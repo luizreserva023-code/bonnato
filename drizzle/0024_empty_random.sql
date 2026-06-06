@@ -1,0 +1,1 @@
+ALTER TABLE `menu_slides` ADD `videoUrl` text;

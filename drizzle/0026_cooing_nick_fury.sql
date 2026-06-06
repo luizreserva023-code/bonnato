@@ -1,0 +1,1 @@
+ALTER TABLE `orders` ADD `aiPaused` boolean DEFAULT false NOT NULL;

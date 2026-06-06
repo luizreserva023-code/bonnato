@@ -1,0 +1,13 @@
+node_modules
+dist
+.git
+.netlify
+.manus-logs
+.codex-dev.err.log
+.codex-dev.out.log
+.guide-check.err.log
+.guide-check.out.log
+.codex-homepage.png
+.codex-homepage-mobile.png
+android
+ios

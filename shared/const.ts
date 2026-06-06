@@ -1,0 +1,7 @@
+export const COOKIE_NAME = "app_session_id";
+export const ONE_YEAR_MS = 1000 * 60 * 60 * 24 * 365;
+// Default session lifetime (30 dias) — sliding via cookie maxAge em cada request.
+export const DEFAULT_SESSION_MS = 1000 * 60 * 60 * 24 * 30;
+export const AXIOS_TIMEOUT_MS = 30_000;
+export const UNAUTHED_ERR_MSG = 'Faça login para continuar (10001)';
+export const NOT_ADMIN_ERR_MSG = 'Você não tem permissão para executar esta ação (10002)';

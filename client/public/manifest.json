@@ -1,0 +1,42 @@
+{
+  "name": "Bonatto Pizza",
+  "short_name": "Bonatto",
+  "description": "Peça sua pizza online - Bonatto Pizza",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#6E0D12",
+  "theme_color": "#6E0D12",
+  "orientation": "portrait",
+  "categories": ["food", "shopping"],
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Ver Cardápio",
+      "short_name": "Cardápio",
+      "description": "Ver o cardápio completo",
+      "url": "/cardapio",
+      "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Minha Conta",
+      "short_name": "Conta",
+      "description": "Ver pedidos e pontos",
+      "url": "/minha-conta",
+      "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }]
+    }
+  ]
+}

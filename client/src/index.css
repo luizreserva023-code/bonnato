@@ -1,0 +1,827 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+}
+
+:root {
+  /* Bonatto Pizza - Paleta Vermelha */
+  --radius: 0.65rem;
+  --background: oklch(0.99 0.002 30);
+  --foreground: oklch(0.15 0.01 30);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.15 0.01 30);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.15 0.01 30);
+  /* Bonatto Bordô #6E0D12 */
+  --bonatto: #6E0D12;
+  --primary: oklch(0.31 0.14 22);
+  --primary-foreground: oklch(0.99 0.002 30);
+  --secondary: oklch(0.96 0.01 30);
+  --secondary-foreground: oklch(0.2 0.01 30);
+  --muted: oklch(0.96 0.005 30);
+  --muted-foreground: oklch(0.5 0.01 30);
+  --accent: oklch(0.96 0.01 30);
+  --accent-foreground: oklch(0.2 0.01 30);
+  --destructive: oklch(0.31 0.14 22);
+  --destructive-foreground: oklch(0.985 0 0);
+  --border: oklch(0.9 0.005 30);
+  --input: oklch(0.9 0.005 30);
+  --ring: oklch(0.31 0.14 22);
+  --chart-1: oklch(0.31 0.14 22);
+  --chart-2: oklch(0.6 0.18 45);
+  --chart-3: oklch(0.7 0.15 60);
+  --chart-4: oklch(0.55 0.12 200);
+  --chart-5: oklch(0.65 0.1 270);
+  --sidebar: oklch(0.13 0.04 25);
+  --sidebar-foreground: oklch(0.95 0.005 30);
+  --sidebar-primary: oklch(0.31 0.14 22);
+  --sidebar-primary-foreground: oklch(0.99 0.002 30);
+  --sidebar-accent: oklch(0.22 0.04 25);
+  --sidebar-accent-foreground: oklch(0.95 0.005 30);
+  --sidebar-border: oklch(0.25 0.04 25);
+  --sidebar-ring: oklch(0.31 0.14 22);
+}
+
+/* Dark mode removed */
+
+/* ── Bonatto Edge — animações das arestas do workflow ── */
+@keyframes bonatto-edge-flow {
+  from { stroke-dashoffset: 18; }
+  to   { stroke-dashoffset: 0; }
+}
+
+@keyframes bonatto-edge-glow {
+  0%, 100% { stroke-opacity: 1; stroke-width: 2; }
+  50%       { stroke-opacity: 0.65; stroke-width: 2.5; }
+}
+
+@keyframes adminFadeIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+    font-family: 'Inter', sans-serif;
+  }
+  h1, h2, h3, h4, h5, h6 {
+    font-family: 'Poppins', sans-serif;
+  }
+  button:not(:disabled),
+  [role="button"]:not([aria-disabled="true"]),
+  [type="button"]:not(:disabled),
+  [type="submit"]:not(:disabled),
+  [type="reset"]:not(:disabled),
+  a[href],
+  select:not(:disabled),
+  input[type="checkbox"]:not(:disabled),
+  input[type="radio"]:not(:disabled) {
+    @apply cursor-pointer;
+  }
+}
+
+@layer components {
+  /**
+   * Custom container utility that centers content and adds responsive padding.
+   *
+   * This overrides Tailwind's default container behavior to:
+   * - Auto-center content (mx-auto)
+   * - Add responsive horizontal padding
+   * - Set max-width for large screens
+   *
+   * Usage: <div className="container">...</div>
+   *
+   * For custom widths, use max-w-* utilities directly:
+   * <div className="max-w-6xl mx-auto px-4">...</div>
+   */
+  .container {
+    width: 100%;
+    margin-left: auto;
+    margin-right: auto;
+    padding-left: 1rem; /* 16px - mobile padding */
+    padding-right: 1rem;
+  }
+
+  .flex {
+    min-height: 0;
+    min-width: 0;
+  }
+
+  @media (min-width: 640px) {
+    .container {
+      padding-left: 1.5rem; /* 24px - tablet padding */
+      padding-right: 1.5rem;
+    }
+  }
+
+  @media (min-width: 1024px) {
+    .container {
+      padding-left: 2rem; /* 32px - desktop padding */
+      padding-right: 2rem;
+      max-width: 1280px; /* Standard content width */
+    }
+  }
+}
+/* ── Hero coupon button pulse animation ── */
+@keyframes hero-coupon-pulse {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(220, 38, 38, 0.5);
+    transform: scale(1);
+  }
+  50% {
+    box-shadow: 0 0 0 8px rgba(220, 38, 38, 0);
+    transform: scale(1.04);
+  }
+}
+
+/* ══════════════════════════════════════════════════════════
+   SHIMMER LINE BUTTON
+   Técnica: conic-gradient rotacionando atrás do botão,
+   mascarado para mostrar apenas a borda fina.
+   Inspirado no Framer "Shimmer Line Button" de Alireza Sinaei.
+══════════════════════════════════════════════════════════ */
+@property --shimmer-angle {
+  syntax: "<angle>";
+  initial-value: 0deg;
+  inherits: false;
+}
+
+@keyframes shimmer-spin {
+  0%   { --shimmer-angle: 0deg; }
+  100% { --shimmer-angle: 360deg; }
+}
+
+.shimmer-wrapper {
+  /* A linha de luz percorre a borda em 2.8s */
+  animation: shimmer-spin 2.8s linear infinite;
+
+  /* Conic gradient: ponto brilhante (branco) + resto transparente */
+  background: conic-gradient(
+    from var(--shimmer-angle),
+    transparent 0%,
+    transparent 68%,
+    rgba(255, 255, 255, 0.55) 76%,
+    rgba(255, 255, 255, 0.95) 82%,
+    rgba(255, 255, 255, 0.55) 88%,
+    transparent 100%
+  );
+}
+
+/* Botão interno: fundo sólido vermelho Bonatto */
+.shimmer-inner {
+  background: hsl(var(--primary)) !important;
+  color: white !important;
+}
+
+/* Pausa a animação quando o botão está desabilitado */
+.shimmer-wrapper:has(button:disabled) {
+  animation-play-state: paused;
+  opacity: 0.5;
+}
+
+/* ── Bonatto Button Shine — gradiente bordô claro → escuro com brilho interno ── */
+.btn-bonatto {
+  background: linear-gradient(160deg, #9b1520 0%, #6E0D12 45%, #5a0a0f 100%) !important;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.15), 0 2px 8px rgba(110,13,18,0.45);
+  transition: filter 0.2s ease, box-shadow 0.2s ease;
+}
+.btn-bonatto:hover {
+  filter: brightness(1.12);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.2), 0 4px 16px rgba(110,13,18,0.55);
+}
+
+/* ── CTA Button Pulse ── */
+@keyframes cta-pulse {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(220, 38, 38, 0.7), 0 0 0 0 rgba(220, 38, 38, 0.4);
+  }
+  50% {
+    box-shadow: 0 0 0 10px rgba(220, 38, 38, 0), 0 0 20px 4px rgba(220, 38, 38, 0.3);
+  }
+}
+
+/* ── Shiny Border Button — pulse de escala + glow ── */
+@keyframes shiny-pulse {
+  0%, 100% {
+    transform: scale(1);
+    filter: drop-shadow(0 0 0px rgba(220, 38, 38, 0));
+  }
+  50% {
+    transform: scale(1.035);
+    filter: drop-shadow(0 0 12px rgba(220, 38, 38, 0.65));
+  }
+}
+
+@keyframes shiny-ring {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(220, 38, 38, 0.5);
+  }
+  50% {
+    box-shadow: 0 0 0 8px rgba(220, 38, 38, 0);
+  }
+}
+
+/* ── Setas curvadas animadas (draw + bounce) ── */
+.arrow-path {
+  stroke-dasharray: 120;
+  stroke-dashoffset: 120;
+  animation: arrow-draw 0.9s ease forwards 0.4s, arrow-bounce 2s ease-in-out infinite 1.4s;
+}
+
+.arrow-head-left {
+  stroke-dasharray: 30;
+  stroke-dashoffset: 30;
+  animation: arrow-draw 0.4s ease forwards 1.2s, arrow-bounce 2s ease-in-out infinite 1.4s;
+}
+
+@keyframes arrow-draw {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes arrow-bounce {
+  0%, 100% { transform: translateY(0px); }
+  50%       { transform: translateY(5px); }
+}
+
+/* ── HoverBorderGradient ─────────────────────────────────────── */
+@keyframes bonatto-border-spin {
+  from { transform: translate(-50%, -50%) rotate(0deg); }
+  to   { transform: translate(-50%, -50%) rotate(360deg); }
+}
+
+.bonatto-border-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 16px;
+  overflow: hidden;
+  padding: 2px;
+}
+
+.bonatto-border-wrap::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 250%;
+  height: 250%;
+  background: conic-gradient(
+    from 0deg,
+    transparent 0deg,
+    transparent 60deg,
+    rgba(255, 255, 255, 0.95) 120deg,
+    transparent 180deg,
+    transparent 360deg
+  );
+  animation: bonatto-border-spin 2.5s linear infinite;
+}
+
+.bonatto-border-wrap:hover::before {
+  background: conic-gradient(
+    from 0deg,
+    transparent 0deg,
+    transparent 60deg,
+    rgba(255, 210, 210, 1.0) 120deg,
+    transparent 180deg,
+    transparent 360deg
+  );
+}
+
+.bonatto-border-inner {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border-radius: 14px;
+  padding: 14px 24px;
+  color: white;
+  font-weight: 700;
+  font-size: 1rem;
+  background: linear-gradient(160deg, #9b1520 0%, #6E0D12 50%, #5a0a0f 100%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.15);
+}
+
+/* ── Órbitas animadas — background hero Home ── */
+.circle-bg {
+  position: absolute;
+  width: 600px;
+  height: 600px;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  overflow: visible;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.orbit {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  animation: orbit-spin linear infinite;
+}
+
+.orbit .circle {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  border: 1px solid rgba(155, 21, 32, 0.35);
+  box-shadow: 0 0 12px rgba(155, 21, 32, 0.15);
+}
+
+.orbit .dot {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  width: 8px;
+  height: 8px;
+  background: #c0392b;
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  box-shadow: 0 0 10px #c0392b, 0 0 20px rgba(192, 57, 43, 0.5);
+}
+
+.orbit.one {
+  width: 600px;
+  height: 600px;
+  animation-duration: 120s;
+}
+
+.orbit.two {
+  width: 400px;
+  height: 400px;
+  animation-duration: 90s;
+  animation-direction: reverse;
+}
+
+.orbit.three {
+  width: 200px;
+  height: 200px;
+  animation-duration: 60s;
+}
+
+@keyframes orbit-spin {
+  from { transform: translate(-50%, -50%) rotate(0deg); }
+  to   { transform: translate(-50%, -50%) rotate(360deg); }
+}
+
+/* ── Gradiente animado (textura) — botão rodapé Home ── */
+@keyframes textura {
+  0%   { background-position: 0 0; }
+  100% { background-position: 100% 0; }
+}
+
+.btn-gradient-animated {
+  animation: 3.4s cubic-bezier(.2,.5,.9,.6) 2s infinite textura;
+  background-image: linear-gradient(45deg, #9b1520, #6E0D12, #9b1520, #6E0D12);
+  background-size: 400% 200%;
+  transition: all .8s;
+  color: white;
+}
+
+@keyframes navbarShimmer {
+  0%   { background-position: 200% 0; opacity: 0; }
+  15%  { opacity: 1; }
+  50%  { background-position: -200% 0; opacity: 1; }
+  65%  { opacity: 0; }
+  100% { background-position: -200% 0; opacity: 0; }
+}
+
+/* ── Admin Panel — Bonatto Identity System ────────────────────────────────── */
+
+/* Tokens de design: espaçamento, raios e sombras unificados para o painel.
+   Colapsados no :root para funcionar sem data-admin-theme no HTML.
+   Paleta: Nexus Dashboard (gray-100 bg, white cards) + Bonatto red accent. */
+:root {
+  --admin-radius-xs: 6px;
+  --admin-radius-sm: 8px;
+  --admin-radius-md: 12px;
+  --admin-radius-lg: 16px;
+  --admin-radius-xl: 20px;
+  /* Nexus: sombra muito suave — 0 1px 3px rgba(0,0,0,0.06) */
+  --admin-shadow-sm: 0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
+  --admin-shadow-md: 0 4px 12px rgba(0,0,0,0.08), 0 1px 3px rgba(0,0,0,0.04);
+  --admin-shadow-lg: 0 10px 24px rgba(0,0,0,0.10), 0 2px 6px rgba(0,0,0,0.05);
+  --admin-font: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --admin-duration: 180ms;
+  --admin-ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+  /* ── Nexus light palette + Bonatto red accent ── */
+  --admin-bg: #eef0f4;                        /* Light gray page bg */
+  --admin-sidebar-bg: linear-gradient(180deg, #e8534a 0%, #c0392b 50%, #a93226 100%); /* Red gradient sidebar */
+  --admin-sidebar-border: transparent;
+  --admin-sidebar-text: rgba(255,255,255,0.85);
+  --admin-sidebar-text-active: #ffffff;
+  --admin-sidebar-active-bg: rgba(255,255,255,0.18);
+  --admin-sidebar-hover-bg: rgba(255,255,255,0.10);
+  --admin-sidebar-divider: rgba(255,255,255,0.15);
+  --admin-card-bg: #ffffff;
+  --admin-card-border: #e8ebf0;
+  --admin-surface-bg: #ffffff;
+  --admin-border: #e8ebf0;
+  --admin-text: #4b5563;
+  --admin-text-secondary: #6b7280;
+  --admin-text-muted: #8a92a0;               /* Nexus gray-medium */
+  --admin-text-heading: #1a1d23;             /* Nexus near-black */
+  --admin-hover-bg: #f8f9fb;                 /* Nexus row hover */
+  --admin-divider: #e8ebf0;
+  /* Accent: Bonatto red */
+  --admin-active-bg: rgba(110,13,18,0.08);
+  --admin-active-text: #6E0D12;
+  --admin-badge-bg: rgba(110,13,18,0.08);
+  --admin-badge-text: #6E0D12;
+  --admin-input-bg: #ffffff;
+  --admin-input-border: #d1d5db;
+  --admin-chart-bar: #fca5a5;
+  --admin-chart-bar-max: #6E0D12;
+  --admin-chart-grid: rgba(0,0,0,0.06);
+  --admin-chart-tick: #8a92a0;
+  --admin-tooltip-bg: #ffffff;
+  --admin-tooltip-shadow: 0 4px 16px rgba(0,0,0,0.12);
+  --admin-pipeline-pending-bg: #fffbeb;
+  --admin-pipeline-pending-text: #92400e;
+  --admin-pipeline-confirmed-bg: #f0fdf4;
+  --admin-pipeline-confirmed-text: #166534;
+  --admin-pipeline-preparing-bg: #eff6ff;
+  --admin-pipeline-preparing-text: #1e40af;
+  --admin-pipeline-delivery-bg: #fef2f2;
+  --admin-pipeline-delivery-text: #dc2626;
+  --admin-icon-bg: rgba(110,13,18,0.08);
+  --admin-icon-color: #6E0D12;
+  --admin-order-row-bg: #f8f9fb;
+  --admin-store-selector-bg: #f0f2f5;
+  --admin-store-selector-text: #374151;
+  --admin-avatar-name: #1a1d23;
+  --admin-avatar-role: #8a92a0;
+  --admin-mobile-header-bg: #ffffff;
+  --admin-mobile-header-border: #e8ebf0;
+  --admin-mobile-header-text: #1a1d23;
+  /* Nexus chips: ativo = dark pill, inativo = gray-100 */
+  --admin-filter-active-bg: #1a1d23;
+  --admin-filter-active-text: #ffffff;
+  --admin-filter-inactive-bg: #f0f2f5;
+  --admin-filter-inactive-text: #6b7280;
+  --admin-trend-up-bg: #e6faf7;              /* Nexus teal-light */
+  --admin-trend-up-text: #00a389;
+  --admin-trend-down-bg: #fff0f0;
+  --admin-trend-down-text: #cc2222;
+  --admin-card-shadow: 0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
+  --admin-progress-bg: rgba(110,13,18,0.08);
+  --admin-header-bg: rgba(240,242,245,0.92);
+}
+
+
+/* Page container — padronização vertical entre abas. */
+.admin-page {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  font-family: var(--admin-font);
+  color: var(--admin-text);
+}
+.admin-page > section { animation: adminSectionFadeIn 0.18s ease-out; }
+
+/* Cabeçalho padrão de aba: título + subtítulo + ações. */
+.admin-page-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--admin-divider);
+}
+.admin-page-header__titles { min-width: 0; }
+.admin-page-header__eyebrow {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--admin-text-muted);
+  margin-bottom: 4px;
+}
+.admin-page-header__title {
+  font-family: var(--admin-font);
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--admin-text-heading);
+  line-height: 1.15;
+}
+.admin-page-header__subtitle {
+  font-size: 13px;
+  color: var(--admin-text-muted);
+  margin-top: 4px;
+  line-height: 1.4;
+}
+.admin-page-header__actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+
+/* Card surface — superfície padrão para blocos de conteúdo. */
+.admin-surface {
+  background: var(--admin-card-bg);
+  border: 1px solid var(--admin-card-border);
+  border-radius: var(--admin-radius-md);
+  box-shadow: var(--admin-shadow-sm);
+  transition: box-shadow var(--admin-duration) var(--admin-ease), transform var(--admin-duration) var(--admin-ease);
+}
+.admin-surface--hover:hover { box-shadow: var(--admin-shadow-md); }
+.admin-surface__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--admin-divider);
+}
+.admin-surface__title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--admin-text-heading);
+  font-family: var(--admin-font);
+  letter-spacing: -0.01em;
+}
+.admin-surface__subtitle {
+  font-size: 12px;
+  color: var(--admin-text-muted);
+  margin-top: 2px;
+}
+.admin-surface__body { padding: 20px; }
+.admin-surface__footer {
+  padding: 12px 20px;
+  border-top: 1px solid var(--admin-divider);
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+/* Toolbar (busca + filtros) padrão. */
+.admin-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.admin-toolbar__search { flex: 1 1 280px; position: relative; }
+.admin-toolbar__search-icon {
+  position: absolute; left: 10px; top: 50%; transform: translateY(-50%);
+  color: var(--admin-text-muted);
+  pointer-events: none;
+}
+
+/* Chips de filtro unificados. */
+.admin-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  border-radius: 999px;
+  padding: 6px 12px;
+  border: 1px solid transparent;
+  transition: all var(--admin-duration) var(--admin-ease);
+  cursor: pointer;
+  color: var(--admin-filter-inactive-text);
+  background: var(--admin-filter-inactive-bg);
+  letter-spacing: 0.01em;
+}
+.admin-chip:hover { filter: brightness(0.97); }
+.admin-chip[data-active="true"] {
+  background: var(--admin-filter-active-bg);
+  color: var(--admin-filter-active-text);
+  border-color: transparent;
+}
+
+/* Stat / Metric Card. */
+.admin-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 18px 20px;
+  background: var(--admin-card-bg);
+  border: 1px solid var(--admin-card-border);
+  border-radius: var(--admin-radius-md);
+  box-shadow: var(--admin-shadow-sm);
+  transition: transform var(--admin-duration) var(--admin-ease), box-shadow var(--admin-duration) var(--admin-ease);
+}
+.admin-stat:hover { transform: translateY(-1px); box-shadow: var(--admin-shadow-md); }
+.admin-stat__top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.admin-stat__label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--admin-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.admin-stat__icon {
+  width: 34px; height: 34px; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: 10px;
+  background: var(--admin-icon-bg);
+  color: var(--admin-icon-color);
+}
+.admin-stat__value {
+  font-size: 26px;
+  font-weight: 700;
+  line-height: 1.1;
+  color: var(--admin-text-heading);
+  letter-spacing: -0.02em;
+}
+.admin-stat__sub { font-size: 12px; color: var(--admin-text-muted); }
+.admin-stat__trend {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 8px;
+  border-radius: 999px;
+}
+.admin-stat__trend--up { background: var(--admin-trend-up-bg); color: var(--admin-trend-up-text); }
+.admin-stat__trend--down { background: var(--admin-trend-down-bg); color: var(--admin-trend-down-text); }
+.admin-stat__trend--neutral { color: var(--admin-text-muted); background: transparent; padding-left: 0; }
+
+/* Section (bloco de conteúdo com título + body). */
+.admin-section { display: flex; flex-direction: column; gap: 12px; }
+.admin-section__header {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 12px; flex-wrap: wrap;
+}
+.admin-section__title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--admin-text-heading);
+  letter-spacing: -0.01em;
+}
+.admin-section__subtitle {
+  font-size: 12px;
+  color: var(--admin-text-muted);
+  margin-top: 2px;
+}
+
+/* Tabela padrão. */
+.admin-table-head {
+  background: var(--admin-hover-bg);
+  border-bottom: 1px solid var(--admin-divider);
+}
+.admin-table-head th {
+  color: var(--admin-text-muted);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 10px 14px;
+}
+.admin-table tbody td { padding: 12px 14px; font-size: 13px; color: var(--admin-text); }
+.admin-table tbody tr { border-bottom: 1px solid var(--admin-divider); }
+.admin-table tbody tr:hover { background: var(--admin-hover-bg); }
+
+/* Empty state padronizado. */
+.admin-empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 20px;
+  gap: 12px;
+  color: var(--admin-text-muted);
+  text-align: center;
+}
+.admin-empty-state svg { opacity: 0.35; }
+.admin-empty-state__title { font-size: 14px; font-weight: 600; color: var(--admin-text-heading); }
+.admin-empty-state__body { font-size: 13px; color: var(--admin-text-muted); max-width: 360px; }
+
+/* Status pill (usada em orders, coupons, raffles, users). */
+.admin-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 10px;
+  border-radius: 999px;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+}
+.admin-pill--success { background: var(--admin-trend-up-bg); color: var(--admin-trend-up-text); }
+.admin-pill--danger { background: var(--admin-trend-down-bg); color: var(--admin-trend-down-text); }
+.admin-pill--neutral { background: var(--admin-hover-bg); color: var(--admin-text-muted); }
+.admin-pill--brand { background: var(--admin-badge-bg); color: var(--admin-badge-text); }
+.admin-pill--warning { background: #fff7e6; color: #b45309; }
+.admin-pill--info { background: #e8f4ff; color: #1d6fa4; }
+
+@keyframes adminSectionFadeIn {
+  from { opacity: 0; transform: translateY(2px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* ══════════════════════════════════════════════════════════
+   ADMIN DARK MODE — Variáveis CSS isoladas
+   Usa [data-admin-theme] para NÃO afetar Home/Cardápio.
+   Paleta bordô monocromática fiel à identidade Bonatto.
+══════════════════════════════════════════════════════════ */
+
+/* dark mode removed — tokens collapsed into :root above */
+
+
+
+/* ── Admin theme: global overrides for shadcn/Tailwind components (both light and dark) ── */
+[data-admin-theme] {
+  /* Card component */
+  & .bg-card { background: var(--admin-card-bg) !important; }
+  & .text-card-foreground { color: var(--admin-text) !important; }
+  & .bg-background { background: var(--admin-bg) !important; }
+  & .text-foreground { color: var(--admin-text) !important; }
+  & .text-muted-foreground { color: var(--admin-text-muted) !important; }
+  & .bg-muted { background: var(--admin-hover-bg) !important; }
+  & .border-border { border-color: var(--admin-card-border) !important; }
+  & .border-input { border-color: var(--admin-input-border) !important; }
+  & .bg-popover { background: var(--admin-card-bg) !important; }
+  & .text-popover-foreground { color: var(--admin-text) !important; }
+
+  /* Table rows */
+  & table { background: var(--admin-card-bg); color: var(--admin-text); }
+  & thead { background: var(--admin-hover-bg); }
+  & thead th { color: var(--admin-text-muted) !important; }
+  & tbody tr { border-color: var(--admin-card-border); }
+  & tbody tr:hover { background: var(--admin-hover-bg) !important; }
+
+  /* Input/Select */
+  & input, & select, & textarea {
+    background: var(--admin-input-bg) !important;
+    color: var(--admin-text) !important;
+    border-color: var(--admin-input-border) !important;
+  }
+  & input::placeholder, & textarea::placeholder {
+    color: var(--admin-text-muted) !important;
+  }
+
+  /* Badge */
+  & .bg-primary { background: #6E0D12 !important; }
+  & .text-primary { color: var(--admin-active-text) !important; }
+  & .border-primary { border-color: var(--admin-active-text) !important; }
+
+  /* Separator */
+  & .bg-border { background: var(--admin-card-border) !important; }
+
+  /* Skeleton */
+  & .animate-pulse { background: var(--admin-hover-bg) !important; }
+
+  /* Scrollbar */
+  & ::-webkit-scrollbar-track { background: var(--admin-bg); }
+  & ::-webkit-scrollbar-thumb { background: var(--admin-card-border); }
+}
+
+
