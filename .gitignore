@@ -115,5 +115,6 @@ load-test-results/
 client/public/__manus__/version.json
 
 .vercel
+.vercel.bak-deploy*/
 .env*
 vercel.production.env
