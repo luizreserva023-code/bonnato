@@ -19,8 +19,16 @@ import { Separator } from "@/components/ui/separator";
 import { toast } from "sonner";
 import { CreditCard, Plus, Trash2, Loader2, ShieldCheck, Lock } from "lucide-react";
 
-// Stripe publishable key from env
-const stripePromise = loadStripe(import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY ?? "");
+const stripePublishableKey = import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY?.trim() ?? "";
+let stripePromise: ReturnType<typeof loadStripe> | null = null;
+
+function getStripePromise() {
+  if (!stripePublishableKey) return null;
+  if (!stripePromise) {
+    stripePromise = loadStripe(stripePublishableKey);
+  }
+  return stripePromise;
+}
 
 // Brand icons mapping
 const BRAND_LABELS: Record<string, string> = {
@@ -231,6 +239,7 @@ interface SavedCardsProps {
 export function SavedCards({ selectable, selectedCardId, onSelectCard, compact }: SavedCardsProps) {
   const [showAddForm, setShowAddForm] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const stripe = getStripePromise();
 
   const utils = trpc.useUtils();
   const { data: cards = [], isLoading } = trpc.payments.listSavedCards.useQuery();
@@ -282,8 +291,8 @@ export function SavedCards({ selectable, selectedCardId, onSelectCard, compact }
         />
       ))}
 
-      {showAddForm ? (
-        <Elements stripe={stripePromise}>
+      {showAddForm && stripe ? (
+        <Elements stripe={stripe}>
           <AddCardForm onSuccess={handleAddSuccess} onCancel={() => setShowAddForm(false)} />
         </Elements>
       ) : (

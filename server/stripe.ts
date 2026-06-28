@@ -1,11 +1,11 @@
 import Stripe from "stripe";
 import { Request, Response } from "express";
-import { updateOrderPaymentStatus, createTransaction, getOrderById, updateStripeCustomerId, recordWebhookEventOnce } from "./db";
-import { notifyOwnerAdapter } from "./adapters/pushNotifications";
+import { updateOrderPaymentStatus, createTransaction, getOrderById, updateStripeCustomerId, recordWebhookEventOnce } from "./db.ts";
+import { notifyOwnerAdapter } from "./adapters/pushNotifications.ts";
 // Alias para compatibilidade retroativa — passa pelo adapter
 const notifyOwner = (payload: { title: string; content: string }) =>
   notifyOwnerAdapter({ title: payload.title, body: payload.content });
-import { sendPushToAdmins } from "./push";
+import { sendPushToAdmins } from "./push.ts";
 
 // Lazy-init: não crasha no boot se `STRIPE_SECRET_KEY` não estiver setado.
 // Isso permite rodar testes e o app em dev sem a credencial. O erro só

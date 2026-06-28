@@ -1,9 +1,9 @@
-import "dotenv/config";
+import "./loadEnv.ts";
 import express from "express";
 import { createServer } from "http";
-import { configureApp } from "./app";
-import { startPersistentBackgroundJobs } from "./backgroundJobs";
-import { findAvailablePort } from "./ports";
+import { configureApp } from "./app.ts";
+import { startPersistentBackgroundJobs } from "./backgroundJobs.ts";
+import { findAvailablePort } from "./ports.ts";
 
 async function startServer() {
   const app = express();

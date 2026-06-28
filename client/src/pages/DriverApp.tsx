@@ -1,14 +1,14 @@
 /**
- * DriverApp — Aplicativo do Motoboy Bonatto Pizza
+ * DriverApp  Aplicativo do Motoboy Bonatto Pizza
  *
  * Melhorias implementadas:
- * 1. Identidade visual Bonatto (bordô #6E0D12, Poppins, gradiente)
- * 2. UX mobile-first: botão GPS grande, wakeLock, vibração, área de toque 56px+
- * 3. Dashboard do dia: entregas, ganhos estimados, avaliação média
- * 4. Navegação integrada: botões Maps e Waze com endereço do cliente
- * 5. Notificações push: subscription automática ao abrir o app
- * 6. Perfil com avaliações: link para /motoboy/perfil/:id
- * 7. v42.0: Lista scrollável de TODOS os pedidos atribuídos simultaneamente
+ * 1. Identidade visual Bonatto (bord #6E0D12, Poppins, gradiente)
+ * 2. UX mobile-first: boto GPS grande, wakeLock, vibrao, rea de toque 56px+
+ * 3. Dashboard do dia: entregas, ganhos estimados, avaliao mdia
+ * 4. Navegao integrada: botes Maps e Waze com endereo do cliente
+ * 5. Notificaes push: subscription automtica ao abrir o app
+ * 6. Perfil com avaliaes: link para /motoboy/perfil/:id
+ * 7. v42.0: Lista scrollvel de TODOS os pedidos atribudos simultaneamente
  */
 
 import { Badge } from "@/components/ui/badge";
@@ -47,13 +47,13 @@ const LOGO_URL =
 
 const NOTIFICATION_SOUND_URL = "/manus-storage/notification-motoboy_31cd6501.mp3";
 
-// ─── Hook: Notificação Sonora de Novo Pedido ─────────────────────────────────
+//  Hook: Notificao Sonora de Novo Pedido 
 
 function useNewOrderSound(assignedOrderIds: number[]) {
   const prevIdsRef = useRef<Set<number> | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
-  // Pré-carrega o áudio uma vez
+  // Pr-carrega o udio uma vez
   useEffect(() => {
     const audio = new Audio(NOTIFICATION_SOUND_URL);
     audio.preload = "auto";
@@ -74,28 +74,28 @@ function useNewOrderSound(assignedOrderIds: number[]) {
     const hasNewOrder = assignedOrderIds.some((id) => !prevIds.has(id));
 
     if (hasNewOrder && audioRef.current) {
-      // Toca o som (pode ser bloqueado pelo navegador se não houver interação prévia)
+      // Toca o som (pode ser bloqueado pelo navegador se no houver interao prvia)
       audioRef.current.currentTime = 0;
       audioRef.current.play().catch(() => {
-        // Autoplay bloqueado — silencioso; push notification já cobre esse caso
+        // Autoplay bloqueado  silencioso; push notification j cobre esse caso
       });
-      // Vibração no celular
+      // Vibrao no celular
       if (navigator.vibrate) navigator.vibrate([300, 100, 300, 100, 300]);
     }
 
-    // Atualiza a referência com os IDs atuais
+    // Atualiza a referncia com os IDs atuais
     prevIdsRef.current = new Set(assignedOrderIds);
   }, [assignedOrderIds]);
 }
 
-// ─── Helpers ─────────────────────────────────────────────────────────────────
+//  Helpers 
 
 function formatCurrency(value: number) {
   return value.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 }
 
 function formatTime(date: Date | string | null | undefined) {
-  if (!date) return "—";
+  if (!date) return "";
   return new Date(date).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
 }
 
@@ -117,7 +117,7 @@ function statusColor(status: string) {
   return "bg-amber-100 text-amber-800";
 }
 
-// ─── WakeLock Hook ────────────────────────────────────────────────────────────
+//  WakeLock Hook 
 
 function useWakeLock(active: boolean) {
   const wakeLockRef = useRef<WakeLockSentinel | null>(null);
@@ -138,7 +138,7 @@ function useWakeLock(active: boolean) {
   }, [active]);
 }
 
-// ─── GPS Hook ────────────────────────────────────────────────────────────────
+//  GPS Hook 
 
 interface GpsState {
   active: boolean;
@@ -154,7 +154,7 @@ function useGps(token: string | null, activeOrderId?: number | null) {
 
   const start = useCallback(() => {
     if (!navigator.geolocation) {
-      setGps((s) => ({ ...s, error: "GPS não disponível neste dispositivo" }));
+      setGps((s) => ({ ...s, error: "GPS no disponvel neste dispositivo" }));
       return;
     }
     watchIdRef.current = navigator.geolocation.watchPosition(
@@ -202,7 +202,7 @@ function useGps(token: string | null, activeOrderId?: number | null) {
   return { gps, toggle };
 }
 
-// ─── OrderCard Component ──────────────────────────────────────────────────────
+//  OrderCard Component 
 
 interface OrderCardProps {
   order: {
@@ -263,14 +263,14 @@ function OrderCard({ order, items, onConfirm, isConfirming }: OrderCardProps) {
         </div>
       </button>
 
-      {/* Resumo sempre visível */}
+      {/* Resumo sempre visvel */}
       <div className="px-4 py-3 flex items-start gap-3">
         <div className="w-8 h-8 rounded-full bg-[#6E0D12]/30 flex items-center justify-center shrink-0">
           <MapPin className="w-4 h-4 text-[#ff6b6b]" />
         </div>
         <div className="flex-1 min-w-0">
           <p className="font-semibold text-sm break-words">
-            {order.deliveryAddress ?? "Endereço não informado"}
+            {order.deliveryAddress ?? "Endereo no informado"}
           </p>
           {order.deliveryComplement && (
             <p className="text-white/50 text-xs">{order.deliveryComplement}</p>
@@ -284,7 +284,7 @@ function OrderCard({ order, items, onConfirm, isConfirming }: OrderCardProps) {
         </div>
       </div>
 
-      {/* Detalhes expandíveis */}
+      {/* Detalhes expandveis */}
       {expanded && (
         <div className="px-4 pb-3 space-y-3 border-t border-white/5 pt-3">
           {/* Cliente */}
@@ -333,20 +333,20 @@ function OrderCard({ order, items, onConfirm, isConfirming }: OrderCardProps) {
             <DollarSign className="w-3.5 h-3.5" />
             <span>
               {order.paymentMethod === "cash"
-                ? "💵 Dinheiro"
+                ? "= Dinheiro"
                 : order.paymentMethod === "pix"
-                ? "📱 Pix"
+                ? "= Pix"
                 : order.paymentMethod === "credit_card"
-                ? "💳 Cartão de crédito"
-                : "💳 Cartão de débito"}
-              {" — "}
+                ? "= Carto de crdito"
+                : "= Carto de dbito"}
+              {"  "}
               {order.paymentStatus === "paid"
-                ? "✅ Pago"
-                : "⏳ Cobrar na entrega"}
+                ? " Pago"
+                : " Cobrar na entrega"}
             </span>
           </div>
 
-          {/* Botões de navegação */}
+          {/* Botes de navegao */}
           <div className="grid grid-cols-2 gap-2">
             <button
               onClick={() => openMaps(order.deliveryAddress ?? "")}
@@ -366,7 +366,7 @@ function OrderCard({ order, items, onConfirm, isConfirming }: OrderCardProps) {
         </div>
       )}
 
-      {/* Botão Confirmar Entrega */}
+      {/* Boto Confirmar Entrega */}
       <div className="px-4 pb-4 pt-2">
         <button
           onClick={() => onConfirm(order.id)}
@@ -386,7 +386,7 @@ function OrderCard({ order, items, onConfirm, isConfirming }: OrderCardProps) {
   );
 }
 
-// ─── Main Component ──────────────────────────────────────────────────────────
+//  Main Component 
 
 export default function DriverApp() {
   const [token, setToken] = useState<string>(
@@ -394,7 +394,7 @@ export default function DriverApp() {
   );
   const [tokenInput, setTokenInput] = useState("");
   const [activeTab, setActiveTab] = useState<"home" | "history">("home");
-  // Rastrear quais pedidos estão sendo confirmados individualmente
+  // Rastrear quais pedidos esto sendo confirmados individualmente
   const [confirmingOrders, setConfirmingOrders] = useState<Set<number>>(new Set());
 
   // Auth query
@@ -411,7 +411,7 @@ export default function DriverApp() {
     { enabled: !!token && !!driver, refetchInterval: 30_000 }
   );
 
-  // Nova query: lista de TODOS os pedidos atribuídos
+  // Nova query: lista de TODOS os pedidos atribudos
   const assignedOrdersQuery = trpc.drivers.assignedOrders.useQuery(
     { token },
     { enabled: !!token && !!driver, refetchInterval: 10_000 }
@@ -425,20 +425,20 @@ export default function DriverApp() {
   // Mutations
   const confirmDelivery = trpc.drivers.confirmDelivery.useMutation();
 
-  // GPS — passa o primeiro pedido da lista como referência de localização
+  // GPS  passa o primeiro pedido da lista como referncia de localizao
   const firstOrderId = assignedOrdersQuery.data?.[0]?.order?.id ?? null;
   const { gps, toggle: toggleGps } = useGps(token || null, firstOrderId);
 
   // WakeLock: manter tela ativa quando GPS ligado
   useWakeLock(gps.active);
 
-  // PWA — manifest dedicado + banner de instalação
+  // PWA  manifest dedicado + banner de instalao
   const { showBanner: showPWABanner, installState, promptInstall, dismissInstall } = useDriverPWA();
 
-  // Push notifications — hook dedicado para motoboy
+  // Push notifications  hook dedicado para motoboy
   const driverPush = useDriverPushNotifications();
 
-  // Notificação sonora: toca quando um novo pedido é atribuído ao motoboy
+  // Notificao sonora: toca quando um novo pedido  atribudo ao motoboy
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const assignedOrderIds = useMemo(
     () => (assignedOrdersQuery.data ?? []).map((a) => a.order.id),
@@ -448,7 +448,7 @@ export default function DriverApp() {
   );
   useNewOrderSound(assignedOrderIds);
 
-  // Subscription automática ao autenticar (se já tem permissão concedida)
+  // Subscription automtica ao autenticar (se j tem permisso concedida)
   useEffect(() => {
     if (driver && token && driverPush.isSupported && !driverPush.isSubscribed) {
       if (Notification.permission === "granted") {
@@ -458,7 +458,7 @@ export default function DriverApp() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [driver?.id]);
 
-  // ── Login ──────────────────────────────────────────────────────────────────
+  //  Login 
 
   function handleLogin(e: React.FormEvent) {
     e.preventDefault();
@@ -474,15 +474,15 @@ export default function DriverApp() {
     setTokenInput("");
   }
 
-  // ── Confirmar entrega individual ──────────────────────────────────────────
+  //  Confirmar entrega individual 
 
   async function handleConfirmDelivery(orderId: number) {
     setConfirmingOrders((prev) => new Set(prev).add(orderId));
     try {
       await confirmDelivery.mutateAsync({ token, orderId });
       if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
-      toast.success("Entrega confirmada! 🎉", {
-        description: `Pedido #${orderId} entregue. Ótimo trabalho!`,
+      toast.success("Entrega confirmada! <", {
+        description: `Pedido #${orderId} entregue. timo trabalho!`,
       });
       meQuery.refetch();
       todayStats.refetch();
@@ -499,7 +499,7 @@ export default function DriverApp() {
     }
   }
 
-  // ─── Tela de Login ─────────────────────────────────────────────────────────
+  //  Tela de Login 
 
   if (!token || (meQuery.isError && !meQuery.isFetching)) {
     return (
@@ -531,7 +531,7 @@ export default function DriverApp() {
             {meQuery.isError && (
               <div className="flex items-center gap-2 text-red-400 text-sm bg-red-900/20 rounded-lg px-3 py-2">
                 <AlertCircle className="w-4 h-4 shrink-0" />
-                <span>Token inválido. Solicite um novo ao administrador.</span>
+                <span>Token invlido. Solicite um novo ao administrador.</span>
               </div>
             )}
             <button
@@ -547,7 +547,7 @@ export default function DriverApp() {
     );
   }
 
-  // ─── Loading ───────────────────────────────────────────────────────────────
+  //  Loading 
 
   if (meQuery.isLoading) {
     return (
@@ -564,12 +564,12 @@ export default function DriverApp() {
   const assignedOrders = assignedOrdersQuery.data ?? [];
   const deliveries = todayDeliveries.data ?? [];
 
-  // ─── App Principal ─────────────────────────────────────────────────────────
+  //  App Principal 
 
   return (
     <div className="min-h-screen bg-[#0f0204] text-white flex flex-col max-w-md mx-auto">
 
-      {/* ── Header com gradiente Bonatto ── */}
+      {/*  Header com gradiente Bonatto  */}
       <div className="bg-gradient-to-b from-[#6E0D12] to-[#4a0809] px-4 pt-8 pb-6 relative overflow-hidden">
         {/* Grid decorativo */}
         <div
@@ -627,15 +627,15 @@ export default function DriverApp() {
             <div className="bg-white/10 rounded-xl p-3 text-center">
               <Star className="w-5 h-5 mx-auto mb-1 text-yellow-300" />
               <p className="text-xl font-black text-yellow-300">
-                {stats?.avgRating && stats.avgRating > 0 ? stats.avgRating.toFixed(1) : "—"}
+                {stats?.avgRating && stats.avgRating > 0 ? stats.avgRating.toFixed(1) : ""}
               </p>
-              <p className="text-white/60 text-xs">Avaliação</p>
+              <p className="text-white/60 text-xs">Avaliao</p>
             </div>
           </div>
         </div>
       </div>
 
-      {/* ── Banner PWA ── */}
+      {/*  Banner PWA  */}
       {showPWABanner && (
         <div className="mx-4 mt-4 rounded-2xl overflow-hidden border border-[#6E0D12]/40 bg-[#1a0305]">
           {installState === "available" ? (
@@ -646,7 +646,7 @@ export default function DriverApp() {
               </div>
               <div className="flex-1 min-w-0">
                 <p className="text-white font-bold text-sm">Instalar App do Motoboy</p>
-                <p className="text-white/50 text-xs mt-0.5">Acesso rápido na tela inicial</p>
+                <p className="text-white/50 text-xs mt-0.5">Acesso rpido na tela inicial</p>
               </div>
               <div className="flex items-center gap-2 shrink-0">
                 <button
@@ -664,12 +664,12 @@ export default function DriverApp() {
               </div>
             </div>
           ) : (
-            /* iOS: instruções manuais */
+            /* iOS: instrues manuais */
             <div className="p-4">
               <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center gap-2">
                   <Share2 className="w-4 h-4 text-[#ff6b6b]" />
-                  <p className="text-white font-bold text-sm">Adicionar à Tela Inicial</p>
+                  <p className="text-white font-bold text-sm">Adicionar  Tela Inicial</p>
                 </div>
                 <button
                   onClick={dismissInstall}
@@ -681,11 +681,11 @@ export default function DriverApp() {
               <ol className="space-y-1.5 text-white/60 text-xs">
                 <li className="flex items-start gap-2">
                   <span className="w-4 h-4 rounded-full bg-[#6E0D12]/40 flex items-center justify-center text-white text-xs shrink-0 mt-0.5">1</span>
-                  <span>Toque no botão <strong className="text-white/80">Compartilhar</strong> <Share2 className="w-3 h-3 inline" /> na barra do Safari</span>
+                  <span>Toque no boto <strong className="text-white/80">Compartilhar</strong> <Share2 className="w-3 h-3 inline" /> na barra do Safari</span>
                 </li>
                 <li className="flex items-start gap-2">
                   <span className="w-4 h-4 rounded-full bg-[#6E0D12]/40 flex items-center justify-center text-white text-xs shrink-0 mt-0.5">2</span>
-                  <span>Selecione <strong className="text-white/80">&ldquo;Adicionar à Tela de Inicio&rdquo;</strong></span>
+                  <span>Selecione <strong className="text-white/80">&ldquo;Adicionar  Tela de Inicio&rdquo;</strong></span>
                 </li>
                 <li className="flex items-start gap-2">
                   <span className="w-4 h-4 rounded-full bg-[#6E0D12]/40 flex items-center justify-center text-white text-xs shrink-0 mt-0.5">3</span>
@@ -697,7 +697,7 @@ export default function DriverApp() {
         </div>
       )}
 
-      {/* ── Tabs ── */}
+      {/*  Tabs  */}
       <div className="flex border-b border-white/10 bg-[#1a0305]">
         {(["home", "history"] as const).map((tab) => (
           <button
@@ -723,13 +723,13 @@ export default function DriverApp() {
         ))}
       </div>
 
-      {/* ── Conteúdo ── */}
+      {/*  Contedo  */}
       <div className="flex-1 overflow-y-auto p-4 space-y-4 pb-8">
 
-        {/* ── Aba Home ── */}
+        {/*  Aba Home  */}
         {activeTab === "home" && (
           <>
-            {/* Botão GPS — área de toque grande (80px) */}
+            {/* Boto GPS  rea de toque grande (80px) */}
             <button
               onClick={toggleGps}
               className={`w-full rounded-2xl font-bold text-lg flex items-center justify-center gap-3 transition-all active:scale-95 ${
@@ -746,7 +746,7 @@ export default function DriverApp() {
                     <span className="relative inline-flex rounded-full h-4 w-4 bg-white" />
                   </span>
                   <Wifi className="w-6 h-6" />
-                  GPS Ativo — Toque para parar
+                  GPS Ativo  Toque para parar
                 </>
               ) : (
                 <>
@@ -763,13 +763,13 @@ export default function DriverApp() {
               </div>
             )}
 
-            {/* Banner de notificações push */}
+            {/* Banner de notificaes push */}
             {driverPush.isSupported && !driverPush.isSubscribed && driverPush.permission !== "denied" && (
               <div className="flex items-center gap-3 bg-amber-900/20 border border-amber-700/30 rounded-xl px-4 py-3">
                 <Bell className="w-5 h-5 text-amber-400 shrink-0" />
                 <div className="flex-1 min-w-0">
-                  <p className="text-amber-300 text-sm font-semibold">Ativar notificações</p>
-                  <p className="text-amber-400/70 text-xs">Receba alertas instantâneos de novos pedidos</p>
+                  <p className="text-amber-300 text-sm font-semibold">Ativar notificaes</p>
+                  <p className="text-amber-400/70 text-xs">Receba alertas instantneos de novos pedidos</p>
                 </div>
                 <button
                   onClick={() => driverPush.subscribe(token)}
@@ -785,22 +785,22 @@ export default function DriverApp() {
               </div>
             )}
 
-            {/* Banner: permissão negada */}
+            {/* Banner: permisso negada */}
             {driverPush.isSupported && driverPush.permission === "denied" && (
               <div className="flex items-center gap-3 bg-red-900/20 border border-red-700/30 rounded-xl px-4 py-3">
                 <BellOff className="w-5 h-5 text-red-400 shrink-0" />
                 <div className="min-w-0">
-                  <p className="text-red-300 text-sm font-semibold">Notificações bloqueadas</p>
-                  <p className="text-red-400/70 text-xs">Ative nas configurações do navegador para receber alertas de pedidos</p>
+                  <p className="text-red-300 text-sm font-semibold">Notificaes bloqueadas</p>
+                  <p className="text-red-400/70 text-xs">Ative nas configuraes do navegador para receber alertas de pedidos</p>
                 </div>
               </div>
             )}
 
-            {/* Indicador: notificações ativas */}
+            {/* Indicador: notificaes ativas */}
             {driverPush.isSubscribed && (
               <div className="flex items-center gap-2 text-emerald-400/80 text-xs bg-emerald-900/10 rounded-xl px-4 py-2">
                 <Bell className="w-3.5 h-3.5" />
-                <span>Notificações de pedidos ativas</span>
+                <span>Notificaes de pedidos ativas</span>
                 <button
                   onClick={() => driverPush.unsubscribe(token)}
                   className="ml-auto text-white/30 hover:text-white/60 text-xs underline"
@@ -814,7 +814,7 @@ export default function DriverApp() {
               <div className="flex items-center gap-2 text-emerald-400 text-xs bg-emerald-900/20 rounded-xl px-4 py-2">
                 <Navigation className="w-3.5 h-3.5" />
                 <span>
-                  Posição: {gps.lat}, {gps.lng}
+                  Posio: {gps.lat}, {gps.lng}
                 </span>
               </div>
             )}
@@ -826,7 +826,7 @@ export default function DriverApp() {
               </div>
             ) : assignedOrders.length > 0 ? (
               <div className="space-y-3">
-                {/* Cabeçalho da lista */}
+                {/* Cabealho da lista */}
                 <div className="flex items-center justify-between px-1">
                   <p className="text-white/60 text-xs font-semibold uppercase tracking-wide">
                     {assignedOrders.length} {assignedOrders.length === 1 ? "pedido em rota" : "pedidos em rota"}
@@ -853,7 +853,7 @@ export default function DriverApp() {
                 </div>
                 <p className="text-white/60 font-semibold">Nenhum pedido ativo</p>
                 <p className="text-white/30 text-sm mt-1">
-                  Aguardando atribuição pelo restaurante
+                  Aguardando atribuio pelo restaurante
                 </p>
               </div>
             )}
@@ -867,8 +867,8 @@ export default function DriverApp() {
                       <Award className="w-5 h-5 text-yellow-400" />
                     </div>
                     <div>
-                      <p className="font-semibold text-sm">Meu Perfil & Avaliações</p>
-                      <p className="text-white/40 text-xs">Ver histórico e notas dos clientes</p>
+                      <p className="font-semibold text-sm">Meu Perfil & Avaliaes</p>
+                      <p className="text-white/40 text-xs">Ver histrico e notas dos clientes</p>
                     </div>
                   </div>
                   <ChevronRight className="w-4 h-4 text-white/30" />
@@ -878,7 +878,7 @@ export default function DriverApp() {
           </>
         )}
 
-        {/* ── Aba Histórico do Dia ── */}
+        {/*  Aba Histrico do Dia  */}
         {activeTab === "history" && (
           <div className="space-y-3">
             {/* Resumo do dia */}
@@ -902,7 +902,7 @@ export default function DriverApp() {
                   <p className="text-2xl font-black text-yellow-400">
                     {stats?.avgRating && stats.avgRating > 0
                       ? stats.avgRating.toFixed(1)
-                      : "—"}
+                      : ""}
                   </p>
                   <p className="text-white/50 text-xs">Nota</p>
                 </div>

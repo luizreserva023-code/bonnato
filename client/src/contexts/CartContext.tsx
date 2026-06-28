@@ -1,20 +1,22 @@
 import React, { createContext, useCallback, useContext, useEffect, useState } from "react";
 
 export interface CartItem {
+  lineId?: string;
   productId: number;
   productName: string;
   productPrice: string;
   quantity: number;
   notes?: string;
   imageUrl?: string;
+  configKey?: string;
 }
 
 interface CartContextType {
   items: CartItem[];
   addItem: (item: Omit<CartItem, "quantity"> & { quantity?: number }) => void;
-  removeItem: (productId: number) => void;
-  updateQuantity: (productId: number, quantity: number) => void;
-  updateNotes: (productId: number, notes: string) => void;
+  removeItem: (lineIdOrProductId: string | number) => void;
+  updateQuantity: (lineIdOrProductId: string | number, quantity: number) => void;
+  updateNotes: (lineIdOrProductId: string | number, notes: string) => void;
   clearCart: () => void;
   /** Substitui todo o carrinho pelos itens fornecidos (restaurar carrinho abandonado) */
   replaceCart: (items: CartItem[]) => void;
@@ -25,6 +27,14 @@ interface CartContextType {
 }
 
 const CartContext = createContext<CartContextType | null>(null);
+
+function createLineId(item: Pick<CartItem, "productId" | "configKey">) {
+  return `${item.productId}-${item.configKey ?? "default"}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function resolveItemIdentity(item: CartItem) {
+  return item.lineId ?? item.productId;
+}
 
 export function CartProvider({ children }: { children: React.ReactNode }) {
   const [items, setItems] = useState<CartItem[]>(() => {
@@ -43,36 +53,38 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
 
   const addItem = useCallback((item: Omit<CartItem, "quantity"> & { quantity?: number }) => {
     setItems((prev) => {
-      const existing = prev.find((i) => i.productId === item.productId);
+      const existing = prev.find(
+        (i) => i.productId === item.productId && (i.configKey ?? "") === (item.configKey ?? ""),
+      );
       if (existing) {
         return prev.map((i) =>
-          i.productId === item.productId
+          resolveItemIdentity(i) === resolveItemIdentity(existing)
             ? { ...i, quantity: i.quantity + (item.quantity ?? 1) }
             : i
         );
       }
-      return [...prev, { ...item, quantity: item.quantity ?? 1 }];
+      return [...prev, { ...item, lineId: item.lineId ?? createLineId(item), quantity: item.quantity ?? 1 }];
     });
     setIsOpen(true);
   }, []);
 
-  const removeItem = useCallback((productId: number) => {
-    setItems((prev) => prev.filter((i) => i.productId !== productId));
+  const removeItem = useCallback((lineIdOrProductId: string | number) => {
+    setItems((prev) => prev.filter((i) => resolveItemIdentity(i) !== lineIdOrProductId));
   }, []);
 
-  const updateQuantity = useCallback((productId: number, quantity: number) => {
+  const updateQuantity = useCallback((lineIdOrProductId: string | number, quantity: number) => {
     if (quantity <= 0) {
-      setItems((prev) => prev.filter((i) => i.productId !== productId));
+      setItems((prev) => prev.filter((i) => resolveItemIdentity(i) !== lineIdOrProductId));
     } else {
       setItems((prev) =>
-        prev.map((i) => (i.productId === productId ? { ...i, quantity } : i))
+        prev.map((i) => (resolveItemIdentity(i) === lineIdOrProductId ? { ...i, quantity } : i))
       );
     }
   }, []);
 
-  const updateNotes = useCallback((productId: number, notes: string) => {
+  const updateNotes = useCallback((lineIdOrProductId: string | number, notes: string) => {
     setItems((prev) =>
-      prev.map((i) => (i.productId === productId ? { ...i, notes } : i))
+      prev.map((i) => (resolveItemIdentity(i) === lineIdOrProductId ? { ...i, notes } : i))
     );
   }, []);
 
@@ -81,7 +93,12 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const replaceCart = useCallback((newItems: CartItem[]) => {
-    setItems(newItems);
+    setItems(
+      newItems.map((item) => ({
+        ...item,
+        lineId: item.lineId ?? createLineId(item),
+      })),
+    );
   }, []);
 
   // Listen for cart:addItem custom events (used by Checkout upsell/downsell)

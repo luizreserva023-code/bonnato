@@ -1,22 +1,7 @@
-/**
- * useDriverPushNotifications
- *
- * Hook dedicado para o app do motoboy.
- * Usa trpc.drivers.savePushSubscription / removePushSubscription
- * em vez do endpoint genérico de usuário (trpc.push.*).
- *
- * Expõe:
- *  - permission: "default" | "granted" | "denied" | "unsupported"
- *  - isSubscribed: boolean
- *  - isLoading: boolean
- *  - isSupported: boolean
- *  - subscribe(token): Promise<void>  — pede permissão e salva subscription
- *  - unsubscribe(token): Promise<void> — remove subscription
- */
-
-import { useState, useEffect, useCallback } from "react";
-import { trpc } from "@/lib/trpc";
+import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
+
+import { trpc } from "@/lib/trpc";
 
 function urlBase64ToUint8Array(base64String: string): Uint8Array<ArrayBuffer> {
   const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
@@ -29,6 +14,29 @@ function urlBase64ToUint8Array(base64String: string): Uint8Array<ArrayBuffer> {
 
 export type PushPermission = "default" | "granted" | "denied" | "unsupported";
 
+function isIOSDevice() {
+  return /iphone|ipad|ipod/i.test(navigator.userAgent);
+}
+
+function isStandalonePWA() {
+  return (
+    window.matchMedia("(display-mode: standalone)").matches ||
+    (navigator as Navigator & { standalone?: boolean }).standalone === true
+  );
+}
+
+function canUsePushNotifications() {
+  const hasCoreSupport =
+    window.isSecureContext &&
+    "serviceWorker" in navigator &&
+    "PushManager" in window &&
+    "Notification" in window;
+
+  if (!hasCoreSupport) return false;
+  if (isIOSDevice() && !isStandalonePWA()) return false;
+  return true;
+}
+
 export function useDriverPushNotifications() {
   const [permission, setPermission] = useState<PushPermission>("default");
   const [isSubscribed, setIsSubscribed] = useState(false);
@@ -38,45 +46,50 @@ export function useDriverPushNotifications() {
   const saveMutation = trpc.drivers.savePushSubscription.useMutation();
   const removeMutation = trpc.drivers.removePushSubscription.useMutation();
 
-  // Buscar chave VAPID do servidor (mais confiável que variável de ambiente)
   const { data: vapidData } = trpc.push.vapidPublicKey.useQuery();
-  const vapidPublicKey = vapidData?.key ?? (import.meta.env.VITE_VAPID_PUBLIC_KEY as string) ?? "";
+  const vapidPublicKey = vapidData?.key ?? import.meta.env.VITE_VAPID_PUBLIC_KEY ?? "";
 
-  // Verificar suporte e estado inicial
   useEffect(() => {
-    const supported =
-      "serviceWorker" in navigator &&
-      "PushManager" in window &&
-      "Notification" in window;
+    const supported = canUsePushNotifications();
     setIsSupported(supported);
 
-    if (supported) {
-      setPermission(Notification.permission as PushPermission);
-      // Verificar se já tem subscription ativa
-      navigator.serviceWorker.ready.then((reg) => {
-        reg.pushManager.getSubscription().then((sub) => {
-          setIsSubscribed(!!sub);
-        });
-      });
-    } else {
+    if (!supported) {
       setPermission("unsupported");
+      return;
     }
+
+    setPermission(Notification.permission as PushPermission);
+
+    navigator.serviceWorker
+      .register("/sw.js")
+      .catch(() => null)
+      .then(() => navigator.serviceWorker.ready)
+      .then((reg) => reg.pushManager.getSubscription())
+      .then((sub) => {
+        setIsSubscribed(!!sub);
+      })
+      .catch(() => {
+        setIsSubscribed(false);
+      });
   }, []);
 
-  /**
-   * Pede permissão ao browser, cria a subscription e salva no backend.
-   * @param token — token de autenticação do motoboy
-   */
   const subscribe = useCallback(
     async (token: string) => {
       if (!isSupported) {
-        toast.error("Seu navegador não suporta notificações push.");
+        if (isIOSDevice() && !isStandalonePWA()) {
+          toast.error("No iPhone, abra o app pela Tela de Inicio para ativar notificacoes.");
+          return;
+        }
+
+        toast.error("Seu navegador nao suporta notificacoes push.");
         return;
       }
+
       if (!vapidPublicKey) {
         toast.error("Chave VAPID não configurada. Contate o suporte.");
         return;
       }
+
       if (!token) {
         toast.error("Você precisa estar autenticado para ativar notificações.");
         return;
@@ -84,12 +97,11 @@ export function useDriverPushNotifications() {
 
       setIsLoading(true);
       try {
-        // Registrar Service Worker (idempotente — não recria se já existe)
-        const reg = await navigator.serviceWorker.register("/sw.js");
-        await navigator.serviceWorker.ready;
+        const perm =
+          Notification.permission === "granted"
+            ? "granted"
+            : await Notification.requestPermission();
 
-        // Pedir permissão ao usuário
-        const perm = await Notification.requestPermission();
         setPermission(perm as PushPermission);
 
         if (perm !== "granted") {
@@ -99,7 +111,10 @@ export function useDriverPushNotifications() {
           return;
         }
 
-        // Criar ou recuperar subscription existente
+        const reg = await navigator.serviceWorker.register("/sw.js");
+        await navigator.serviceWorker.ready;
+        await reg.update().catch(() => undefined);
+
         const existing = await reg.pushManager.getSubscription();
         const sub =
           existing ??
@@ -109,24 +124,24 @@ export function useDriverPushNotifications() {
           }));
 
         const json = sub.toJSON();
-        if (!json.endpoint || !(json.keys as Record<string, string>)?.p256dh || !(json.keys as Record<string, string>)?.auth) {
-          throw new Error("Subscription inválida — chaves ausentes.");
+        const keys = (json.keys as Record<string, string> | undefined) ?? {};
+
+        if (!json.endpoint || !keys.p256dh || !keys.auth) {
+          throw new Error("Subscription inválida: chaves ausentes.");
         }
 
         await saveMutation.mutateAsync({
           token,
           endpoint: json.endpoint,
-          p256dh: (json.keys as Record<string, string>).p256dh,
-          auth: (json.keys as Record<string, string>).auth,
+          p256dh: keys.p256dh,
+          auth: keys.auth,
           userAgent: navigator.userAgent,
         });
 
         setIsSubscribed(true);
-        toast.success("Notificações ativadas! 🔔", {
-          description: "Você receberá alertas instantâneos de novos pedidos.",
-        });
+        toast.success("Notificações ativadas! Você receberá alertas de novos pedidos.");
       } catch (err) {
-        console.error("[DriverPush] Erro ao ativar notificações:", err);
+        console.error("[DriverPush] Erro ao ativar notificacoes:", err);
         toast.error("Não foi possível ativar as notificações.", {
           description: err instanceof Error ? err.message : "Tente novamente.",
         });
@@ -134,28 +149,26 @@ export function useDriverPushNotifications() {
         setIsLoading(false);
       }
     },
-    [isSupported, vapidPublicKey, saveMutation]
+    [isSupported, saveMutation, vapidPublicKey]
   );
 
-  /**
-   * Remove a subscription do browser e do backend.
-   * @param token — token de autenticação do motoboy
-   */
   const unsubscribe = useCallback(
     async (token: string) => {
       setIsLoading(true);
       try {
         const reg = await navigator.serviceWorker.ready;
         const sub = await reg.pushManager.getSubscription();
+
         if (sub) {
           await removeMutation.mutateAsync({ token, endpoint: sub.endpoint });
           await sub.unsubscribe();
         }
+
         setIsSubscribed(false);
-        toast.success("Notificações desativadas.");
+        toast.success("Notificacoes desativadas.");
       } catch (err) {
-        console.error("[DriverPush] Erro ao desativar notificações:", err);
-        toast.error("Não foi possível desativar as notificações.");
+        console.error("[DriverPush] Erro ao desativar notificacoes:", err);
+        toast.error("Nao foi possivel desativar as notificacoes.");
       } finally {
         setIsLoading(false);
       }

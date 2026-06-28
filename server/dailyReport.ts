@@ -5,9 +5,9 @@
  * Configuração: DAILY_REPORT_PHONE=55379XXXXXXXX (número do admin)
  */
 
-import { getDb } from "./db";
-import { orders } from "../drizzle/schema";
-import { sendWhatsApp } from "./whatsapp";
+import { getDb } from "./db.ts";
+import { orders } from "../drizzle/schema.ts";
+import { sendWhatsApp } from "./whatsapp.ts";
 import { and, gte, lt, eq, sql } from "drizzle-orm";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────

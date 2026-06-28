@@ -41,7 +41,7 @@ export interface LLMResponse {
 
 // ─── Manus built-in ──────────────────────────────────────────────────────────
 async function callManus(options: LLMOptions): Promise<LLMResponse> {
-  const { invokeLLM } = await import("../_core/llm");
+  const { invokeLLM } = await import("../_core/llm.ts");
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const res = await invokeLLM({
     messages: options.messages.map(m => ({ role: m.role, content: m.content })) as any,

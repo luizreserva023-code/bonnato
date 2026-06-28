@@ -35,7 +35,7 @@ export interface PushResult {
 // ─── Manus built-in (owner notifications only) ───────────────────────────────
 async function notifyOwnerManus(payload: PushNotificationPayload): Promise<PushResult> {
   try {
-    const { notifyOwner } = await import("../_core/notification");
+    const { notifyOwner } = await import("../_core/notification.ts");
     const success = await notifyOwner({
       title: payload.title,
       content: payload.body,
@@ -53,7 +53,7 @@ async function sendVapidToUser(
   payload: PushNotificationPayload
 ): Promise<PushResult> {
   try {
-    const { sendPushToUser } = await import("../push");
+    const { sendPushToUser } = await import("../push.ts");
     await sendPushToUser(userId, payload);
     return { success: true, provider: "vapid", sent: 1, failed: 0 };
   } catch (err: unknown) {
@@ -64,7 +64,7 @@ async function sendVapidToUser(
 
 async function sendVapidToAdmins(payload: PushNotificationPayload): Promise<PushResult> {
   try {
-    const { sendPushToAdmins } = await import("../push");
+    const { sendPushToAdmins } = await import("../push.ts");
     await sendPushToAdmins(payload);
     return { success: true, provider: "vapid" };
   } catch (err: unknown) {
@@ -78,7 +78,7 @@ async function sendVapidToAll(
   userIds?: number[]
 ): Promise<PushResult> {
   try {
-    const { sendPushToAllUsers } = await import("../push");
+    const { sendPushToAllUsers } = await import("../push.ts");
     const { sent, failed } = await sendPushToAllUsers(payload, userIds);
     return { success: sent > 0, provider: "vapid", sent, failed };
   } catch (err: unknown) {

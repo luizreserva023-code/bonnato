@@ -13,32 +13,28 @@ import { useMemo, useState, useCallback, useEffect, useRef } from "react";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { Link, useLocation } from "wouter";
 import { ProductDetailModal, type ProductDetailProduct } from "@/components/ProductDetailModal";
+import { getPizzaFlavorConfig } from "@/lib/pizza-flavor-config";
 import { isStoreOpenWithHours, nextOpenTimeWithHours, type DaySchedule } from "@/lib/storeUtils";
 import { useStore } from "@/contexts/StoreContext";
-import { BRAND_ASSETS, CATEGORY_MEDIA } from "@/lib/brand";
+import { BRAND_ASSETS } from "@/lib/brand";
+import { getCategoryIcon } from "@/lib/category-visuals";
 
 // ─── Assets ─────────────────────────────────────────────────────────────────
 const LOGO_URL = BRAND_ASSETS.heroLogo;
 const BANNER_URL = BRAND_ASSETS.navbarBg;
 const PALMITO_URL = BRAND_ASSETS.palmitoMenu;
 
-const PIZZA_IMGS: Record<string, string> = {
-  pizzas: CATEGORY_MEDIA.pizzas,
-  calzones: CATEGORY_MEDIA.calzones,
-  lasanhas: CATEGORY_MEDIA.lasanhas,
-  empanados: CATEGORY_MEDIA.empanados,
-  sorvetes: CATEGORY_MEDIA.sorvetes,
-  bebidas: CATEGORY_MEDIA.bebidas,
-  extras: CATEGORY_MEDIA.extras,
-  promocoes: CATEGORY_MEDIA.promocoes,
-};
-
-const CAT_ICONS: Record<string, string> = {
-  pizzas: "🍕", calzones: "🥙", lasanhas: "🍝", empanados: "🍗",
-  sorvetes: "🍦", bebidas: "🥤", extras: "🧂", promocoes: "🔥",
-};
-
 const fmt = (v: number) => `R$ ${v.toFixed(2).replace(".", ",")}`;
+
+type MenuCategoryRecord = {
+  id: number;
+  name: string;
+  slug: string;
+  icon?: string | null;
+  imageUrl?: string | null;
+};
+
+const PRODUCT_FALLBACK_IMG = BRAND_ASSETS.pizzaHero;
 
 // ─── Cardapio Menu Drawer ────────────────────────────────────────────────────
 function CardapioMenuDrawer({ open, onClose }: { open: boolean; onClose: () => void }) {
@@ -288,7 +284,7 @@ function CategoryNav({
   selected,
   onSelect,
 }: {
-  categories?: { id: number; name: string; slug: string }[];
+  categories?: MenuCategoryRecord[];
   loading: boolean;
   selected: number | null;
   onSelect: (id: number | null) => void;
@@ -303,7 +299,8 @@ function CategoryNav({
             onClick={() => onSelect(null)}
             className={`shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold transition-all ${selected === null ? "bg-primary text-primary-foreground shadow-md" : "bg-muted text-muted-foreground hover:bg-muted/80"}`}
           >
-            <span>🍽️</span><span>Todos</span>
+            <ShoppingBag className="h-3.5 w-3.5" />
+            <span>Todos</span>
           </button>
           {loading
             ? Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-8 w-24 rounded-full shrink-0" />)
@@ -313,7 +310,8 @@ function CategoryNav({
                 onClick={() => onSelect(cat.id)}
                 className={`shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold transition-all ${selected === cat.id ? "bg-primary text-primary-foreground shadow-md" : "bg-muted text-muted-foreground hover:bg-muted/80"}`}
               >
-                <span>{CAT_ICONS[cat.slug] ?? "🍽️"}</span><span>{cat.name}</span>
+                {(() => { const Icon = getCategoryIcon(cat); return <Icon className="h-3.5 w-3.5" />; })()}
+                <span>{cat.name}</span>
               </button>
             ))}
         </div>
@@ -324,12 +322,14 @@ function CategoryNav({
 
 // ─── Product Card (iFood style) ───────────────────────────────────────────────
 function ProductCard({
-  product, cartQty, imgUrl, onDetail, isFavorite, onToggleFavorite, onAdd, onUpdateQty, badge,
+  product, cartQty, imgUrl, onDetail, isFavorite, onToggleFavorite, onAdd, onUpdateQty, badge, allowQuickAdd = true, addLabel = "Adicionar",
 }: {
   product: { id: number; name: string; description: string | null; price: string; featured: boolean; originalPrice?: string | null };
   cartQty: number; imgUrl: string; onDetail: () => void;
   isFavorite?: boolean; onToggleFavorite?: () => void;
   onAdd: () => void; onUpdateQty: (q: number) => void;
+  allowQuickAdd?: boolean;
+  addLabel?: string;
   badge?: "Mais pedido" | "Destaque" | "Novo" | "Promoção";
 }) {
   const price = parseFloat(product.price);
@@ -391,7 +391,7 @@ function ProductCard({
             )}
             <span className="text-primary font-black text-base leading-tight">{fmt(price)}</span>
           </div>
-          {inCart ? (
+          {inCart && allowQuickAdd ? (
             <div className="flex items-center gap-1">
               <button onClick={() => onUpdateQty(cartQty - 1)} className="w-7 h-7 flex items-center justify-center rounded-lg border border-border hover:bg-muted transition-colors">
                 <Minus className="w-3 h-3" />
@@ -406,7 +406,7 @@ function ProductCard({
               onClick={onAdd}
               className="flex items-center gap-1.5 bg-primary text-primary-foreground text-xs font-semibold px-3 py-1.5 rounded-full hover:bg-primary/90 active:scale-95 transition-all"
             >
-              <Plus className="w-3 h-3" />Adicionar
+              <Plus className="w-3 h-3" />{addLabel}
             </button>
           )}
         </div>
@@ -424,6 +424,7 @@ type AnyProduct = {
   featured: boolean;
   categoryId: number;
   originalPrice?: string | null;
+  imageUrl?: string | null;
   [key: string]: unknown;
 };
 
@@ -473,7 +474,7 @@ function PecaNovamente({
         {recentProducts.map((product) => {
           const cat = categories.find(c => c.id === product.categoryId);
           const slug = cat?.slug ?? "pizzas";
-          const imgUrl = PIZZA_IMGS[slug] ?? PIZZA_IMGS["pizzas"];
+          const imgUrl = product.imageUrl?.trim() || PRODUCT_FALLBACK_IMG;
           const cartQty = items.find(i => i.productId === product.id)?.quantity ?? 0;
           return (
             <div key={product.id} className="shrink-0 w-44 bg-card rounded-xl border border-border overflow-hidden hover:shadow-md transition-shadow">
@@ -603,13 +604,17 @@ export default function Cardapio() {
   const dbStoreHours = storeSettings?.storeHours
     ? (JSON.parse(storeSettings.storeHours as string) as Record<string, DaySchedule | null>)
     : undefined;
+  const pizzaFlavorConfig = useMemo(
+    () => getPizzaFlavorConfig(storeSettings?.pizzaFlavorConfig),
+    [storeSettings?.pizzaFlavorConfig],
+  );
   const isOpen = isStoreOpenWithHours(dbStoreHours);
 
   const filteredProducts = useMemo(() => {
     if (!products) return [];
     if (!search.trim()) return products;
     const q = search.toLowerCase();
-    return products.filter((p) => p.name.toLowerCase().includes(q) || p.description?.toLowerCase().includes(q));
+    return products.filter((p: AnyProduct) => p.name.toLowerCase().includes(q) || p.description?.toLowerCase().includes(q));
   }, [products, search]);
 
   const totalCartItems = items.reduce((sum, i) => sum + i.quantity, 0);
@@ -619,14 +624,24 @@ export default function Cardapio() {
     addItem({ productId: product.id, productName: product.name, productPrice: product.price, quantity: 1 });
   };
 
-  const getCategoryImg = (slug: string) => PIZZA_IMGS[slug] ?? PIZZA_IMGS["pizzas"];
-
   const [detailProduct, setDetailProduct] = useState<ProductDetailProduct | null>(null);
   const [detailImg, setDetailImg] = useState("");
   const openDetail = (product: (typeof filteredProducts)[0], imgUrl: string, catSlug: string) => {
-    setDetailProduct({ ...product, categorySlug: catSlug });
+    setDetailProduct({ ...product, imageUrl: product.imageUrl?.trim() || null, categorySlug: catSlug, categoryId: product.categoryId });
     setDetailImg(imgUrl);
   };
+
+  const isMultiFlavorProduct = useCallback((product: { categoryId: number }) => {
+    if (!pizzaFlavorConfig.enabled || !categories) return false;
+    const category = categories.find((entry: MenuCategoryRecord) => entry.id === product.categoryId);
+    return category?.slug === "pizzas";
+  }, [categories, pizzaFlavorConfig.enabled]);
+
+  const getCartQuantityForProduct = useCallback((productId: number) => {
+    return items
+      .filter((item) => item.productId === productId)
+      .reduce((sum, item) => sum + item.quantity, 0);
+  }, [items]);
 
   const scrollToCategory = useCallback((id: number | null) => {
     setSelectedCategoryId(id);
@@ -649,21 +664,25 @@ export default function Cardapio() {
 
   const renderGrid = (prods: typeof filteredProducts) => (
     <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
-      {prods.map((product, idx) => {
-        const cat = categories?.find((c) => c.id === product.categoryId);
+      {prods.map((product: AnyProduct, idx: number) => {
+        const cat = categories?.find((c: MenuCategoryRecord) => c.id === product.categoryId);
         const slug = cat?.slug ?? "pizzas";
+        const productImg = product.imageUrl?.trim() || PRODUCT_FALLBACK_IMG;
+        const allowQuickAdd = !isMultiFlavorProduct(product);
         return (
           <ProductCard
             key={product.id}
             product={product}
-            cartQty={items.find(i => i.productId === product.id)?.quantity ?? 0}
-            onAdd={() => handleAdd(product)}
+            cartQty={getCartQuantityForProduct(product.id)}
+            onAdd={() => allowQuickAdd ? handleAdd(product) : openDetail(product, productImg, slug)}
             onUpdateQty={(q) => updateQuantity(product.id, q)}
-            imgUrl={getCategoryImg(slug)}
-            onDetail={() => openDetail(product, getCategoryImg(slug), slug)}
+            imgUrl={productImg}
+            onDetail={() => openDetail(product, productImg, slug)}
             isFavorite={favoriteIds.has(product.id)}
             onToggleFavorite={isAuthenticated ? () => toggleFavMutation.mutate({ productId: product.id }) : undefined}
             badge={getProductBadge(product, idx)}
+            allowQuickAdd={allowQuickAdd}
+            addLabel={allowQuickAdd ? "Adicionar" : "Montar"}
           />
         );
       })}
@@ -765,31 +784,37 @@ export default function Cardapio() {
         ) : search || selectedCategoryId !== null ? (
           renderGrid(filteredProducts)
         ) : (
-          categories?.map((cat) => {
-            const catProducts = filteredProducts.filter((p) => p.categoryId === cat.id);
+          categories?.map((cat: MenuCategoryRecord) => {
+            const catProducts = filteredProducts.filter((p: AnyProduct) => p.categoryId === cat.id);
             if (catProducts.length === 0) return null;
             return (
               <section key={cat.id} id={`cat-section-${cat.id}`} className="mb-12">
                 <div className="flex items-center gap-2 mb-5 pb-3 border-b border-border">
-                  <span className="text-2xl">{CAT_ICONS[cat.slug] ?? "🍽️"}</span>
+                  {(() => { const Icon = getCategoryIcon(cat); return <Icon className="h-5 w-5 text-primary" />; })()}
                   <h2 className="text-lg font-black text-foreground" style={{ fontFamily: "'Poppins', sans-serif" }}>{cat.name}</h2>
                   <Badge variant="secondary" className="ml-auto text-xs">{catProducts.length} itens</Badge>
                 </div>
                 <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
-                  {catProducts.map((product, idx) => (
-                    <ProductCard
-                      key={product.id}
-                      product={product}
-                      cartQty={items.find(i => i.productId === product.id)?.quantity ?? 0}
-                      onAdd={() => handleAdd(product)}
-                      onUpdateQty={(q) => updateQuantity(product.id, q)}
-                      imgUrl={getCategoryImg(cat.slug)}
-                      onDetail={() => openDetail(product, getCategoryImg(cat.slug), cat.slug)}
-                      isFavorite={favoriteIds.has(product.id)}
-                      onToggleFavorite={isAuthenticated ? () => toggleFavMutation.mutate({ productId: product.id }) : undefined}
-                      badge={getProductBadge(product, idx)}
-                    />
-                  ))}
+                  {catProducts.map((product: AnyProduct, idx: number) => {
+                    const productImg = product.imageUrl?.trim() || PRODUCT_FALLBACK_IMG;
+                    const allowQuickAdd = !isMultiFlavorProduct(product);
+                    return (
+                      <ProductCard
+                        key={product.id}
+                        product={product}
+                        cartQty={getCartQuantityForProduct(product.id)}
+                        onAdd={() => allowQuickAdd ? handleAdd(product) : openDetail(product, productImg, cat.slug)}
+                        onUpdateQty={(q) => updateQuantity(product.id, q)}
+                        imgUrl={productImg}
+                        onDetail={() => openDetail(product, productImg, cat.slug)}
+                        isFavorite={favoriteIds.has(product.id)}
+                        onToggleFavorite={isAuthenticated ? () => toggleFavMutation.mutate({ productId: product.id }) : undefined}
+                        badge={getProductBadge(product, idx)}
+                        allowQuickAdd={allowQuickAdd}
+                        addLabel={allowQuickAdd ? "Adicionar" : "Montar"}
+                      />
+                    );
+                  })}
                 </div>
               </section>
             );
@@ -865,3 +890,6 @@ export default function Cardapio() {
     </div>
   );
 }
+
+
+

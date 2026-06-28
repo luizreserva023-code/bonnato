@@ -1,8 +1,8 @@
 import bcrypt from "bcryptjs";
 import crypto from "crypto";
 import { eq } from "drizzle-orm";
-import { drivers, users } from "../drizzle/schema";
-import { getDb } from "./db";
+import { drivers, users } from "../drizzle/schema.ts";
+import { getDb } from "./db.ts";
 
 export type BootstrapAccessInput = {
   adminEmail?: string;

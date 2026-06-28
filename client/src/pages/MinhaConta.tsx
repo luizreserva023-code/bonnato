@@ -10,6 +10,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { getLoginUrl } from "@/const";
+import { loadMagnificAvatarPresets, type MagnificAvatarPreset } from "@/lib/magnific-assets";
 import { trpc } from "@/lib/trpc";
 import {
   Bell, BellOff, BellRing, ChevronDown, ChevronUp, Clock, CreditCard, Gift, Heart, Home, LogIn,
@@ -44,7 +45,24 @@ const PAYMENT_LABELS: Record<string, string> = {
   cash:        "Dinheiro",
 };
 
-// ─── Status Progress Bar ──────────────────────────────────────────────────────
+const ACCOUNT_TABS = [
+  { value: "pedidos", label: "Pedidos", icon: Package },
+  { value: "fidelidade", label: "Pontos", icon: Trophy },
+  { value: "enderecos", label: "Endereços", icon: MapPin },
+  { value: "notificacoes", label: "Avisos", icon: Bell },
+  { value: "cupons", label: "Cupons", icon: Tag },
+  { value: "promocoes", label: "Promoções", icon: Gift },
+  { value: "sorteios", label: "Sorteios", icon: Ticket },
+  { value: "perfil", label: "Perfil", icon: User },
+  { value: "clube", label: "Clube", icon: Crown },
+  { value: "pagamentos", label: "Pagamentos", icon: Receipt },
+  { value: "cartoes", label: "Cartões", icon: CreditCard },
+  { value: "carrinhos", label: "Salvos", icon: ShoppingCart },
+] as const;
+
+type AccountTabValue = (typeof ACCOUNT_TABS)[number]["value"];
+
+//  Status Progress Bar 
 function StatusProgressBar({ status }: { status: string }) {
   const info = STATUS_LABELS[status];
   if (!info || info.step < 0) return null;
@@ -56,7 +74,7 @@ function StatusProgressBar({ status }: { status: string }) {
             <div className={`w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold transition-all ${
               i <= info.step ? "bg-primary text-white shadow-md shadow-primary/30" : "bg-muted text-muted-foreground"
             }`}>
-              {i < info.step ? "✓" : i === info.step ? "●" : "○"}
+              {i < info.step ? "" : i === info.step ? "" : ""}
             </div>
             <span className={`text-[9px] text-center leading-tight hidden sm:block ${i <= info.step ? "text-primary font-semibold" : "text-muted-foreground"}`}>
               {step}
@@ -74,11 +92,11 @@ function StatusProgressBar({ status }: { status: string }) {
   );
 }
 
-// ─── Delivery Rating Section ──────────────────────────────────────────────────
+//  Delivery Rating Section 
 function DeliveryRatingSection({ orderId }: { orderId: number }) {
   const { data: existing, isLoading, refetch } = trpc.ratings.getByOrder.useQuery({ orderId });
   const submitRating = trpc.ratings.submit.useMutation({
-    onSuccess: () => { toast.success("Avaliação enviada! Obrigado pelo feedback ❤️"); refetch(); },
+    onSuccess: () => { toast.success("Avaliação enviada! Obrigado pelo feedback."); refetch(); },
     onError: (e) => toast.error(e.message),
   });
   const [selected, setSelected] = useState(0);
@@ -91,7 +109,7 @@ function DeliveryRatingSection({ orderId }: { orderId: number }) {
     return (
       <div className="mt-3 pt-3 border-t">
         <p className="text-xs font-semibold text-muted-foreground mb-1.5 uppercase tracking-wide flex items-center gap-1">
-          <Star className="w-3.5 h-3.5 text-yellow-500" /> Sua Avaliação
+          <Star className="w-3.5 h-3.5 text-yellow-500" /> Sua avaliação
         </p>
         <div className="flex items-center gap-1 mb-1">
           {[1,2,3,4,5].map(s => (
@@ -119,7 +137,7 @@ function DeliveryRatingSection({ orderId }: { orderId: number }) {
         <>
           <textarea value={comment} onChange={e => setComment(e.target.value)} placeholder="Comentário opcional sobre a entrega..." className="w-full text-sm border rounded-md p-2 resize-none bg-background text-foreground mb-2" rows={2} />
           <Button size="sm" className="w-full" disabled={submitRating.isPending} onClick={() => submitRating.mutate({ orderId, rating: selected, comment: comment || undefined })}>
-            {submitRating.isPending ? "Enviando..." : "Enviar Avaliação"}
+            {submitRating.isPending ? "Enviando..." : "Enviar avaliação"}
           </Button>
         </>
       )}
@@ -127,7 +145,7 @@ function DeliveryRatingSection({ orderId }: { orderId: number }) {
   );
 }
 
-// ─── Order Items Expand ───────────────────────────────────────────────────────
+//  Order Items Expand 
 function OrderItemsDetail({ orderId, onReorder }: { orderId: number; onReorder: (items: { productId: number; productName: string; quantity: number; productPrice: string }[]) => void }) {
   const { data, isLoading } = trpc.orders.byId.useQuery({ id: orderId });
   if (isLoading) return <div className="mt-3 pt-3 border-t space-y-2"><Skeleton className="h-4 w-full" /><Skeleton className="h-4 w-3/4" /></div>;
@@ -155,7 +173,7 @@ function OrderItemsDetail({ orderId, onReorder }: { orderId: number; onReorder: 
   );
 }
 
-// ─── Abandoned Carts Tab ──────────────────────────────────────────────────────────────────────────────────────────────
+//  Abandoned Carts Tab 
 function AbandonedCartsTab() {
   const [, navigate] = useLocation();
   const utils = trpc.useUtils();
@@ -249,7 +267,7 @@ function AbandonedCartsTab() {
   );
 }
 
-// ─── Orders Tab ──────────────────────────────────────────────────────────────────────────────────────────────
+//  Orders Tab 
 function OrdersTab() {
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const { data: orders, isLoading } = trpc.orders.myOrders.useQuery(undefined, { refetchInterval: 30000 });
@@ -257,20 +275,20 @@ function OrdersTab() {
   const [, navigate] = useLocation();
   const orderRefs = useRef<Record<number, HTMLDivElement | null>>({});
 
-  // Tratar parâmetro ?avaliar=X da URL (notificação push pós-entrega)
+  // Tratar parmetro ?avaliar=X da URL (notificao push ps-entrega)
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const avaliarId = params.get("avaliar");
     if (!avaliarId || !orders?.length) return;
     const orderId = parseInt(avaliarId);
     if (isNaN(orderId)) return;
-    // Expandir o pedido e rolar até ele
+    // Expandir o pedido e rolar at ele
     setExpandedId(orderId);
     setTimeout(() => {
       const el = orderRefs.current[orderId];
       if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
     }, 400);
-    // Limpar o parâmetro da URL sem recarregar
+    // Limpar o parmetro da URL sem recarregar
     const newUrl = window.location.pathname;
     window.history.replaceState({}, "", newUrl);
   }, [orders]);
@@ -345,7 +363,7 @@ function OrdersTab() {
               {order.status === "out_for_delivery" && (
                 <Link href={`/rastrear/${order.id}`}>
                   <button className="mt-3 w-full flex items-center justify-center gap-2 bg-[#6E0D12] btn-bonatto hover:bg-[#5a0a0f] text-white rounded-lg py-2.5 text-sm font-semibold transition-colors">
-                    <span>🏙️</span>Rastrear Entrega ao Vivo
+                    <span>&gt;</span>Rastrear Entrega ao Vivo
                   </button>
                 </Link>
               )}
@@ -363,7 +381,7 @@ function OrdersTab() {
   );
 }
 
-// ─── Loyalty Tab ──────────────────────────────────────────────────────────────
+//  Loyalty Tab 
 function LoyaltyTab() {
   const { data: points, isLoading: loadingPoints } = trpc.loyalty.points.useQuery();
   const { data: history, isLoading: loadingHistory } = trpc.loyalty.spendingHistory.useQuery();
@@ -422,23 +440,23 @@ function LoyaltyTab() {
           </p>
           <div className="space-y-2 text-sm text-yellow-800">
             <div className="flex items-start gap-2">
-              <span className="text-base leading-none mt-0.5">⭐</span>
+              <span className="text-base leading-none mt-0.5">P</span>
               <span><strong>Ganhe pontos:</strong> A cada R$ 1,00 gasto em pedidos entregues, você recebe <strong>1 ponto</strong> automaticamente.</span>
             </div>
             <div className="flex items-start gap-2">
-              <span className="text-base leading-none mt-0.5">🎁</span>
+              <span className="text-base leading-none mt-0.5">&gt;</span>
               <span><strong>Use como desconto:</strong> Na tela de pagamento do pedido, use seus pontos. <strong>10 pontos = R$ 1,00</strong> de desconto.</span>
             </div>
             <div className="flex items-start gap-2">
-              <span className="text-base leading-none mt-0.5">📋</span>
+              <span className="text-base leading-none mt-0.5">=</span>
               <span><strong>Mínimo para resgatar:</strong> 50 pontos (equivale a R$ 5,00 de desconto).</span>
             </div>
             <div className="flex items-start gap-2">
-              <span className="text-base leading-none mt-0.5">🏆</span>
-              <span><strong>Níveis:</strong> Bronze (0) → Prata (100) → Ouro (300) → Diamante (600) → VIP (1.000+). Quanto mais alto seu nível, mais benefícios em breve!</span>
+              <span className="text-base leading-none mt-0.5">&gt;</span>
+              <span><strong>Níveis:</strong> Bronze (0) - Prata (100) - Ouro (300) - Diamante (600) - VIP (1.000+). Quanto mais alto seu nível, mais benefícios em breve!</span>
             </div>
           </div>
-          <a href="/checkout" className="inline-block mt-1 text-xs font-semibold text-yellow-700 underline underline-offset-2">Fazer um pedido agora →</a>
+          <a href="/checkout" className="inline-block mt-1 text-xs font-semibold text-yellow-700 underline underline-offset-2">Fazer um pedido agora </a>
         </CardContent>
       </Card>
 
@@ -447,7 +465,7 @@ function LoyaltyTab() {
         <CardHeader><CardTitle className="text-base flex items-center gap-2"><Trophy className="w-4 h-4 text-primary" />Extrato de Pontos</CardTitle></CardHeader>
         <CardContent>
           {loadingTxHistory ? <Skeleton className="h-40 w-full" /> : !txHistory?.length ? (
-            <p className="text-sm text-muted-foreground text-center py-8">Nenhuma movimentação de pontos ainda.</p>
+            <p className="text-sm text-muted-foreground text-center py-8">Nenhuma movimenta??o de pontos ainda.</p>
           ) : (
             <div className="space-y-1">
               {txHistory.map((tx: { id: number; type: string; points: number; description: string | null; createdAt: Date | string }) => {
@@ -509,7 +527,7 @@ function LoyaltyTab() {
   );
 }
 
-// ─── Addresses Tab ────────────────────────────────────────────────────────────
+//  Addresses Tab 
 function AddressesTab() {
   const { data: addresses, isLoading, refetch } = trpc.addresses.list.useQuery();
   const createAddress = trpc.addresses.create.useMutation({ onSuccess: () => { toast.success("Endereço salvo!"); refetch(); setOpen(false); resetForm(); }, onError: e => toast.error(e.message) });
@@ -571,7 +589,7 @@ function AddressesTab() {
                 Definir como endereço padrão
               </label>
               <Button className="w-full" onClick={handleSubmit} disabled={createAddress.isPending || updateAddress.isPending}>
-                {createAddress.isPending || updateAddress.isPending ? "Salvando..." : editId ? "Salvar Alterações" : "Adicionar Endereço"}
+                {createAddress.isPending || updateAddress.isPending ? "Salvando..." : editId ? "Salvar alterações" : "Adicionar endereço"}
               </Button>
             </div>
           </DialogContent>
@@ -596,10 +614,10 @@ function AddressesTab() {
                   <div>
                     <div className="flex items-center gap-2">
                       <p className="font-semibold text-sm">{a.label}</p>
-                      {a.isDefault && <Badge className="bg-primary/10 text-primary border-0 text-xs py-0">Padrão</Badge>}
+                      {a.isDefault && <Badge className="bg-primary/10 text-primary border-0 text-xs py-0">Padro</Badge>}
                     </div>
                     <p className="text-sm text-muted-foreground">{a.address}</p>
-                    {(a.cep || a.city) && <p className="text-xs text-muted-foreground">{[a.cep, a.city].filter(Boolean).join(" · ")}</p>}
+                    {(a.cep || a.city) && <p className="text-xs text-muted-foreground">{[a.cep, a.city].filter(Boolean).join("  ")}</p>}
                   </div>
                 </div>
                 <div className="flex gap-1 shrink-0">
@@ -619,7 +637,7 @@ function AddressesTab() {
   );
 }
 
-// ─── Notifications Tab ────────────────────────────────────────────────────────
+//  Notifications Tab 
 function PushToggle() {
   const { isSubscribed, isLoading, isSupported, permission, subscribe, unsubscribe } = usePushNotifications();
   return (
@@ -637,7 +655,7 @@ function PushToggle() {
                 : permission === "denied"
                 ? "Bloqueado no navegador. Habilite nas configurações."
                 : isSubscribed
-                ? "Ativo — você recebe alertas sobre seus pedidos."
+                ? "Ativo: você recebe alertas sobre seus pedidos."
                 : "Receba alertas quando seu pedido mudar de status."}
             </p>
           </div>
@@ -693,6 +711,7 @@ function NotificationsTab() {
               {TYPE_ICONS[n.type] ?? <Bell className="w-4 h-4" />}
             </div>
             <div className="flex-1 min-w-0">
+            <p className="mb-2 inline-flex rounded-full border border-[#f0d6d0] bg-[#fff7f4] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-[#7d0f14]">Minha conta</p>
               <div className="flex items-center justify-between gap-2">
                 <p className="font-semibold text-sm">{n.title}</p>
                 {!n.read && <div className="w-2 h-2 rounded-full bg-primary shrink-0" />}
@@ -707,7 +726,7 @@ function NotificationsTab() {
   );
 }
 
-// ─── Profile Tab ──────────────────────────────────────────────────────────────
+//  Profile Tab 
 function ProfileTab() {
   const { data: profile, isLoading, refetch } = trpc.profile.me.useQuery();
   const updateProfile = trpc.profile.update.useMutation({
@@ -718,10 +737,16 @@ function ProfileTab() {
     onSuccess: (data) => { toast.success("Foto atualizada!"); setAvatarPreview(data.url); refetch(); },
     onError: (e) => toast.error(e.message),
   });
+  const updateAvatar = trpc.avatar.update.useMutation({
+    onSuccess: () => { toast.success("Avatar atualizado!"); refetch(); },
+    onError: (e) => toast.error(e.message),
+  });
 
   const fileRef = useRef<HTMLInputElement>(null);
   const [form, setForm] = useState({ name: "", phone: "", savedAddress: "", savedCep: "", savedCity: "" });
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
+  const [avatarPresets, setAvatarPresets] = useState<MagnificAvatarPreset[]>([]);
+  const [avatarPickerOpen, setAvatarPickerOpen] = useState(false);
 
   useEffect(() => {
     if (profile) {
@@ -729,10 +754,26 @@ function ProfileTab() {
     }
   }, [profile?.name, profile?.phone, profile?.savedAddress, profile?.savedCep, profile?.savedCity]);
 
+  useEffect(() => {
+    let cancelled = false;
+
+    loadMagnificAvatarPresets()
+      .then((items) => {
+        if (!cancelled) setAvatarPresets(items);
+      })
+      .catch(() => {
+        if (!cancelled) setAvatarPresets([]);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   async function handleAvatarChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (file.size > 2 * 1024 * 1024) { toast.error("Imagem muito grande. Máximo 2MB."); return; }
+    if (file.size > 2 * 1024 * 1024) { toast.error("Imagem muito grande. Mximo 2MB."); return; }
     const reader = new FileReader();
     reader.onload = (ev) => {
       const dataUrl = ev.target?.result as string;
@@ -743,9 +784,15 @@ function ProfileTab() {
     reader.readAsDataURL(file);
   }
 
+  function handlePresetAvatarSelect(preset: MagnificAvatarPreset) {
+    setAvatarPreview(preset.src);
+    updateAvatar.mutate({ avatarUrl: preset.src });
+  }
+
   if (isLoading) return <div className="space-y-4">{Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-12 w-full" />)}</div>;
 
   const avatarSrc = avatarPreview ?? (profile as any)?.avatarUrl ?? null;
+  const selectedAvatarPreset = avatarPresets.find((preset) => preset.src === avatarSrc) ?? null;
 
   return (
     <Card>
@@ -767,9 +814,77 @@ function ProfileTab() {
           <div>
             <p className="font-semibold">{form.name || "Sem nome"}</p>
             <p className="text-sm text-muted-foreground">{profile?.email}</p>
-            <button type="button" onClick={() => fileRef.current?.click()} className="text-xs text-primary hover:underline mt-1">Alterar foto de perfil</button>
+            <div className="mt-2 flex flex-wrap gap-2">
+              <button type="button" onClick={() => fileRef.current?.click()} className="text-xs text-primary hover:underline">Alterar foto de perfil</button>
+              {avatarPresets.length > 0 && (
+                <Dialog open={avatarPickerOpen} onOpenChange={setAvatarPickerOpen}>
+                  <DialogTrigger asChild>
+                    <button type="button" className="inline-flex items-center gap-1 rounded-full border border-[#ead7d1] bg-[#fff7f4] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-[#7d0f14] transition-colors hover:bg-[#fff1ec]">
+                      <Star className="h-3.5 w-3.5" />
+                      Avatares da casa
+                    </button>
+                  </DialogTrigger>
+                  <DialogContent className="sm:max-w-[680px]">
+                    <DialogHeader>
+                      <DialogTitle>Escolha um avatar com cara de Bonatto</DialogTitle>
+                    </DialogHeader>
+                    <div className="space-y-3 pt-2">
+                      <p className="text-sm text-muted-foreground">Selecao mais quente e artesanal para combinar melhor com o universo da marca.</p>
+                      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                        {avatarPresets.map((preset) => {
+                          const isSelected = avatarSrc === preset.src;
+
+                          return (
+                            <button
+                              key={preset.id}
+                              type="button"
+                              onClick={() => {
+                                handlePresetAvatarSelect(preset);
+                                setAvatarPickerOpen(false);
+                              }}
+                              disabled={updateAvatar.isPending}
+                              className={`overflow-hidden rounded-[22px] border bg-white text-left transition-all hover:-translate-y-0.5 hover:shadow-md ${
+                                isSelected ? "bg-primary/[0.03] shadow-sm ring-1 ring-primary/20" : "border-border/70"
+                              }`}
+                              title={`Usar avatar ${preset.label}`}
+                            >
+                              <img src={preset.src} alt={preset.label} className="h-32 w-full object-cover" />
+                              <div className="space-y-1 p-3">
+                                <p className="text-sm font-semibold text-foreground">{preset.label}</p>
+                                <p className="text-xs text-muted-foreground">{isSelected ? "Avatar em uso" : "Aplicar este estilo"}</p>
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </DialogContent>
+                </Dialog>
+              )}
+            </div>
           </div>
         </div>
+
+        {avatarPresets.length > 0 && (
+          <div className="rounded-2xl border border-[#ead7d1] bg-[#fffaf8] p-3">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-sm font-semibold text-foreground">Curadoria Bonatto</p>
+                <p className="text-xs text-muted-foreground">Os avatares prontos agora ficam mais discretos e com uma linha visual mais quente.</p>
+              </div>
+              {(uploadAvatar.isPending || updateAvatar.isPending) && <Loader2 className="h-4 w-4 animate-spin text-primary" />}
+            </div>
+            {selectedAvatarPreset && (
+              <div className="mt-3 flex items-center gap-3 rounded-2xl bg-white/90 p-2.5">
+                <img src={selectedAvatarPreset.src} alt={selectedAvatarPreset.label} className="h-12 w-12 rounded-2xl object-cover" />
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold text-foreground">{selectedAvatarPreset.label}</p>
+                  <p className="truncate text-xs text-muted-foreground">Avatar atual selecionado na colecao Bonatto.</p>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div className="space-y-1.5">
@@ -803,7 +918,7 @@ function ProfileTab() {
   );
 }
 
-// ─── Coupons Tab ──────────────────────────────────────────────────────────────
+//  Coupons Tab 
 function CouponsTab() {
   const { data: coupons, isLoading } = trpc.profile.myCoupons.useQuery();
   const { data: allCoupons } = trpc.coupons.listActive.useQuery();
@@ -826,7 +941,7 @@ function CouponsTab() {
                     <p className="font-black text-lg text-primary tracking-widest">{c.code}</p>
                     <p className="text-sm text-muted-foreground">
                       {c.discountType === "percentage" ? `${parseFloat(c.discountValue)}% de desconto` : `R$ ${parseFloat(c.discountValue).toFixed(2)} de desconto`}
-                      {c.minOrderValue && parseFloat(c.minOrderValue) > 0 && ` · Mínimo R$ ${parseFloat(c.minOrderValue).toFixed(2)}`}
+                      {c.minOrderValue && parseFloat(c.minOrderValue) > 0 && `  Mínimo R$ ${parseFloat(c.minOrderValue).toFixed(2)}`}
                     </p>
                     {c.expiresAt && <p className="text-xs text-muted-foreground mt-0.5">Válido até {new Date(c.expiresAt).toLocaleDateString("pt-BR")}</p>}
                   </div>
@@ -840,7 +955,7 @@ function CouponsTab() {
       {publicCoupons.length > 0 && (
         <div>
           <h3 className="font-bold text-sm uppercase tracking-wide text-muted-foreground mb-3 flex items-center gap-2">
-            <Tag className="w-4 h-4" />Cupons Disponíveis
+            <Tag className="w-4 h-4" />Cupons Disponveis
           </h3>
           <div className="grid gap-3">
             {publicCoupons.map((c) => (
@@ -870,7 +985,7 @@ function CouponsTab() {
   );
 }
 
-// ─── Promotions Tab ───────────────────────────────────────────────────────────
+//  Promotions Tab 
 function PromotionsTab() {
   const { data: promotions, isLoading } = trpc.promotions.active.useQuery();
   if (isLoading) return <div className="grid gap-4">{Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-40 w-full rounded-xl" />)}</div>;
@@ -903,11 +1018,11 @@ function PromotionsTab() {
   );
 }
 
-// ─── Raffles Tab ──────────────────────────────────────────────────────────────
+//  Raffles Tab 
 function RafflesTab() {
   const { data: raffles, isLoading, refetch } = trpc.raffles.active.useQuery();
   const enterRaffle = trpc.raffles.enter.useMutation({
-    onSuccess: (ok) => { if (ok) { toast.success("Você entrou no sorteio! Boa sorte! 🎉"); refetch(); } else toast.info("Você já está participando deste sorteio."); },
+    onSuccess: (ok) => { if (ok) { toast.success("Você entrou no sorteio! Boa sorte!"); refetch(); } else toast.info("Você já está participando deste sorteio."); },
     onError: (e) => toast.error(e.message),
   });
   if (isLoading) return <div className="grid gap-4">{Array.from({ length: 2 }).map((_, i) => <Skeleton key={i} className="h-48 w-full rounded-xl" />)}</div>;
@@ -932,7 +1047,7 @@ function RafflesTab() {
               <Badge className="bg-yellow-400 text-yellow-900 border-0 shrink-0">Ativo</Badge>
             </div>
             <div className="bg-white rounded-xl p-3 mb-4 border border-yellow-200">
-              <p className="text-xs text-muted-foreground uppercase tracking-wide font-semibold mb-1">Prêmio</p>
+              <p className="text-xs text-muted-foreground uppercase tracking-wide font-semibold mb-1">Prmio</p>
               <p className="font-bold text-lg text-primary flex items-center gap-2"><Gift className="w-5 h-5" />{raffle.prize}</p>
             </div>
             {raffle.endsAt && <p className="text-xs text-muted-foreground mb-3 flex items-center gap-1"><Clock className="w-3.5 h-3.5" />Encerra em {new Date(raffle.endsAt).toLocaleDateString("pt-BR")}</p>}
@@ -946,7 +1061,7 @@ function RafflesTab() {
   );
 }
 
-// ─── Payments Tab ─────────────────────────────────────────────────────────────
+//  Payments Tab 
 function PaymentsTab() {
   const { data: transactions, isLoading } = trpc.payments.getMyTransactions.useQuery();
 
@@ -1002,8 +1117,8 @@ function PaymentsTab() {
                     <p className="font-semibold text-sm">Pedido #{tx.orderId}</p>
                     <p className="text-xs text-muted-foreground">
                       {METHOD_LABELS[tx.paymentMethod ?? ""] ?? tx.paymentMethod ?? "Online"}
-                      {" · "}
-                      {tx.createdAt ? new Date(tx.createdAt).toLocaleDateString("pt-BR", { day: "2-digit", month: "short", year: "numeric" }) : "—"}
+                      {"  "}
+                      {tx.createdAt ? new Date(tx.createdAt).toLocaleDateString("pt-BR", { day: "2-digit", month: "short", year: "numeric" }) : ""}
                     </p>
                   </div>
                 </div>
@@ -1023,14 +1138,11 @@ function PaymentsTab() {
     </div>
   );
 }
-// ─── Club Member Tab ─────────────────────────────────────────────────────
+// Club Member Tab
 function ClubMemberTab() {
   const { isAuthenticated } = useAuth();
   const { data: clubPlan, isLoading } = trpc.club.getMyPlan.useQuery(undefined, { enabled: isAuthenticated });
-  const useFreePizza = trpc.club.useFreePizza.useMutation({
-    onSuccess: () => toast.success("Pizza grátis marcada! Será aplicada no seu próximo pedido."),
-    onError: (e) => toast.error(e.message),
-  });
+  const { data: clubConfig } = trpc.club.getPublicConfig.useQuery();
   const cancelSub = trpc.club.cancelSubscription.useMutation({
     onSuccess: () => toast.success("Assinatura cancelada. Você ainda terá acesso até o fim do período."),
     onError: (e) => toast.error(e.message),
@@ -1045,32 +1157,48 @@ function ClubMemberTab() {
   const isActive = clubPlan?.status === "active";
   const isPending = clubPlan?.status === "pending";
   const isBonattao = clubPlan?.plan === "bonattao";
+  const planDetails = clubPlan?.planDetails;
+  const planName = planDetails?.name ?? (isBonattao ? "Sócio Bonatto" : "Fã Bonatto");
+  const planDiscount = Number(planDetails?.discountPercent ?? 0);
+  const hasFreeDelivery = Boolean(planDetails?.freeDelivery);
+  const hasFreePizza = Boolean(planDetails?.freePizzaPerMonth);
+  const planBenefits = planDetails?.benefits ?? [];
+  const freePizzaAvailable = hasFreePizza && !clubPlan?.freePizzaUsed;
+  const guestPlans = clubConfig?.plans ?? [];
 
-  // Não é membro — mostrar convite
+  // No  membro  mostrar convite
   if (!clubPlan || (!isActive && !isPending)) {
     return (
       <div className="max-w-xl mx-auto">
         <div className="relative rounded-3xl overflow-hidden bg-gradient-to-br from-[#2d0305] via-zinc-900 to-zinc-950 border border-[#3a0608]/50 shadow-2xl p-8 text-center">
           <Crown className="w-12 h-12 text-[#7d0f14] mx-auto mb-4" />
-          <h2 className="text-2xl font-black text-white mb-2">Você ainda não é membro</h2>
-          <p className="text-zinc-400 mb-6">Assine o Clube do Bonatto e tenha descontos exclusivos, entrega grátis e uma pizza grátis todo mês!</p>
-          <div className="flex gap-4 justify-center mb-6">
-            <div className="bg-zinc-800 rounded-2xl p-4 text-center">
-              <Crown className="w-5 h-5 text-[#7d0f14] mx-auto mb-1" />
-              <p className="text-white font-black">Bonattão</p>
-              <p className="text-[#a01218] font-black text-xl">R$ 19<span className="text-xs text-zinc-400">/mês</span></p>
-              <p className="text-xs text-zinc-400 mt-1">20% OFF + Frete grátis + Pizza grátis</p>
-            </div>
-            <div className="bg-zinc-800 rounded-2xl p-4 text-center">
-              <Star className="w-5 h-5 text-zinc-400 mx-auto mb-1" />
-              <p className="text-white font-black">Básico</p>
-              <p className="text-zinc-300 font-black text-xl">R$ 9,99<span className="text-xs text-zinc-400">/mês</span></p>
-              <p className="text-xs text-zinc-400 mt-1">15% OFF + Pizza grátis</p>
-            </div>
+          <h2 className="text-2xl font-black text-white mb-2">
+            {clubConfig?.profileGuestTitle ?? "Você ainda não é membro"}
+          </h2>
+          <p className="text-zinc-400 mb-6">
+            {clubConfig?.profileGuestSubtitle ??
+              "Assine o Clube do Bonatto e tenha descontos exclusivos, entrega grátis e uma pizza grátis todo mês!"}
+          </p>
+          <div className="flex flex-wrap gap-4 justify-center mb-6">
+            {guestPlans.map((plan) => (
+              <div key={plan.id} className="bg-zinc-800 rounded-2xl p-4 text-center w-full max-w-[220px]">
+                {plan.id === "bonattao" ? (
+                  <Crown className="w-5 h-5 text-[#7d0f14] mx-auto mb-1" />
+                ) : (
+                  <Star className="w-5 h-5 text-zinc-400 mx-auto mb-1" />
+                )}
+                <p className="text-white font-black">{plan.name}</p>
+                <p className={plan.id === "bonattao" ? "text-[#a01218] font-black text-xl" : "text-zinc-300 font-black text-xl"}>
+                  R$ {Number(plan.price).toFixed(2).replace(".", ",")}
+                  <span className="text-xs text-zinc-400">/mês</span>
+                </p>
+                <p className="text-xs text-zinc-400 mt-1">{plan.benefits.slice(0, 3).join(" + ")}</p>
+              </div>
+            ))}
           </div>
           <Link href="/clube">
             <Button className="bg-[#6E0D12] btn-bonatto hover:bg-[#5a0a0f] text-white font-bold px-8 py-3 rounded-2xl">
-              <Crown className="w-4 h-4 mr-2" /> Assinar agora
+              <Crown className="w-4 h-4 mr-2" /> {clubConfig?.ctaLabel ?? "Assinar agora via PIX"}
             </Button>
           </Link>
         </div>
@@ -1087,7 +1215,7 @@ function ClubMemberTab() {
             <Loader2 className="w-10 h-10 text-yellow-600 mx-auto mb-3 animate-spin" />
             <h3 className="font-black text-lg text-yellow-800 mb-2">Pagamento PIX aguardando confirmação</h3>
             <p className="text-yellow-700 text-sm">Seu pagamento está sendo verificado pelo nosso time. Assim que confirmado, seu plano será ativado automaticamente!</p>
-            <p className="text-xs text-yellow-600 mt-3">Plano: <strong>{clubPlan.plan === "bonattao" ? "Bonattão" : "Básico"}</strong></p>
+            <p className="text-xs text-yellow-600 mt-3">Plano: <strong>{clubPlan.plan === "bonattao" ? "Bonatto" : "Básico"}</strong></p>
           </CardContent>
         </Card>
       </div>
@@ -1108,41 +1236,41 @@ function ClubMemberTab() {
             {isBonattao ? <Crown className="w-8 h-8 text-yellow-300" /> : <Star className="w-8 h-8 text-blue-300" />}
             <div>
               <p className="text-white/70 text-sm">Plano ativo</p>
-              <h2 className="text-2xl font-black">{isBonattao ? "Bonattão" : "Básico"}</h2>
+              <h2 className="text-2xl font-black">{isBonattao ? "Bonatto" : "Básico"}</h2>
             </div>
           </div>
           <span className="bg-green-400/20 border border-green-400/40 text-green-300 text-xs font-bold px-3 py-1 rounded-full">
-            ✓ Ativo
+             Ativo
           </span>
         </div>
         <div className="grid grid-cols-2 gap-3 text-sm">
           <div className="bg-white/10 rounded-xl p-3">
             <p className="text-white/60 text-xs mb-0.5">Membro desde</p>
-            <p className="font-bold">{clubPlan.startDate ? new Date(clubPlan.startDate).toLocaleDateString("pt-BR") : "—"}</p>
+            <p className="font-bold">{clubPlan.startDate ? new Date(clubPlan.startDate).toLocaleDateString("pt-BR") : ""}</p>
           </div>
           <div className="bg-white/10 rounded-xl p-3">
             <p className="text-white/60 text-xs mb-0.5">Próxima renovação</p>
-            <p className="font-bold">{clubPlan.nextBillingDate ? new Date(clubPlan.nextBillingDate).toLocaleDateString("pt-BR") : "—"}</p>
+            <p className="font-bold">{clubPlan.nextBillingDate ? new Date(clubPlan.nextBillingDate).toLocaleDateString("pt-BR") : ""}</p>
           </div>
         </div>
       </div>
 
-      {/* Benefícios */}
+      {/* Benefcios */}
       <Card>
         <CardHeader className="pb-2">
           <CardTitle className="text-base flex items-center gap-2">
-            <Gift className="w-4 h-4 text-[#7d0f14]" /> Seus benefícios
+            <Gift className="w-4 h-4 text-[#7d0f14]" /> {clubConfig?.profileBenefitsTitle ?? "Seus benefícios"}
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
           <div className="flex items-center justify-between p-3 bg-green-50 dark:bg-green-950/30 rounded-xl">
             <div className="flex items-center gap-2">
               <CheckCircle className="w-5 h-5 text-green-600" />
-              <span className="font-medium text-sm">{isBonattao ? "20%" : "15%"} de desconto em todos os pedidos</span>
+              <span className="font-medium text-sm">{planDiscount}% de desconto em todos os pedidos</span>
             </div>
-            <Badge className="bg-green-100 text-green-700 border-green-200">{isBonattao ? "-20%" : "-15%"}</Badge>
+            <Badge className="bg-green-100 text-green-700 border-green-200">-{planDiscount}%</Badge>
           </div>
-          {isBonattao && (
+          {hasFreeDelivery && (
             <div className="flex items-center justify-between p-3 bg-blue-50 dark:bg-blue-950/30 rounded-xl">
               <div className="flex items-center gap-2">
                 <Truck className="w-5 h-5 text-blue-600" />
@@ -1153,33 +1281,46 @@ function ClubMemberTab() {
           )}
           <div className={[
             "flex items-center justify-between p-3 rounded-xl border-2",
-            clubPlan.freePizzaUsed
-              ? "bg-gray-50 dark:bg-gray-900/30 border-gray-200"
-              : "bg-orange-50 dark:bg-orange-950/30 border-orange-200"
+            freePizzaAvailable
+              ? "bg-orange-50 dark:bg-orange-950/30 border-orange-200"
+              : "bg-gray-50 dark:bg-gray-900/30 border-gray-200"
           ].join(" ")}>
             <div className="flex items-center gap-2">
-              <Pizza className={`w-5 h-5 ${clubPlan.freePizzaUsed ? "text-gray-400" : "text-orange-500"}`} />
+              <Pizza className={`w-5 h-5 ${freePizzaAvailable ? "text-orange-500" : "text-gray-400"}`} />
               <div>
                 <p className="font-medium text-sm">Pizza grátis do mês</p>
                 <p className="text-xs text-muted-foreground">
                   {clubPlan.freePizzaUsed
-                    ? `Já utilizada este mês${clubPlan.freePizzaResetAt ? ` — renova em ${new Date(clubPlan.freePizzaResetAt).toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit' })}` : ' — renova dia 1º'}`
-                    : "Disponível! Será aplicada automaticamente no checkout."}
+                    ? `Já utilizada este mês${clubPlan.freePizzaResetAt ? ` • renova em ${new Date(clubPlan.freePizzaResetAt).toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo", day: "2-digit", month: "2-digit" })}` : ""}`
+                    : clubConfig?.checkoutFreePizzaLabel ?? "Pizza grátis disponível para o próximo pedido."}
                 </p>
               </div>
             </div>
-            {clubPlan.freePizzaUsed
-              ? <XCircle className="w-5 h-5 text-gray-400" />
-              : <CheckCircle className="w-5 h-5 text-orange-500" />}
+            {freePizzaAvailable
+              ? <CheckCircle className="w-5 h-5 text-orange-500" />
+              : <XCircle className="w-5 h-5 text-gray-400" />}
           </div>
+          {planBenefits.length > 0 && (
+            <div className="rounded-2xl border border-[#f0dfdb] bg-[#fff8f6] p-4">
+              <p className="mb-3 text-xs font-semibold uppercase tracking-[0.16em] text-[#7d0f14]">Resumo do plano</p>
+              <div className="space-y-2">
+                {planBenefits.map((benefit) => (
+                  <div key={benefit} className="flex items-start gap-2 text-sm text-[#3b1618]">
+                    <CheckCircle className="mt-0.5 h-4 w-4 shrink-0 text-[#7d0f14]" />
+                    <span>{benefit}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </CardContent>
       </Card>
 
-      {/* Ações */}
+      {/* Aes */}
       <div className="flex flex-col sm:flex-row gap-3">
         <Link href="/clube" className="flex-1">
           <Button variant="outline" className="w-full gap-2">
-            <Crown className="w-4 h-4" /> Ver detalhes do plano
+            <Crown className="w-4 h-4" /> {clubConfig?.profilePrimaryActionLabel ?? "Ver detalhes do plano"}
           </Button>
         </Link>
         <Button
@@ -1200,7 +1341,7 @@ function ClubMemberTab() {
   );
 }
 
-// ─── Main Component ─────────────────────────────────────────────────────
+//  Main Component 
 export default function MinhaConta() {
   const { isAuthenticated, loading, user } = useAuth();
   const { data: unreadCount } = trpc.notifications.unreadCount.useQuery(undefined, { enabled: isAuthenticated, refetchInterval: 60000 });
@@ -1210,12 +1351,49 @@ export default function MinhaConta() {
   const { data: orders } = trpc.orders.myOrders.useQuery(undefined, { enabled: isAuthenticated, refetchInterval: 30000 });
 
   const activeOrdersCount = orders?.filter(o => !["delivered","cancelled"].includes(o.status)).length ?? 0;
-  const [activeTab, setActiveTab] = useState("pedidos");
+  const ordersCount = orders?.length ?? 0;
+  const [activeTab, setActiveTab] = useState<AccountTabValue>("pedidos");
+
+  const summaryCards = [
+    {
+      label: "Pedidos ativos",
+      value: activeOrdersCount,
+      helper: activeOrdersCount > 0 ? "Acompanhando em tempo real" : "Nenhum pedido em andamento",
+      icon: Package,
+      className: "bg-[linear-gradient(145deg,#6E0D12,#9b1520)] text-white",
+      iconWrapClassName: "bg-white/15 text-white",
+      mutedClassName: "text-white/70",
+    },
+    {
+      label: "Avisos pendentes",
+      value: totalAvisosBadge,
+      helper: totalAvisosBadge > 0 ? "Atualizações esperando por você" : "Tudo em dia no momento",
+      icon: BellRing,
+      className: "border border-[#ecd8d1] bg-[#fffaf8] text-[#210608]",
+      iconWrapClassName: "bg-[#fff1ef] text-[#7d0f14]",
+      mutedClassName: "text-[#7b676b]",
+    },
+    {
+      label: "Pontos Bonatto",
+      value: points ?? 0,
+      helper: points ? "Prontos para desconto e benefícios" : "Faça pedidos para começar a acumular",
+      icon: Trophy,
+      className: "border border-[#f1e2b8] bg-[linear-gradient(145deg,#fff6d8,#fff1bf)] text-[#3a2400]",
+      iconWrapClassName: "bg-white/70 text-[#8a5a00]",
+      mutedClassName: "text-[#816b39]",
+    },
+  ] as const;
+
+  const getTabBadge = (value: AccountTabValue) => {
+    if (value === "pedidos" && activeOrdersCount > 0) return activeOrdersCount;
+    if (value === "notificacoes" && totalAvisosBadge > 0) return totalAvisosBadge;
+    return null;
+  };
 
   // Listener para navegação via menu hambúrguer
   useEffect(() => {
     function handleTabEvent(e: Event) {
-      const tab = (e as CustomEvent).detail as string;
+      const tab = (e as CustomEvent).detail as AccountTabValue;
       if (tab) setActiveTab(tab);
     }
     window.addEventListener("minhaconta:tab", handleTabEvent);
@@ -1223,59 +1401,103 @@ export default function MinhaConta() {
   }, []);
 
   if (loading) return (
-    <div className="min-h-screen flex items-center justify-center">
-      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
+    <div className="flex min-h-[100dvh] items-center justify-center bg-[#f6efec]">
+      <Loader2 className="h-8 w-8 animate-spin text-primary" />
     </div>
   );
 
   if (!isAuthenticated) return (
-    <div className="min-h-screen flex flex-col items-center justify-center gap-6 p-8">
-      <img src={LOGO_URL} alt="Bonatto Pizza" className="w-24 h-24 rounded-full shadow-lg" />
-      <div className="text-center">
-        <h2 className="text-2xl font-black mb-2" style={{ fontFamily: "'Poppins', sans-serif" }}>Faça login para acessar sua conta</h2>
-        <p className="text-muted-foreground">Crie sua conta gratuitamente e acesse cupons exclusivos, promoções e sorteios!</p>
-      </div>
-      <div className="flex flex-col sm:flex-row gap-3">
-        <Link href="/login?returnTo=/minha-conta">
-          <Button size="lg" className="gap-2 w-full sm:w-auto"><LogIn className="w-4 h-4" />Entrar / Criar Conta</Button>
-        </Link>
-        <Link href="/cardapio">
-          <Button size="lg" variant="outline" className="gap-2 w-full sm:w-auto"><ShoppingBag className="w-4 h-4" />Ver Cardápio</Button>
-        </Link>
+    <div className="relative min-h-[100dvh] overflow-hidden bg-[#f6efec] px-4 py-10">
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(154,21,32,0.12),_transparent_42%),linear-gradient(180deg,_rgba(255,255,255,0.96),_rgba(246,239,236,0.92))]" />
+      <div className="container relative flex min-h-[calc(100dvh-5rem)] max-w-4xl items-center justify-center">
+        <div className="grid w-full gap-6 rounded-[32px] border border-[#e8d6d1] bg-white/90 p-6 shadow-[0_24px_80px_rgba(83,23,23,0.12)] backdrop-blur sm:p-8 lg:grid-cols-[1.15fr_0.85fr]">
+          <div className="space-y-6">
+            <div className="inline-flex items-center gap-2 rounded-full border border-[#f0d6d0] bg-[#fff6f2] px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-[#7d0f14]">
+              <User className="h-3.5 w-3.5" />
+              Minha conta Bonatto
+            </div>
+            <div className="space-y-3">
+              <img src={LOGO_URL} alt="Bonatto Pizza" className="h-20 w-20 rounded-[24px] object-cover shadow-lg shadow-[#7d0f14]/10" />
+              <h2 className="max-w-[14ch] text-3xl font-black leading-[0.95] text-[#210608]" style={{ fontFamily: "'Poppins', sans-serif" }}>
+                {"Fa\u00e7a login para acompanhar seus pedidos e benef\u00edcios."}
+              </h2>
+              <p className="max-w-[52ch] text-sm leading-relaxed text-[#6d5a5d]">
+                {"Entre na sua \u00e1rea para rever pedidos, salvar endere\u00e7os, acompanhar pagamentos e usar os benef\u00edcios do Clube Bonatto."}
+              </p>
+            </div>
+            <div className="flex flex-col gap-3 sm:flex-row">
+              <a href={getLoginUrl("/minha-conta")} className="w-full sm:w-auto">
+                <Button size="lg" className="w-full gap-2 rounded-2xl bg-[#6E0D12] px-6 hover:bg-[#5a0a0f] sm:w-auto">
+                  <LogIn className="h-4 w-4" />
+                  Entrar ou criar conta
+                </Button>
+              </a>
+              <Link href="/cardapio">
+                <Button size="lg" variant="outline" className="w-full gap-2 rounded-2xl border-[#e7c7c7] bg-white sm:w-auto">
+                  <ShoppingBag className="h-4 w-4" />
+                  {"Ver card\u00e1pio"}
+                </Button>
+              </Link>
+            </div>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-1">
+            {[
+              { label: "Cupons", helper: "Ofertas e vantagens exclusivas", icon: Tag },
+              { label: "Sorteios", helper: "Participa\u00e7\u00f5es e novidades da casa", icon: Ticket },
+              { label: "Clube", helper: "Descontos mensais e pizza gr\u00e1tis", icon: Crown },
+            ].map((item) => (
+              <div key={item.label} className="rounded-[24px] border border-[#efe1db] bg-[#fffaf8] p-4">
+                <item.icon className="mb-3 h-5 w-5 text-[#7d0f14]" />
+                <p className="text-sm font-semibold text-[#210608]">{item.label}</p>
+                <p className="mt-1 text-xs leading-relaxed text-[#7b676b]">{item.helper}</p>
+              </div>
+            ))}
+          </div>
+        </div>
       </div>
     </div>
   );
 
   return (
-    <div className="min-h-screen bg-muted/30 py-8">
-      <div className="container max-w-3xl">
-        {/* Header */}
-        <div className="flex items-center gap-4 mb-6">
-          <div className="w-14 h-14 rounded-full bg-primary flex items-center justify-center text-white font-black text-xl shrink-0 overflow-hidden">
-            {(user as any)?.avatarUrl
-              ? <img src={(user as any).avatarUrl} alt="Avatar" className="w-full h-full object-cover" />
-              : (user?.name ?? "U")[0].toUpperCase()
-            }
-          </div>
-          <div className="flex-1 min-w-0">
-            <h1 className="text-2xl font-black" style={{ fontFamily: "'Poppins', sans-serif" }}>
-              Olá, {user?.name?.split(" ")[0] ?? "Cliente"}! 👋
-            </h1>
-            <p className="text-muted-foreground text-sm">Bem-vindo ao seu painel Bonatto Pizza</p>
-          </div>
-          {points !== undefined && points > 0 && (
-            <div className="shrink-0 bg-primary/10 text-primary rounded-xl px-3 py-2 text-center">
-              <p className="text-xs font-medium">Pontos</p>
-              <p className="text-lg font-black">{points}</p>
+    <div className="min-h-[100dvh] bg-[#f6efec] py-8 sm:py-10">
+      <div className="container max-w-6xl space-y-6">
+                {/* Header */}
+        <div className="grid gap-4 rounded-[30px] border border-[#ead7d1] bg-white/90 p-5 shadow-[0_24px_80px_rgba(83,23,23,0.10)] backdrop-blur lg:grid-cols-[1.2fr_0.8fr]">
+          <div className="flex items-center gap-4">
+            <div className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-[24px] bg-primary text-xl font-black text-white shadow-lg shadow-[#6E0D12]/20">
+              {(user as any)?.avatarUrl
+                ? <img src={(user as any).avatarUrl} alt="Avatar" className="w-full h-full object-cover" />
+                : (user?.name ?? "U")[0].toUpperCase()
+              }
             </div>
-          )}
+            <div className="flex-1 min-w-0">
+              <p className="mb-2 inline-flex rounded-full border border-[#f0d6d0] bg-[#fff7f4] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-[#7d0f14]">Minha conta</p>
+              <h1 className="text-3xl font-black leading-[0.95] text-[#210608] sm:text-4xl" style={{ fontFamily: "'Poppins', sans-serif" }}>
+                {"Ol\u00e1, "}{user?.name?.split(" ")[0] ?? "Cliente"}!
+              </h1>
+              <p className="mt-2 max-w-[58ch] text-sm leading-relaxed text-[#6d5a5d] sm:text-base">
+                {"Seu espa\u00e7o para acompanhar pedidos, revisar pagamentos, salvar endere\u00e7os e aproveitar tudo que a Bonatto preparou para voc\u00ea."}
+              </p>
+            </div>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-1">
+            {summaryCards.map((card) => (
+              <div key={card.label} className={`rounded-[24px] p-4 shadow-sm ${card.className}`}>
+                <div className={`inline-flex rounded-[18px] p-2 ${card.iconWrapClassName}`}>
+                  <card.icon className="h-4 w-4" />
+                </div>
+                <p className={`mt-4 text-xs uppercase tracking-[0.16em] ${card.mutedClassName}`}>{card.label}</p>
+                <p className="mt-1 text-3xl font-black">{card.value}</p>
+                <p className={`mt-1 text-xs leading-relaxed ${card.mutedClassName}`}>{card.helper}</p>
+              </div>
+            ))}
+          </div>
         </div>
 
-
-
-        <Tabs value={activeTab} onValueChange={setActiveTab}>
+        <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as AccountTabValue)} className="space-y-4">
           {/* Desktop: TabsList horizontal */}
-          <TabsList className="hidden sm:grid w-full mb-6 grid-cols-12 h-auto gap-1">
+          <div className="rounded-[28px] border border-[#ead7d1] bg-white/90 p-3 shadow-[0_18px_50px_rgba(83,23,23,0.08)] backdrop-blur">
+          <TabsList className="hidden sm:grid w-full grid-cols-4 md:grid-cols-6 xl:grid-cols-12 h-auto gap-2 bg-transparent p-0">
             <TabsTrigger value="pedidos" className="relative flex flex-col gap-1 py-2 text-xs">
               <Package className="w-4 h-4" /><span>Pedidos</span>
               {activeOrdersCount > 0 && (
@@ -1300,29 +1522,32 @@ export default function MinhaConta() {
             <TabsTrigger value="cartoes" className="flex flex-col gap-1 py-2 text-xs"><CreditCard className="w-4 h-4" /><span>Cartões</span></TabsTrigger>
             <TabsTrigger value="carrinhos" className="relative flex flex-col gap-1 py-2 text-xs"><ShoppingCart className="w-4 h-4" /><span>Salvos</span></TabsTrigger>
           </TabsList>
+          </div>
 
 
 
-          <TabsContent value="pedidos"><OrdersTab /></TabsContent>
-          <TabsContent value="fidelidade"><LoyaltyTab /></TabsContent>
-          <TabsContent value="enderecos"><AddressesTab /></TabsContent>
-          <TabsContent value="notificacoes"><NotificationsTab /></TabsContent>
-          <TabsContent value="cupons"><CouponsTab /></TabsContent>
-          <TabsContent value="promocoes"><PromotionsTab /></TabsContent>
-          <TabsContent value="sorteios"><RafflesTab /></TabsContent>
-          <TabsContent value="perfil"><ProfileTab /></TabsContent>
-          <TabsContent value="clube"><ClubMemberTab /></TabsContent>
-          <TabsContent value="pagamentos"><PaymentsTab /></TabsContent>
-          <TabsContent value="cartoes"><SavedCards /></TabsContent>
-          <TabsContent value="carrinhos"><AbandonedCartsTab /></TabsContent>
+          <div className="rounded-[28px] border border-[#ead7d1] bg-white/90 p-3 shadow-[0_18px_50px_rgba(83,23,23,0.08)] backdrop-blur sm:p-4">
+            <TabsContent value="pedidos" className="mt-0"><OrdersTab /></TabsContent>
+          <TabsContent value="fidelidade" className="mt-0"><LoyaltyTab /></TabsContent>
+          <TabsContent value="enderecos" className="mt-0"><AddressesTab /></TabsContent>
+          <TabsContent value="notificacoes" className="mt-0"><NotificationsTab /></TabsContent>
+          <TabsContent value="cupons" className="mt-0"><CouponsTab /></TabsContent>
+          <TabsContent value="promocoes" className="mt-0"><PromotionsTab /></TabsContent>
+          <TabsContent value="sorteios" className="mt-0"><RafflesTab /></TabsContent>
+          <TabsContent value="perfil" className="mt-0"><ProfileTab /></TabsContent>
+          <TabsContent value="clube" className="mt-0"><ClubMemberTab /></TabsContent>
+          <TabsContent value="pagamentos" className="mt-0"><PaymentsTab /></TabsContent>
+          <TabsContent value="cartoes" className="mt-0"><SavedCards /></TabsContent>
+          <TabsContent value="carrinhos" className="mt-0"><AbandonedCartsTab /></TabsContent>
+          </div>
         </Tabs>
 
-        {/* Espaço para não sobrepor o rodapé fixo no mobile */}
+        {/* Espa?o para n?o sobrepor o rodap? fixo no mobile */}
         <div className="h-24 sm:hidden" />
       </div>
 
-      {/* Barra de rodapé fixa no mobile */}
-      <div className="sm:hidden fixed bottom-0 left-0 right-0 z-50 bg-background border-t border-border shadow-[0_-2px_12px_rgba(0,0,0,0.08)]">
+      {/* Barra de rodap? fixa no mobile */}
+      <div className="sm:hidden fixed bottom-0 left-0 right-0 z-50 border-t border-[#ead7d1] bg-white/92 shadow-[0_-2px_20px_rgba(0,0,0,0.06)] backdrop-blur">
         <div className="grid grid-cols-5 h-16">
           {[
             { value: "pedidos", icon: <Package className="w-5 h-5" />, label: "Pedidos", badge: activeOrdersCount > 0 ? activeOrdersCount : null },

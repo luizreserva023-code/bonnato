@@ -1,5 +1,7 @@
-// Service Worker — Bonatto Pizza Web Push
-// Versão: 3.0 — suporte a notificações do motoboy, cliente e avaliação pós-entrega
+// Service Worker - Bonatto Pizza Web Push
+// Versao 4.0 - push com notificacao nativa + ponte para som customizado em abas abertas
+
+const DEFAULT_PUSH_SOUND_URL = "/manus-storage/notification-motoboy_31cd6501.mp3";
 
 self.addEventListener("install", () => {
   self.skipWaiting();
@@ -9,88 +11,105 @@ self.addEventListener("activate", (event) => {
   event.waitUntil(self.clients.claim());
 });
 
-// ─── Receber notificação push ─────────────────────────────────────────────────
-self.addEventListener("push", (event) => {
-  if (!event.data) return;
-
-  let data = {};
-  try {
-    data = event.data.json();
-  } catch {
-    data = { title: "Bonatto Pizza", body: event.data.text() };
-  }
-
-  const title = data.title || "Bonatto Pizza";
-  const tag = data.tag || "bonatto-push";
-  const url = data.url || "/";
-
-  // Detectar tipo de notificação pelo tag para personalizar comportamento
+function buildPushMetadata(tag) {
   const isDriverOrder = tag.startsWith("driver-order-");
   const isDriverUnassigned = tag.startsWith("driver-unassigned-");
   const isDriverMsg = tag.startsWith("driver-msg-");
   const isDeliveryConfirmed = tag.startsWith("delivery-confirmed-");
 
-  // Vibração diferenciada por tipo
   const vibrate = isDriverOrder
-    ? [300, 100, 300, 100, 300]   // Urgente — 3 pulsos
+    ? [300, 100, 300, 100, 300]
     : isDeliveryConfirmed
-    ? [200, 150, 200, 150, 200]   // Entrega confirmada — 3 pulsos suaves
-    : isDriverMsg
-    ? [200, 100, 200]              // Mensagem — 2 pulsos
-    : [200, 100, 200];             // Padrão
+      ? [200, 150, 200, 150, 200]
+      : [200, 100, 200];
 
-  // Ações específicas por tipo
   const actions = isDriverOrder
     ? [
-        { action: "open_driver", title: "📱 Ver Pedido" },
+        { action: "open_driver", title: "Ver Pedido" },
         { action: "dismiss", title: "Dispensar" },
       ]
     : isDriverMsg
-    ? [
-        { action: "open_driver", title: "💬 Ver Mensagem" },
-      ]
-    : isDeliveryConfirmed
-    ? [
-        { action: "open_url", title: "⭐ Avaliar entrega" },
-        { action: "dismiss", title: "Agora não" },
-      ]
-    : [];
+      ? [{ action: "open_driver", title: "Ver Mensagem" }]
+      : isDeliveryConfirmed
+        ? [
+            { action: "open_url", title: "Avaliar entrega" },
+            { action: "dismiss", title: "Agora nao" },
+          ]
+        : [];
 
-  const options = {
-    body: data.body || "",
-    icon: data.icon || "/icon-192.png",
-    badge: data.badge || "/icon-192.png",
-    tag,
-    data: { url },
+  return {
     requireInteraction: isDriverOrder || isDriverUnassigned || isDeliveryConfirmed,
     vibrate,
     actions,
-    silent: false,
   };
+}
 
-  event.waitUntil(self.registration.showNotification(title, options));
+self.addEventListener("push", (event) => {
+  if (!event.data) return;
+
+  event.waitUntil((async () => {
+    let data = {};
+    try {
+      data = event.data.json();
+    } catch {
+      data = { title: "Bonatto Pizza", body: event.data.text() };
+    }
+
+    const title = data.title || "Bonatto Pizza";
+    const body = data.body || "";
+    const tag = data.tag || "bonatto-push";
+    const url = data.url || "/";
+    const icon = data.icon || "/icon-192.png";
+    const badge = data.badge || "/icon-192.png";
+    const soundUrl = data.soundUrl || DEFAULT_PUSH_SOUND_URL;
+
+    const meta = buildPushMetadata(tag);
+    const windowClients = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
+    const hasVisibleClient = windowClients.some((client) => client.visibilityState === "visible");
+
+    for (const client of windowClients) {
+      client.postMessage({
+        type: "BONATTO_PUSH_SOUND",
+        title,
+        body,
+        tag,
+        url,
+        soundUrl,
+      });
+    }
+
+    const options = {
+      body,
+      icon,
+      badge,
+      tag,
+      data: { url, soundUrl },
+      requireInteraction: meta.requireInteraction,
+      actions: meta.actions,
+      silent: hasVisibleClient,
+      ...(hasVisibleClient ? {} : { vibrate: meta.vibrate }),
+    };
+
+    await self.registration.showNotification(title, options);
+  })());
 });
 
-// ─── Clicar na notificação ou em uma ação ────────────────────────────────────
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
 
   const action = event.action;
   const url = event.notification.data?.url || "/";
 
-  // Ação "dispensar" — apenas fecha
   if (action === "dismiss") return;
 
-  // Roteamento por ação
-  let targetUrl = url; // padrão: URL da notificação
+  let targetUrl = url;
   if (action === "open_driver") targetUrl = "/motoboy";
-  if (action === "open_url") targetUrl = url; // usa a URL da notificação (ex: /meus-pedidos?avaliar=X)
+  if (action === "open_url") targetUrl = url;
 
   event.waitUntil(
     self.clients
       .matchAll({ type: "window", includeUncontrolled: true })
       .then((clients) => {
-        // Procurar aba já aberta no domínio
         for (const client of clients) {
           if (
             typeof client.url === "string" &&
@@ -101,7 +120,6 @@ self.addEventListener("notificationclick", (event) => {
             return client.focus();
           }
         }
-        // Nenhuma aba aberta → abrir nova
         if (self.clients.openWindow) {
           return self.clients.openWindow(targetUrl);
         }
@@ -109,7 +127,6 @@ self.addEventListener("notificationclick", (event) => {
   );
 });
 
-// ─── Fechar notificação sem clicar ───────────────────────────────────────────
 self.addEventListener("notificationclose", () => {
-  // Telemetria futura: registrar que o motoboy dispensou sem ver
+  // Telemetria futura
 });

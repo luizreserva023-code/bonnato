@@ -12,6 +12,7 @@ import {
 } from "recharts";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
+import { AdminStoreProvider, useAdminStore } from "@/contexts/AdminStoreContext";
 import { format, subDays, startOfDay, endOfDay } from "date-fns";
 import { ptBR } from "date-fns/locale";
 
@@ -19,6 +20,25 @@ import { ptBR } from "date-fns/locale";
 type Preset = "today" | "7d" | "30d" | "90d" | "custom";
 
 interface DateRange { start: Date; end: Date }
+
+type SalesTooltipPayloadItem = {
+  value?: number;
+};
+
+type SalesTooltipProps = {
+  active?: boolean;
+  payload?: SalesTooltipPayloadItem[];
+  label?: string;
+};
+
+type RecentOrder = {
+  id: number;
+  customerName: string;
+  status: string;
+  paymentMethod: string;
+  total: string | number;
+  createdAt: string | Date;
+};
 
 function getPresetRange(preset: Preset): DateRange {
   const now = new Date();
@@ -39,6 +59,11 @@ function fmt(value: number) {
 function pctChange(current: number, prev: number): number | null {
   if (prev === 0) return current > 0 ? 100 : null;
   return ((current - prev) / prev) * 100;
+}
+
+function clampDelta(value: number | null, limit = 999): number | null {
+  if (value === null) return null;
+  return Math.max(-limit, Math.min(limit, value));
 }
 
 function DeltaBadge({ value }: { value: number | null }) {
@@ -81,7 +106,7 @@ function statusLabel(status: string) {
 }
 
 // ─── Custom Tooltip ───────────────────────────────────────────────────────────
-function CustomTooltip({ active, payload, label }: any) {
+function CustomTooltip({ active, payload, label }: SalesTooltipProps) {
   if (!active || !payload?.length) return null;
   return (
     <div className="bg-card border border-border rounded-xl shadow-lg px-4 py-3 text-sm">
@@ -93,9 +118,10 @@ function CustomTooltip({ active, payload, label }: any) {
 }
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
-export default function VendasDashboard() {
+function VendasDashboardContent() {
   const { user, loading: authLoading } = useAuth();
   const [, setLocation] = useLocation();
+  const { selectedStoreId, setSelectedStoreId, selectedStoreName, isManager, stores } = useAdminStore();
 
   const [preset, setPreset] = useState<Preset>("7d");
   const [customRange, setCustomRange] = useState<DateRange>(() => getPresetRange("7d"));
@@ -104,27 +130,7 @@ export default function VendasDashboard() {
   const [customEnd, setCustomEnd] = useState("");
 
   // Loja do manager (se aplicável)
-  const isManager = !authLoading && user?.role === "manager";
   const isAdmin = !authLoading && user?.role === "admin";
-  const [selectedStoreId, setSelectedStoreId] = useState<number | undefined>(undefined);
-
-  // Para managers: buscar a loja automaticamente
-  const { data: myStore } = trpc.stores.myStore.useQuery(undefined, { enabled: isManager });
-  // Para admins: buscar lista de lojas para o seletor
-  const { data: allStores } = trpc.stores.listAll.useQuery(undefined, { enabled: isAdmin });
-
-  useEffect(() => {
-    if (isManager && myStore) {
-      setSelectedStoreId(myStore.id);
-    }
-  }, [isManager, myStore]);
-
-  const stores = allStores ?? [];
-  const selectedStoreName = isManager
-    ? (myStore?.name ?? "Minha Loja")
-    : selectedStoreId
-    ? (stores.find((s) => s.id === selectedStoreId)?.name ?? "Loja")
-    : "Todas as unidades";
 
   const range = useMemo<DateRange>(() => {
     if (preset === "custom") return customRange;
@@ -134,15 +140,15 @@ export default function VendasDashboard() {
   // Queries
   const overviewQuery = trpc.analytics.salesOverview.useQuery(
     { startDate: range.start, endDate: range.end, storeId: selectedStoreId },
-    { refetchInterval: 30_000 }
+    { refetchInterval: 30_000, refetchOnWindowFocus: false, staleTime: 15_000 }
   );
   const timeSeriesQuery = trpc.analytics.salesTimeSeries.useQuery(
     { startDate: range.start, endDate: range.end, storeId: selectedStoreId },
-    { refetchInterval: 60_000 }
+    { refetchInterval: 60_000, refetchOnWindowFocus: false, staleTime: 30_000 }
   );
   const recentQuery = trpc.analytics.recentOrders.useQuery(
     { limit: 20, storeId: selectedStoreId },
-    { refetchInterval: 30_000 }
+    { refetchInterval: 30_000, refetchOnWindowFocus: false, staleTime: 15_000 }
   );
 
   const handleApplyCustom = useCallback(() => {
@@ -173,8 +179,9 @@ export default function VendasDashboard() {
   const series = timeSeriesQuery.data ?? [];
   const recent = recentQuery.data ?? [];
 
-  const revDelta = ov ? pctChange(ov.totalRevenue, ov.prevTotalRevenue) : null;
-  const ordDelta = ov ? pctChange(ov.totalOrders, ov.prevTotalOrders) : null;
+  const revDelta = ov ? clampDelta(pctChange(ov.totalRevenue, ov.prevTotalRevenue)) : null;
+  const ordDelta = ov ? clampDelta(pctChange(ov.totalOrders, ov.prevTotalOrders)) : null;
+  const comparisonLabel = "Comparado ao período anterior equivalente";
 
   const PRESETS: { key: Preset; label: string }[] = [
     { key: "today", label: "Hoje" },
@@ -199,6 +206,7 @@ export default function VendasDashboard() {
               <p className="text-xs text-muted-foreground mt-0.5">
                 {format(range.start, "dd/MM/yyyy", { locale: ptBR })} — {format(range.end, "dd/MM/yyyy", { locale: ptBR })}
               </p>
+              <p className="text-[11px] text-muted-foreground mt-1">{comparisonLabel}</p>
             </div>
           </div>
 
@@ -213,6 +221,7 @@ export default function VendasDashboard() {
               <select
                 value={selectedStoreId ?? ""}
                 onChange={(e) => setSelectedStoreId(e.target.value ? Number(e.target.value) : undefined)}
+                aria-label="Filtrar vendas por loja"
                 className="text-xs border border-border rounded-lg px-2 py-1.5 bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-[#6E0D12]/30 h-8"
               >
                 <option value="">Todas as unidades</option>
@@ -283,6 +292,7 @@ export default function VendasDashboard() {
                 type="date"
                 value={customStart}
                 onChange={(e) => setCustomStart(e.target.value)}
+                aria-label="Data inicial do período personalizado"
                 className="text-sm border-0 outline-none text-foreground bg-transparent"
               />
               <span className="text-muted-foreground text-sm">até</span>
@@ -290,6 +300,7 @@ export default function VendasDashboard() {
                 type="date"
                 value={customEnd}
                 onChange={(e) => setCustomEnd(e.target.value)}
+                aria-label="Data final do período personalizado"
                 className="text-sm border-0 outline-none text-foreground bg-transparent"
               />
               <button
@@ -450,7 +461,7 @@ export default function VendasDashboard() {
                   <p className="text-sm">Nenhum pedido ainda</p>
                 </div>
               ) : (
-                recent.map((order) => (
+                recent.map((order: RecentOrder) => (
                   <div
                     key={order.id}
                     className="flex items-center gap-3 p-3 rounded-xl hover:bg-muted/50 transition-colors cursor-pointer group"
@@ -487,5 +498,13 @@ export default function VendasDashboard() {
 
       </div>
     </div>
+  );
+}
+
+export default function VendasDashboard() {
+  return (
+    <AdminStoreProvider>
+      <VendasDashboardContent />
+    </AdminStoreProvider>
   );
 }

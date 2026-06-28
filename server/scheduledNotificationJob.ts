@@ -3,9 +3,9 @@ import {
   markScheduledNotificationSent,
   createScheduledNotification,
   getDb,
-} from "./db";
-import { sendPushToAllUsers } from "./push";
-import { sendWhatsApp } from "./whatsapp";
+} from "./db.ts";
+import { sendPushToAllUsers } from "./push.ts";
+import { sendWhatsApp } from "./whatsapp.ts";
 
 /**
  * Get user IDs filtered by audience segment and optional neighborhood filter.
@@ -18,7 +18,7 @@ async function getUserIdsBySegment(
   const db = await getDb();
   if (!db) return undefined;
 
-  const { users, orders } = await import("../drizzle/schema");
+  const { users, orders } = await import("../drizzle/schema.ts");
   const { eq, gte, or, like } = await import("drizzle-orm");
 
   // Helper: filter a list of user IDs to only those who ordered from given neighborhoods
@@ -93,7 +93,7 @@ async function getPhonesBySegment(
   const db = await getDb();
   if (!db) return [];
 
-  const { users, orders } = await import("../drizzle/schema");
+  const { users, orders } = await import("../drizzle/schema.ts");
   const { gte, isNotNull, or, like } = await import("drizzle-orm");
 
   // Helper: filter phone rows by neighborhood

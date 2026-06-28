@@ -8,8 +8,8 @@
  */
 
 import { and, eq, sql } from "drizzle-orm";
-import { categories, orderItems, orders, products, promotions } from "../drizzle/schema";
-import { getDb } from "./db";
+import { categories, orderItems, orders, products, promotions } from "../drizzle/schema.ts";
+import { getDb } from "./db.ts";
 
 const IFOOD_BASE_URL = "https://merchant-api.ifood.com.br";
 const IFOOD_SOURCE = "ifood";

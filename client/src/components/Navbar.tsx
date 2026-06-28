@@ -5,6 +5,8 @@ import { useStore } from "@/contexts/StoreContext";
 import { isStoreOpenWithHours, type DaySchedule } from "@/lib/storeUtils";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
+import { useTenantConfig } from "@/shared/tenant/use-tenant-config";
+import type { inferRouterOutputs } from "@trpc/server";
 import { motion } from "framer-motion";
 import {
   Bell,
@@ -30,16 +32,20 @@ import {
 import { useState } from "react";
 import { Link, useLocation } from "wouter";
 import { BRAND_ASSETS } from "@/lib/brand";
+import type { AppRouter } from "../../../server/routers";
 
 const LOGO_TIPOGRAFICA_URL = BRAND_ASSETS.palmitoWordmark;
 const NAVBAR_PALMITO_URL = BRAND_ASSETS.palmito;
+type RouterOutputs = inferRouterOutputs<AppRouter>;
+type CustomerOrderRecord = RouterOutputs["orders"]["myOrders"][number];
 
 export function Navbar() {
   const { itemCount, setIsOpen } = useCart();
   const { user, isAuthenticated, logout } = useAuth();
   const [location, navigate] = useLocation();
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const { setShowCityModal } = useStore();
+  const { selectedStore, setShowCityModal } = useStore();
+  const tenant = useTenantConfig(selectedStore?.slug);
 
   const { data: unreadData } = trpc.chat.totalUnread.useQuery(undefined, {
     enabled: isAuthenticated,
@@ -63,7 +69,8 @@ export function Navbar() {
     enabled: isAuthenticated,
     refetchInterval: 30000,
   });
-  const activeOrdersCount = orders?.filter((order) => !["delivered", "cancelled"].includes(order.status)).length ?? 0;
+  const customerOrders: CustomerOrderRecord[] = orders ?? [];
+  const activeOrdersCount = customerOrders.filter((order: CustomerOrderRecord) => !["delivered", "cancelled"].includes(order.status)).length;
 
   const navLinks = [
     { href: "/", label: "Início", icon: ShoppingBag },
@@ -78,6 +85,11 @@ export function Navbar() {
     : undefined;
   const storeOpen = isStoreOpenWithHours(dbStoreHours);
   const totalAlerts = notifCount + unreadCount + alertsCount + activeOrdersCount;
+  const brandName = tenant.brand.name;
+  const brandTagline = tenant.brand.tagline;
+  const locationLabel = selectedStore ? `Entrega em ${selectedStore.city}` : tenant.brand.deliveryLabel;
+  const navIcon = tenant.brand.logos.icon || NAVBAR_PALMITO_URL;
+  const navWordmark = tenant.brand.logos.wordmark || LOGO_TIPOGRAFICA_URL;
 
   const accountCards = [
     { tab: "pedidos", icon: <Package className="h-5 w-5" />, label: "Pedidos", badge: activeOrdersCount > 0 ? activeOrdersCount : null },
@@ -128,16 +140,16 @@ export function Navbar() {
             <Link href="/" className="flex min-w-0 items-center gap-2.5">
               <motion.div whileHover={{ rotate: -6, scale: 1.04 }} transition={{ type: "spring", stiffness: 260, damping: 16 }}>
                 <img
-                  src={NAVBAR_PALMITO_URL}
-                  alt="Bonatto"
+                  src={navIcon}
+                  alt={brandName}
                   className="h-12 w-auto object-contain sm:h-14"
                   style={{ maxWidth: "56px" }}
                 />
               </motion.div>
               <div className="min-w-0">
                 <img
-                  src={LOGO_TIPOGRAFICA_URL}
-                  alt="Bonatto Pizza"
+                  src={navWordmark}
+                  alt={brandName}
                   className="h-8 w-auto object-contain sm:h-10"
                   style={{ maxWidth: "172px" }}
                 />
@@ -159,7 +171,7 @@ export function Navbar() {
                 whileTap={{ scale: 0.98 }}
               >
                 <MapPin className="h-3.5 w-3.5" />
-                Entrega em Mateus Leme
+                {locationLabel}
               </motion.button>
             </div>
 
@@ -212,10 +224,10 @@ export function Navbar() {
               <div className="relative flex items-start justify-between gap-4">
                 <div className="flex items-center gap-3">
                   <div className="rounded-[22px] bg-[linear-gradient(160deg,#9b1520_0%,#6E0D12_60%,#4a080c_100%)] p-2.5 shadow-[0_18px_40px_rgba(110,13,18,0.2)]">
-                    <img src={NAVBAR_PALMITO_URL} alt="Bonatto" className="h-9 w-9 object-contain" />
+                    <img src={navIcon} alt={brandName} className="h-9 w-9 object-contain" />
                   </div>
                   <div>
-                    <SheetTitle className="text-base font-black text-[#2f090d]">Bonatto Pizza</SheetTitle>
+                    <SheetTitle className="text-base font-black text-[#2f090d]">{brandName}</SheetTitle>
                     <p className="mt-1 text-xs text-[#7e4d51]">
                       Menu premium, delivery e experiência de app em um só lugar.
                     </p>
@@ -230,10 +242,10 @@ export function Navbar() {
             <div className="flex-1 overflow-y-auto px-4 pb-4 pt-4">
               <div className="mb-5 rounded-[28px] border border-[#f1d0cf] bg-[linear-gradient(135deg,#5f0a10_0%,#8f141d_58%,#b92028_100%)] p-5 text-white shadow-[0_28px_60px_rgba(110,13,18,0.18)]">
                 <p className="text-[11px] font-bold uppercase tracking-[0.24em] text-white/70">
-                  Bonatto Pizza
+                  {brandName}
                 </p>
                 <p className="mt-3 text-xl font-black leading-tight">
-                  Delivery artesanal com pedido simples e visual forte.
+                  {brandTagline}
                 </p>
                 <p className="mt-2 text-sm leading-6 text-white/78">
                   Escolha seu sabor, acompanhe seus pedidos e entre na experiência completa da Bonatto sem exagero visual.

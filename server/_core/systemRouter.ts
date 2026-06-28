@@ -1,7 +1,7 @@
 import { z } from "zod";
-import { notifyOwner } from "./notification";
-import { adminProcedure, publicProcedure, router } from "./trpc";
-import { sendDailyReport } from "../dailyReport";
+import { notifyOwner } from "./notification.ts";
+import { adminProcedure, publicProcedure, router } from "./trpc.ts";
+import { sendDailyReport } from "../dailyReport.ts";
 
 export const systemRouter = router({
   health: publicProcedure

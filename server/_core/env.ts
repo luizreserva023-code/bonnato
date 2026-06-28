@@ -41,7 +41,9 @@ export const ENV = {
   sessionAppId: deriveSessionAppId(),
   cookieSecret: rawJwtSecret,
   databaseUrl: process.env.DATABASE_URL ?? "",
-  oAuthServerUrl: process.env.OAUTH_SERVER_URL ?? "",
+  oAuthServerUrl: process.env.OAUTH_SERVER_URL ?? process.env.VITE_OAUTH_PORTAL_URL ?? "",
+  googleClientId: process.env.GOOGLE_CLIENT_ID ?? process.env.VITE_GOOGLE_CLIENT_ID ?? "",
+  googleClientSecret: process.env.GOOGLE_CLIENT_SECRET ?? "",
   ownerOpenId: process.env.OWNER_OPEN_ID ?? "",
   isProduction: IS_PRODUCTION,
   forgeApiUrl: process.env.BUILT_IN_FORGE_API_URL ?? "",
@@ -49,4 +51,5 @@ export const ENV = {
   resendApiKey: process.env.RESEND_API_KEY ?? "",
   emailFrom: process.env.EMAIL_FROM ?? "Bonatto Pizza <onboarding@resend.dev>",
   publicAppUrl: PUBLIC_APP_URL,
+  enablePersistentJobs: process.env.ENABLE_PERSISTENT_JOBS === "true",
 };

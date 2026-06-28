@@ -1,5 +1,6 @@
 import { useState, useCallback, useRef } from "react";
 import { useAuth } from "@/_core/hooks/useAuth";
+import type { inferRouterOutputs } from "@trpc/server";
 import { Redirect } from "wouter";
 import {
   ReactFlow,
@@ -36,11 +37,17 @@ import {
   Gift, Coins, Megaphone, Shuffle, PackageCheck, PackageX, Cake, Trophy, Timer,
 } from "lucide-react";
 import { nodeTypes, edgeTypes } from "@/components/flow/FlowNodes";
+import { AdminStoreProvider, useAdminStore } from "@/contexts/AdminStoreContext";
+import type { AppRouter } from "../../../server/routers";
 
-// ─── Types ───────────────────────────────────────────────────────────────────
+//  Types 
 type StepType = "wait" | "send_whatsapp" | "send_push" | "condition" | "add_tag" | "remove_tag" | "webhook" | "send_coupon" | "update_loyalty" | "send_alert" | "split_ab" | "pause_journey" | "notify_admin";
 type TriggerType = "checkout_abandoned" | "tag_inativo_15" | "tag_inativo_30" | "tag_inativo_60" | "tag_inativo_custom" | "first_order" | "new_user" | "club_subscriber" | "manual" | "order_delivered" | "order_cancelled" | "birthday" | "loyalty_milestone" | "rating_submitted" | "rating_negative" | "club_expiring" | "first_order_month";
 type JourneyStatus = "active" | "paused" | "draft";
+type RouterOutputs = inferRouterOutputs<AppRouter>;
+type ExecutionLogRecord = NonNullable<RouterOutputs["automations"]["getExecutionLogs"]>["logs"][number];
+type JourneyExecutionRecord = RouterOutputs["automations"]["listExecutions"][number];
+type GlobalJourneyMetric = NonNullable<RouterOutputs["automations"]["getGlobalMetrics"]>["topJourneys"][number];
 
 interface JourneyStep {
   id: string;
@@ -113,7 +120,7 @@ const TRIGGER_DESCRIPTIONS: Record<TriggerType, string> = {
   birthday: "Dispara no aniversário do cliente (requer data de nascimento)",
   loyalty_milestone: "Dispara quando cliente atinge 50, 100 ou 200 pontos",
   rating_submitted: "Dispara quando cliente envia uma avaliação",
-  rating_negative: "Dispara quando cliente dá nota ≤3 na avaliação",
+  rating_negative: "Dispara quando cliente dá nota 03 na avaliação",
   club_expiring: "Dispara 3 dias antes do clube expirar",
   first_order_month: "Dispara no primeiro pedido entregue do mês corrente",
   tag_inativo_custom: "Dispara quando cliente fica N dias sem pedir (configurável)",
@@ -139,7 +146,7 @@ const TRIGGER_ICONS: Record<TriggerType, React.ReactNode> = {
   tag_inativo_custom: <Clock className="w-4 h-4" />,
 };
 
-// ─── Trigger color accent per type (Nexus light) ─────────────────────────────
+//  Trigger color accent per type (Nexus light) 
 const TRIGGER_ACCENT: Record<TriggerType, { bg: string; icon: string; border: string }> = {
   checkout_abandoned: { bg: "bg-[#fdf2f2]", icon: "text-[#6E0D12]", border: "border-[#fca5a5]" },
   tag_inativo_15:     { bg: "bg-[#fffbeb]", icon: "text-[#92400e]", border: "border-[#fcd34d]" },
@@ -172,7 +179,7 @@ const STATUS_LABELS: Record<JourneyStatus, string> = {
   draft: "Rascunho",
 };
 
-// ─── Helpers ─────────────────────────────────────────────────────────────────
+//  Helpers 
 function stepsToNodes(steps: JourneyStep[], trigger: TriggerType): Node[] {
   const nodes: Node[] = [
     {
@@ -214,7 +221,7 @@ function nodesToSteps(nodes: Node[]): JourneyStep[] {
     .filter((n) => n.id !== "trigger")
     .sort((a, b) => a.position.y - b.position.y)
     .map((n) => ({ ...(n.data as unknown as JourneyStep), id: n.id }));
-}// ─── Step palette items (Nexus light) ─────────────────────────────────────────────────
+}//  Step palette items (Nexus light) 
 const PALETTE: { type: StepType; label: string; icon: React.ReactNode; group: string }[] = [
   // Mensagens
   { type: "send_whatsapp", label: "WhatsApp",  icon: <MessageCircle className="w-3.5 h-3.5" />, group: "msg" },
@@ -236,12 +243,7 @@ const PALETTE: { type: StepType; label: string; icon: React.ReactNode; group: st
   { type: "wait",         label: "Aguardar",   icon: <Clock className="w-3.5 h-3.5" />,          group: "timing" },
 ];
 
-const PALETTE_GROUP_COLORS: Record<string, string> = {
-  msg:    "text-[#6E0D12] border-[#fca5a5] hover:bg-[#fdf2f2] hover:border-[#6E0D12]",
-  logic:  "text-[#1d4ed8] border-[#93c5fd] hover:bg-[#eff6ff] hover:border-[#1d4ed8]",
-  action: "text-[#15803d] border-[#86efac] hover:bg-[#f0fdf4] hover:border-[#15803d]",
-  timing: "text-[#92400e] border-[#fcd34d] hover:bg-[#fffbeb] hover:border-[#92400e]",
-};// ─── TagSelect ────────────────────────────────────────────────────────────────
+//  TagSelect 
 function TagSelect({ value, onChange }: { value: string; onChange: (v: string) => void }) {
   const { data: customTags } = trpc.crm.listCustomTags.useQuery();
   const tags = customTags ?? [];
@@ -252,7 +254,7 @@ function TagSelect({ value, onChange }: { value: string; onChange: (v: string) =
       </SelectTrigger>
       <SelectContent>
         {tags.length === 0 && (
-          <div className="px-3 py-2 text-xs text-gray-400">Nenhuma tag criada. Crie no CRM → Tags.</div>
+          <div className="px-3 py-2 text-xs text-gray-400">Nenhuma tag criada. Crie no CRM   Tags.</div>
         )}
         {tags.map((t) => (
           <SelectItem key={t.id} value={String(t.id)}>
@@ -267,7 +269,7 @@ function TagSelect({ value, onChange }: { value: string; onChange: (v: string) =
   );
 }
 
-// ─── Node editor panel ────────────────────────────────────────────────────────
+//  Node editor panel 
 function NodeEditor({ node, onSave, onDelete, onClose, journeyId }: {
   node: Node;
   onSave: (id: string, data: Partial<JourneyStep>) => void;
@@ -510,7 +512,7 @@ function NodeEditor({ node, onSave, onDelete, onClose, journeyId }: {
           <div className="grid grid-cols-4 gap-2">
             <div>
               <Label className="text-xs font-bold text-[#6E0D12] uppercase tracking-wider">Emoji</Label>
-              <Input value={form.alertIcon ?? "🔔"} onChange={(e) => set("alertIcon", e.target.value)}
+              <Input value={form.alertIcon ?? "x"} onChange={(e) => set("alertIcon", e.target.value)}
                 className="mt-1 border-[#f9d0d0] text-center text-lg" maxLength={2} />
             </div>
             <div className="col-span-3">
@@ -576,7 +578,7 @@ function NodeEditor({ node, onSave, onDelete, onClose, journeyId }: {
         <>
           <div className="rounded-xl border border-[#fce8e8] bg-[#fdf5f5] px-4 py-3 text-sm text-[#5a0a0f]">
             <p className="font-bold mb-1 flex items-center gap-1.5"><Pause className="w-3.5 h-3.5" /> Pausar esta jornada</p>
-            <p className="text-xs text-gray-500">Quando este passo for executado, a jornada atual será pausada automaticamente para o cliente. Útil como condição de saída após atingir o objetivo.</p>
+            <p className="text-xs text-gray-500">Quando este passo for executado, a jornada atual será pausada automaticamente para o cliente. atil como condição de saída após atingir o objetivo.</p>
           </div>
           <div>
             <Label className="text-xs font-bold text-[#6E0D12] uppercase tracking-wider">Rótulo do passo</Label>
@@ -603,9 +605,9 @@ function NodeEditor({ node, onSave, onDelete, onClose, journeyId }: {
             <Select value={form.adminTaskPriority ?? "normal"} onValueChange={(v) => set("adminTaskPriority", v)}>
               <SelectTrigger className="mt-1 border-[#f9d0d0]"><SelectValue /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="low">🟢 Baixa</SelectItem>
-                <SelectItem value="normal">🟡 Normal</SelectItem>
-                <SelectItem value="high">🔴 Alta</SelectItem>
+                <SelectItem value="low">xx Baixa</SelectItem>
+                <SelectItem value="normal">xx Normal</SelectItem>
+                <SelectItem value="high">x Alta</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -627,9 +629,10 @@ function NodeEditor({ node, onSave, onDelete, onClose, journeyId }: {
   );
 }
 
-// ─── Execution Log Dialog ─────────────────────────────────────────────────────
+//  Execution Log Dialog 
 function ExecutionLogDialog({ execId, onClose }: { execId: number; onClose: () => void }) {
   const { data, isLoading } = trpc.automations.getExecutionLogs.useQuery({ executionId: execId });
+  const logs: ExecutionLogRecord[] = data?.logs ?? [];
   return (
     <Dialog open onOpenChange={onClose}>
       <DialogContent className="max-w-lg">
@@ -662,10 +665,10 @@ function ExecutionLogDialog({ execId, onClose }: { execId: number; onClose: () =
               <span className="text-gray-400 text-xs">Passo {data.currentStep}</span>
             </div>
             <div className="bg-gray-50 rounded-xl border border-gray-100 p-3 max-h-64 overflow-y-auto space-y-1">
-              {data.logs.length === 0 ? (
+              {logs.length === 0 ? (
                 <p className="text-xs text-gray-400">Nenhum log registrado</p>
               ) : (
-                data.logs.map((log, i) => (
+                logs.map((log: ExecutionLogRecord, i: number) => (
                   <div key={i} className="text-xs flex gap-2">
                     <span className="text-gray-400 shrink-0">{new Date(log.at).toLocaleTimeString("pt-BR")}</span>
                     <span className="text-gray-700">{log.msg}</span>
@@ -683,7 +686,7 @@ function ExecutionLogDialog({ execId, onClose }: { execId: number; onClose: () =
   );
 }
 
-// ─── Executions Panel ─────────────────────────────────────────────────────────
+//  Executions Panel 
 function ExecutionsPanel({ journeyId, journeyName }: { journeyId: number; journeyName: string }) {
   const [expanded, setExpanded] = useState(false);
   const [viewLogId, setViewLogId] = useState<number | null>(null);
@@ -692,8 +695,8 @@ function ExecutionsPanel({ journeyId, journeyName }: { journeyId: number; journe
     onSuccess: () => { refetch(); toast.success("Execução cancelada"); },
     onError: (err) => toast.error(`Erro: ${err.message}`),
   });
-  const execs = executions ?? [];
-  const running = execs.filter((e) => e.status === "running").length;
+  const execs: JourneyExecutionRecord[] = executions ?? [];
+  const running = execs.filter((execution: JourneyExecutionRecord) => execution.status === "running").length;
 
   return (
     <div className="rounded-xl border border-[#e8ebf0] overflow-hidden" style={{ background: "#ffffff" }}>
@@ -768,7 +771,7 @@ function ExecutionsPanel({ journeyId, journeyName }: { journeyId: number; journe
       {viewLogId && <ExecutionLogDialog execId={viewLogId} onClose={() => setViewLogId(null)} />}
     </div>
   );
-}// ─── A/B Stats Panel ─────────────────────────────────────────────────────────────────────────────────
+}//  A/B Stats Panel 
 function AbStatsPanel({ journeyId }: { journeyId: number }) {
   const { data: stats } = trpc.automations.getAbStats.useQuery({ journeyId });
   if (!stats || (stats.groupA === 0 && stats.groupB === 0)) return null;
@@ -812,7 +815,7 @@ function AbStatsPanel({ journeyId }: { journeyId: number }) {
   );
 }
 
-// ─── PaletteDropdown ────────────────────────────────────────────────────────────────────────────
+//  PaletteDropdown 
 function PaletteDropdown({
   label, icon, colorClass, items, onAdd,
 }: {
@@ -862,7 +865,7 @@ function PaletteDropdown({
   );
 }
 
-// ─── Flow Editor ─────────────────────────────────────────────────────────────────────────────────
+//  Flow Editor 
 function FlowEditor({ journey, onBack }: {
   journey: { id: number; name: string; trigger: string; steps: JourneyStep[]; status: string };
   onBack: () => void;
@@ -977,7 +980,7 @@ function FlowEditor({ journey, onBack }: {
       backgroundImage: "radial-gradient(circle, #c8cdd6 1px, transparent 1px)",
       backgroundSize: "20px 20px",
     }}>
-      {/* ── Toolbar ── */}
+      {/*  Toolbar  */}
       <div
         className="flex items-center justify-between px-4 py-3 border-b shrink-0"
         style={{
@@ -1010,7 +1013,7 @@ function FlowEditor({ journey, onBack }: {
 
         {/* Right: palette + actions */}
         <div className="flex items-center gap-2">
-          {/* Step palette — grouped dropdowns */}
+          {/* Step palette  grouped dropdowns */}
           <div className="flex gap-1.5">
             {([
               { group: "msg",    label: "Mensagem",  icon: <MessageCircle className="w-3.5 h-3.5" />, color: "text-[#6E0D12] border-[#fca5a5] hover:bg-[#fdf2f2] hover:border-[#6E0D12]" },
@@ -1166,10 +1169,11 @@ function FlowEditor({ journey, onBack }: {
   );
 }
 
-// ─── Journey List (main page) ─────────────────────────────────────────────────
-export default function Automacoes() {
+//  Journey List (main page) 
+function AutomacoesContent() {
   const { user, loading: authLoading } = useAuth();
   const utils = trpc.useUtils();
+  const { selectedStoreId, selectedStoreName, stores, isManager, setSelectedStoreId } = useAdminStore();
 
   if (!authLoading && (!user || user.role !== "admin")) {
     return <Redirect to="/" />;
@@ -1186,8 +1190,9 @@ export default function Automacoes() {
   const [showMetrics, setShowMetrics] = useState(false);
 
   const { data: journeys, isLoading } = trpc.automations.listJourneys.useQuery();
-  const { data: executions } = trpc.automations.listExecutions.useQuery({ journeyId: undefined });
-  const { data: globalMetrics } = trpc.automations.getGlobalMetrics.useQuery();
+  const { data: executions } = trpc.automations.listExecutions.useQuery({ journeyId: undefined, storeId: selectedStoreId });
+  const { data: globalMetrics } = trpc.automations.getGlobalMetrics.useQuery({ storeId: selectedStoreId });
+  const topJourneys: GlobalJourneyMetric[] = globalMetrics?.topJourneys ?? [];
 
   const createMutation = trpc.automations.createJourney.useMutation({
     onSuccess: (data) => {
@@ -1243,7 +1248,7 @@ export default function Automacoes() {
     }}>
       <div className="max-w-5xl mx-auto px-4 py-8">
 
-        {/* ── Page Header ── */}
+        {/*  Page Header  */}
         <div className="flex items-center justify-between mb-8">
           <div className="flex items-center gap-3">
             <div className="p-2.5 bg-[#fdf2f2] border border-[#fca5a5] rounded-xl">
@@ -1258,15 +1263,39 @@ export default function Automacoes() {
               </p>
             </div>
           </div>
-          <button
-            onClick={() => setCreateOpen(true)}
-            className="flex items-center gap-2 px-5 py-2.5 text-sm font-bold text-white rounded-xl bg-[#6E0D12] hover:bg-[#5a0a0f] shadow-sm hover:shadow-md transition-all"
-          >
-            <Plus className="w-4 h-4" /> Nova Jornada
-          </button>
+          <div className="flex items-center gap-2">
+            {isManager ? (
+              <div className="hidden md:flex items-center rounded-xl border border-[#fca5a5] bg-[#fdf2f2] px-3 py-2 text-xs font-semibold text-[#6E0D12]">
+                Loja: {selectedStoreName}
+              </div>
+            ) : (
+              <Select
+                value={selectedStoreId ? String(selectedStoreId) : "all"}
+                onValueChange={(value) => setSelectedStoreId(value === "all" ? undefined : Number(value))}
+              >
+                <SelectTrigger className="w-[220px] bg-white">
+                  <SelectValue placeholder="Todas as lojas" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todas as lojas</SelectItem>
+                  {stores.map((store) => (
+                    <SelectItem key={store.id} value={String(store.id)}>
+                      {store.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+            <button
+              onClick={() => setCreateOpen(true)}
+              className="flex items-center gap-2 px-5 py-2.5 text-sm font-bold text-white rounded-xl bg-[#6E0D12] hover:bg-[#5a0a0f] shadow-sm hover:shadow-md transition-all"
+            >
+              <Plus className="w-4 h-4" /> Nova Jornada
+            </button>
+          </div>
         </div>
 
-        {/* ── Stats ── */}
+        {/*  Stats  */}
         <div className="grid grid-cols-3 gap-4 mb-8">
           {[
             { label: "Jornadas ativas",   value: activeCount,           icon: <Play className="w-5 h-5 text-[#15803d]" />, accent: "bg-[#f0fdf4] border-[#86efac]" },
@@ -1289,7 +1318,7 @@ export default function Automacoes() {
           ))}
         </div>
 
-        {/* ── Métricas Globais ── */}
+        {/*  Métricas Globais  */}
         <div className="mb-6 bg-white border border-[#e8ebf0] rounded-xl overflow-hidden">
           <button
             className="w-full flex items-center justify-between px-5 py-3.5 hover:bg-[#fdf5f5] transition-colors"
@@ -1325,16 +1354,16 @@ export default function Automacoes() {
                   ))}
                 </div>
               )}
-              {globalMetrics && globalMetrics.topJourneys.length > 0 && (
+              {globalMetrics && topJourneys.length > 0 && (
                 <div className="mt-4">
                   <p className="text-xs font-bold text-[#8a92a0] uppercase tracking-wider mb-2">Top jornadas por execuções</p>
                   <div className="space-y-1.5">
-                    {globalMetrics.topJourneys.map((j: { id: number; name: string; executions: number; conversions: number }) => (
-                      <div key={j.id} className="flex items-center justify-between text-sm">
-                        <span className="text-[#1a1d23] font-medium truncate max-w-[200px]">{j.name}</span>
+                    {topJourneys.map((journey: GlobalJourneyMetric) => (
+                      <div key={journey.id} className="flex items-center justify-between text-sm">
+                        <span className="text-[#1a1d23] font-medium truncate max-w-[200px]">{journey.name}</span>
                         <div className="flex items-center gap-3">
-                          <span className="text-[#8a92a0] text-xs">{j.executions} exec.</span>
-                          <span className="text-[11px] px-2 py-0.5 rounded-full border font-semibold bg-[#f0fdf4] text-[#15803d] border-[#86efac]">{j.conversions} conversões</span>
+                          <span className="text-[#8a92a0] text-xs">{Number(journey.executions)} exec.</span>
+                          <span className="text-[11px] px-2 py-0.5 rounded-full border font-semibold bg-[#f0fdf4] text-[#15803d] border-[#86efac]">{Number(journey.conversions)} conversões</span>
                         </div>
                       </div>
                     ))}
@@ -1345,7 +1374,7 @@ export default function Automacoes() {
           )}
         </div>
 
-        {/* ── Info box ── */}
+        {/*  Info box  */}
         <div className="mb-6 p-4 bg-white border border-[#e8ebf0] rounded-xl text-sm text-[#1a1d23]">
           <div className="flex items-start gap-2.5">
             <div className="p-1.5 bg-[#fdf2f2] border border-[#fca5a5] rounded-lg shrink-0 mt-0.5">
@@ -1360,7 +1389,7 @@ export default function Automacoes() {
           </div>
         </div>
 
-        {/* ── Journey list ── */}
+        {/*  Journey list  */}
         {isLoading ? (
           <div className="text-center py-16 text-gray-400 flex items-center justify-center gap-2">
             <Loader2 className="w-5 h-5 animate-spin text-[#6E0D12]" /> Carregando jornadas...
@@ -1430,12 +1459,12 @@ export default function Automacoes() {
                             {j.lastRunAt && (
                               <span className="flex items-center gap-1">
                                 <Clock className="w-3 h-3" />
-                                Última: {new Date(j.lastRunAt).toLocaleDateString("pt-BR")}
+                                altima: {new Date(j.lastRunAt).toLocaleDateString("pt-BR")}
                               </span>
                             )}
                             {j.status === "draft" && (
                               <span className="flex items-center gap-1 text-[#6E0D12] font-medium">
-                                <AlertCircle className="w-3 h-3" /> Rascunho — configure os passos e ative
+                                <AlertCircle className="w-3 h-3" /> Rascunho  configure os passos e ative
                               </span>
                             )}
                           </div>
@@ -1476,7 +1505,7 @@ export default function Automacoes() {
         )}
       </div>
 
-      {/* ── Create Dialog ── */}
+      {/*  Create Dialog  */}
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
         <DialogContent className="max-w-md">
           <DialogHeader>
@@ -1559,3 +1588,12 @@ export default function Automacoes() {
     </div>
   );
 }
+
+export default function Automacoes() {
+  return (
+    <AdminStoreProvider>
+      <AutomacoesContent />
+    </AdminStoreProvider>
+  );
+}
+

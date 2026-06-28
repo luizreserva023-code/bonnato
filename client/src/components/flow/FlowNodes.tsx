@@ -11,11 +11,11 @@ import {
   Trophy, Star as StarIcon, Timer,
 } from "lucide-react";
 
-// ─── Design System: Nexus Dashboard ──────────────────────────────────────────
+//  Design System: Nexus Dashboard 
 // Canvas bg         : #f0f2f5
 // Card bg           : #ffffff
 // Card border       : #e8ebf0  (resting)
-// Card border hover : #6E0D12  (hover — Bonatto accent)
+// Card border hover : #6E0D12  (hover  Bonatto accent)
 // Card border sel   : #6E0D12  (selected)
 // Card shadow       : 0 1px 3px rgba(0,0,0,0.06)
 // Card shadow hover : 0 4px 12px rgba(110,13,18,0.12)
@@ -30,7 +30,7 @@ import {
 //   logic      : #1d4ed8 / #eff6ff
 //   action     : #15803d / #f0fdf4
 //   timing     : #92400e / #fffbeb
-// ─────────────────────────────────────────────────────────────────────────────
+// 
 
 type NodeCategory = "trigger" | "messaging" | "logic" | "action" | "timing";
 
@@ -42,7 +42,7 @@ const CATEGORY_COLORS: Record<NodeCategory, { bg: string; text: string; border: 
   timing:    { bg: "#fffbeb", text: "#92400e", border: "#fcd34d" },
 };
 
-// ─── Sub-components ───────────────────────────────────────────────────────────
+//  Sub-components 
 
 function NodeHandle({ type, position, id, color = "#6E0D12" }: {
   type: "source" | "target";
@@ -204,7 +204,7 @@ function NodeContent({ title, subtitle, badge }: {
   );
 }
 
-// ─── TRIGGER NODE ─────────────────────────────────────────────────────────────
+//  TRIGGER NODE 
 const TRIGGER_ICONS: Record<string, React.ReactNode> = {
   first_order:       <Star size={17} />,
   checkout_abandoned: <ShoppingCart size={17} />,
@@ -228,7 +228,7 @@ const TRIGGER_ICONS: Record<string, React.ReactNode> = {
 const TRIGGER_LABELS: Record<string, string> = {
   first_order:        "Primeiro Pedido",
   checkout_abandoned: "Carrinho Abandonado",
-  new_user:           "Novo Usuário",
+  new_user:           "Novo Usurio",
   manual:             "Disparo Manual",
   tag_inativo_15:     "Inativo 15 dias",
   tag_inativo_30:     "Inativo 30 dias",
@@ -236,13 +236,13 @@ const TRIGGER_LABELS: Record<string, string> = {
   club_subscriber:    "Assinou o Clube",
   order_delivered:    "Pedido Entregue",
   order_cancelled:    "Pedido Cancelado",
-  birthday:           "Aniversário",
+  birthday:           "Aniversrio",
   loyalty_milestone:  "Marco de Pontos",
-  rating_submitted:   "Avaliação Enviada",
-  rating_negative:    "Avaliação Negativa",
+  rating_submitted:   "Avaliao Enviada",
+  rating_negative:    "Avaliao Negativa",
   club_expiring:      "Clube Expirando",
   tag_inativo_custom: "Inativo (personalizado)",
-  first_order_month:  "1º Pedido do Mês",
+  first_order_month:  "1 Pedido do Ms",
 };
 
 export function TriggerNode({ data, selected }: NodeProps) {
@@ -265,13 +265,13 @@ export function TriggerNode({ data, selected }: NodeProps) {
   );
 }
 
-// ─── WAIT NODE ────────────────────────────────────────────────────────────────
+//  WAIT NODE 
 export function WaitNode({ data, selected }: NodeProps) {
   const d = data as { delayMinutes?: number };
   const mins = d.delayMinutes ?? 0;
   const subtitle = mins > 0
     ? mins >= 1440 ? `Aguardar ${Math.round(mins / 1440)}d` : mins >= 60 ? `Aguardar ${Math.round(mins / 60)}h` : `Aguardar ${mins} min`
-    : "Duração não configurada";
+    : "Durao no configurada";
 
   return (
     <div style={{ position: "relative" }}>
@@ -289,7 +289,7 @@ export function WaitNode({ data, selected }: NodeProps) {
   );
 }
 
-// ─── WHATSAPP NODE ────────────────────────────────────────────────────────────
+//  WHATSAPP NODE 
 export function WhatsAppNode({ data, selected }: NodeProps) {
   const d = data as { message?: string };
   const hasMsg = !!d.message;
@@ -301,7 +301,7 @@ export function WhatsAppNode({ data, selected }: NodeProps) {
         <IconBox category="messaging"><MessageCircle size={17} /></IconBox>
         <NodeContent
           title="WhatsApp"
-          subtitle={hasMsg ? d.message!.substring(0, 30) + (d.message!.length > 30 ? "…" : "") : "Mensagem não configurada"}
+          subtitle={hasMsg ? d.message!.substring(0, 30) + (d.message!.length > 30 ? "&" : "") : "Mensagem no configurada"}
           badge={<CategoryBadge label="Mensagem" category="messaging" />}
         />
       </BaseCard>
@@ -309,7 +309,7 @@ export function WhatsAppNode({ data, selected }: NodeProps) {
   );
 }
 
-// ─── PUSH NODE ────────────────────────────────────────────────────────────────
+//  PUSH NODE 
 export function PushNode({ data, selected }: NodeProps) {
   const d = data as { title?: string; message?: string };
   const hasContent = !!d.title;
@@ -321,7 +321,7 @@ export function PushNode({ data, selected }: NodeProps) {
         <IconBox category="messaging"><Bell size={17} /></IconBox>
         <NodeContent
           title="Push"
-          subtitle={hasContent ? d.title! : "Notificação não configurada"}
+          subtitle={hasContent ? d.title! : "Notificao no configurada"}
           badge={<CategoryBadge label="Mensagem" category="messaging" />}
         />
       </BaseCard>
@@ -329,20 +329,20 @@ export function PushNode({ data, selected }: NodeProps) {
   );
 }
 
-// ─── CONDITION NODE ───────────────────────────────────────────────────────────
+//  CONDITION NODE 
 const CONDITION_LABELS: Record<string, string> = {
-  purchased_since_start: "Comprou desde o início",
+  purchased_since_start: "Comprou desde o incio",
   has_tag: "Tem a tag",
-  has_min_orders: "Mín. de pedidos",
-  has_min_points: "Mín. de pontos",
+  has_min_orders: "Mn. de pedidos",
+  has_min_points: "Mn. de pontos",
 };
 
 export function ConditionNode({ data, selected }: NodeProps) {
   const d = data as { condition?: string; conditionTag?: string; conditionValue?: number };
   const hasCondition = !!d.condition;
-  const condLabel = d.condition ? CONDITION_LABELS[d.condition] ?? d.condition : "Não configurada";
+  const condLabel = d.condition ? CONDITION_LABELS[d.condition] ?? d.condition : "No configurada";
   const detail = d.condition === "has_tag" && d.conditionTag ? `: ${d.conditionTag}` :
-    (d.condition === "has_min_orders" || d.condition === "has_min_points") && d.conditionValue != null ? ` ≥ ${d.conditionValue}` : "";
+    (d.condition === "has_min_orders" || d.condition === "has_min_points") && d.conditionValue != null ? ` e ${d.conditionValue}` : "";
 
   return (
     <div style={{ position: "relative" }}>
@@ -362,9 +362,9 @@ export function ConditionNode({ data, selected }: NodeProps) {
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 5, marginBottom: 2 }}>
             <div style={{ fontFamily: "'Poppins', sans-serif", fontWeight: 600, fontSize: 12.5, color: "#1a1d23", flex: 1 }}>
-              Condição
+              Condio
             </div>
-            <CategoryBadge label="Lógica" category="logic" />
+            <CategoryBadge label="Lgica" category="logic" />
           </div>
           <div style={{ fontSize: 10.5, color: "#8a92a0", fontFamily: "'Inter', sans-serif", marginBottom: 5 }}>
             {condLabel}{detail}
@@ -374,7 +374,7 @@ export function ConditionNode({ data, selected }: NodeProps) {
               <CheckCircle2 size={10} /> SIM
             </span>
             <span style={{ display: "flex", alignItems: "center", gap: 3, fontSize: 9.5, color: "#9CA3AF", fontWeight: 700, fontFamily: "'Inter', sans-serif" }}>
-              <XCircle size={10} /> NÃO
+              <XCircle size={10} /> NO
             </span>
           </div>
         </div>
@@ -383,7 +383,7 @@ export function ConditionNode({ data, selected }: NodeProps) {
   );
 }
 
-// ─── ADD TAG NODE ─────────────────────────────────────────────────────────────
+//  ADD TAG NODE 
 export function AddTagNode({ data, selected }: NodeProps) {
   const d = data as { tag?: string };
   return (
@@ -394,15 +394,15 @@ export function AddTagNode({ data, selected }: NodeProps) {
         <IconBox category="action"><Tag size={17} /></IconBox>
         <NodeContent
           title="Adicionar Tag"
-          subtitle={d.tag ?? "Tag não configurada"}
-          badge={<CategoryBadge label="Ação" category="action" />}
+          subtitle={d.tag ?? "Tag no configurada"}
+          badge={<CategoryBadge label="Ao" category="action" />}
         />
       </BaseCard>
     </div>
   );
 }
 
-// ─── REMOVE TAG NODE ──────────────────────────────────────────────────────────
+//  REMOVE TAG NODE 
 export function RemoveTagNode({ data, selected }: NodeProps) {
   const d = data as { tag?: string };
   return (
@@ -413,15 +413,15 @@ export function RemoveTagNode({ data, selected }: NodeProps) {
         <IconBox category="action"><TagIcon size={17} /></IconBox>
         <NodeContent
           title="Remover Tag"
-          subtitle={d.tag ?? "Tag não configurada"}
-          badge={<CategoryBadge label="Ação" category="action" />}
+          subtitle={d.tag ?? "Tag no configurada"}
+          badge={<CategoryBadge label="Ao" category="action" />}
         />
       </BaseCard>
     </div>
   );
 }
 
-// ─── WEBHOOK NODE ─────────────────────────────────────────────────────────────
+//  WEBHOOK NODE 
 export function WebhookNode({ data, selected }: NodeProps) {
   const d = data as { webhookUrl?: string; url?: string };
   const url = d.webhookUrl ?? d.url;
@@ -433,21 +433,21 @@ export function WebhookNode({ data, selected }: NodeProps) {
         <IconBox category="action"><Webhook size={17} /></IconBox>
         <NodeContent
           title="Webhook"
-          subtitle={url ? url.replace(/^https?:\/\//, "").substring(0, 28) + "…" : "URL não configurada"}
-          badge={<CategoryBadge label="Ação" category="action" />}
+          subtitle={url ? url.replace(/^https?:\/\//, "").substring(0, 28) + "&" : "URL no configurada"}
+          badge={<CategoryBadge label="Ao" category="action" />}
         />
       </BaseCard>
     </div>
   );
 }
 
-// ─── SEND COUPON NODE ─────────────────────────────────────────────────────────
+//  SEND COUPON NODE 
 export function SendCouponNode({ data, selected }: NodeProps) {
   const d = data as { couponDiscountType?: string; couponDiscountValue?: number; couponExpiryDays?: number };
   const hasConfig = d.couponDiscountValue != null;
   const subtitle = hasConfig
-    ? `${d.couponDiscountType === "fixed" ? "R$" : ""} ${d.couponDiscountValue}${d.couponDiscountType === "percentage" ? "%" : ""} · ${d.couponExpiryDays ?? 7}d`
-    : "Desconto não configurado";
+    ? `${d.couponDiscountType === "fixed" ? "R$" : ""} ${d.couponDiscountValue}${d.couponDiscountType === "percentage" ? "%" : ""}  ${d.couponExpiryDays ?? 7}d`
+    : "Desconto no configurado";
   return (
     <div style={{ position: "relative" }}>
       <NodeHandle type="target" position={Position.Top} />
@@ -457,21 +457,21 @@ export function SendCouponNode({ data, selected }: NodeProps) {
         <NodeContent
           title="Enviar Cupom"
           subtitle={subtitle}
-          badge={<CategoryBadge label="Ação" category="action" />}
+          badge={<CategoryBadge label="Ao" category="action" />}
         />
       </BaseCard>
     </div>
   );
 }
 
-// ─── UPDATE LOYALTY NODE ──────────────────────────────────────────────────────
+//  UPDATE LOYALTY NODE 
 export function UpdateLoyaltyNode({ data, selected }: NodeProps) {
   const d = data as { loyaltyPoints?: number; loyaltyDescription?: string };
   const pts = d.loyaltyPoints ?? 0;
   const hasConfig = pts !== 0;
   const subtitle = hasConfig
-    ? `${pts > 0 ? "+" : ""}${pts} pontos${d.loyaltyDescription ? ` · ${d.loyaltyDescription.substring(0, 18)}` : ""}`
-    : "Pontos não configurados";
+    ? `${pts > 0 ? "+" : ""}${pts} pontos${d.loyaltyDescription ? `  ${d.loyaltyDescription.substring(0, 18)}` : ""}`
+    : "Pontos no configurados";
   return (
     <div style={{ position: "relative" }}>
       <NodeHandle type="target" position={Position.Top} />
@@ -481,14 +481,14 @@ export function UpdateLoyaltyNode({ data, selected }: NodeProps) {
         <NodeContent
           title="Pontos de Fidelidade"
           subtitle={subtitle}
-          badge={<CategoryBadge label="Ação" category="action" />}
+          badge={<CategoryBadge label="Ao" category="action" />}
         />
       </BaseCard>
     </div>
   );
 }
 
-// ─── SEND ALERT NODE ──────────────────────────────────────────────────────────
+//  SEND ALERT NODE 
 export function SendAlertNode({ data, selected }: NodeProps) {
   const d = data as { alertTitle?: string; alertMessage?: string; alertIcon?: string };
   const hasConfig = !!d.alertTitle;
@@ -499,8 +499,8 @@ export function SendAlertNode({ data, selected }: NodeProps) {
       <BaseCard selected={!!selected} warning={!hasConfig}>
         <IconBox category="messaging"><Megaphone size={17} /></IconBox>
         <NodeContent
-          title={`${d.alertIcon ?? "🔔"} Alerta no App`}
-          subtitle={hasConfig ? d.alertTitle! : "Título não configurado"}
+          title={`${d.alertIcon ?? "="} Alerta no App`}
+          subtitle={hasConfig ? d.alertTitle! : "Ttulo no configurado"}
           badge={<CategoryBadge label="Mensagem" category="messaging" />}
         />
       </BaseCard>
@@ -508,7 +508,7 @@ export function SendAlertNode({ data, selected }: NodeProps) {
   );
 }
 
-// ─── SPLIT A/B NODE ───────────────────────────────────────────────────────────
+//  SPLIT A/B NODE 
 export function SplitAbNode({ data, selected }: NodeProps) {
   const d = data as { messageA?: string; messageB?: string; splitChannel?: string };
   const hasConfig = !!d.messageA && !!d.messageB;
@@ -533,10 +533,10 @@ export function SplitAbNode({ data, selected }: NodeProps) {
             <div style={{ fontFamily: "'Poppins', sans-serif", fontWeight: 600, fontSize: 12.5, color: "#1a1d23", flex: 1 }}>
               Teste A/B
             </div>
-            <CategoryBadge label="Lógica" category="logic" />
+            <CategoryBadge label="Lgica" category="logic" />
           </div>
           <div style={{ fontSize: 10.5, color: "#8a92a0", fontFamily: "'Inter', sans-serif", marginBottom: 5 }}>
-            {hasConfig ? `${channel} · 50% / 50%` : "Mensagens não configuradas"}
+            {hasConfig ? `${channel}  50% / 50%` : "Mensagens no configuradas"}
           </div>
           <div style={{ display: "flex", gap: 10 }}>
             <span style={{ fontSize: 9.5, color: "#6E0D12", fontWeight: 700, fontFamily: "'Inter', sans-serif" }}>GRUPO A</span>
@@ -548,7 +548,7 @@ export function SplitAbNode({ data, selected }: NodeProps) {
   );
 }
 
-// ─── PAUSE JOURNEY NODE ─────────────────────────────────────────────────────────────────────────────────
+//  PAUSE JOURNEY NODE 
 export function PauseJourneyNode({ data, selected }: NodeProps) {
   const d = data as { label?: string };
   return (
@@ -570,12 +570,12 @@ export function PauseJourneyNode({ data, selected }: NodeProps) {
   );
 }
 
-// ─── NOTIFY ADMIN NODE ─────────────────────────────────────────────────────────────────────────────────
+//  NOTIFY ADMIN NODE 
 export function NotifyAdminNode({ data, selected }: NodeProps) {
   const d = data as { adminTaskTitle?: string; adminTaskPriority?: string };
   const hasConfig = !!d.adminTaskTitle;
   const priorityColors: Record<string, string> = { high: "#dc2626", normal: "#92400e", low: "#15803d" };
-  const priorityLabels: Record<string, string> = { high: "🔴 Alta", normal: "🟡 Normal", low: "🟢 Baixa" };
+  const priorityLabels: Record<string, string> = { high: "=4 Alta", normal: "= Normal", low: "= Baixa" };
   const prio = d.adminTaskPriority ?? "normal";
   return (
     <div style={{ position: "relative" }}>
@@ -590,14 +590,14 @@ export function NotifyAdminNode({ data, selected }: NodeProps) {
             <div style={{ fontFamily: "'Poppins', sans-serif", fontWeight: 600, fontSize: 12.5, color: "#1a1d23", flex: 1 }}>
               Tarefa Admin
             </div>
-            <CategoryBadge label="Ação" category="action" />
+            <CategoryBadge label="Ao" category="action" />
           </div>
           <div style={{ fontSize: 10.5, color: "#8a92a0", fontFamily: "'Inter', sans-serif", marginBottom: 4 }}>
-            {hasConfig ? d.adminTaskTitle!.substring(0, 28) + (d.adminTaskTitle!.length > 28 ? "…" : "") : "Tarefa não configurada"}
+            {hasConfig ? d.adminTaskTitle!.substring(0, 28) + (d.adminTaskTitle!.length > 28 ? "&" : "") : "Tarefa no configurada"}
           </div>
           {hasConfig && (
             <span style={{ fontSize: 9.5, fontWeight: 700, color: priorityColors[prio], fontFamily: "'Inter', sans-serif" }}>
-              {priorityLabels[prio] ?? "🟡 Normal"}
+              {priorityLabels[prio] ?? "= Normal"}
             </span>
           )}
         </div>
@@ -606,8 +606,8 @@ export function NotifyAdminNode({ data, selected }: NodeProps) {
   );
 }
 
-// ─── nodeTypes export ─────────────────────────────────────────────────────────────────────────────────
-// ─── Custom Edge: animada + botão × ─────────────────────────────────────────
+//  nodeTypes export 
+//  Custom Edge: animada + boto  
 export function BonattoDeletableEdge({
   id,
   sourceX, sourceY, targetX, targetY,
@@ -624,7 +624,7 @@ export function BonattoDeletableEdge({
 
   return (
     <>
-      {/* Camada de glow — linha mais grossa e transparente por baixo */}
+      {/* Camada de glow  linha mais grossa e transparente por baixo */}
       <BaseEdge
         id={`${id}-glow`}
         path={edgePath}
@@ -634,7 +634,7 @@ export function BonattoDeletableEdge({
           filter: "blur(3px)",
         }}
       />
-      {/* Linha sólida principal */}
+      {/* Linha slida principal */}
       <BaseEdge
         id={id}
         path={edgePath}
@@ -657,7 +657,7 @@ export function BonattoDeletableEdge({
         >
           <button
             onClick={() => onDelete?.(id)}
-            title="Remover conexão"
+            title="Remover conexo"
             style={{
               width: 20,
               height: 20,
@@ -684,7 +684,7 @@ export function BonattoDeletableEdge({
               (e.currentTarget as HTMLButtonElement).style.color = "#6E0D12";
             }}
           >
-            ×
+            
           </button>
         </div>
       </EdgeLabelRenderer>

@@ -113,3 +113,7 @@ load-test-results/
 
 # Manus version file (auto-generated, not part of source)
 client/public/__manus__/version.json
+
+.vercel
+.env*
+vercel.production.env

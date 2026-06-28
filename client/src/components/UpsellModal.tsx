@@ -1,6 +1,6 @@
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { useCart } from "@/contexts/CartContext";
 import { trpc } from "@/lib/trpc";
 import { ShoppingCart, X, Zap, TrendingDown } from "lucide-react";
@@ -106,6 +106,9 @@ export function UpsellModal({ open, onAccept, onDecline, cartProductIds, cartTot
   return (
     <Dialog open={open} onOpenChange={() => handleDecline()}>
       <DialogContent className="max-w-md p-0 overflow-hidden">
+        <DialogDescription className="sr-only">
+          Oferta complementar para aumentar o pedido ou sugerir uma alternativa com desconto.
+        </DialogDescription>
         {/* Colored header */}
         <div className={`p-5 text-white ${headerColor}`}>
           <div className="flex items-center gap-2 mb-1">

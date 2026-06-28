@@ -1,8 +1,9 @@
-import { processJourneyExecutions, processAbandonedCarts, refreshCustomerTags } from "../automation";
-import { cancelStaleUnpaidOrders } from "../db";
-import { sendDailyReport, startDailyReportJob } from "../dailyReport";
-import { pollIfoodEventsOnce, startIfoodPolling } from "../ifood";
-import { processScheduledNotifications } from "../scheduledNotificationJob";
+import { processJourneyExecutions, processAbandonedCarts, refreshCustomerTags } from "../automation.ts";
+import { cancelStaleUnpaidOrders } from "../db.ts";
+import { sendDailyReport, startDailyReportJob } from "../dailyReport.ts";
+import { pollIfoodEventsOnce, startIfoodPolling } from "../ifood.ts";
+import { processScheduledNotifications } from "../scheduledNotificationJob.ts";
+import { ENV } from "./env.ts";
 
 let persistentJobsStarted = false;
 
@@ -49,6 +50,11 @@ export async function runDailyReportDeliveryJob(): Promise<void> {
 
 export function startPersistentBackgroundJobs(): void {
   if (persistentJobsStarted) {
+    return;
+  }
+
+  if (!ENV.enablePersistentJobs) {
+    console.log("[Jobs] Persistent background jobs disabled for this runtime");
     return;
   }
 

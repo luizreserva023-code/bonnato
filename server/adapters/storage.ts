@@ -27,6 +27,10 @@
  *   MINIO_SECRET_KEY=minioadmin
  *   MINIO_BUCKET=bonatto
  *   MINIO_PUBLIC_URL=http://localhost:9000/bonatto
+ *
+ * Para usar Vercel Blob (ideal na Vercel):
+ *   BLOB_READ_WRITE_TOKEN=...   (a Vercel injeta automaticamente)
+ *   STORAGE_PROVIDER=vercel_blob  (opcional; auto-detectado quando o token existe)
  */
 
 export interface StorageResult {
@@ -35,21 +39,56 @@ export interface StorageResult {
   provider: string;
 }
 
+function resolveStorageProvider(): "manus" | "s3" | "r2" | "minio" | "vercel_blob" {
+  const explicit = (process.env.STORAGE_PROVIDER ?? "").trim().toLowerCase();
+  if (explicit === "vercel_blob" || explicit === "vercel-blob") return "vercel_blob";
+  if (explicit === "s3" || explicit === "r2" || explicit === "minio" || explicit === "manus") {
+    return explicit;
+  }
+
+  if (process.env.BLOB_READ_WRITE_TOKEN?.trim()) return "vercel_blob";
+  return "manus";
+}
+
 // ─── Manus built-in ──────────────────────────────────────────────────────────
 async function putManus(
   relKey: string,
   data: Buffer | Uint8Array | string,
   contentType: string
 ): Promise<StorageResult> {
-  const { storagePut } = await import("../storage");
+  const { storagePut } = await import("../storage.ts");
   const result = await storagePut(relKey, data, contentType);
   return { ...result, provider: "manus" };
 }
 
 async function getManus(relKey: string): Promise<StorageResult> {
-  const { storageGet } = await import("../storage");
+  const { storageGet } = await import("../storage.ts");
   const result = await storageGet(relKey);
   return { ...result, provider: "manus" };
+}
+
+// ─── Vercel Blob ──────────────────────────────────────────────────────────────
+async function putVercelBlob(
+  relKey: string,
+  data: Buffer | Uint8Array | string,
+  contentType: string
+): Promise<StorageResult> {
+  const { put } = await import("@vercel/blob");
+  const pathname = relKey.replace(/^\/+/, "");
+  const body = typeof data === "string" ? data : data instanceof Uint8Array ? data : new Uint8Array(data);
+  const blob = await put(pathname, body, {
+    access: "public",
+    addRandomSuffix: true,
+    contentType,
+  });
+  return { key: blob.pathname, url: blob.url, provider: "vercel_blob" };
+}
+
+async function getVercelBlob(relKey: string): Promise<StorageResult> {
+  const { head } = await import("@vercel/blob");
+  const pathname = relKey.replace(/^\/+/, "");
+  const blob = await head(pathname);
+  return { key: blob.pathname, url: blob.url, provider: "vercel_blob" };
 }
 
 // ─── AWS S3 / Cloudflare R2 (mesma API S3-compatible) ───────────────────────
@@ -150,9 +189,11 @@ export async function storagePutAdapter(
   data: Buffer | Uint8Array | string,
   contentType = "application/octet-stream"
 ): Promise<StorageResult> {
-  const provider = (process.env.STORAGE_PROVIDER ?? "manus").toLowerCase();
+  const provider = resolveStorageProvider();
 
   switch (provider) {
+    case "vercel_blob":
+      return putVercelBlob(relKey, data, contentType);
     case "s3":
       return putS3Compatible("s3", relKey, data, contentType);
     case "r2":
@@ -166,9 +207,11 @@ export async function storagePutAdapter(
 }
 
 export async function storageGetAdapter(relKey: string): Promise<StorageResult> {
-  const provider = (process.env.STORAGE_PROVIDER ?? "manus").toLowerCase();
+  const provider = resolveStorageProvider();
 
   switch (provider) {
+    case "vercel_blob":
+      return getVercelBlob(relKey);
     case "s3":
       return getS3Compatible("s3", relKey);
     case "r2":

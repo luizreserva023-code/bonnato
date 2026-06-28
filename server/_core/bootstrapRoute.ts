@@ -1,6 +1,6 @@
 import type { Express } from "express";
 import { z } from "zod";
-import { bootstrapAdminAndDriver } from "../bootstrapAccess";
+import { bootstrapAdminAndDriver } from "../bootstrapAccess.ts";
 
 const bootstrapSchema = z.object({
   adminEmail: z.string().email().optional(),

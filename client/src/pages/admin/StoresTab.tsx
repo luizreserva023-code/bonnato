@@ -1,9 +1,10 @@
 /**
- * StoresTab — aba de gerenciamento de lojas (unidades) no painel admin
+ * StoresTab  aba de gerenciamento de lojas (unidades) no painel admin
  * Tema claro com identidade visual Bonatto (bordô #6E0D12 + branco)
  * v51.0: Adicionada seção de dados fiscais (NFC-e) no modal de edição
  */
 import { useState } from "react";
+import type { inferRouterOutputs } from "@trpc/server";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { Button } from "@/components/ui/button";
@@ -19,6 +20,7 @@ import {
   Search, CheckCircle2, XCircle, FileText, ChevronUp
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import type { AppRouter } from "../../../../server/routers";
 
 interface StoreFormData {
   name: string;
@@ -43,6 +45,10 @@ const emptyForm: StoreFormData = {
   cnpj: "", inscricaoEstadual: "", regimeTributario: "1", csc: "", cscId: "", focusNfeToken: "", nfceEnabled: false,
 };
 
+type RouterOutputs = inferRouterOutputs<AppRouter>;
+type AdminStoreRecord = RouterOutputs["stores"]["listAll"][number];
+type StoreManagerRecord = RouterOutputs["stores"]["getManagers"][number];
+
 function slugify(str: string) {
   return str
     .toLowerCase()
@@ -66,7 +72,7 @@ export function StoresTab() {
   const utils = trpc.useUtils();
   const { user } = useAuth();
   const isAdmin = user?.role === "admin";
-  const { data: stores = [], isLoading } = trpc.stores.listAll.useQuery(undefined, { enabled: isAdmin });
+  const { data: storesData, isLoading } = trpc.stores.listAll.useQuery(undefined, { enabled: isAdmin });
   const createStore = trpc.stores.create.useMutation({
     onSuccess: () => { utils.stores.listAll.invalidate(); toast.success("Loja criada!"); setShowForm(false); setForm(emptyForm); },
     onError: (e) => toast.error(e.message),
@@ -84,7 +90,7 @@ export function StoresTab() {
       utils.stores.getManagers.invalidate();
       toast.success("Gerente adicionado com sucesso!");
       setManagerEmail("");
-      setFoundUser(null);
+      setSearchEmail("");
     },
     onError: (e) => toast.error(e.message),
   });
@@ -99,14 +105,15 @@ export function StoresTab() {
   const [expandedStore, setExpandedStore] = useState<number | null>(null);
   const [managerEmail, setManagerEmail] = useState("");
   const [searchEmail, setSearchEmail] = useState("");
-  const [foundUser, setFoundUser] = useState<{ id: number; name: string | null; email: string | null; role: string } | null | undefined>(undefined);
   const [showFiscal, setShowFiscal] = useState(false);
 
   // Managers da loja expandida
-  const { data: managers = [] } = trpc.stores.getManagers.useQuery(
+  const { data: managersData = [] } = trpc.stores.getManagers.useQuery(
     { storeId: expandedStore! },
     { enabled: expandedStore !== null }
   );
+  const stores: AdminStoreRecord[] = storesData ?? [];
+  const managers: StoreManagerRecord[] = managersData ?? [];
 
   // Buscar usuário por email
   const findUser = trpc.stores.findUserByEmail.useQuery(
@@ -121,7 +128,7 @@ export function StoresTab() {
     setShowForm(true);
   }
 
-  function openEdit(store: typeof stores[0]) {
+  function openEdit(store: AdminStoreRecord) {
     setForm({
       name: store.name,
       slug: store.slug,
@@ -189,7 +196,6 @@ export function StoresTab() {
       return;
     }
     setSearchEmail(managerEmail);
-    setFoundUser(findUser.data);
   }
 
   return (
@@ -265,7 +271,7 @@ export function StoresTab() {
                   <div className="flex items-center gap-4 mt-1.5 flex-wrap">
                     <span className="text-gray-500 text-sm flex items-center gap-1.5">
                       <MapPin className="w-3.5 h-3.5 text-[#6E0D12]" />
-                      {store.city}{store.address ? ` — ${store.address}` : ""}
+                      {store.city}{store.address ? `  ${store.address}` : ""}
                     </span>
                     {store.phone && (
                       <span className="text-gray-500 text-sm flex items-center gap-1.5">
@@ -343,7 +349,6 @@ export function StoresTab() {
                           value={managerEmail}
                           onChange={e => {
                             setManagerEmail(e.target.value);
-                            setFoundUser(undefined);
                           }}
                           onKeyDown={e => e.key === "Enter" && handleSearchUser()}
                           className="pl-9 bg-white border-gray-200 text-gray-900 placeholder:text-gray-400 h-9 text-sm"
@@ -399,7 +404,7 @@ export function StoresTab() {
                     <p className="text-gray-400 text-sm text-center py-2">Nenhum gerente cadastrado nesta unidade</p>
                   ) : (
                     <div className="space-y-2">
-                      {managers.map(m => (
+                      {managers.map((m: StoreManagerRecord) => (
                         <div key={m.id} className="flex items-center justify-between bg-white border border-gray-200 rounded-lg px-3 py-2.5">
                           <div className="flex items-center gap-2.5">
                             <div className="w-8 h-8 rounded-full bg-[#6E0D12]/10 flex items-center justify-center">
@@ -441,7 +446,7 @@ export function StoresTab() {
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-2">
-            {/* ── Dados básicos ── */}
+            {/*  Dados básicos  */}
             <div className="space-y-1.5">
               <Label className="text-gray-700 font-medium">Nome da Loja *</Label>
               <Input
@@ -512,7 +517,7 @@ export function StoresTab() {
               </label>
             </div>
 
-            {/* ── Seção de Dados Fiscais (NFC-e) — colapsável ── */}
+            {/*  Seção de Dados Fiscais (NFC-e)  colapsável  */}
             {editingId && (
               <div className="border border-[#6E0D12]/20 rounded-xl overflow-hidden">
                 <button
@@ -570,7 +575,7 @@ export function StoresTab() {
                           </SelectTrigger>
                           <SelectContent>
                             <SelectItem value="1">Simples Nacional</SelectItem>
-                            <SelectItem value="2">Simples Nacional — Excesso</SelectItem>
+                            <SelectItem value="2">Simples Nacional  Excesso</SelectItem>
                             <SelectItem value="3">Regime Normal (Lucro Real)</SelectItem>
                           </SelectContent>
                         </Select>
@@ -607,7 +612,7 @@ export function StoresTab() {
                         type="password"
                         className="border-gray-200 text-gray-900 font-mono text-xs focus:border-[#6E0D12]"
                       />
-                      <p className="text-gray-400 text-xs">Obtido em app.focusnfe.com.br → Configurações → Token de Acesso</p>
+                      <p className="text-gray-400 text-xs">Obtido em app.focusnfe.com.br   Configurações   Token de Acesso</p>
                     </div>
 
                     <label className="flex items-center gap-3 cursor-pointer p-3 rounded-lg border border-gray-200 hover:border-[#6E0D12]/30 hover:bg-[#fdf5f5] transition-colors">
@@ -648,3 +653,4 @@ export function StoresTab() {
     </div>
   );
 }
+

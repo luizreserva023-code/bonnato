@@ -25,12 +25,14 @@ import {
 // ── Componente de plano ────────────────────────────────────────────────────────
 function PlanCard({
   plan,
+  isPopular,
   selected,
   onSelect,
 }: {
   plan: {
     id: string;
     name: string;
+    badge: string;
     price: number;
     discountPercent: number;
     freeDelivery: boolean;
@@ -38,6 +40,7 @@ function PlanCard({
     description: string;
     benefits: readonly string[];
   };
+  isPopular: boolean;
   selected: boolean;
   onSelect: () => void;
 }) {
@@ -51,10 +54,10 @@ function PlanCard({
           : "border-zinc-700 bg-zinc-900 hover:border-zinc-500"
       }`}
     >
-      {isBonattao && (
+      {isPopular && (
         <div className="absolute -top-3 left-1/2 -translate-x-1/2">
           <Badge className="bg-[#6E0D12] btn-bonatto text-white text-xs px-3 py-1 font-bold">
-            ⭐ MAIS POPULAR
+            {plan.badge.toUpperCase()}
           </Badge>
         </div>
       )}
@@ -202,7 +205,7 @@ function MemberDashboard({
       freeDelivery: boolean;
       freePizzaPerMonth: boolean;
       benefits: readonly string[];
-    };
+    } | null;
   };
 }) {
   const [, navigate] = useLocation();
@@ -216,6 +219,14 @@ function MemberDashboard({
   const isBonattao = myPlan.plan === "bonattao";
   const statusColor = myPlan.status === "active" ? "bg-green-600" : myPlan.status === "pending" ? "bg-yellow-600" : "bg-zinc-600";
   const statusLabel = myPlan.status === "active" ? "Ativo" : myPlan.status === "pending" ? "Aguardando pagamento" : "Cancelado";
+  const planDetails = myPlan.planDetails ?? {
+    name: "Clube do Bonatto",
+    price: 0,
+    discountPercent: 0,
+    freeDelivery: false,
+    freePizzaPerMonth: false,
+    benefits: [],
+  };
 
   return (
     <div className="max-w-2xl mx-auto space-y-5">
@@ -227,7 +238,7 @@ function MemberDashboard({
               {isBonattao ? <Crown className="w-6 h-6 text-white" /> : <Star className="w-6 h-6 text-white" />}
             </div>
             <div>
-              <h3 className="text-white font-black text-xl">Plano {myPlan.planDetails.name}</h3>
+              <h3 className="text-white font-black text-xl">Plano {planDetails.name}</h3>
               <div className="flex items-center gap-2 mt-1">
                 <span className={`text-xs px-2 py-0.5 rounded-full text-white font-medium ${statusColor}`}>
                   {statusLabel}
@@ -236,7 +247,7 @@ function MemberDashboard({
             </div>
           </div>
           <div className="text-right">
-            <p className="text-2xl font-black text-white">R$ {myPlan.planDetails.price.toFixed(2).replace(".", ",")}</p>
+            <p className="text-2xl font-black text-white">R$ {planDetails.price.toFixed(2).replace(".", ",")}</p>
             <p className="text-zinc-400 text-xs">/mês</p>
           </div>
         </div>
@@ -246,13 +257,13 @@ function MemberDashboard({
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <div className="bg-zinc-900 border border-zinc-700 rounded-xl p-4 text-center">
           <Tag className="w-6 h-6 text-[#7d0f14] mx-auto mb-2" />
-          <p className="text-white font-bold text-lg">{myPlan.planDetails.discountPercent}%</p>
+          <p className="text-white font-bold text-lg">{planDetails.discountPercent}%</p>
           <p className="text-zinc-400 text-xs">desconto em pedidos</p>
         </div>
-        <div className={`border rounded-xl p-4 text-center ${myPlan.planDetails.freeDelivery ? "bg-green-950/30 border-green-800" : "bg-zinc-900 border-zinc-700 opacity-50"}`}>
-          <Truck className={`w-6 h-6 mx-auto mb-2 ${myPlan.planDetails.freeDelivery ? "text-green-500" : "text-zinc-600"}`} />
-          <p className={`font-bold text-lg ${myPlan.planDetails.freeDelivery ? "text-white" : "text-zinc-600"}`}>
-            {myPlan.planDetails.freeDelivery ? "Grátis" : "Não incluso"}
+        <div className={`border rounded-xl p-4 text-center ${planDetails.freeDelivery ? "bg-green-950/30 border-green-800" : "bg-zinc-900 border-zinc-700 opacity-50"}`}>
+          <Truck className={`w-6 h-6 mx-auto mb-2 ${planDetails.freeDelivery ? "text-green-500" : "text-zinc-600"}`} />
+          <p className={`font-bold text-lg ${planDetails.freeDelivery ? "text-white" : "text-zinc-600"}`}>
+            {planDetails.freeDelivery ? "Grátis" : "Não incluso"}
           </p>
           <p className="text-zinc-400 text-xs">entrega</p>
         </div>
@@ -342,6 +353,7 @@ export default function Clube() {
   } | null>(null);
 
   const { data: plans, isLoading: plansLoading } = trpc.club.getPlans.useQuery();
+  const { data: clubConfig } = trpc.club.getPublicConfig.useQuery();
   const { data: myPlan, isLoading: myPlanLoading } = trpc.club.getMyPlan.useQuery(
     undefined,
     { enabled: !!user }
@@ -395,7 +407,7 @@ export default function Clube() {
           <div className="text-center mb-8">
             <div className="inline-flex items-center gap-2 bg-[#6E0D12] btn-bonatto/20 border border-[#6E0D12]/40 rounded-full px-4 py-1.5 mb-4">
               <Crown className="w-4 h-4 text-[#a01218]" />
-              <span className="text-[#a01218] text-sm font-medium">Clube do Bonatto</span>
+              <span className="text-[#a01218] text-sm font-medium">{clubConfig?.badgeLabel ?? "Clube do Bonatto"}</span>
             </div>
             <h1 className="text-3xl font-black text-white">Sua Assinatura</h1>
           </div>
@@ -421,25 +433,19 @@ export default function Clube() {
         <div className="text-center mb-12">
           <div className="inline-flex items-center gap-2 bg-[#6E0D12]/30 border border-[#6E0D12]/50 rounded-full px-4 py-1.5 mb-5">
             <Crown className="w-4 h-4 text-[#e63946]" />
-            <span className="text-[#e63946] font-bold text-xs uppercase tracking-widest">Clube do Bonatto</span>
+            <span className="text-[#e63946] font-bold text-xs uppercase tracking-widest">{clubConfig?.badgeLabel ?? "Clube do Bonatto"}</span>
           </div>
           <h1 className="text-4xl md:text-5xl font-black text-white leading-tight mb-4"
             style={{ fontFamily: "'Poppins', sans-serif" }}
           >
-            Assine, economize e
-            <span
-              className="block bg-clip-text text-transparent"
-              style={{ backgroundImage: 'linear-gradient(90deg, #e63946 0%, #ff6b6b 100%)' }}
-            >
-              ganhe pizza todo mês.
-            </span>
+            {clubConfig?.sectionTitle ?? "Assine, economize e ganhe pizza todo mês."}
           </h1>
           <p className="text-zinc-400 text-lg max-w-xl mx-auto">
-            Cliente fiel merece mais. Escolha seu plano, pague via PIX e faça parte do clube.
+            {clubConfig?.sectionSubtitle ?? "Cliente fiel merece mais. Escolha seu plano, pague via PIX e faça parte do clube."}
           </p>
           {/* Mini benefícios */}
           <div className="flex flex-wrap justify-center gap-3 mt-6">
-            {["🍕 Pizza grátis/mês", "🏷️ Até 20% de desconto", "🚚 Entrega grátis (Sócio)", "❌ Cancele quando quiser"].map((b) => (
+            {(clubConfig?.highlightItems ?? ["Pizza grátis mensal", "Até 20% de desconto", "Entrega grátis no plano premium", "Cancele quando quiser"]).map((b) => (
               <span key={b} className="bg-zinc-800 border border-zinc-700 text-zinc-300 text-xs px-3 py-1.5 rounded-full">{b}</span>
             ))}
           </div>
@@ -453,6 +459,7 @@ export default function Clube() {
                 <PlanCard
                   key={plan.id}
                   plan={plan}
+                  isPopular={clubConfig?.popularPlanId === plan.id}
                   selected={selectedPlan === plan.id}
                   onSelect={() => setSelectedPlan(plan.id as "bonattao" | "basico")}
                 />
@@ -469,10 +476,10 @@ export default function Clube() {
                 {subscribeMutation.isPending ? (
                   <><RefreshCw className="w-5 h-5 mr-2 animate-spin" /> Gerando PIX...</>
                 ) : (
-                  <><Crown className="w-5 h-5 mr-2" /> Assinar Agora via PIX</>
+                  <><Crown className="w-5 h-5 mr-2" /> {clubConfig?.ctaLabel ?? "Assinar agora via PIX"}</>
                 )}
               </Button>
-              <p className="text-zinc-500 text-xs mt-3">Pagamento 100% seguro via PIX • Cancele quando quiser</p>
+              <p className="text-zinc-500 text-xs mt-3">{clubConfig?.disclaimer ?? "Pagamento 100% seguro via PIX • Cancele quando quiser"}</p>
             </div>
           </>
         )}
@@ -493,9 +500,9 @@ export default function Clube() {
             <div className="w-20 h-20 bg-green-600/20 rounded-full flex items-center justify-center mx-auto mb-6">
               <CheckCircle2 className="w-10 h-10 text-green-500" />
             </div>
-            <h2 className="text-3xl font-black text-white mb-3">Bem-vindo ao Clube! 🎉</h2>
+            <h2 className="text-3xl font-black text-white mb-3">{clubConfig?.successTitle ?? "Bem-vindo ao Clube!"}</h2>
             <p className="text-zinc-400 mb-8">
-              Seu plano foi ativado. Aproveite todos os benefícios exclusivos do Clube do Bonatto!
+              {clubConfig?.successSubtitle ?? "Seu plano foi ativado. Aproveite todos os benefícios exclusivos do Clube do Bonatto!"}
             </p>
             <Button
               onClick={() => navigate("/cardapio")}

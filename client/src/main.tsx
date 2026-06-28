@@ -1,21 +1,18 @@
 import { trpc } from "@/lib/trpc";
-import { UNAUTHED_ERR_MSG } from '@shared/const';
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { httpBatchLink, TRPCClientError } from "@trpc/client";
 import { createRoot } from "react-dom/client";
 import superjson from "superjson";
 import { toast } from "sonner";
 import App from "./App";
-import { getLoginUrl } from "./const";
-import { StoreProvider } from "./contexts/StoreContext";
 import { CitySelectModal } from "./components/CitySelectModal";
+import { StoreProvider } from "./contexts/StoreContext";
+import { logApiError, redirectToLoginIfUnauthorized, shouldToastGlobalApiError } from "./shared/lib/api-error-handling";
 import "./index.css";
 
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      // Evita rajadas de refetch em foco de janela somadas a polling manual
-      // das telas Admin (`refetchInterval`). Cada tela pode sobrescrever.
       staleTime: 30_000,
       refetchOnWindowFocus: false,
       retry: (failureCount, error) => {
@@ -31,45 +28,27 @@ const queryClient = new QueryClient({
   },
 });
 
-const redirectToLoginIfUnauthorized = (error: unknown) => {
-  if (!(error instanceof TRPCClientError)) return;
-  if (typeof window === "undefined") return;
-
-  const isUnauthorized =
-    error.message === UNAUTHED_ERR_MSG ||
-    (error.data as { code?: string } | undefined)?.code === "UNAUTHORIZED";
-
-  if (!isUnauthorized) return;
-
-  window.location.href = getLoginUrl();
-};
-
 const showFriendlyErrorToast = (error: unknown, source: "Query" | "Mutation") => {
-  if (!(error instanceof TRPCClientError)) return;
-  const code = (error.data as { code?: string } | undefined)?.code;
-  // Não exibir toast para estados de auth/permissão — o fluxo já redireciona ou
-  // os próprios componentes tratam. Evita spam em carregamentos iniciais.
-  if (code === "UNAUTHORIZED" || code === "FORBIDDEN") return;
-  if (source === "Query") return; // queries silenciosas; apenas mutations exibem toast
-  const message = error.message || "Algo deu errado. Tente novamente.";
+  if (!shouldToastGlobalApiError(error, source)) return;
+  const message = error instanceof TRPCClientError ? error.message : "Algo deu errado. Tente novamente.";
   toast.error(message);
 };
 
-queryClient.getQueryCache().subscribe(event => {
+queryClient.getQueryCache().subscribe((event) => {
   if (event.type === "updated" && event.action.type === "error") {
     const error = event.query.state.error;
     redirectToLoginIfUnauthorized(error);
     showFriendlyErrorToast(error, "Query");
-    console.error("[API Query Error]", error);
+    logApiError(error, "Query");
   }
 });
 
-queryClient.getMutationCache().subscribe(event => {
+queryClient.getMutationCache().subscribe((event) => {
   if (event.type === "updated" && event.action.type === "error") {
     const error = event.mutation.state.error;
     redirectToLoginIfUnauthorized(error);
     showFriendlyErrorToast(error, "Mutation");
-    console.error("[API Mutation Error]", error);
+    logApiError(error, "Mutation");
   }
 });
 
@@ -110,5 +89,5 @@ createRoot(document.getElementById("root")!).render(
         <CitySelectModal />
       </StoreProvider>
     </QueryClientProvider>
-  </trpc.Provider>
+  </trpc.Provider>,
 );

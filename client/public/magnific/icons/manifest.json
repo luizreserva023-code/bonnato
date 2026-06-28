@@ -1,0 +1,37 @@
+[
+  {
+    "id": "pizza-category",
+    "label": "Pizza Category",
+    "term": "pizza slice outline premium app icon",
+    "src": null,
+    "fallbackIconKey": "pizza"
+  },
+  {
+    "id": "delivery-tracking",
+    "label": "Delivery Tracking",
+    "term": "delivery scooter route modern outline icon",
+    "src": null,
+    "fallbackIconKey": "drink"
+  },
+  {
+    "id": "loyalty-club",
+    "label": "Loyalty Club",
+    "term": "crown reward premium loyalty icon",
+    "src": null,
+    "fallbackIconKey": "featured"
+  },
+  {
+    "id": "checkout-fast",
+    "label": "Checkout Fast",
+    "term": "credit card lightning checkout icon",
+    "src": null,
+    "fallbackIconKey": "combo"
+  },
+  {
+    "id": "support-chat",
+    "label": "Support Chat",
+    "term": "chat bubble concierge modern icon",
+    "src": null,
+    "fallbackIconKey": "menu"
+  }
+]

@@ -1,29 +1,15 @@
-/**
- * Router de Lojas (Unidades) — Multi-tenant
- * - stores.list: público — lista lojas ativas para seleção de cidade
- * - stores.getBySlug: público — detalhes de uma loja pelo slug
- * - stores.create: admin — criar nova unidade
- * - stores.update: admin — editar unidade
- * - stores.delete: admin — desativar unidade
- * - stores.addManager: admin — promover usuário a gerente de uma loja
- * - stores.removeManager: admin — remover gerente de uma loja
- * - stores.getManagers: admin — listar gerentes de uma loja
- * - stores.myStore: manager — retorna a loja do gerente logado
- */
-
 import { z } from "zod";
-import { adminProcedure, publicProcedure, staffProcedure, router } from "../_core/trpc";
-import { getDb } from "../db";
-import { stores, storeManagers, users } from "../../drizzle/schema";
+import { adminProcedure, publicProcedure, staffProcedure, router } from "../_core/trpc.ts";
+import { getDb } from "../db.ts";
+import { stores, storeManagers, users, staffMembers, drivers, diningTables } from "../../drizzle/schema.ts";
 import { eq, and, desc } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 
 export const storesRouter = router({
-  // Lista lojas ativas (público — para seleção de cidade na Home)
   list: publicProcedure.query(async () => {
     const db = await getDb();
     if (!db) return [];
-    const rows = await db
+    return db
       .select({
         id: stores.id,
         name: stores.name,
@@ -36,10 +22,8 @@ export const storesRouter = router({
       .from(stores)
       .where(eq(stores.active, true))
       .orderBy(desc(stores.isDefault), stores.city);
-    return rows;
   }),
 
-  // Detalhes de uma loja pelo slug (público)
   getBySlug: publicProcedure
     .input(z.object({ slug: z.string() }))
     .query(async ({ input }) => {
@@ -50,26 +34,20 @@ export const storesRouter = router({
         .from(stores)
         .where(and(eq(stores.slug, input.slug), eq(stores.active, true)))
         .limit(1);
-      if (!store) throw new TRPCError({ code: "NOT_FOUND", message: "Loja não encontrada" });
+      if (!store) throw new TRPCError({ code: "NOT_FOUND", message: "Loja nao encontrada" });
       return store;
     }),
 
-  // Lista todas as lojas para o admin (incluindo inativas)
   listAll: adminProcedure.query(async () => {
     const db = await getDb();
     if (!db) return [];
-    const rows = await db
-      .select()
-      .from(stores)
-      .orderBy(desc(stores.isDefault), stores.city);
-    return rows;
+    return db.select().from(stores).orderBy(desc(stores.isDefault), stores.city);
   }),
 
-  // Criar nova loja
   create: adminProcedure
     .input(z.object({
       name: z.string().min(2).max(200),
-      slug: z.string().min(2).max(100).regex(/^[a-z0-9-]+$/, "Slug deve conter apenas letras minúsculas, números e hífens"),
+      slug: z.string().min(2).max(100).regex(/^[a-z0-9-]+$/, "Slug deve conter apenas letras minusculas, numeros e hifens"),
       city: z.string().min(2).max(100),
       address: z.string().max(500).optional(),
       phone: z.string().max(20).optional(),
@@ -79,7 +57,6 @@ export const storesRouter = router({
     .mutation(async ({ input }) => {
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
-      // Se isDefault, remover default das outras
       if (input.isDefault) {
         await db.update(stores).set({ isDefault: false });
       }
@@ -95,7 +72,6 @@ export const storesRouter = router({
       return { id: (result as any).insertId, ...input };
     }),
 
-  // Editar loja
   update: adminProcedure
     .input(z.object({
       id: z.number(),
@@ -106,7 +82,6 @@ export const storesRouter = router({
       phone: z.string().max(20).optional(),
       active: z.boolean().optional(),
       isDefault: z.boolean().optional(),
-      // Dados fiscais para NFC-e
       cnpj: z.string().max(18).optional().nullable(),
       inscricaoEstadual: z.string().max(30).optional().nullable(),
       regimeTributario: z.number().int().min(1).max(3).optional().nullable(),
@@ -126,17 +101,23 @@ export const storesRouter = router({
       return { success: true };
     }),
 
-  // Desativar loja (soft delete)
   delete: adminProcedure
     .input(z.object({ id: z.number() }))
     .mutation(async ({ input }) => {
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+      const [store] = await db.select().from(stores).where(eq(stores.id, input.id)).limit(1);
+      if (!store) throw new TRPCError({ code: "NOT_FOUND", message: "Loja nao encontrada" });
+      if (store.isDefault) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "Defina outra loja padrao antes de desativar esta unidade." });
+      }
       await db.update(stores).set({ active: false }).where(eq(stores.id, input.id));
+      await db.update(staffMembers).set({ active: false }).where(eq(staffMembers.storeId, input.id));
+      await db.update(drivers).set({ active: false }).where(eq(drivers.storeId, input.id));
+      await db.update(diningTables).set({ active: false, status: "free" }).where(eq(diningTables.storeId, input.id));
       return { success: true };
     }),
 
-  // Adicionar gerente a uma loja
   addManager: adminProcedure
     .input(z.object({
       storeId: z.number(),
@@ -145,28 +126,24 @@ export const storesRouter = router({
     .mutation(async ({ input }) => {
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
-      // Verificar se usuário existe
       const [user] = await db.select().from(users).where(eq(users.id, input.userId)).limit(1);
-      if (!user) throw new TRPCError({ code: "NOT_FOUND", message: "Usuário não encontrado" });
+      if (!user) throw new TRPCError({ code: "NOT_FOUND", message: "Usuario nao encontrado" });
 
-      // Promover para manager se ainda não for admin
       if (user.role === "user") {
         await db.update(users).set({ role: "manager" }).where(eq(users.id, input.userId));
       }
 
-      // Inserir associação (ignorar se já existir)
       try {
         await db.insert(storeManagers).values({
           storeId: input.storeId,
           userId: input.userId,
         });
       } catch {
-        // unique constraint — já é gerente desta loja
+        // ignore duplicate
       }
       return { success: true };
     }),
 
-  // Remover gerente de uma loja
   removeManager: adminProcedure
     .input(z.object({
       storeId: z.number(),
@@ -175,28 +152,20 @@ export const storesRouter = router({
     .mutation(async ({ input }) => {
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
-      await db.delete(storeManagers).where(
-        and(eq(storeManagers.storeId, input.storeId), eq(storeManagers.userId, input.userId))
-      );
-      // Verificar se ainda gerencia outras lojas; se não, rebaixar para user
-      const remaining = await db
-        .select()
-        .from(storeManagers)
-        .where(eq(storeManagers.userId, input.userId))
-        .limit(1);
+      await db.delete(storeManagers).where(and(eq(storeManagers.storeId, input.storeId), eq(storeManagers.userId, input.userId)));
+      const remaining = await db.select().from(storeManagers).where(eq(storeManagers.userId, input.userId)).limit(1);
       if (remaining.length === 0) {
         await db.update(users).set({ role: "user" }).where(eq(users.id, input.userId));
       }
       return { success: true };
     }),
 
-  // Listar gerentes de uma loja
   getManagers: adminProcedure
     .input(z.object({ storeId: z.number() }))
     .query(async ({ input }) => {
       const db = await getDb();
       if (!db) return [];
-      const rows = await db
+      return db
         .select({
           id: storeManagers.id,
           userId: storeManagers.userId,
@@ -210,10 +179,8 @@ export const storesRouter = router({
         .from(storeManagers)
         .innerJoin(users, eq(storeManagers.userId, users.id))
         .where(eq(storeManagers.storeId, input.storeId));
-      return rows;
     }),
 
-  // Buscar usuário por email (para adicionar como gerente)
   findUserByEmail: adminProcedure
     .input(z.object({ email: z.string().email() }))
     .query(async ({ input }) => {
@@ -227,9 +194,8 @@ export const storesRouter = router({
       return user ?? null;
     }),
 
-  // Retorna a loja do gerente logado (para managers)
   myStore: staffProcedure.query(async ({ ctx }) => {
-    if (ctx.isOwner) return null; // admin vê tudo, não tem "minha loja"
+    if (ctx.isOwner) return null;
     const db = await getDb();
     if (!db) return null;
     const [row] = await db

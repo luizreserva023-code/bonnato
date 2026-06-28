@@ -8,8 +8,8 @@
  * A NFC-e é processada de forma SÍNCRONA — a resposta já informa se foi autorizada.
  */
 
-import { getDb } from "./db";
-import { orders, stores, orderItems } from "../drizzle/schema";
+import { getDb } from "./db.ts";
+import { orders, stores, orderItems } from "../drizzle/schema.ts";
 import { eq } from "drizzle-orm";
 
 // ---------------------------------------------------------------------------

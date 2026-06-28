@@ -5,7 +5,7 @@
  * - Registro e recuperação de carrinhos abandonados
  */
 
-import { getDb } from "./db";
+import { getDb } from "./db.ts";
 import {
   customerTags,
   abandonedCarts,
@@ -20,11 +20,11 @@ import {
   loyaltyTransactions,
   clientAlerts,
   clientNotifications,
-} from "../drizzle/schema";
+} from "../drizzle/schema.ts";
 import { eq, and, lt, gte, sql, inArray, isNull, or } from "drizzle-orm";
-import { sendWhatsApp } from "./whatsapp";
-import { sendPushToUser } from "./push";
-import { pickRandomTemplate } from "./db";
+import { sendWhatsApp } from "./whatsapp.ts";
+import { sendPushToUser } from "./push.ts";
+import { pickRandomTemplate } from "./db.ts";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -713,7 +713,7 @@ async function processExecution(exec: typeof journeyExecutions.$inferSelect): Pr
       const taskTitle = step.adminTaskTitle ?? "Ação manual necessária";
       const taskMsg = step.adminTaskMessage ?? `Cliente ${exec.userId} requer atenção (jornada #${exec.journeyId})`;
       // Notificar via sistema de notificações do owner
-      const { notifyOwner } = await import("./_core/notification");
+      const { notifyOwner } = await import("./_core/notification.ts");
       await notifyOwner({ title: taskTitle, content: taskMsg });
       // Registrar no log da execução
       await db

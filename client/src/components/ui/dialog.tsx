@@ -99,6 +99,7 @@ function DialogContent({
   showCloseButton?: boolean;
 }) {
   const { isComposing } = useDialogComposition();
+  const ariaDescribedBy = props["aria-describedby"] ?? undefined;
 
   const handleEscapeKeyDown = React.useCallback(
     (e: KeyboardEvent) => {
@@ -129,6 +130,7 @@ function DialogContent({
         )}
         onEscapeKeyDown={handleEscapeKeyDown}
         {...props}
+        aria-describedby={ariaDescribedBy}
       >
         {children}
         {showCloseButton && (
@@ -206,4 +208,3 @@ export {
   DialogTitle,
   DialogTrigger
 };
-

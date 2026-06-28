@@ -6,13 +6,13 @@ import { useAuth } from "@/_core/hooks/useAuth";
 import { useLocation } from "wouter";
 import { Clock, Minus, MessageSquare, Plus, ShoppingCart, Trash2, LogIn, X } from "lucide-react";
 import { toast } from "sonner";
-import { useState, useMemo } from "react";
+import { useState } from "react";
 
 export function CartDrawer() {
   const { items, isOpen, setIsOpen, removeItem, updateQuantity, updateNotes, itemCount, subtotal } = useCart();
   const { isAuthenticated, loading: authLoading } = useAuth();
   const [, navigate] = useLocation();
-  const [expandedNotes, setExpandedNotes] = useState<Record<number, boolean>>({});
+  const [expandedNotes, setExpandedNotes] = useState<Record<string, boolean>>({});
 
 
 
@@ -32,8 +32,8 @@ export function CartDrawer() {
     navigate("/checkout");
   };
 
-  const toggleNotes = (productId: number) => {
-    setExpandedNotes((prev) => ({ ...prev, [productId]: !prev[productId] }));
+  const toggleNotes = (itemKey: string) => {
+    setExpandedNotes((prev) => ({ ...prev, [itemKey]: !prev[itemKey] }));
   };
 
   return (
@@ -69,8 +69,10 @@ export function CartDrawer() {
             </div>
 
             <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
-              {items.map((item) => (
-                <div key={item.productId} className="space-y-2">
+              {items.map((item) => {
+                const itemKey = item.lineId ?? String(item.productId);
+                return (
+                <div key={itemKey} className="space-y-2">
                   <div className="flex gap-3">
                     <div className="flex-1 min-w-0">
                       <p className="font-medium text-sm leading-tight">{item.productName}</p>
@@ -78,30 +80,30 @@ export function CartDrawer() {
                         R$ {(parseFloat(item.productPrice) * item.quantity).toFixed(2).replace(".", ",")}
                       </p>
                       <button
-                        onClick={() => toggleNotes(item.productId)}
+                        onClick={() => toggleNotes(itemKey)}
                         className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground mt-1 transition-colors"
                       >
                         <MessageSquare className="w-3 h-3" />
-                        {expandedNotes[item.productId] ? "Ocultar obs." : item.notes ? "Ver obs." : "Adicionar obs."}
+                        {expandedNotes[itemKey] ? "Ocultar obs." : item.notes ? "Ver obs." : "Adicionar obs."}
                       </button>
                     </div>
                     <div className="flex flex-col items-end gap-2">
                       <button
-                        onClick={() => removeItem(item.productId)}
+                        onClick={() => removeItem(itemKey)}
                         className="text-muted-foreground hover:text-destructive transition-colors"
                       >
                         <Trash2 className="w-4 h-4" />
                       </button>
                       <div className="flex items-center gap-1 border rounded-lg overflow-hidden">
                         <button
-                          onClick={() => updateQuantity(item.productId, item.quantity - 1)}
+                          onClick={() => updateQuantity(itemKey, item.quantity - 1)}
                           className="w-7 h-7 flex items-center justify-center hover:bg-muted transition-colors"
                         >
                           <Minus className="w-3 h-3" />
                         </button>
                         <span className="w-6 text-center text-sm font-medium">{item.quantity}</span>
                         <button
-                          onClick={() => updateQuantity(item.productId, item.quantity + 1)}
+                          onClick={() => updateQuantity(itemKey, item.quantity + 1)}
                           className="w-7 h-7 flex items-center justify-center hover:bg-muted transition-colors"
                         >
                           <Plus className="w-3 h-3" />
@@ -111,18 +113,18 @@ export function CartDrawer() {
                   </div>
 
                   {/* Observação inline expansível */}
-                  {expandedNotes[item.productId] && (
+                  {expandedNotes[itemKey] && (
                     <div className="relative">
                       <textarea
                         value={item.notes ?? ""}
-                        onChange={(e) => updateNotes(item.productId, e.target.value)}
+                        onChange={(e) => updateNotes(itemKey, e.target.value)}
                         placeholder="Ex: sem cebola, massa fina, borda recheada..."
                         rows={2}
                         className="w-full text-xs border rounded-lg px-3 py-2 resize-none bg-muted/40 focus:outline-none focus:ring-1 focus:ring-primary pr-8"
                       />
                       {item.notes && (
                         <button
-                          onClick={() => updateNotes(item.productId, "")}
+                          onClick={() => updateNotes(itemKey, "")}
                           className="absolute top-2 right-2 text-muted-foreground hover:text-foreground"
                         >
                           <X className="w-3 h-3" />
@@ -131,7 +133,8 @@ export function CartDrawer() {
                     </div>
                   )}
                 </div>
-              ))}
+                );
+              })}
             </div>
 
             <div className="border-t px-6 py-4 space-y-3 bg-background">

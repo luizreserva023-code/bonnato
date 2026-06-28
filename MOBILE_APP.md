@@ -1,29 +1,29 @@
 # Bonatto Pizza Mobile
 
-Este projeto agora está preparado para operar em três camadas:
+Este projeto esta preparado para operar em tres camadas:
 
-1. Web/PWA para aquisição e retenção.
+1. Web/PWA para aquisicao e retencao.
 2. Shell nativa com Capacitor para iOS e Android.
-3. Backend publicado separadamente para atender o app em produção.
+3. Backend publicado separadamente para atender o app em producao.
 
 ## Stack mobile
 
-- `Capacitor` para empacotar a experiência web como app nativo.
+- `Capacitor` para empacotar a experiencia web como app nativo.
 - `VITE_API_BASE_URL` para apontar o app nativo para uma API publicada.
-- `scripts/generate-mobile-assets.mjs` para gerar ícones e splash a partir da marca.
-- `scripts/fetch-magnific-icons.mjs` para baixar ícones do Magnific quando houver `MAGNIFIC_API_KEY`.
+- `scripts/generate-mobile-assets.mjs` para gerar icones e splash a partir da marca.
+- `scripts/fetch-magnific-icons.mjs` para sincronizar icones, imagens de categoria e presets de avatar via Magnific.
 
-## Variáveis importantes
+## Variaveis importantes
 
-Crie um `.env` de produção com pelo menos:
+Crie um `.env` de producao com pelo menos:
 
 ```bash
 VITE_API_BASE_URL=https://api.seudominio.com
-MAGNIFIC_API_KEY=opcional-se-for-baixar-icones
+MAGNIFIC_API_KEY=opcional-se-for-baixar-assets-premium
 ```
 
 Sem `VITE_API_BASE_URL`, o app web continua funcionando com caminhos relativos.
-Para `Capacitor`, a API publicada é obrigatória.
+Para `Capacitor`, a API publicada e obrigatoria.
 
 ## Fluxo recomendado
 
@@ -41,18 +41,24 @@ Depois:
 
 ## Magnific
 
-Para puxar ícones premium da API do Magnific:
+Para puxar assets premium da API do Magnific:
 
 ```bash
 npm run mobile:magnific
 ```
 
-Os arquivos serão salvos em `client/public/magnific-icons/`.
+O script salva manifestos em:
 
-## Publicação para 40k+ usuários/mês
+- `client/public/magnific/icons/manifest.json`
+- `client/public/magnific/category-images/manifest.json`
+- `client/public/magnific/avatar-presets/manifest.json`
+
+Se `MAGNIFIC_API_KEY` nao estiver configurada, o script gera manifestos fallback com imagens locais e avatares cartoon prontos para o app continuar funcionando.
+
+## Publicacao para 40k+ usuarios/mes
 
 - Hospedar API e banco fora do app nativo.
-- Colocar imagens estáticas atrás de CDN.
-- Usar banco gerenciado e fila para notificações/push.
+- Colocar imagens estaticas atras de CDN.
+- Usar banco gerenciado e fila para notificacoes/push.
 - Monitorar erros de cliente e backend.
-- Separar ambiente staging e produção antes de publicar nas lojas.
+- Separar ambiente staging e producao antes de publicar nas lojas.

@@ -1,8 +1,8 @@
 import webpush from "web-push";
-import { getDb } from "./db";
-import { pushSubscriptions, driverPushSubscriptions } from "../drizzle/schema";
+import { getDb } from "./db.ts";
+import { pushSubscriptions, driverPushSubscriptions } from "../drizzle/schema.ts";
 import { eq, and } from "drizzle-orm";
-import type { PushSubscription as PushSubRow, DriverPushSubscription as DriverPushSubRow } from "../drizzle/schema";
+import type { PushSubscription as PushSubRow, DriverPushSubscription as DriverPushSubRow } from "../drizzle/schema.ts";
 
 // Configurar VAPID com as chaves do ambiente (graceful: não travar se chaves ausentes)
 const vapidPublicKey = process.env.VAPID_PUBLIC_KEY ?? "";
@@ -24,6 +24,7 @@ export interface PushPayload {
   badge?: string;
   url?: string;
   tag?: string;
+  soundUrl?: string;
 }
 
 /**
@@ -46,7 +47,7 @@ export async function sendPushToUser(userId: number, payload: PushPayload): Prom
       try {
         await webpush.sendNotification(
           { endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } },
-          JSON.stringify({ title: payload.title, body: payload.body, icon, badge, url: payload.url ?? "/", tag: payload.tag })
+          JSON.stringify({ title: payload.title, body: payload.body, icon, badge, url: payload.url ?? "/", tag: payload.tag, soundUrl: payload.soundUrl })
         );
       } catch (err: any) {
         // 410 Gone ou 404 = subscription expirada, remover
@@ -64,7 +65,7 @@ export async function sendPushToUser(userId: number, payload: PushPayload): Prom
 export async function sendPushToAdmins(payload: PushPayload): Promise<void> {
   const db = await getDb();
   if (!db) return;
-  const { users } = await import("../drizzle/schema");
+  const { users } = await import("../drizzle/schema.ts");
   const adminUsers = await db
     .select({ id: users.id })
     .from(users)
@@ -130,7 +131,7 @@ export async function sendPushToAllUsers(
       try {
         await webpush.sendNotification(
           { endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } },
-          JSON.stringify({ title: payload.title, body: payload.body, icon, badge, url: payload.url ?? "/", tag: payload.tag })
+          JSON.stringify({ title: payload.title, body: payload.body, icon, badge, url: payload.url ?? "/", tag: payload.tag, soundUrl: payload.soundUrl })
         );
         sent++;
       } catch (err: any) {
@@ -162,7 +163,7 @@ export async function sendPushToDriver(driverId: number, payload: PushPayload): 
       try {
         await webpush.sendNotification(
           { endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } },
-          JSON.stringify({ title: payload.title, body: payload.body, icon, badge, url: payload.url ?? "/motoboy", tag: payload.tag })
+          JSON.stringify({ title: payload.title, body: payload.body, icon, badge, url: payload.url ?? "/motoboy", tag: payload.tag, soundUrl: payload.soundUrl })
         );
       } catch (err: any) {
         if (err?.statusCode === 410 || err?.statusCode === 404) {

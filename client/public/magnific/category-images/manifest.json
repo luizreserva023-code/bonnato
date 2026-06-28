@@ -1,0 +1,76 @@
+[
+  {
+    "id": "pizzas-premium",
+    "label": "Pizzas Premium",
+    "term": "artisan pizza close up premium food photo",
+    "src": "/brand/pizza-1-margherita.jpg",
+    "categoryKeys": [
+      "pizza",
+      "pizzas"
+    ]
+  },
+  {
+    "id": "calzones-premium",
+    "label": "Calzones Premium",
+    "term": "golden baked calzone premium food photo",
+    "src": "/brand/pizza-14.png",
+    "categoryKeys": [
+      "calzone",
+      "calzones",
+      "lanche",
+      "lanches"
+    ]
+  },
+  {
+    "id": "massas-premium",
+    "label": "Massas Premium",
+    "term": "lasagna premium italian food photo",
+    "src": "/brand/pizza-15.jpg",
+    "categoryKeys": [
+      "massa",
+      "massas",
+      "lasanha",
+      "lasanhas",
+      "pasta"
+    ]
+  },
+  {
+    "id": "bebidas-premium",
+    "label": "Bebidas Premium",
+    "term": "sparkling soda premium product photo",
+    "src": "/brand/pizza-8.jpg",
+    "categoryKeys": [
+      "bebida",
+      "bebidas",
+      "drink",
+      "drinks",
+      "refrigerante"
+    ]
+  },
+  {
+    "id": "sobremesas-premium",
+    "label": "Sobremesas Premium",
+    "term": "ice cream dessert premium food photo",
+    "src": "/brand/pizza-10.webp",
+    "categoryKeys": [
+      "sobremesa",
+      "sobremesas",
+      "sorvete",
+      "sorvetes",
+      "dessert"
+    ]
+  },
+  {
+    "id": "empanados-premium",
+    "label": "Empanados Premium",
+    "term": "crispy appetizer premium food photo",
+    "src": "/brand/pizza-16.jpg",
+    "categoryKeys": [
+      "empanado",
+      "empanados",
+      "extra",
+      "extras",
+      "snack"
+    ]
+  }
+]

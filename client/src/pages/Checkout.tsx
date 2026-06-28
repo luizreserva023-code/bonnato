@@ -37,6 +37,15 @@ import { TrendingDown, Zap, ShoppingCart as CartIcon, X as XIcon } from "lucide-
 
 type PaymentMethod = "credit_card" | "debit_card" | "pix" | "cash";
 type DeliveryMode = "delivery" | "pickup";
+type PixCheckoutData = {
+  chargeId: string;
+  qrCodeImage: string;
+  pixCopiaECola: string;
+  expirationDate: string;
+  value: number;
+  autoConfirm?: boolean;
+  instructions?: string;
+};
 
 const STEPS = ["Entrega", "Pagamento", "Confirmar"] as const;
 type Step = 0 | 1 | 2;
@@ -91,23 +100,17 @@ export default function Checkout() {
 
   const createOrder = trpc.orders.create.useMutation();
   const createCheckoutSession = trpc.payments.createCheckoutSession.useMutation();
+  const createManualPixCode = trpc.payments.createManualPixCode.useMutation();
   const checkoutWithSavedCard = trpc.payments.checkoutWithSavedCard.useMutation();
   const createPixAsaas = trpc.asaas.createPix.useMutation();
   // Estado do QR Code PIX Asaas
-  const [pixData, setPixData] = useState<{
-    chargeId: string;
-    qrCodeImage: string;
-    pixCopiaECola: string;
-    expirationDate: string;
-    value: number;
-  } | null>(null);
+  const [pixData, setPixData] = useState<PixCheckoutData | null>(null);
   const [pixPaid, setPixPaid] = useState(false);
-  const [asaasEnabled, setAsaasEnabled] = useState(false);
   const pixStatusQuery = trpc.asaas.checkPixStatus.useQuery(
     { orderId: orderId ?? 0 },
     {
-      enabled: !!orderId && !!pixData && !pixPaid,
-      refetchInterval: pixData && !pixPaid ? 5000 : false,
+      enabled: !!orderId && !!pixData?.autoConfirm && !pixPaid,
+      refetchInterval: pixData?.autoConfirm && !pixPaid ? 5000 : false,
     }
   );
   // Detectar pagamento confirmado via polling
@@ -136,16 +139,39 @@ export default function Checkout() {
   );
   const productsQuery = trpc.products.list.useQuery(undefined, { enabled: isAuthenticated });
   const myClubPlan = trpc.club.getMyPlan.useQuery(undefined, { enabled: isAuthenticated });
+  const clubConfigQuery = trpc.club.getPublicConfig.useQuery();
+  const paymentSettingsQuery = trpc.paymentSettings.getPublic.useQuery();
   const storeSettingsQuery = trpc.storeSettings.get.useQuery();
   const minOrderValue = storeSettingsQuery.data?.minOrderValue ? parseFloat(storeSettingsQuery.data.minOrderValue) : 0;
   const dbStoreHours = storeSettingsQuery.data?.storeHours
     ? (JSON.parse(storeSettingsQuery.data.storeHours as string) as Record<string, DaySchedule | null>)
     : undefined;
   const clubPlan = myClubPlan.data;
+  const clubConfig = clubConfigQuery.data;
+  const paymentSettings = paymentSettingsQuery.data;
+  const paymentOptions = useMemo(() => {
+    const options: Array<{ value: PaymentMethod; label: string; icon: React.ReactNode; desc: string }> = [];
+    if (paymentSettings?.config.orders.pixEnabled) {
+      const desc =
+        paymentSettings.config.orders.pixMode === "dynamic_asaas"
+          ? "QR Code e aprovação automática"
+          : "Copia e cola com chave da loja";
+      options.push({ value: "pix", label: "PIX", icon: <QrCode className="w-5 h-5" />, desc });
+    }
+    if (paymentSettings?.config.orders.cardEnabled) {
+      options.push({ value: "credit_card", label: "Cartão de Crédito", icon: <CreditCard className="w-5 h-5" />, desc: "Pagamento online seguro" });
+      options.push({ value: "debit_card", label: "Cartão de Débito", icon: <CreditCard className="w-5 h-5" />, desc: "Pagamento online seguro" });
+    }
+    if (paymentSettings?.config.orders.cashEnabled ?? true) {
+      options.push({ value: "cash", label: "Dinheiro", icon: <Wallet className="w-5 h-5" />, desc: "Pagamento na entrega" });
+    }
+    return options;
+  }, [paymentSettings]);
+  const clubPlanDetails = clubPlan?.planDetails;
   const isClubActive = clubPlan?.status === "active";
-  const clubDiscountPct = isClubActive ? (clubPlan?.plan === "bonattao" ? 20 : 15) : 0;
-  const clubFreeDelivery = isClubActive && clubPlan?.plan === "bonattao";
-  const clubFreePizzaAvailable = isClubActive && !clubPlan?.freePizzaUsed;
+  const clubDiscountPct = isClubActive ? Number(clubPlanDetails?.discountPercent ?? 0) : 0;
+  const clubFreeDelivery = Boolean(isClubActive && clubPlanDetails?.freeDelivery);
+  const clubFreePizzaAvailable = Boolean(isClubActive && clubPlanDetails?.freePizzaPerMonth && !clubPlan?.freePizzaUsed);
 
   // Restaurar carrinho abandonado via ?restore=cartId
   const restoreCartId = useMemo(() => {
@@ -188,6 +214,13 @@ export default function Checkout() {
       }));
     }
   }, [profileQuery.data]);
+
+  useEffect(() => {
+    if (!paymentOptions.length) return;
+    if (!paymentOptions.some((option) => option.value === paymentMethod)) {
+      setPaymentMethod(paymentOptions[0].value);
+    }
+  }, [paymentMethod, paymentOptions]);
 
   const handleCepBlur = async () => {
     const cep = form.deliveryCep.replace(/\D/g, "");
@@ -305,6 +338,88 @@ export default function Checkout() {
     }
   };
 
+  const submitOrder = async () => {
+    try {
+      const result = await createOrder.mutateAsync({
+        ...form,
+        deliveryCep: form.deliveryCep ? form.deliveryCep.replace(/\D/g, "").replace(/(\d{5})(\d{3})/, "$1-$2") || undefined : undefined,
+        deliveryAddress: deliveryMode === "delivery"
+          ? `${form.deliveryAddress}${neighborhood ? `, ${neighborhood}` : ""}${form.deliveryCity ? ` - ${form.deliveryCity}` : ""}`
+          : (form.deliveryAddress.trim() || "Retirada no local"),
+        deliveryNeighborhood: deliveryMode === "delivery" ? neighborhood || undefined : undefined,
+        paymentMethod,
+        couponCode: couponApplied ? couponCode : undefined,
+        pointsToRedeem: pointsApplied && parseInt(pointsToRedeem) >= 50 ? parseInt(pointsToRedeem) : undefined,
+        items: items.map((item) => ({
+          productId: item.productId,
+          productName: item.productName,
+          productPrice: item.productPrice,
+          quantity: item.quantity,
+          notes: item.notes,
+        })),
+      });
+
+      setOrderId(result.orderId);
+      setSavedItems([...items]);
+      clearCart();
+
+      if (paymentMethod === "credit_card" || paymentMethod === "debit_card") {
+        try {
+          toast.info("Redirecionando para o pagamento seguro...");
+          let checkoutUrl: string | null | undefined;
+          if (useSavedCard && selectedSavedCardId) {
+            const session = await checkoutWithSavedCard.mutateAsync({
+              orderId: result.orderId,
+              paymentMethodId: selectedSavedCardId,
+              origin: window.location.origin,
+            });
+            checkoutUrl = session.checkoutUrl;
+          } else {
+            const session = await createCheckoutSession.mutateAsync({
+              orderId: result.orderId,
+              origin: window.location.origin,
+            });
+            checkoutUrl = session.checkoutUrl;
+          }
+          if (checkoutUrl) {
+            window.open(checkoutUrl, "_blank");
+          }
+        } catch (stripeErr: any) {
+          console.error("Stripe checkout error:", stripeErr);
+          toast.warning("Pedido criado! Houve um problema ao abrir o pagamento online. Você pode pagar na entrega.");
+        }
+      } else if (paymentMethod === "pix") {
+        try {
+          if (paymentSettings?.config.orders.pixMode === "dynamic_asaas") {
+            const pix = await createPixAsaas.mutateAsync({ orderId: result.orderId });
+            if (!pix.alreadyPaid) {
+              setPixData({
+                chargeId: pix.chargeId,
+                qrCodeImage: pix.qrCodeImage,
+                pixCopiaECola: pix.pixCopiaECola,
+                expirationDate: pix.expirationDate,
+                value: pix.value,
+                autoConfirm: true,
+              });
+            } else {
+              setPixPaid(true);
+            }
+          } else {
+            const pix = await createManualPixCode.mutateAsync({ orderId: result.orderId });
+            setPixData(pix);
+          }
+        } catch (pixErr: any) {
+          console.error("PIX checkout error:", pixErr);
+          toast.warning("Pedido criado, mas houve um problema ao preparar o PIX. Confira com a loja antes de pagar.");
+        }
+      }
+
+      setOrderStep("success");
+    } catch (err: any) {
+      toast.error(err.message ?? "Erro ao realizar pedido");
+    }
+  };
+
   const validateStep0 = () => {
     if (deliveryMode === "delivery") {
       if (!form.customerName || !form.customerPhone || !form.deliveryAddress) {
@@ -330,6 +445,10 @@ export default function Checkout() {
 
   const handleNext = () => {
     if (step === 0 && !validateStep0()) return;
+    if (step === 1 && paymentOptions.length === 0) {
+      toast.error("Nenhum método de pagamento está disponível no momento.");
+      return;
+    }
     const nextStep = Math.min(step + 1, 2) as Step;
     // Quando o cliente chega no step de pagamento (step 1), registrar carrinho abandonado
     if (nextStep === 1 && isAuthenticated && items.length > 0) {
@@ -390,7 +509,7 @@ export default function Checkout() {
   }
 
   if (orderStep === "success") {
-    return <SuccessScreen orderId={orderId} paymentMethod={paymentMethod} deliveryMode={deliveryMode} total={total} items={savedItems} pixData={asaasEnabled ? pixData : null} pixPaid={pixPaid} />;
+    return <SuccessScreen orderId={orderId} paymentMethod={paymentMethod} deliveryMode={deliveryMode} total={total} items={savedItems} pixData={pixData} pixPaid={pixPaid} />;
   }
 
   // Upsell / Downsell data
@@ -600,12 +719,7 @@ export default function Checkout() {
                   <CardContent className="pt-5 space-y-4">
                     <p className="text-sm font-semibold flex items-center gap-2"><CreditCard className="w-4 h-4 text-primary" />Forma de Pagamento</p>
                     <div className="grid grid-cols-2 gap-3">
-                      {[
-                        { value: "pix", label: "PIX", icon: <QrCode className="w-5 h-5" />, desc: "Aprovação imediata" },
-                        { value: "credit_card", label: "Cartão de Crédito", icon: <CreditCard className="w-5 h-5" />, desc: "Visa, Master, Elo" },
-                        { value: "debit_card", label: "Cartão de Débito", icon: <CreditCard className="w-5 h-5" />, desc: "Na entrega" },
-                        { value: "cash", label: "Dinheiro", icon: <Wallet className="w-5 h-5" />, desc: "Na entrega" },
-                      ].map((opt) => (
+                      {paymentOptions.map((opt) => (
                         <button
                           key={opt.value}
                           type="button"
@@ -620,6 +734,11 @@ export default function Checkout() {
                         </button>
                       ))}
                     </div>
+                    {paymentOptions.length === 0 && (
+                      <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                        Nenhum método de pagamento está disponível agora. Tente novamente em instantes ou fale com a loja.
+                      </div>
+                    )}
 
                     {/* Cartões salvos — mostrar quando credit_card ou debit_card selecionado */}
                     {(paymentMethod === "credit_card" || paymentMethod === "debit_card") && savedCardsQuery.data && savedCardsQuery.data.length > 0 && (
@@ -667,7 +786,10 @@ export default function Checkout() {
 
                     {paymentMethod === "pix" && (
                       <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg text-sm text-blue-700">
-                        Após confirmar, a chave PIX será exibida na tela de confirmação.
+                        {paymentSettings?.config.orders.pixMode === "dynamic_asaas"
+                          ? "Após confirmar, vamos gerar um QR Code PIX com confirmação automática."
+                          : "Após confirmar, vamos gerar o PIX da loja com QR Code e código copia e cola."}
+                        {paymentSettings?.config.pix.instructions ? ` ${paymentSettings.config.pix.instructions}` : ""}
                       </div>
                     )}
 
@@ -806,7 +928,7 @@ export default function Checkout() {
 
                   <Button
                     className="w-full h-12 text-base font-bold"
-                    onClick={doCreateOrder}
+                    onClick={submitOrder}
                     disabled={createOrder.isPending}
                   >
                     {createOrder.isPending ? (
@@ -841,6 +963,16 @@ export default function Checkout() {
                       </div>
                     ))}
                   </div>
+                  {isClubActive && (
+                    <div className="rounded-xl border border-[#f0dfdb] bg-[#fff8f6] px-3 py-2">
+                      <p className="text-xs font-semibold text-[#7d0f14]">
+                        {clubConfig?.checkoutTitle ?? "Benefícios do seu clube"}
+                      </p>
+                      <p className="text-[11px] text-muted-foreground">
+                        {clubConfig?.checkoutSubtitle ?? "Seu plano ativo entra automaticamente no total deste pedido."}
+                      </p>
+                    </div>
+                  )}
                   <Separator />
                   {couponDiscount > 0 && (
                     <div className="flex justify-between text-xs text-green-600">
@@ -849,13 +981,13 @@ export default function Checkout() {
                   )}
                   {clubDiscountAmount > 0 && (
                     <div className="flex justify-between text-xs text-[#7d0f14]">
-                      <span>🏆 Desconto Clube ({clubDiscountPct}%)</span>
+                      <span>{clubConfig?.checkoutDiscountLabel ?? "Desconto do clube"} ({clubDiscountPct}%)</span>
                       <span>- R$ {clubDiscountAmount.toFixed(2).replace(".", ",")}</span>
                     </div>
                   )}
                   {clubFreeDelivery && deliveryMode === "delivery" && (
                     <div className="flex justify-between text-xs text-green-600">
-                      <span>🚚 Entrega grátis (Clube)</span>
+                      <span>{clubConfig?.checkoutDeliveryLabel ?? "Entrega grátis do clube"}</span>
                       <span>R$ 0,00</span>
                     </div>
                   )}
@@ -867,8 +999,7 @@ export default function Checkout() {
                   )}
                   {clubFreePizzaAvailable && (
                     <div className="flex items-center gap-1.5 text-xs text-orange-500 bg-orange-50 dark:bg-orange-950/30 rounded-lg px-2 py-1.5">
-                      <span>🍕</span>
-                      <span className="font-medium">Pizza grátis disponível! Use no próximo pedido.</span>
+                      <span className="font-medium">{clubConfig?.checkoutFreePizzaLabel ?? "Pizza grátis disponível para o próximo pedido."}</span>
                     </div>
                   )}
                   <div className="flex justify-between font-black text-base">
@@ -1080,7 +1211,7 @@ function SuccessScreen({ orderId, paymentMethod, deliveryMode, total, items: ord
   deliveryMode: DeliveryMode;
   total: number;
   items?: Array<{ productName: string; quantity: number; productPrice: string }>;
-  pixData?: { chargeId: string; qrCodeImage: string; pixCopiaECola: string; expirationDate: string; value: number } | null;
+  pixData?: PixCheckoutData | null;
   pixPaid?: boolean;
 }) {
   const [pixCopied, setPixCopied] = useState(false);
@@ -1220,14 +1351,16 @@ function SuccessScreen({ orderId, paymentMethod, deliveryMode, total, items: ord
                   <QrCode className="w-5 h-5 text-[#6E0D12]" />
                   <p className="font-bold text-gray-900">Pague com PIX</p>
                   <span className="ml-auto flex items-center gap-1.5 text-xs text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full font-medium">
-                    <Loader2 className="w-3 h-3 animate-spin" />
-                    Aguardando pagamento
+                    {pixData.autoConfirm ? <Loader2 className="w-3 h-3 animate-spin" /> : null}
+                    {pixData.autoConfirm ? "Aguardando pagamento" : "Pagamento manual"}
                   </span>
                 </div>
                 {pixData.qrCodeImage && (
                   <div className="flex justify-center mb-4">
                     <img
-                      src={`data:image/png;base64,${pixData.qrCodeImage}`}
+                      src={pixData.qrCodeImage.startsWith("data:") || pixData.qrCodeImage.startsWith("http")
+                        ? pixData.qrCodeImage
+                        : `data:image/png;base64,${pixData.qrCodeImage}`}
                       alt="QR Code PIX"
                       className="w-48 h-48 rounded-xl border border-gray-100"
                     />
@@ -1247,9 +1380,20 @@ function SuccessScreen({ orderId, paymentMethod, deliveryMode, total, items: ord
                 >
                   {pixCopied ? "✓ Copiado!" : "Copiar código PIX"}
                 </button>
-                <p className="text-xs text-center text-gray-400 mt-2">
-                  Válido até {new Date(pixData.expirationDate).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
-                </p>
+                {pixData.instructions ? (
+                  <div className="mt-3 rounded-xl bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                    {pixData.instructions}
+                  </div>
+                ) : null}
+                {pixData.expirationDate ? (
+                  <p className="text-xs text-center text-gray-400 mt-2">
+                    Válido até {new Date(pixData.expirationDate).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
+                  </p>
+                ) : (
+                  <p className="text-xs text-center text-gray-400 mt-2">
+                    Após pagar, aguarde a confirmação da loja se o PIX estiver em modo manual.
+                  </p>
+                )}
               </div>
             )}
           </div>

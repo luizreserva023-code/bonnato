@@ -1,8 +1,8 @@
 import { Request, Response } from "express";
-import { getDb } from "./db";
-import { journeys, users } from "../drizzle/schema";
+import { getDb } from "./db.ts";
+import { journeys, users } from "../drizzle/schema.ts";
 import { eq } from "drizzle-orm";
-import { startJourneyExecution } from "./automation";
+import { startJourneyExecution } from "./automation.ts";
 
 /**
  * POST /api/automations/webhook/:token

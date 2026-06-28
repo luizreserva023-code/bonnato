@@ -1,6 +1,6 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import { appRouter } from "./routers";
-import type { TrpcContext } from "./_core/context";
+import { appRouter } from "./routers.ts";
+import type { TrpcContext } from "./_core/context.ts";
 
 // ─── Mock DB ──────────────────────────────────────────────────────────────────
 vi.mock("./db", () => ({

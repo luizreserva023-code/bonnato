@@ -3,40 +3,74 @@ import { type Server } from "http";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
 import rateLimit from "express-rate-limit";
 import helmet from "helmet";
-import { appRouter } from "../routers";
-import { handleAutomationWebhook } from "../automationWebhook";
-import { notifyOwnerAdapter } from "../adapters/pushNotifications";
-import { verifyAsaasWebhook } from "../asaas";
-import { createTransaction, recordWebhookEventOnce, updateOrderPaymentStatus } from "../db";
-import { handleStripeWebhook } from "../stripe";
-import { createContext } from "./context";
-import { registerBootstrapRoute } from "./bootstrapRoute";
-import { registerOAuthRoutes } from "./oauth";
-import { registerStorageProxy } from "./storageProxy";
+
+import { notifyOwnerAdapter } from "../adapters/pushNotifications.ts";
+import { verifyAsaasWebhook } from "../asaas.ts";
+import { handleAutomationWebhook } from "../automationWebhook.ts";
+import { createTransaction, recordWebhookEventOnce, updateOrderPaymentStatus } from "../db.ts";
+import { appRouter } from "../routers.ts";
+import { handleStripeWebhook } from "../stripe.ts";
+import { registerBootstrapRoute } from "./bootstrapRoute.ts";
+import { createContext } from "./context.ts";
+import { registerOAuthRoutes } from "./oauth.ts";
+import { registerStorageProxy } from "./storageProxy.ts";
 
 const globalLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 200,
+  max: 600,
   standardHeaders: true,
   legacyHeaders: false,
-  message: { error: "Muitas requisições. Tente novamente em alguns minutos." },
+  message: { error: "Muitas requisicoes. Tente novamente em alguns minutos." },
   skip: (req) => req.path.startsWith("/api/stripe/webhook"),
 });
 
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 10,
+  max: 8,
   standardHeaders: true,
   legacyHeaders: false,
-  message: { error: "Muitas tentativas de autenticação. Aguarde 15 minutos." },
+  skipSuccessfulRequests: true,
+  message: { error: "Muitas tentativas de autenticacao. Aguarde 15 minutos." },
 });
 
 const criticalLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Limite de operacoes atingido. Tente novamente em breve." },
+});
+
+const uploadLimiter = rateLimit({
+  windowMs: 10 * 60 * 1000,
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Muitos uploads em pouco tempo. Aguarde alguns minutos." },
+});
+
+const messagingLimiter = rateLimit({
+  windowMs: 5 * 60 * 1000,
+  max: 120,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Muitas acoes de mensagens ou notificacoes. Tente novamente em instantes." },
+});
+
+const bootstrapLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Limite temporario atingido para bootstrap administrativo." },
+});
+
+const oauthLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
   max: 30,
   standardHeaders: true,
   legacyHeaders: false,
-  message: { error: "Limite de operações atingido. Tente novamente em breve." },
+  message: { error: "Muitas tentativas de autenticacao social. Aguarde alguns minutos." },
 });
 
 type FrontendMode = "vite" | "static" | "none";
@@ -59,9 +93,7 @@ function buildAllowedHosts(publicAppUrl: string, hostHeader: string | undefined)
 
   if (publicAppUrl) {
     const hostname = hostnameOf(publicAppUrl);
-    if (hostname) {
-      allowedHosts.add(hostname);
-    }
+    if (hostname) allowedHosts.add(hostname);
   }
 
   if (hostHeader) {
@@ -75,12 +107,15 @@ export async function configureApp(app: Express, options: ConfigureAppOptions = 
   const frontendMode = options.frontendMode ?? (process.env.NODE_ENV === "development" ? "vite" : "static");
   const publicAppUrl = (process.env.PUBLIC_APP_URL ?? "").replace(/\/+$/, "");
 
+  app.disable("x-powered-by");
   app.set("trust proxy", 1);
 
   app.use(
     helmet({
       contentSecurityPolicy: false,
       frameguard: { action: "sameorigin" },
+      referrerPolicy: { policy: "strict-origin-when-cross-origin" },
+      crossOriginResourcePolicy: { policy: "cross-origin" },
       noSniff: true,
       strictTransportSecurity: { maxAge: 31536000, includeSubDomains: true },
       xssFilter: true,
@@ -165,7 +200,7 @@ export async function configureApp(app: Express, options: ConfigureAppOptions = 
 
     if (!origin && !referer) {
       if (process.env.NODE_ENV === "production") {
-        return res.status(403).json({ error: "Origin obrigatório" });
+        return res.status(403).json({ error: "Origin obrigatorio" });
       }
 
       return next();
@@ -173,17 +208,19 @@ export async function configureApp(app: Express, options: ConfigureAppOptions = 
 
     const checkHost = origin ? originHost : refererHost;
     if (!checkHost || !allowedHosts.has(checkHost)) {
-      return res.status(403).json({ error: "Origin não autorizado" });
+      return res.status(403).json({ error: "Origin nao autorizado" });
     }
 
     return next();
   });
 
-  app.use("/api/trpc", express.json({ limit: "15mb" }));
-  app.use("/api/trpc", express.urlencoded({ limit: "15mb", extended: true }));
+  app.use("/api/trpc", express.json({ limit: "6mb" }));
+  app.use("/api/trpc", express.urlencoded({ limit: "6mb", extended: true }));
   app.use(express.json({ limit: "2mb" }));
   app.use(express.urlencoded({ limit: "2mb", extended: true }));
 
+  app.use("/api/bootstrap/access", bootstrapLimiter);
+  app.use("/api/oauth", oauthLimiter);
   app.use("/api", globalLimiter);
 
   const authProcedures = new Set([
@@ -201,6 +238,19 @@ export async function configureApp(app: Express, options: ConfigureAppOptions = 
     "club.subscribe",
     "asaas.createPix",
   ]);
+  const uploadProcedures = new Set([
+    "avatar.upload",
+    "products.uploadImage",
+    "menuSlides.uploadImage",
+    "carousel.uploadImage",
+  ]);
+  const messagingProcedures = new Set([
+    "chat.send",
+    "push.subscribe",
+    "push.unsubscribe",
+    "drivers.savePushSubscription",
+    "drivers.removePushSubscription",
+  ]);
 
   const applyLimiter =
     (limiter: ReturnType<typeof rateLimit>, match: (proc: string) => boolean) =>
@@ -217,6 +267,8 @@ export async function configureApp(app: Express, options: ConfigureAppOptions = 
 
   app.use("/api/trpc", applyLimiter(authLimiter, (procedure) => authProcedures.has(procedure)));
   app.use("/api/trpc", applyLimiter(criticalLimiter, (procedure) => criticalProcedures.has(procedure)));
+  app.use("/api/trpc", applyLimiter(uploadLimiter, (procedure) => uploadProcedures.has(procedure)));
+  app.use("/api/trpc", applyLimiter(messagingLimiter, (procedure) => messagingProcedures.has(procedure)));
 
   registerBootstrapRoute(app);
   registerStorageProxy(app);
@@ -234,10 +286,10 @@ export async function configureApp(app: Express, options: ConfigureAppOptions = 
       throw new Error("configureApp requires an HTTP server when frontendMode is 'vite'");
     }
 
-    const { setupVite } = await import("./vite");
+    const { setupVite } = await import("./vite.ts");
     await setupVite(app, options.server);
   } else if (frontendMode === "static") {
-    const { serveStatic } = await import("./vite");
+    const { serveStatic } = await import("./vite.ts");
     serveStatic(app);
   }
 

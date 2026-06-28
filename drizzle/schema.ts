@@ -19,6 +19,7 @@ export const users = mysqlTable("users", {
   loginMethod: varchar("loginMethod", { length: 64 }),
   role: mysqlEnum("role", ["user", "admin", "manager"]).default("user").notNull(),
   phone: varchar("phone", { length: 20 }),
+  status: mysqlEnum("status", ["active", "inactive", "suspended", "setup_pending"]).default("active").notNull(),
   savedAddress: text("savedAddress"),
   savedCep: varchar("savedCep", { length: 10 }),
   savedCity: varchar("savedCity", { length: 100 }),
@@ -49,11 +50,18 @@ export const users = mysqlTable("users", {
 export const stores = mysqlTable("stores", {
   id: int("id").autoincrement().primaryKey(),
   name: varchar("name", { length: 200 }).notNull(),
+  displayName: varchar("displayName", { length: 200 }),
   slug: varchar("slug", { length: 100 }).notNull().unique(),
+  document: varchar("document", { length: 32 }),
+  email: varchar("email", { length: 320 }),
   city: varchar("city", { length: 100 }).notNull(),
   address: text("address"),
   phone: varchar("phone", { length: 20 }),
+  latitude: decimal("latitude", { precision: 10, scale: 7 }),
+  longitude: decimal("longitude", { precision: 10, scale: 7 }),
+  serviceRadiusKm: decimal("serviceRadiusKm", { precision: 6, scale: 2 }).default("25.00"),
   active: boolean("active").default(true).notNull(),
+  status: mysqlEnum("status", ["active", "inactive", "suspended", "setup_pending"]).default("active").notNull(),
   isDefault: boolean("isDefault").default(false).notNull(),
   // Dados fiscais para emissão de NFC-e via Focus NFe
   cnpj: varchar("cnpj", { length: 18 }),
@@ -68,6 +76,7 @@ export const stores = mysqlTable("stores", {
 }, (t) => ({
   slugIdx: uniqueIndex("stores_slug_idx").on(t.slug),
   activeIdx: index("stores_active_idx").on(t.active),
+  statusIdx: index("stores_status_idx").on(t.status),
 }));
 export type Store = typeof stores.$inferSelect;
 export type InsertStore = typeof stores.$inferInsert;
@@ -91,6 +100,7 @@ export const categories = mysqlTable("categories", {
   slug: varchar("slug", { length: 100 }).notNull().unique(),
   description: text("description"),
   imageUrl: text("imageUrl"),
+  icon: varchar("icon", { length: 64 }),
   externalSource: varchar("externalSource", { length: 32 }),
   externalMerchantId: varchar("externalMerchantId", { length: 128 }),
   externalId: varchar("externalId", { length: 128 }),
@@ -153,10 +163,12 @@ export const orders = mysqlTable("orders", {
   id: int("id").autoincrement().primaryKey(),
   storeId: int("storeId"),  // qual unidade recebeu o pedido
   userId: int("userId"),
+  serviceType: mysqlEnum("serviceType", ["delivery", "pickup", "dine_in", "counter"]).default("delivery").notNull(),
   customerName: varchar("customerName", { length: 200 }).notNull(),
   customerEmail: varchar("customerEmail", { length: 320 }),
   customerPhone: varchar("customerPhone", { length: 20 }),
   deliveryAddress: text("deliveryAddress").notNull(),
+  deliveryNeighborhood: varchar("deliveryNeighborhood", { length: 120 }),
   deliveryCity: varchar("deliveryCity", { length: 100 }),
   deliveryCep: varchar("deliveryCep", { length: 10 }),
   deliveryComplement: varchar("deliveryComplement", { length: 200 }),
@@ -175,6 +187,16 @@ export const orders = mysqlTable("orders", {
   pointsUsed: int("pointsUsed").default(0),
   notes: text("notes"),
   driverId: int("driverId"),
+  tableSessionId: int("tableSessionId"),
+  predictedReadyAt: timestamp("predictedReadyAt"),
+  predictedDeliveredAt: timestamp("predictedDeliveredAt"),
+  predictionLabel: varchar("predictionLabel", { length: 120 }),
+  confirmedAt: timestamp("confirmedAt"),
+  preparingAt: timestamp("preparingAt"),
+  readyAt: timestamp("readyAt"),
+  outForDeliveryAt: timestamp("outForDeliveryAt"),
+  deliveredAt: timestamp("deliveredAt"),
+  cancelledAt: timestamp("cancelledAt"),
   aiPaused: boolean("aiPaused").default(false).notNull(),
   // iFood integration
   ifoodOrderId: varchar("ifoodOrderId", { length: 100 }),
@@ -468,6 +490,353 @@ export const orderMessages = mysqlTable("order_messages", {
   orderIdx: index("order_messages_order_idx").on(t.orderId),
   orderCreatedIdx: index("order_messages_order_created_idx").on(t.orderId, t.createdAt),
 }));
+
+// --- OPERATIONAL FOUNDATION --------------------------------------------------
+
+export const ingredients = mysqlTable("ingredients", {
+  id: int("id").autoincrement().primaryKey(),
+  storeId: int("storeId"),
+  name: varchar("name", { length: 160 }).notNull(),
+  category: varchar("category", { length: 120 }),
+  unit: mysqlEnum("unit", ["g", "kg", "ml", "l", "unit", "pack", "slice", "portion"]).notNull(),
+  currentStock: decimal("currentStock", { precision: 12, scale: 3 }).default("0.000").notNull(),
+  minimumStock: decimal("minimumStock", { precision: 12, scale: 3 }).default("0.000").notNull(),
+  unitCost: decimal("unitCost", { precision: 10, scale: 4 }).default("0.0000").notNull(),
+  supplier: varchar("supplier", { length: 160 }),
+  notes: text("notes"),
+  active: boolean("active").default(true).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (t) => ({
+  storeIdx: index("ingredients_store_idx").on(t.storeId),
+  activeIdx: index("ingredients_active_idx").on(t.active),
+  nameIdx: index("ingredients_name_idx").on(t.name),
+}));
+export type Ingredient = typeof ingredients.$inferSelect;
+export type InsertIngredient = typeof ingredients.$inferInsert;
+
+export const productIngredients = mysqlTable("product_ingredients", {
+  id: int("id").autoincrement().primaryKey(),
+  productId: int("productId").notNull(),
+  ingredientId: int("ingredientId").notNull(),
+  quantity: decimal("quantity", { precision: 12, scale: 3 }).notNull(),
+  wastePercent: decimal("wastePercent", { precision: 5, scale: 2 }).default("0.00").notNull(),
+  active: boolean("active").default(true).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (t) => ({
+  productIdx: index("product_ingredients_product_idx").on(t.productId),
+  ingredientIdx: index("product_ingredients_ingredient_idx").on(t.ingredientId),
+  uniqueBinding: uniqueIndex("product_ingredients_unique").on(t.productId, t.ingredientId),
+}));
+export type ProductIngredient = typeof productIngredients.$inferSelect;
+export type InsertProductIngredient = typeof productIngredients.$inferInsert;
+
+export const inventoryMovements = mysqlTable("inventory_movements", {
+  id: int("id").autoincrement().primaryKey(),
+  ingredientId: int("ingredientId").notNull(),
+  storeId: int("storeId"),
+  orderId: int("orderId"),
+  orderItemId: int("orderItemId"),
+  movementType: mysqlEnum("movementType", ["entry", "manual_adjustment", "sale_consumption", "reversal", "waste"]).notNull(),
+  quantityDelta: decimal("quantityDelta", { precision: 12, scale: 3 }).notNull(),
+  previousStock: decimal("previousStock", { precision: 12, scale: 3 }).default("0.000").notNull(),
+  nextStock: decimal("nextStock", { precision: 12, scale: 3 }).default("0.000").notNull(),
+  reason: varchar("reason", { length: 255 }),
+  performedByUserId: int("performedByUserId"),
+  metadata: text("metadata"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (t) => ({
+  ingredientIdx: index("inventory_movements_ingredient_idx").on(t.ingredientId),
+  orderIdx: index("inventory_movements_order_idx").on(t.orderId),
+  typeIdx: index("inventory_movements_type_idx").on(t.movementType),
+  createdIdx: index("inventory_movements_created_idx").on(t.createdAt),
+}));
+export type InventoryMovement = typeof inventoryMovements.$inferSelect;
+export type InsertInventoryMovement = typeof inventoryMovements.$inferInsert;
+
+export const orderStageLogs = mysqlTable("order_stage_logs", {
+  id: int("id").autoincrement().primaryKey(),
+  orderId: int("orderId").notNull(),
+  previousStatus: mysqlEnum("previousStatus", ["pending", "confirmed", "preparing", "out_for_delivery", "delivered", "cancelled"]),
+  nextStatus: mysqlEnum("nextStatus", ["pending", "confirmed", "preparing", "out_for_delivery", "delivered", "cancelled"]).notNull(),
+  stage: mysqlEnum("stage", ["created", "confirmed", "preparing", "ready", "out_for_delivery", "delivered", "cancelled"]).notNull(),
+  source: mysqlEnum("source", ["system", "admin", "manager", "driver", "automation", "customer"]).default("system").notNull(),
+  changedByUserId: int("changedByUserId"),
+  changedByDriverId: int("changedByDriverId"),
+  notes: varchar("notes", { length: 255 }),
+  metadata: text("metadata"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (t) => ({
+  orderIdx: index("order_stage_logs_order_idx").on(t.orderId),
+  stageIdx: index("order_stage_logs_stage_idx").on(t.stage),
+  createdIdx: index("order_stage_logs_created_idx").on(t.createdAt),
+}));
+export type OrderStageLog = typeof orderStageLogs.$inferSelect;
+export type InsertOrderStageLog = typeof orderStageLogs.$inferInsert;
+
+export const productivityEvents = mysqlTable("productivity_events", {
+  id: int("id").autoincrement().primaryKey(),
+  orderId: int("orderId"),
+  storeId: int("storeId"),
+  eventType: mysqlEnum("eventType", ["acceptance_time", "prep_time", "dispatch_time", "delivery_time", "total_time", "delay"]).notNull(),
+  actorType: mysqlEnum("actorType", ["system", "user", "staff", "driver"]).default("system").notNull(),
+  actorUserId: int("actorUserId"),
+  actorDriverId: int("actorDriverId"),
+  valueSeconds: int("valueSeconds").notNull(),
+  metadata: text("metadata"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (t) => ({
+  orderIdx: index("productivity_events_order_idx").on(t.orderId),
+  typeIdx: index("productivity_events_type_idx").on(t.eventType),
+  storeIdx: index("productivity_events_store_idx").on(t.storeId),
+  createdIdx: index("productivity_events_created_idx").on(t.createdAt),
+}));
+export type ProductivityEvent = typeof productivityEvents.$inferSelect;
+export type InsertProductivityEvent = typeof productivityEvents.$inferInsert;
+
+export const staffMembers = mysqlTable("staff_members", {
+  id: int("id").autoincrement().primaryKey(),
+  storeId: int("storeId"),
+  userId: int("userId"),
+  name: varchar("name", { length: 200 }).notNull(),
+  phone: varchar("phone", { length: 20 }),
+  email: varchar("email", { length: 320 }),
+  role: mysqlEnum("role", ["waiter", "cashier", "attendant", "kitchen", "driver", "manager", "admin"]).notNull(),
+  accessToken: varchar("accessToken", { length: 128 }),
+  active: boolean("active").default(true).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (t) => ({
+  storeIdx: index("staff_members_store_idx").on(t.storeId),
+  roleIdx: index("staff_members_role_idx").on(t.role),
+  userIdx: uniqueIndex("staff_members_user_unique").on(t.userId),
+  accessTokenIdx: uniqueIndex("staff_members_access_token_unique").on(t.accessToken),
+}));
+export type StaffMember = typeof staffMembers.$inferSelect;
+export type InsertStaffMember = typeof staffMembers.$inferInsert;
+
+export const deliveryPredictions = mysqlTable("delivery_predictions", {
+  id: int("id").autoincrement().primaryKey(),
+  orderId: int("orderId").notNull(),
+  kind: mysqlEnum("kind", ["delivery", "pickup", "dine_in"]).default("delivery").notNull(),
+  predictionLabel: varchar("predictionLabel", { length: 120 }).notNull(),
+  minMinutes: int("minMinutes").notNull(),
+  maxMinutes: int("maxMinutes").notNull(),
+  prepBaseMinutes: int("prepBaseMinutes").default(0).notNull(),
+  deliveryBaseMinutes: int("deliveryBaseMinutes").default(0).notNull(),
+  queuePressure: int("queuePressure").default(0).notNull(),
+  neighborhood: varchar("neighborhood", { length: 120 }),
+  method: varchar("method", { length: 80 }).default("heuristic").notNull(),
+  computedAt: timestamp("computedAt").defaultNow().notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (t) => ({
+  orderIdx: uniqueIndex("delivery_predictions_order_unique").on(t.orderId),
+  kindIdx: index("delivery_predictions_kind_idx").on(t.kind),
+}));
+export type DeliveryPrediction = typeof deliveryPredictions.$inferSelect;
+export type InsertDeliveryPrediction = typeof deliveryPredictions.$inferInsert;
+
+export const diningTables = mysqlTable("dining_tables", {
+  id: int("id").autoincrement().primaryKey(),
+  storeId: int("storeId"),
+  name: varchar("name", { length: 80 }).notNull(),
+  status: mysqlEnum("status", ["free", "occupied", "reserved", "awaiting_closure"]).default("free").notNull(),
+  capacity: int("capacity").default(4).notNull(),
+  active: boolean("active").default(true).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (t) => ({
+  storeIdx: index("dining_tables_store_idx").on(t.storeId),
+  statusIdx: index("dining_tables_status_idx").on(t.status),
+  uniqueNamePerStore: uniqueIndex("dining_tables_store_name_unique").on(t.storeId, t.name),
+}));
+export type DiningTable = typeof diningTables.$inferSelect;
+export type InsertDiningTable = typeof diningTables.$inferInsert;
+
+export const tableSessions = mysqlTable("table_sessions", {
+  id: int("id").autoincrement().primaryKey(),
+  tableId: int("tableId").notNull(),
+  storeId: int("storeId"),
+  waiterStaffId: int("waiterStaffId"),
+  customerName: varchar("customerName", { length: 200 }),
+  guestCount: int("guestCount").default(1).notNull(),
+  status: mysqlEnum("status", ["open", "awaiting_closure", "closed", "cancelled"]).default("open").notNull(),
+  notes: text("notes"),
+  openedAt: timestamp("openedAt").defaultNow().notNull(),
+  closedAt: timestamp("closedAt"),
+  subtotal: decimal("subtotal", { precision: 10, scale: 2 }).default("0.00").notNull(),
+  discountAmount: decimal("discountAmount", { precision: 10, scale: 2 }).default("0.00").notNull(),
+  tipAmount: decimal("tipAmount", { precision: 10, scale: 2 }).default("0.00").notNull(),
+  closedByStaffId: int("closedByStaffId"),
+  total: decimal("total", { precision: 10, scale: 2 }).default("0.00").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (t) => ({
+  tableIdx: index("table_sessions_table_idx").on(t.tableId),
+  waiterIdx: index("table_sessions_waiter_idx").on(t.waiterStaffId),
+  statusIdx: index("table_sessions_status_idx").on(t.status),
+  closedByIdx: index("table_sessions_closed_by_idx").on(t.closedByStaffId),
+}));
+export type TableSession = typeof tableSessions.$inferSelect;
+export type InsertTableSession = typeof tableSessions.$inferInsert;
+
+export const tableOrderLinks = mysqlTable("table_order_links", {
+  id: int("id").autoincrement().primaryKey(),
+  tableSessionId: int("tableSessionId").notNull(),
+  orderId: int("orderId").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (t) => ({
+  tableSessionIdx: index("table_order_links_session_idx").on(t.tableSessionId),
+  orderIdx: uniqueIndex("table_order_links_order_unique").on(t.orderId),
+}));
+export type TableOrderLink = typeof tableOrderLinks.$inferSelect;
+
+export const tableSessionItems = mysqlTable("table_session_items", {
+  id: int("id").autoincrement().primaryKey(),
+  tableSessionId: int("tableSessionId").notNull(),
+  productId: int("productId").notNull(),
+  productName: varchar("productName", { length: 200 }).notNull(),
+  unitPrice: decimal("unitPrice", { precision: 10, scale: 2 }).notNull(),
+  quantity: int("quantity").default(1).notNull(),
+  notes: text("notes"),
+  addedByStaffId: int("addedByStaffId"),
+  status: mysqlEnum("status", ["pending", "preparing", "ready", "served", "cancelled"]).default("pending").notNull(),
+  requestedAt: timestamp("requestedAt").defaultNow().notNull(),
+  readyAt: timestamp("readyAt"),
+  servedAt: timestamp("servedAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (t) => ({
+  tableSessionIdx: index("table_session_items_session_idx").on(t.tableSessionId),
+  productIdx: index("table_session_items_product_idx").on(t.productId),
+  requestedAtIdx: index("table_session_items_requested_at_idx").on(t.requestedAt),
+  statusIdx: index("table_session_items_status_idx").on(t.status),
+}));
+export type TableSessionItem = typeof tableSessionItems.$inferSelect;
+export type InsertTableSessionItem = typeof tableSessionItems.$inferInsert;
+
+export const notificationCampaigns = mysqlTable("notification_campaigns", {
+  id: int("id").autoincrement().primaryKey(),
+  storeId: int("storeId"),
+  name: varchar("name", { length: 200 }).notNull(),
+  channel: mysqlEnum("channel", ["push", "whatsapp", "sms", "email"]).notNull(),
+  status: mysqlEnum("status", ["draft", "scheduled", "sending", "sent", "error"]).default("draft").notNull(),
+  audienceType: varchar("audienceType", { length: 80 }).default("custom").notNull(),
+  messageTitle: varchar("messageTitle", { length: 200 }),
+  messageBody: text("messageBody").notNull(),
+  estimatedRecipients: int("estimatedRecipients").default(0).notNull(),
+  scheduledAt: timestamp("scheduledAt"),
+  sentAt: timestamp("sentAt"),
+  createdByUserId: int("createdByUserId"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (t) => ({
+  storeIdx: index("notification_campaigns_store_idx").on(t.storeId),
+  statusIdx: index("notification_campaigns_status_idx").on(t.status),
+}));
+export type NotificationCampaign = typeof notificationCampaigns.$inferSelect;
+export type InsertNotificationCampaign = typeof notificationCampaigns.$inferInsert;
+
+export const campaignSegments = mysqlTable("campaign_segments", {
+  id: int("id").autoincrement().primaryKey(),
+  campaignId: int("campaignId").notNull(),
+  filterKey: varchar("filterKey", { length: 80 }).notNull(),
+  operator: varchar("operator", { length: 20 }).default("eq").notNull(),
+  value: text("value").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (t) => ({
+  campaignIdx: index("campaign_segments_campaign_idx").on(t.campaignId),
+  filterIdx: index("campaign_segments_filter_idx").on(t.filterKey),
+}));
+export type CampaignSegment = typeof campaignSegments.$inferSelect;
+
+export const notificationLogs = mysqlTable("notification_logs", {
+  id: int("id").autoincrement().primaryKey(),
+  campaignId: int("campaignId"),
+  userId: int("userId"),
+  channel: mysqlEnum("channel", ["push", "whatsapp", "sms", "email"]).notNull(),
+  destination: varchar("destination", { length: 320 }),
+  status: mysqlEnum("status", ["queued", "sent", "delivered", "opened", "clicked", "converted", "failed"]).default("queued").notNull(),
+  providerMessageId: varchar("providerMessageId", { length: 120 }),
+  convertedOrderId: int("convertedOrderId"),
+  metadata: text("metadata"),
+  sentAt: timestamp("sentAt"),
+  deliveredAt: timestamp("deliveredAt"),
+  openedAt: timestamp("openedAt"),
+  clickedAt: timestamp("clickedAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (t) => ({
+  campaignIdx: index("notification_logs_campaign_idx").on(t.campaignId),
+  userIdx: index("notification_logs_user_idx").on(t.userId),
+  statusIdx: index("notification_logs_status_idx").on(t.status),
+}));
+export type NotificationLog = typeof notificationLogs.$inferSelect;
+
+export const customerMetrics = mysqlTable("customer_metrics", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  storeId: int("storeId").default(0).notNull(),
+  firstOrderAt: timestamp("firstOrderAt"),
+  lastOrderAt: timestamp("lastOrderAt"),
+  totalOrders: int("totalOrders").default(0).notNull(),
+  deliveredOrders: int("deliveredOrders").default(0).notNull(),
+  cancelledOrders: int("cancelledOrders").default(0).notNull(),
+  firstOrderCount: int("firstOrderCount").default(0).notNull(),
+  totalSpent: decimal("totalSpent", { precision: 12, scale: 2 }).default("0.00").notNull(),
+  averageTicket: decimal("averageTicket", { precision: 12, scale: 2 }).default("0.00").notNull(),
+  favoriteNeighborhood: varchar("favoriteNeighborhood", { length: 120 }),
+  favoriteOrderDay: varchar("favoriteOrderDay", { length: 20 }),
+  favoriteOrderHour: int("favoriteOrderHour"),
+  favoriteProductName: varchar("favoriteProductName", { length: 200 }),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (t) => ({
+  userStoreUnique: uniqueIndex("customer_metrics_user_store_unique").on(t.userId, t.storeId),
+  ordersIdx: index("customer_metrics_orders_idx").on(t.totalOrders),
+  spentIdx: index("customer_metrics_spent_idx").on(t.totalSpent),
+}));
+export type CustomerMetric = typeof customerMetrics.$inferSelect;
+export type InsertCustomerMetric = typeof customerMetrics.$inferInsert;
+
+export const customerAuthProviders = mysqlTable("customer_auth_providers", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  provider: mysqlEnum("provider", ["email", "phone", "google", "apple", "facebook", "instagram", "manus"]).notNull(),
+  providerUserId: varchar("providerUserId", { length: 191 }).notNull(),
+  providerEmail: varchar("providerEmail", { length: 320 }),
+  providerPhone: varchar("providerPhone", { length: 20 }),
+  isPrimary: boolean("isPrimary").default(false).notNull(),
+  linkedAt: timestamp("linkedAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (t) => ({
+  userIdx: index("customer_auth_providers_user_idx").on(t.userId),
+  uniqueProviderUser: uniqueIndex("customer_auth_providers_provider_user_unique").on(t.provider, t.providerUserId),
+  uniqueUserProvider: uniqueIndex("customer_auth_providers_user_provider_unique").on(t.userId, t.provider),
+}));
+export type CustomerAuthProvider = typeof customerAuthProviders.$inferSelect;
+export type InsertCustomerAuthProvider = typeof customerAuthProviders.$inferInsert;
+
+export const otpCodes = mysqlTable("otp_codes", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId"),
+  phone: varchar("phone", { length: 20 }).notNull(),
+  purpose: mysqlEnum("purpose", ["login", "verify_phone"]).default("login").notNull(),
+  codeHash: varchar("codeHash", { length: 255 }).notNull(),
+  attempts: int("attempts").default(0).notNull(),
+  requestIp: varchar("requestIp", { length: 64 }),
+  userAgent: text("userAgent"),
+  expiresAt: timestamp("expiresAt").notNull(),
+  consumedAt: timestamp("consumedAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (t) => ({
+  phoneIdx: index("otp_codes_phone_idx").on(t.phone),
+  phonePurposeIdx: index("otp_codes_phone_purpose_idx").on(t.phone, t.purpose),
+  expiresIdx: index("otp_codes_expires_idx").on(t.expiresAt),
+}));
+export type OtpCode = typeof otpCodes.$inferSelect;
+export type InsertOtpCode = typeof otpCodes.$inferInsert;
 
 // --- TYPES ----------------------------------------------------------------------------------------
 export type User = typeof users.$inferSelect;

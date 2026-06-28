@@ -1,6 +1,7 @@
-import { useState, useEffect, useCallback } from "react";
-import { trpc } from "@/lib/trpc";
+import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
+
+import { trpc } from "@/lib/trpc";
 
 function urlBase64ToUint8Array(base64String: string): Uint8Array<ArrayBuffer> {
   const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
@@ -13,6 +14,29 @@ function urlBase64ToUint8Array(base64String: string): Uint8Array<ArrayBuffer> {
 
 export type PushPermission = "default" | "granted" | "denied" | "unsupported";
 
+function isIOSDevice() {
+  return /iphone|ipad|ipod/i.test(navigator.userAgent);
+}
+
+function isStandalonePWA() {
+  return (
+    window.matchMedia("(display-mode: standalone)").matches ||
+    (navigator as Navigator & { standalone?: boolean }).standalone === true
+  );
+}
+
+function canUsePushNotifications() {
+  const hasCoreSupport =
+    window.isSecureContext &&
+    "serviceWorker" in navigator &&
+    "PushManager" in window &&
+    "Notification" in window;
+
+  if (!hasCoreSupport) return false;
+  if (isIOSDevice() && !isStandalonePWA()) return false;
+  return true;
+}
+
 export function usePushNotifications() {
   const [permission, setPermission] = useState<PushPermission>("default");
   const [isSubscribed, setIsSubscribed] = useState(false);
@@ -22,92 +46,119 @@ export function usePushNotifications() {
   const subscribeMutation = trpc.push.subscribe.useMutation();
   const unsubscribeMutation = trpc.push.unsubscribe.useMutation();
 
-  // Buscar chave VAPID do servidor (mais confiável que variável de ambiente no frontend)
   const { data: vapidData } = trpc.push.vapidPublicKey.useQuery();
   const vapidPublicKey = vapidData?.key ?? import.meta.env.VITE_VAPID_PUBLIC_KEY ?? "";
 
-  // Verificar suporte e estado inicial
   useEffect(() => {
-    const supported =
-      "serviceWorker" in navigator &&
-      "PushManager" in window &&
-      "Notification" in window;
+    const supported = canUsePushNotifications();
     setIsSupported(supported);
 
-    if (supported) {
-      setPermission(Notification.permission as PushPermission);
-      // Verificar se já tem subscription ativa
-      navigator.serviceWorker.ready.then((reg) => {
-        reg.pushManager.getSubscription().then((sub) => {
-          setIsSubscribed(!!sub);
-        });
-      });
+    if (!supported) {
+      setPermission("unsupported");
+      return;
     }
+
+    setPermission(Notification.permission as PushPermission);
+
+    navigator.serviceWorker
+      .register("/sw.js")
+      .catch(() => null)
+      .then(() => navigator.serviceWorker.ready)
+      .then((reg) => reg.pushManager.getSubscription())
+      .then((sub) => {
+        setIsSubscribed(!!sub);
+      })
+      .catch(() => {
+        setIsSubscribed(false);
+      });
   }, []);
 
   const subscribe = useCallback(async () => {
     if (!isSupported) {
-      toast.error("Seu navegador não suporta notificações push.");
+      if (isIOSDevice() && !isStandalonePWA()) {
+        toast.error("No iPhone, abra o app pela Tela de Inicio para ativar notificacoes.");
+        return;
+      }
+
+      toast.error("Seu navegador nao suporta notificacoes push.");
       return;
     }
+
     if (!vapidPublicKey) {
-      toast.error("Chave VAPID não configurada. Contate o suporte.");
+      toast.error("Chave VAPID nao configurada. Contate o suporte.");
       return;
     }
 
     setIsLoading(true);
     try {
-      // Registrar Service Worker
-      const reg = await navigator.serviceWorker.register("/sw.js");
-      await navigator.serviceWorker.ready;
+      const perm =
+        Notification.permission === "granted"
+          ? "granted"
+          : await Notification.requestPermission();
 
-      // Pedir permissão
-      const perm = await Notification.requestPermission();
       setPermission(perm as PushPermission);
 
       if (perm !== "granted") {
-        toast.error("Permissão para notificações negada.");
+        toast.error("Permissão para notificações negada.", {
+          description: "Você pode ativar nas configurações do navegador.",
+        });
         return;
       }
 
-      // Criar subscription
-      const sub = await reg.pushManager.subscribe({
-        userVisibleOnly: true,
-        applicationServerKey: urlBase64ToUint8Array(vapidPublicKey),
-      });
+      const reg = await navigator.serviceWorker.register("/sw.js");
+      await navigator.serviceWorker.ready;
+      await reg.update().catch(() => undefined);
+
+      const existing = await reg.pushManager.getSubscription();
+      const sub =
+        existing ??
+        (await reg.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: urlBase64ToUint8Array(vapidPublicKey),
+        }));
 
       const subJson = sub.toJSON();
+      const keys = (subJson.keys as Record<string, string> | undefined) ?? {};
+
+      if (!subJson.endpoint || !keys.p256dh || !keys.auth) {
+        throw new Error("Subscription inválida: chaves ausentes.");
+      }
+
       await subscribeMutation.mutateAsync({
-        endpoint: subJson.endpoint!,
-        p256dh: (subJson.keys as any)?.p256dh ?? "",
-        auth: (subJson.keys as any)?.auth ?? "",
+        endpoint: subJson.endpoint,
+        p256dh: keys.p256dh,
+        auth: keys.auth,
         userAgent: navigator.userAgent,
       });
 
       setIsSubscribed(true);
       toast.success("Notificações ativadas! Você receberá alertas de novos pedidos.");
     } catch (err) {
-      console.error("[Push] Erro ao ativar notificações:", err);
-      toast.error("Não foi possível ativar as notificações.");
+      console.error("[Push] Erro ao ativar notificacoes:", err);
+      toast.error("Não foi possível ativar as notificações.", {
+        description: err instanceof Error ? err.message : "Tente novamente.",
+      });
     } finally {
       setIsLoading(false);
     }
-  }, [isSupported, vapidPublicKey, subscribeMutation]);
+  }, [isSupported, subscribeMutation, vapidPublicKey]);
 
   const unsubscribe = useCallback(async () => {
     setIsLoading(true);
     try {
       const reg = await navigator.serviceWorker.ready;
       const sub = await reg.pushManager.getSubscription();
+
       if (sub) {
-        await sub.unsubscribe();
         await unsubscribeMutation.mutateAsync({ endpoint: sub.endpoint });
+        await sub.unsubscribe();
       }
+
       setIsSubscribed(false);
-      toast.success("Notificações desativadas.");
+      toast.success("Notificacoes desativadas.");
     } catch (err) {
-      console.error("[Push] Erro ao desativar notificações:", err);
-      toast.error("Não foi possível desativar as notificações.");
+      console.error("[Push] Erro ao desativar notificacoes:", err);
+      toast.error("Nao foi possivel desativar as notificacoes.");
     } finally {
       setIsLoading(false);
     }

@@ -1,10 +1,10 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import { appRouter } from "./routers";
-import type { TrpcContext } from "./_core/context";
+import { appRouter } from "./routers.ts";
+import type { TrpcContext } from "./_core/context.ts";
 
 // ─── Mock DB calls ────────────────────────────────────────────────────────────
 vi.mock("./automation", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("./automation")>();
+  const actual = await importOriginal<typeof import("./automation.ts")>();
   return {
     ...actual,
     listJourneys: vi.fn().mockResolvedValue([

@@ -3,7 +3,7 @@
  * Visual claro com identidade Bonatto (bordô + branco)
  */
 import { MapPin, ChevronRight, CheckCircle2 } from "lucide-react";
-import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { useStore } from "@/contexts/StoreContext";
 import { cn } from "@/lib/utils";
 
@@ -20,6 +20,9 @@ export function CitySelectModal() {
     <Dialog open={showCityModal} onOpenChange={setShowCityModal}>
       <DialogContent className="p-0 border-0 bg-transparent shadow-none max-w-sm w-[92vw] overflow-visible">
         <DialogTitle className="sr-only">Escolha sua unidade</DialogTitle>
+        <DialogDescription className="sr-only">
+          Selecione a unidade Bonatto mais próxima para continuar navegando no cardápio.
+        </DialogDescription>
         <div
           className="relative overflow-hidden rounded-2xl"
           style={{

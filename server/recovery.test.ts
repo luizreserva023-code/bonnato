@@ -33,7 +33,7 @@ vi.mock("./push", () => ({
 
 describe("markCartRecovered", () => {
   it("deve ser uma função exportada do automation.ts", async () => {
-    const mod = await import("./automation");
+    const mod = await import("./automation.ts");
     expect(typeof mod.markCartRecovered).toBe("function");
   });
 });
@@ -42,7 +42,7 @@ describe("markCartRecovered", () => {
 
 describe("markConversions", () => {
   it("deve ser uma função exportada do automation.ts", async () => {
-    const mod = await import("./automation");
+    const mod = await import("./automation.ts");
     expect(typeof mod.markConversions).toBe("function");
   });
 });
@@ -51,7 +51,7 @@ describe("markConversions", () => {
 
 describe("processReactivation", () => {
   it("deve ser uma função exportada do automation.ts", async () => {
-    const mod = await import("./automation");
+    const mod = await import("./automation.ts");
     expect(typeof mod.processReactivation).toBe("function");
   });
 });
@@ -60,7 +60,7 @@ describe("processReactivation", () => {
 
 describe("processAbandonedCarts", () => {
   it("deve ser uma função exportada do automation.ts", async () => {
-    const mod = await import("./automation");
+    const mod = await import("./automation.ts");
     expect(typeof mod.processAbandonedCarts).toBe("function");
   });
 });

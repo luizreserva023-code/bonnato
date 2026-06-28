@@ -1,4 +1,5 @@
 import { useState } from "react";
+import type { inferRouterOutputs } from "@trpc/server";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { Redirect } from "wouter";
 import { trpc } from "@/lib/trpc";
@@ -50,6 +51,8 @@ import {
   Palette,
 } from "lucide-react";
 import { JoinedPagination } from "@/components/ui/joined-pagination";
+import { AdminStoreProvider, useAdminStore } from "@/contexts/AdminStoreContext";
+import type { AppRouter } from "../../../server/routers";
 
 // ─── Tag helpers ─────────────────────────────────────────────────────────────
 
@@ -72,6 +75,11 @@ const TAG_COLORS: Record<string, string> = {
 };
 
 const ALL_TAGS = ["novo", "recorrente", "indeciso", "inativo_15", "inativo_30", "inativo_60"];
+type RouterOutputs = inferRouterOutputs<AppRouter>;
+type CrmCustomerDetail = NonNullable<RouterOutputs["crm"]["getCustomerDetail"]>;
+type CrmCustomerOrder = CrmCustomerDetail["orders"][number];
+type ClubMemberRecord = RouterOutputs["club"]["getMembers"][number];
+type PendingClubPaymentRecord = RouterOutputs["club"]["getPendingPayments"][number];
 
 function TagBadge({ tag }: { tag: string }) {
   return (
@@ -105,8 +113,8 @@ const STATUS_COLORS: Record<string, string> = {
 
 // ─── Stats Cards ─────────────────────────────────────────────────────────────
 
-function StatsCards() {
-  const { data: stats } = trpc.crm.getStats.useQuery();
+function StatsCards({ storeId }: { storeId?: number }) {
+  const { data: stats } = trpc.crm.getStats.useQuery({ storeId });
 
   if (!stats) return null;
 
@@ -144,9 +152,11 @@ function StatsCards() {
 
 function CustomerDetailDialog({
   userId,
+  storeId,
   onClose,
 }: {
   userId: number;
+  storeId?: number;
   onClose: () => void;
 }) {
   const utils = trpc.useUtils();
@@ -154,7 +164,7 @@ function CustomerDetailDialog({
   const [addCustomTagId, setAddCustomTagId] = useState("");
   const [triggerJourneyId, setTriggerJourneyId] = useState("");
 
-  const { data, isLoading, refetch } = trpc.crm.getCustomerDetail.useQuery({ userId });
+  const { data, isLoading, refetch } = trpc.crm.getCustomerDetail.useQuery({ userId, storeId });
   const { data: journeysData } = trpc.automations.listJourneys.useQuery();
   const { data: allCustomTags } = trpc.crm.listCustomTags.useQuery();
   const { data: customerCustomTags, refetch: refetchCustomTags } = trpc.crm.getCustomTagsForCustomer.useQuery({ userId });
@@ -217,10 +227,11 @@ function CustomerDetailDialog({
   if (!data) return null;
 
   const { user, orders, tags, executions, carts } = data;
+  const customerOrders: CrmCustomerOrder[] = orders;
 
-  const totalSpent = orders
-    .filter((o) => o.status === "delivered")
-    .reduce((acc, o) => acc + parseFloat(o.total), 0);
+  const totalSpent = customerOrders
+    .filter((order: CrmCustomerOrder) => order.status === "delivered")
+    .reduce((acc: number, order: CrmCustomerOrder) => acc + parseFloat(order.total), 0);
 
   return (
     <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
@@ -239,7 +250,7 @@ function CustomerDetailDialog({
       <Tabs defaultValue="overview">
         <TabsList className="w-full">
           <TabsTrigger value="overview" className="flex-1">Visão Geral</TabsTrigger>
-          <TabsTrigger value="orders" className="flex-1">Pedidos ({orders.length})</TabsTrigger>
+          <TabsTrigger value="orders" className="flex-1">Pedidos ({customerOrders.length})</TabsTrigger>
           <TabsTrigger value="journeys" className="flex-1">Jornadas ({executions.length})</TabsTrigger>
           <TabsTrigger value="carts" className="flex-1">Carrinhos ({carts.length})</TabsTrigger>
         </TabsList>
@@ -249,7 +260,7 @@ function CustomerDetailDialog({
           {/* Stats */}
           <div className="grid grid-cols-3 gap-3">
             <div className="bg-[#fce8e8] rounded-lg p-3 text-center">
-              <div className="text-xl font-extrabold text-[#6E0D12]">{orders.length}</div>
+              <div className="text-xl font-extrabold text-[#6E0D12]">{customerOrders.length}</div>
               <div className="text-xs text-muted-foreground">Pedidos</div>
             </div>
             <div className="bg-[#fdf5f5] rounded-lg p-3 text-center">
@@ -409,8 +420,8 @@ function CustomerDetailDialog({
         {/* Orders */}
         <TabsContent value="orders" className="mt-4">
           <div className="space-y-2">
-            {orders.length === 0 && <p className="text-sm text-gray-500 text-center py-4">Nenhum pedido encontrado</p>}
-            {orders.map((order) => (
+            {customerOrders.length === 0 && <p className="text-sm text-gray-500 text-center py-4">Nenhum pedido encontrado</p>}
+            {customerOrders.map((order: CrmCustomerOrder) => (
               <div key={order.id} className="border rounded-lg p-3 flex items-center justify-between">
                 <div>
                   <div className="font-medium text-sm">Pedido #{order.id}</div>
@@ -515,15 +526,17 @@ function ClubTab() {
     onError: (e) => toast.error(e.message),
   });
 
-  const filteredMembers = (members ?? []).filter((m) => {
+  const memberList: ClubMemberRecord[] = members ?? [];
+  const pendingPaymentList: PendingClubPaymentRecord[] = pendingPayments ?? [];
+  const filteredMembers = memberList.filter((member: ClubMemberRecord) => {
     if (planFilter === "all") return true;
-    return m.clubPlan === planFilter;
+    return member.clubPlan === planFilter;
   });
 
-  const activeCount = (members ?? []).filter((m) => m.clubStatus === "active").length;
-  const bonattaoCount = (members ?? []).filter((m) => m.clubPlan === "bonattao" && m.clubStatus === "active").length;
-  const basicoCount = (members ?? []).filter((m) => m.clubPlan === "basico" && m.clubStatus === "active").length;
-  const pendingCount = (pendingPayments ?? []).length;
+  const activeCount = memberList.filter((member: ClubMemberRecord) => member.clubStatus === "active").length;
+  const bonattaoCount = memberList.filter((member: ClubMemberRecord) => member.clubPlan === "bonattao" && member.clubStatus === "active").length;
+  const basicoCount = memberList.filter((member: ClubMemberRecord) => member.clubPlan === "basico" && member.clubStatus === "active").length;
+  const pendingCount = pendingPaymentList.length;
 
   return (
     <div className="space-y-6">
@@ -578,7 +591,7 @@ function ClubTab() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {(pendingPayments ?? []).map((p) => (
+                    {pendingPaymentList.map((p: PendingClubPaymentRecord) => (
                       <TableRow key={p.id}>
                         <TableCell>
                           <div className="font-medium text-sm">{p.userName ?? "—"}</div>
@@ -681,7 +694,7 @@ function ClubTab() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {filteredMembers.map((m) => (
+                  {filteredMembers.map((m: ClubMemberRecord) => (
                     <TableRow key={m.id}>
                       <TableCell>
                         <div className="flex items-center gap-2">
@@ -794,8 +807,9 @@ function ClubTab() {
 
 // ─── Main CRM Page ────────────────────────────────────────────────────────────
 
-export default function CRM() {
+function CRMContent() {
   const { user, loading: authLoading } = useAuth();
+  const { selectedStoreId, selectedStoreName, stores, isManager, setSelectedStoreId } = useAdminStore();
 
   // Guard: apenas admins podem acessar
   if (!authLoading && (!user || user.role !== "admin")) {
@@ -830,6 +844,7 @@ export default function CRM() {
     search: debouncedSearch || undefined,
     tag: tagFilter !== "all" ? tagFilter : undefined,
     limit: 100,
+    storeId: selectedStoreId,
   });
 
   const { data: journeysData } = trpc.automations.listJourneys.useQuery();
@@ -919,6 +934,28 @@ export default function CRM() {
           </p>
         </div>
         <div className="flex gap-2">
+          {isManager ? (
+            <div className="hidden md:flex items-center rounded-lg border bg-[#fce8e8] px-3 py-2 text-xs font-semibold text-[#6E0D12]">
+              Loja: {selectedStoreName}
+            </div>
+          ) : (
+            <Select
+              value={selectedStoreId ? String(selectedStoreId) : "all"}
+              onValueChange={(value) => setSelectedStoreId(value === "all" ? undefined : Number(value))}
+            >
+              <SelectTrigger className="w-[220px]">
+                <SelectValue placeholder="Todas as lojas" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Todas as lojas</SelectItem>
+                {stores.map((store) => (
+                  <SelectItem key={store.id} value={String(store.id)}>
+                    {store.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
           <Button
             variant="outline"
             size="sm"
@@ -964,7 +1001,7 @@ export default function CRM() {
         <TabsContent value="clientes">
 
       {/* Stats */}
-      <StatsCards />
+      <StatsCards storeId={selectedStoreId} />
 
       {/* Filters */}
       <div className="flex flex-col sm:flex-row gap-3 mb-4">
@@ -1267,7 +1304,7 @@ export default function CRM() {
       {/* Customer Detail Dialog */}
       {selectedUserId !== null && (
         <Dialog open={true} onOpenChange={() => setSelectedUserId(null)}>
-          <CustomerDetailDialog userId={selectedUserId} onClose={() => setSelectedUserId(null)} />
+          <CustomerDetailDialog userId={selectedUserId} storeId={selectedStoreId} onClose={() => setSelectedUserId(null)} />
         </Dialog>
       )}
 
@@ -1368,5 +1405,13 @@ function InlineTagsCell({ tags }: { tags: string | null }) {
         <span className="text-xs text-gray-400">+{tagList.length - 3}</span>
       )}
     </div>
+  );
+}
+
+export default function CRM() {
+  return (
+    <AdminStoreProvider>
+      <CRMContent />
+    </AdminStoreProvider>
   );
 }

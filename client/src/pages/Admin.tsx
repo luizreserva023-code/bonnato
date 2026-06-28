@@ -8,7 +8,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
+import { Switch } from "@/components/ui/switch";
+import { Textarea } from "@/components/ui/textarea";
 import { useAuth } from "@/_core/hooks/useAuth";
+import { clampFlavorCount, getPizzaFlavorConfig } from "@/lib/pizza-flavor-config";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
 import {
@@ -16,6 +19,7 @@ import {
   ChefHat,
   ClipboardList,
   Clock,
+  Crown,
   DollarSign,
   Gift,
   Loader2,
@@ -48,6 +52,7 @@ import {
   ImageIcon,
   RefreshCcw,
   FileText,
+  Truck,
 } from "lucide-react";
 import { useState, useEffect, useRef, useCallback, useMemo, createContext, useContext } from "react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -60,10 +65,19 @@ import { useNewOrderAlert } from "@/hooks/useNewOrderAlert";
 import { usePushNotifications } from "@/hooks/usePushNotifications";
 import { Bell, BellOff } from "lucide-react";
 import { JoinedPagination } from "@/components/ui/joined-pagination";
+import { MarketplacesTab } from "./admin/MarketplacesTab";
 import { StoresTab } from "./admin/StoresTab";
 import { Building2, Store, ChevronDown, ChevronLeft, ChevronRight } from "lucide-react";
 import { AdminStoreProvider, useAdminStore } from "@/contexts/AdminStoreContext";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { CATEGORY_ICON_OPTIONS, getCategoryIcon, getCategoryImage } from "@/lib/category-visuals";
+import { BRAND_ASSETS } from "@/lib/brand";
+import {
+  loadMagnificCategoryImages,
+  loadMagnificIcons,
+  type MagnificCategoryImageAsset,
+  type MagnificIconAsset,
+} from "@/lib/magnific-assets";
 import {
   AdminPage,
   AdminTopbar,
@@ -93,7 +107,40 @@ const PAYMENT_LABELS: Record<string, string> = {
   cash: "Dinheiro",
 };
 
-type AdminTab = "dashboard" | "orders" | "messages" | "menu" | "coupons" | "reports" | "promotions" | "raffles" | "upsells" | "users" | "drivers" | "settings" | "stores" | "recovery";
+type AdminTab = "dashboard" | "orders" | "messages" | "menu" | "club" | "coupons" | "reports" | "promotions" | "raffles" | "upsells" | "users" | "drivers" | "settings" | "payments" | "marketplaces" | "stores" | "recovery";
+type ClubAdminPlanId = "bonattao" | "basico";
+type ClubAdminPlan = {
+  id: ClubAdminPlanId;
+  name: string;
+  badge: string;
+  price: number;
+  discountPercent: number;
+  freeDelivery: boolean;
+  freePizzaPerMonth: boolean;
+  description: string;
+  benefits: string[];
+};
+type ClubAdminConfig = {
+  badgeLabel: string;
+  sectionTitle: string;
+  sectionSubtitle: string;
+  ctaLabel: string;
+  disclaimer: string;
+  highlightItems: string[];
+  checkoutTitle: string;
+  checkoutSubtitle: string;
+  checkoutDiscountLabel: string;
+  checkoutDeliveryLabel: string;
+  checkoutFreePizzaLabel: string;
+  profileGuestTitle: string;
+  profileGuestSubtitle: string;
+  profileBenefitsTitle: string;
+  profilePrimaryActionLabel: string;
+  successTitle: string;
+  successSubtitle: string;
+  popularPlanId: ClubAdminPlanId;
+  plans: ClubAdminPlan[];
+};
 
 // ─── Admin Theme Context ─────────────────────────────────────────────────────
 // Dark mode removed — admin always uses light theme
@@ -106,6 +153,7 @@ const NAV_ITEMS: NavItem[] = [
   { id: "dashboard" as AdminTab, label: "Dashboard", icon: <LayoutDashboard className="w-[18px] h-[18px]" /> },
   { id: "orders" as AdminTab, label: "Pedidos", icon: <ClipboardList className="w-[18px] h-[18px]" /> },
   { id: "menu" as AdminTab, label: "Cardápio", icon: <ChefHat className="w-[18px] h-[18px]" /> },
+  { id: "club" as AdminTab, label: "Clube", icon: <Crown className="w-[18px] h-[18px]" /> },
   {
     id: "coupons" as AdminTab, label: "Marketing", icon: <Megaphone className="w-[18px] h-[18px]" />,
     children: [
@@ -131,6 +179,8 @@ const NAV_ITEMS: NavItem[] = [
       { id: "stores" as AdminTab, label: "Lojas", icon: <Building2 className="w-4 h-4" />, adminOnly: true },
     ],
   },
+  { id: "payments" as AdminTab, label: "Pagamentos", icon: <DollarSign className="w-[18px] h-[18px]" />, adminOnly: true },
+  { id: "marketplaces" as AdminTab, label: "Marketplaces", icon: <Truck className="w-[18px] h-[18px]" />, adminOnly: true },
   { id: "settings" as AdminTab, label: "Configurações", icon: <Settings className="w-[18px] h-[18px]" /> },
 ];
 
@@ -138,8 +188,8 @@ const NAV_ITEMS: NavItem[] = [
 
 // ─── Brand assets ────────────────────────────────────────────────────────────
 // Mesmas logos e cores da Navbar da loja
-const BONATTO_ICON_URL = "/brand/palmito-2-circular.png"; // ícone circular (mesmo da navbar)
-const BONATTO_LOGO_URL = "/brand/palmito-logo-tipografica.png"; // logo tipográfica branca
+const BONATTO_ICON_URL = BRAND_ASSETS.palmito;
+const BONATTO_LOGO_URL = BRAND_ASSETS.palmitoWordmark;
 
 // ─── Framer Motion variants for hover-expand sidebar ───────────────────────
 const sidebarMotionVariants = {
@@ -230,9 +280,9 @@ function AdminSidebar({
       {/* ── Header: logo ── */}
       <div className="flex items-center px-3 pt-4 pb-3 overflow-hidden" style={{ borderBottom: `1px solid ${dividerColor}`, minHeight: 60 }}>
         <div className="flex items-center gap-2 min-w-0">
-          <img src="/manus-storage/bonatto-mascote-logo_7b5f45c0.png" alt="Bonatto" className="w-10 h-10 object-contain shrink-0 rounded-full" />
+          <img src={BONATTO_ICON_URL} alt="Bonatto" className="w-10 h-10 object-contain shrink-0 rounded-full" />
           <div className="min-w-0 overflow-hidden flex items-center">
-            <span className="font-bold text-base tracking-tight" style={{ color: '#ffffff', fontFamily: "'Inter', sans-serif" }}>Bonatto Pizza</span>
+            <img src={BONATTO_LOGO_URL} alt="Bonatto Pizza" className="h-8 w-auto object-contain" />
           </div>
         </div>
       </div>
@@ -281,9 +331,6 @@ function AdminSidebar({
                   onMouseEnter={e => { if (!isActive) (e.currentTarget as HTMLButtonElement).style.background = hoverBg; }}
                   onMouseLeave={e => { if (!isActive) (e.currentTarget as HTMLButtonElement).style.background = 'transparent'; }}
                 >
-                  {isActive && !isCollapsed && (
-                    <div className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-5 rounded-r-full" style={{ background: 'rgba(255,255,255,0.9)' }} />
-                  )}
                   <span className="shrink-0" style={{ opacity: isActive ? 1 : 0.7 }}>{item.icon}</span>
                   {!isCollapsed && <span className="flex-1 text-left">{item.label}</span>}
                   {!isCollapsed && hasChildren && (
@@ -295,7 +342,7 @@ function AdminSidebar({
                 </button>
                 {/* Submenu children */}
                 {hasChildren && isOpen && !isCollapsed && (
-                  <div className="ml-5 mt-0.5 space-y-0.5 border-l-2 pl-3" style={{ borderColor: 'rgba(255,255,255,0.20)' }}>
+                  <div className="ml-5 mt-0.5 space-y-0.5 border-l pl-3" style={{ borderColor: 'rgba(255,255,255,0.14)' }}>
                     {item.children!.filter(c => !c.adminOnly || isAdmin).map((child) => {
                       const isChildActive = activeTab === child.id;
                       const childBadge = child.id === 'orders' && pendingCount > 0 ? pendingCount
@@ -509,7 +556,7 @@ export default function Admin() {
             <Menu className="w-5 h-5" />
           </button>
           <div className="flex items-center gap-2 flex-1">
-            <img src="/manus-storage/bonatto-mascote-logo_7b5f45c0.png" alt="Bonatto" className="w-7 h-7 object-contain rounded-full" />
+            <img src={BONATTO_ICON_URL} alt="Bonatto" className="w-7 h-7 object-contain rounded-full" />
             <span className="font-semibold text-sm" style={{ fontFamily: "'Inter', sans-serif", color: 'var(--admin-mobile-header-text)' }}>{activeLabel}</span>
           </div>
           <AdminStoreSelectorMobile />
@@ -524,9 +571,10 @@ export default function Admin() {
         {/* Page content */}
         <main className="flex-1 p-4 lg:p-8" style={{ background: 'var(--admin-bg)' }}>
           <div key={activeTab} style={{ animation: 'adminFadeIn 0.18s ease-out' }}>
-            {activeTab === "dashboard" && <DashboardTab />}
+            {activeTab === "dashboard" && <DeliveryDashboardTab />}
             {activeTab === "orders" && <OrdersTab onOpenOrder={stopAlert} />}
             {activeTab === "menu" && <MenuTab />}
+            {activeTab === "club" && <ClubTab />}
             {activeTab === "coupons" && <CouponsTab />}
             {activeTab === "promotions" && <PromotionsTab />}
             {activeTab === "raffles" && <RafflesTab />}
@@ -535,6 +583,8 @@ export default function Admin() {
             {activeTab === "reports" && <ReportsTab />}
             {activeTab === "drivers" && <DriversTab />}
             {activeTab === "messages" && <MessagesTab />}
+            {activeTab === "payments" && isAdmin && <PaymentsTab />}
+            {activeTab === "marketplaces" && isAdmin && <MarketplacesTab />}
             {activeTab === "settings" && <SettingsTab />}
             {activeTab === "stores" && isAdmin && <StoresTab />}
             {activeTab === "recovery" && <RecoveryTab />}
@@ -965,6 +1015,839 @@ function DashboardTab() {
   );
 }
 
+function DeliveryDashboardTab() {
+  const utils = trpc.useUtils();
+  const { selectedStoreId } = useAdminStore();
+  const { user } = useAuth();
+  const [searchQuery, setSearchQuery] = useState("");
+  const [periodDays, setPeriodDays] = useState<7 | 14 | 30>(14);
+  const [timezoneOffset] = useState(() => new Date().getTimezoneOffset());
+
+  const endDate = useMemo(() => new Date(), [periodDays]);
+  const startDate = useMemo(() => {
+    const date = new Date();
+    date.setHours(0, 0, 0, 0);
+    date.setDate(date.getDate() - (periodDays - 1));
+    return date;
+  }, [periodDays]);
+
+  const { data: liveOrders, isLoading: loadingLive } = trpc.orders.list.useQuery(
+    { limit: 400, storeId: selectedStoreId },
+    { refetchInterval: 30000 }
+  );
+  const { data: periodOrders, isLoading: loadingPeriod } = trpc.orders.list.useQuery(
+    { limit: 5000, storeId: selectedStoreId, startDate, endDate },
+    { refetchInterval: 60000 }
+  );
+  const { data: overview, isLoading: loadingOverview } = trpc.analytics.salesOverview.useQuery(
+    { startDate, endDate, storeId: selectedStoreId },
+    { refetchInterval: 60000 }
+  );
+  const { data: series, isLoading: loadingSeries } = trpc.analytics.salesTimeSeries.useQuery(
+    { startDate, endDate, storeId: selectedStoreId, timezoneOffset },
+    { refetchInterval: 60000 }
+  );
+  const { data: recentOrders, isLoading: loadingRecent } = trpc.analytics.recentOrders.useQuery(
+    { limit: 14, storeId: selectedStoreId },
+    { refetchInterval: 30000 }
+  );
+  const { data: topProducts, isLoading: loadingProducts } = trpc.reports.topProducts.useQuery(
+    { limit: 6, storeId: selectedStoreId, startDate, endDate },
+    { refetchInterval: 60000 }
+  );
+  const { data: drivers } = trpc.drivers.list.useQuery(
+    { storeId: selectedStoreId },
+    { refetchInterval: 30000 }
+  );
+
+  const userName = user?.name ?? (user?.role === "admin" ? "Administrador" : "Gerente");
+  const firstNameOnly = userName.split(" ")[0];
+
+  const cardStyle: React.CSSProperties = {
+    background: "#ffffff",
+    borderRadius: 18,
+    border: "1px solid #eadfdf",
+    boxShadow: "0 16px 40px rgba(81, 15, 20, 0.06)",
+    padding: 20,
+  };
+
+  const activeStatuses = new Set(["pending", "confirmed", "preparing", "out_for_delivery"]);
+  const statusTone: Record<string, string> = {
+    pending: "bg-[#fff2df] text-[#8a4c00]",
+    confirmed: "bg-[#fce8e8] text-[#7d0f14]",
+    preparing: "bg-[#f8d9d9] text-[#661014]",
+    out_for_delivery: "bg-[#7d0f14] text-white",
+    delivered: "bg-[#edf9f0] text-[#166534]",
+    cancelled: "bg-[#f2f4f7] text-[#667085]",
+  };
+  const sourceLabels: Record<string, string> = {
+    app: "App",
+    ifood: "iFood",
+    whatsapp: "WhatsApp",
+    phone: "Telefone",
+  };
+  const serviceLabels: Record<string, string> = {
+    delivery: "Delivery",
+    pickup: "Retirada",
+    dine_in: "Salao",
+    counter: "Balcao",
+  };
+  const paymentLabels: Record<string, string> = {
+    credit_card: "Cartao credito",
+    debit_card: "Cartao debito",
+    pix: "PIX",
+    cash: "Dinheiro",
+  };
+  const chartPalette = ["#7d0f14", "#b42318", "#d92d20", "#f97066", "#fda29b", "#fecdc9"];
+  const formatCurrency = (value: number) =>
+    new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(value || 0);
+  const formatCompactCurrency = (value: number) =>
+    new Intl.NumberFormat("pt-BR", {
+      style: "currency",
+      currency: "BRL",
+      maximumFractionDigits: value >= 1000 ? 0 : 2,
+    }).format(value || 0);
+  const percentChange = (current: number, previous: number) => (previous > 0 ? ((current - previous) / previous) * 100 : 0);
+  const safeMinutesDiff = (start?: string | number | Date | null, end?: string | number | Date | null) => {
+    if (!start || !end) return null;
+    const startMs = new Date(start).getTime();
+    const endMs = new Date(end).getTime();
+    if (!Number.isFinite(startMs) || !Number.isFinite(endMs) || endMs < startMs) return null;
+    return Math.round((endMs - startMs) / 60000);
+  };
+  const average = (values: number[]) => {
+    if (!values.length) return 0;
+    return values.reduce((sum, value) => sum + value, 0) / values.length;
+  };
+
+  const activeOrders = useMemo(
+    () => (liveOrders ?? []).filter((order) => activeStatuses.has(order.status)),
+    [liveOrders]
+  );
+  const periodOrdersAll = periodOrders ?? [];
+  const completedPeriodOrders = periodOrdersAll.filter((order) => order.status !== "cancelled");
+  const deliveryOrders = completedPeriodOrders.filter((order) => order.serviceType === "delivery");
+  const deliveredDeliveryOrders = deliveryOrders.filter((order) => order.status === "delivered");
+  const cancelledOrders = periodOrdersAll.filter((order) => order.status === "cancelled");
+
+  const queueNow = {
+    pending: activeOrders.filter((order) => order.status === "pending").length,
+    confirmed: activeOrders.filter((order) => order.status === "confirmed").length,
+    preparing: activeOrders.filter((order) => order.status === "preparing").length,
+    outForDelivery: activeOrders.filter((order) => order.status === "out_for_delivery").length,
+  };
+  const activeDrivers = drivers?.filter((driver) => driver.active).length ?? 0;
+  const assignedDrivers = new Set(activeOrders.map((order) => order.driverId).filter(Boolean)).size;
+  const loadPerDriver = activeDrivers > 0 ? activeOrders.length / activeDrivers : activeOrders.length;
+  const criticalOrders = activeOrders
+    .map((order) => ({
+      ...order,
+      ageMinutes: safeMinutesDiff(order.createdAt, new Date()) ?? 0,
+    }))
+    .filter((order) => order.ageMinutes >= 35)
+    .sort((a, b) => b.ageMinutes - a.ageMinutes);
+
+  const kitchenLeadTimes = completedPeriodOrders
+    .map((order) => safeMinutesDiff(order.confirmedAt ?? order.createdAt, order.readyAt ?? order.outForDeliveryAt ?? order.deliveredAt))
+    .filter((value): value is number => value !== null);
+  const dispatchLeadTimes = deliveryOrders
+    .map((order) => safeMinutesDiff(order.readyAt ?? order.preparingAt ?? order.confirmedAt ?? order.createdAt, order.outForDeliveryAt))
+    .filter((value): value is number => value !== null);
+  const endToEndLeadTimes = deliveredDeliveryOrders
+    .map((order) => safeMinutesDiff(order.createdAt, order.deliveredAt))
+    .filter((value): value is number => value !== null);
+  const onTimeOrders = deliveredDeliveryOrders.filter((order) => {
+    if (!order.predictedDeliveredAt || !order.deliveredAt) return false;
+    return new Date(order.deliveredAt).getTime() <= new Date(order.predictedDeliveredAt).getTime();
+  }).length;
+  const onTimeBase = deliveredDeliveryOrders.filter((order) => order.predictedDeliveredAt && order.deliveredAt).length;
+
+  const totalRevenue = Number(overview?.totalRevenue ?? 0);
+  const totalOrders = Number(overview?.totalOrders ?? 0);
+  const avgTicket = Number(overview?.avgTicket ?? 0);
+  const todayRevenue = Number(overview?.todayRevenue ?? 0);
+  const todayOrders = Number(overview?.todayOrders ?? 0);
+  const prevRevenue = Number(overview?.prevTotalRevenue ?? 0);
+  const prevOrders = Number(overview?.prevTotalOrders ?? 0);
+  const revenueDelta = percentChange(totalRevenue, prevRevenue);
+  const cancelRate = periodOrdersAll.length > 0 ? (cancelledOrders.length / periodOrdersAll.length) * 100 : 0;
+  const deliveryShare = completedPeriodOrders.length > 0 ? (deliveryOrders.length / completedPeriodOrders.length) * 100 : 0;
+  const criticalRate = activeOrders.length > 0 ? (criticalOrders.length / activeOrders.length) * 100 : 0;
+
+  const chartData = (series ?? []).map((point) => ({
+    date: new Date(`${point.date}T00:00:00`).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" }),
+    pedidos: point.totalOrders,
+    receita: Number(point.totalRevenue ?? 0),
+  }));
+  const dailyAverageRevenue = chartData.length > 0 ? chartData.reduce((sum, point) => sum + point.receita, 0) / chartData.length : 0;
+
+  const hourlyVolume = Array.from({ length: 24 }, (_, hour) => {
+    const bucketOrders = completedPeriodOrders.filter((order) => {
+      const orderHour = new Date(order.createdAt).toLocaleString("en-US", {
+        hour: "2-digit",
+        hour12: false,
+        timeZone: "America/Sao_Paulo",
+      });
+      return Number(orderHour) === hour;
+    });
+    return {
+      label: `${String(hour).padStart(2, "0")}h`,
+      pedidos: bucketOrders.length,
+      receita: bucketOrders.reduce((sum, order) => sum + Number(order.total), 0),
+    };
+  });
+
+  const sourceMix = Object.entries(
+    completedPeriodOrders.reduce<Record<string, { orders: number; revenue: number }>>((acc, order) => {
+      const key = order.source ?? "app";
+      const current = acc[key] ?? { orders: 0, revenue: 0 };
+      current.orders += 1;
+      current.revenue += Number(order.total);
+      acc[key] = current;
+      return acc;
+    }, {})
+  )
+    .map(([key, value], index) => ({
+      key,
+      label: sourceLabels[key] ?? key,
+      orders: value.orders,
+      revenue: value.revenue,
+      fill: chartPalette[index % chartPalette.length],
+    }))
+    .sort((a, b) => b.orders - a.orders);
+
+  const paymentMix = Object.entries(
+    completedPeriodOrders.reduce<Record<string, number>>((acc, order) => {
+      const key = order.paymentMethod;
+      acc[key] = (acc[key] ?? 0) + Number(order.total);
+      return acc;
+    }, {})
+  )
+    .map(([key, revenue]) => ({
+      key,
+      label: paymentLabels[key] ?? key,
+      revenue,
+    }))
+    .sort((a, b) => b.revenue - a.revenue);
+
+  const serviceMix = Object.entries(
+    completedPeriodOrders.reduce<Record<string, number>>((acc, order) => {
+      const key = order.serviceType;
+      acc[key] = (acc[key] ?? 0) + 1;
+      return acc;
+    }, {})
+  )
+    .map(([key, count]) => ({
+      key,
+      label: serviceLabels[key] ?? key,
+      count,
+    }))
+    .sort((a, b) => b.count - a.count);
+
+  const neighborhoodRows = Object.values(
+    deliveredDeliveryOrders.reduce<Record<string, { name: string; orders: number; revenue: number; minutes: number[] }>>((acc, order) => {
+      const key = order.deliveryNeighborhood?.trim() || order.deliveryCity?.trim() || "Sem bairro";
+      const current = acc[key] ?? { name: key, orders: 0, revenue: 0, minutes: [] };
+      current.orders += 1;
+      current.revenue += Number(order.total);
+      const cycle = safeMinutesDiff(order.createdAt, order.deliveredAt);
+      if (cycle !== null) current.minutes.push(cycle);
+      acc[key] = current;
+      return acc;
+    }, {})
+  )
+    .map((row) => ({
+      ...row,
+      avgMinutes: average(row.minutes),
+    }))
+    .sort((a, b) => b.orders - a.orders)
+    .slice(0, 6);
+
+  const filteredRecentOrders = (recentOrders ?? []).filter((order) => {
+    const normalizedQuery = searchQuery.trim().toLowerCase();
+    if (!normalizedQuery) return true;
+    return (
+      order.customerName.toLowerCase().includes(normalizedQuery) ||
+      String(order.id).includes(normalizedQuery)
+    );
+  });
+
+  const opsStatus =
+    criticalRate >= 35 || cancelRate >= 8
+      ? { label: "Operacao critica", tone: "bg-[#fef3f2] text-[#b42318]" }
+      : criticalRate >= 15 || cancelRate >= 4
+        ? { label: "Operacao em atencao", tone: "bg-[#fff7ed] text-[#c2410c]" }
+        : { label: "Operacao saudavel", tone: "bg-[#ecfdf3] text-[#027a48]" };
+
+  const handleRefresh = () => {
+    utils.orders.list.invalidate();
+    utils.analytics.salesOverview.invalidate();
+    utils.analytics.salesTimeSeries.invalidate();
+    utils.analytics.recentOrders.invalidate();
+    utils.reports.topProducts.invalidate();
+  };
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 20, fontFamily: "var(--admin-font)", color: "var(--admin-text)" }}>
+      <div
+        style={{
+          ...cardStyle,
+          padding: "18px 20px",
+          background: "linear-gradient(135deg, rgba(125,15,20,0.97) 0%, rgba(79,9,13,0.96) 100%)",
+          color: "#fff8f6",
+          border: "1px solid rgba(255,255,255,0.08)",
+        }}
+      >
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex items-start gap-3">
+            <div
+              className="w-11 h-11 rounded-2xl flex items-center justify-center text-white shrink-0"
+              style={{ background: "rgba(255,255,255,0.12)" }}
+            >
+              <Bike className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="flex flex-wrap items-center gap-2">
+                <p className="text-xs uppercase tracking-[0.18em] text-white/60">Cockpit do delivery</p>
+                <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-[10px] font-bold ${opsStatus.tone}`}>
+                  {opsStatus.label}
+                </span>
+              </div>
+              <h2 className="mt-2 text-2xl font-black tracking-[-0.03em]">
+                Ola, {firstNameOnly}. Aqui estao os sinais que pedem decisao rapida.
+              </h2>
+              <p className="mt-2 max-w-3xl text-sm text-white/72">
+                Fila ativa, risco de SLA, carga de motoboys, horarios quentes e bairros que mais puxam a operacao.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex flex-col gap-3 lg:items-end">
+            <div className="flex flex-wrap items-center gap-2">
+              {[7, 14, 30].map((days) => {
+                const active = periodDays === days;
+                return (
+                  <button
+                    key={days}
+                    type="button"
+                    onClick={() => setPeriodDays(days as 7 | 14 | 30)}
+                    className="rounded-full px-3 py-1.5 text-xs font-bold transition-all"
+                    style={{
+                      background: active ? "#fff5f3" : "rgba(255,255,255,0.10)",
+                      color: active ? "#7d0f14" : "#fff8f6",
+                      border: active ? "1px solid rgba(255,255,255,0.35)" : "1px solid rgba(255,255,255,0.16)",
+                    }}
+                  >
+                    {days} dias
+                  </button>
+                );
+              })}
+              <button
+                onClick={handleRefresh}
+                className="w-9 h-9 rounded-full flex items-center justify-center transition-colors"
+                style={{ background: "rgba(255,255,255,0.10)", border: "1px solid rgba(255,255,255,0.16)" }}
+                title="Atualizar dashboard"
+              >
+                <RefreshCw className="w-4 h-4 text-white" />
+              </button>
+            </div>
+
+            <div className="relative w-full lg:w-[280px]">
+              <input
+                type="text"
+                placeholder="Buscar pedido ou cliente..."
+                value={searchQuery}
+                onChange={(event) => setSearchQuery(event.target.value)}
+                className="w-full rounded-full border-0 bg-white/10 pl-9 pr-4 py-2.5 text-sm text-white outline-none placeholder:text-white/45"
+              />
+              <svg className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-white/55" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                <circle cx="11" cy="11" r="8" />
+                <path d="m21 21-4.35-4.35" />
+              </svg>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+        {[
+          {
+            label: "Fila ativa",
+            value: activeOrders.length,
+            helper: `${queueNow.pending} aguardando · ${queueNow.preparing} em preparo`,
+            icon: <ShoppingBag className="w-4 h-4" />,
+            tone: "#7d0f14",
+          },
+          {
+            label: "Pedidos em risco",
+            value: criticalOrders.length,
+            helper: criticalOrders.length > 0 ? `${criticalRate.toFixed(0)}% da fila acima de 35 min` : "Nenhum pedido critico agora",
+            icon: <Clock className="w-4 h-4" />,
+            tone: criticalOrders.length > 0 ? "#b42318" : "#027a48",
+          },
+          {
+            label: "Motoboys ativos",
+            value: activeDrivers,
+            helper: `${assignedDrivers} com pedidos em rota`,
+            icon: <Bike className="w-4 h-4" />,
+            tone: "#7d0f14",
+          },
+          {
+            label: "Carga por motoboy",
+            value: `${loadPerDriver.toFixed(1)}x`,
+            helper: activeDrivers > 0 ? `${queueNow.outForDelivery} pedidos em entrega` : "Sem motoboys ativos no momento",
+            icon: <Zap className="w-4 h-4" />,
+            tone: "#7d0f14",
+          },
+        ].map((item) => (
+          <div key={item.label} style={cardStyle}>
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-xs uppercase tracking-[0.14em] text-[#8a6f73]">{item.label}</p>
+                <p className="mt-2 text-3xl font-black tracking-[-0.03em] text-[#2f090d]">{item.value}</p>
+                <p className="mt-2 text-sm text-[#7d6669]">{item.helper}</p>
+              </div>
+              <div
+                className="w-10 h-10 rounded-2xl flex items-center justify-center"
+                style={{ background: `${item.tone}14`, color: item.tone }}
+              >
+                {item.icon}
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+        {[
+          {
+            label: "Receita hoje",
+            value: formatCompactCurrency(todayRevenue),
+            helper: `${todayOrders} pedidos hoje`,
+            trend: revenueDelta,
+          },
+          {
+            label: "Receita do periodo",
+            value: formatCompactCurrency(totalRevenue),
+            helper: revenueDelta === 0 ? "Mesmo ritmo do periodo anterior" : `${revenueDelta > 0 ? "+" : ""}${revenueDelta.toFixed(1)}% vs periodo anterior`,
+            trend: revenueDelta,
+          },
+          {
+            label: "Ticket medio",
+            value: formatCompactCurrency(avgTicket),
+            helper: `${deliveryShare.toFixed(0)}% do volume vem de delivery`,
+            trend: 0,
+          },
+          {
+            label: "Cancelamento",
+            value: `${cancelRate.toFixed(1)}%`,
+            helper: `${cancelledOrders.length} cancelados em ${periodOrdersAll.length} pedidos`,
+            trend: -cancelRate,
+          },
+        ].map((item) => (
+          <div key={item.label} style={cardStyle}>
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-xs uppercase tracking-[0.14em] text-[#8a6f73]">{item.label}</p>
+                <p className="mt-2 text-3xl font-black tracking-[-0.03em] text-[#2f090d]">{item.value}</p>
+                <p className="mt-2 text-sm text-[#7d6669]">{item.helper}</p>
+              </div>
+              <div className="mt-1">
+                {item.trend > 0 && <ArrowUp className="w-4 h-4 text-[#027a48]" />}
+                {item.trend < 0 && <ArrowDown className="w-4 h-4 text-[#b42318]" />}
+                {item.trend === 0 && <Minus className="w-4 h-4 text-[#98a2b3]" />}
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-[1.45fr_0.95fr]">
+        <div style={cardStyle}>
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <p className="text-xs uppercase tracking-[0.14em] text-[#8a6f73]">Volume e receita</p>
+              <h3 className="mt-2 text-xl font-black tracking-[-0.03em] text-[#2f090d]">Ritmo do delivery no periodo</h3>
+              <p className="mt-1 text-sm text-[#7d6669]">Media diaria de {formatCompactCurrency(dailyAverageRevenue)} e visao conjunta de pedidos e faturamento.</p>
+            </div>
+            <Badge className="rounded-full bg-[#fff1ef] text-[#7d0f14] border-0">{periodDays} dias</Badge>
+          </div>
+
+          {loadingSeries ? (
+            <div className="mt-6 space-y-2">
+              {Array.from({ length: 5 }).map((_, index) => <Skeleton key={index} className="h-10 w-full rounded-xl" />)}
+            </div>
+          ) : chartData.length === 0 ? (
+            <div className="mt-6">
+              <AdminEmptyState title="Sem dados para o periodo" description="Assim que entrarem pedidos, a curva de faturamento e volume aparece aqui." />
+            </div>
+          ) : (
+            <div className="mt-6 h-[320px]">
+              <ResponsiveContainer width="100%" height="100%">
+                <ComposedChart data={chartData} margin={{ top: 8, right: 8, left: -16, bottom: 0 }}>
+                  <defs>
+                    <linearGradient id="dashboardDeliveryRevenue" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#b42318" stopOpacity={0.26} />
+                      <stop offset="95%" stopColor="#b42318" stopOpacity={0.03} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f1e6e6" vertical={false} />
+                  <XAxis dataKey="date" tick={{ fontSize: 11, fill: "#8a6f73" }} axisLine={false} tickLine={false} />
+                  <YAxis yAxisId="left" tick={{ fontSize: 11, fill: "#8a6f73" }} axisLine={false} tickLine={false} allowDecimals={false} />
+                  <YAxis
+                    yAxisId="right"
+                    orientation="right"
+                    tick={{ fontSize: 11, fill: "#8a6f73" }}
+                    axisLine={false}
+                    tickLine={false}
+                    tickFormatter={(value) => `R$${value}`}
+                  />
+                  <Tooltip
+                    contentStyle={{ borderRadius: 14, border: "1px solid #f1e6e6", boxShadow: "0 18px 40px rgba(81,15,20,0.10)" }}
+                    formatter={(value: number, name: string) => [name === "receita" ? formatCurrency(value) : value, name === "receita" ? "Receita" : "Pedidos"]}
+                  />
+                  <Bar yAxisId="left" dataKey="pedidos" radius={[8, 8, 0, 0]} maxBarSize={34} fill="#f4b8b0" />
+                  <Area yAxisId="right" type="monotone" dataKey="receita" stroke="#b42318" strokeWidth={2.5} fill="url(#dashboardDeliveryRevenue)" />
+                  <ReferenceLine yAxisId="right" y={dailyAverageRevenue} stroke="#7d0f14" strokeDasharray="4 4" />
+                </ComposedChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+        </div>
+
+        <div style={cardStyle}>
+          <p className="text-xs uppercase tracking-[0.14em] text-[#8a6f73]">Saude operacional</p>
+          <h3 className="mt-2 text-xl font-black tracking-[-0.03em] text-[#2f090d]">Sinais que afetam atraso, experiencia e margem</h3>
+
+          <div className="mt-6 grid grid-cols-1 gap-3">
+            {[
+              {
+                label: "Tempo medio de cozinha",
+                value: `${average(kitchenLeadTimes).toFixed(0)} min`,
+                helper: "Do aceite ate ficar pronto ou sair da cozinha.",
+                icon: <ChefHat className="w-4 h-4" />,
+              },
+              {
+                label: "Tempo medio de despacho",
+                value: `${average(dispatchLeadTimes).toFixed(0)} min`,
+                helper: "Janela entre pronto e saida para entrega.",
+                icon: <Package className="w-4 h-4" />,
+              },
+              {
+                label: "Ponta a ponta do delivery",
+                value: `${average(endToEndLeadTimes).toFixed(0)} min`,
+                helper: "Tempo total do cliente fazendo o pedido ate a entrega.",
+                icon: <Bike className="w-4 h-4" />,
+              },
+              {
+                label: "No prazo previsto",
+                value: onTimeBase > 0 ? `${((onTimeOrders / onTimeBase) * 100).toFixed(0)}%` : "--",
+                helper: onTimeBase > 0 ? `${onTimeOrders} de ${onTimeBase} entregas com previsao` : "Ative previsao de entrega para medir SLA real.",
+                icon: <Clock className="w-4 h-4" />,
+              },
+            ].map((row) => (
+              <div key={row.label} className="rounded-2xl border border-[#f1e6e6] bg-[#fffaf9] p-4">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2 text-[#7d0f14]">
+                    {row.icon}
+                    <span className="text-sm font-semibold text-[#3f1a1f]">{row.label}</span>
+                  </div>
+                  <span className="text-lg font-black tracking-[-0.03em] text-[#2f090d]">{row.value}</span>
+                </div>
+                <p className="mt-2 text-sm text-[#7d6669]">{row.helper}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
+        <div style={cardStyle}>
+          <p className="text-xs uppercase tracking-[0.14em] text-[#8a6f73]">Fila por etapa</p>
+          <h3 className="mt-2 text-xl font-black tracking-[-0.03em] text-[#2f090d]">Onde a operacao esta prendendo agora</h3>
+          <div className="mt-5 space-y-3">
+            {[
+              { label: "Aguardando aceite", value: queueNow.pending, color: "#f79009" },
+              { label: "Confirmados", value: queueNow.confirmed, color: "#d92d20" },
+              { label: "Em preparo", value: queueNow.preparing, color: "#b42318" },
+              { label: "Em entrega", value: queueNow.outForDelivery, color: "#7d0f14" },
+            ].map((row) => {
+              const max = Math.max(activeOrders.length, 1);
+              const width = `${(row.value / max) * 100}%`;
+              return (
+                <div key={row.label}>
+                  <div className="mb-1.5 flex items-center justify-between gap-3">
+                    <span className="text-sm font-medium text-[#3f1a1f]">{row.label}</span>
+                    <span className="text-sm font-bold text-[#2f090d]">{row.value}</span>
+                  </div>
+                  <div className="h-2.5 rounded-full bg-[#f5e9e8]">
+                    <div className="h-full rounded-full" style={{ width, background: row.color }} />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        <div style={cardStyle}>
+          <p className="text-xs uppercase tracking-[0.14em] text-[#8a6f73]">Mix de origem</p>
+          <h3 className="mt-2 text-xl font-black tracking-[-0.03em] text-[#2f090d]">Quais canais estao puxando o volume</h3>
+          {sourceMix.length === 0 ? (
+            <div className="mt-6">
+              <AdminEmptyState title="Sem pedidos para classificar" description="Quando o periodo tiver volume, os canais de origem aparecem aqui." />
+            </div>
+          ) : (
+            <div className="mt-4 flex flex-col gap-4 lg:flex-row lg:items-center">
+              <div className="h-[200px] w-full max-w-[220px] self-center">
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie data={sourceMix} dataKey="orders" nameKey="label" innerRadius={52} outerRadius={82} paddingAngle={2}>
+                      {sourceMix.map((entry) => (
+                        <Cell key={entry.key} fill={entry.fill} />
+                      ))}
+                    </Pie>
+                    <Tooltip
+                      contentStyle={{ borderRadius: 14, border: "1px solid #f1e6e6", boxShadow: "0 18px 40px rgba(81,15,20,0.10)" }}
+                      formatter={(value: number, _name: string, payload: { payload?: { revenue: number } }) => [`${value} pedidos`, payload.payload ? formatCurrency(payload.payload.revenue) : ""]}
+                    />
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
+
+              <div className="flex-1 space-y-3">
+                {sourceMix.map((row) => (
+                  <div key={row.key} className="rounded-2xl border border-[#f1e6e6] bg-[#fffaf9] p-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="flex items-center gap-2">
+                        <span className="w-2.5 h-2.5 rounded-full" style={{ background: row.fill }} />
+                        <span className="text-sm font-semibold text-[#3f1a1f]">{row.label}</span>
+                      </div>
+                      <span className="text-sm font-bold text-[#2f090d]">{row.orders} pedidos</span>
+                    </div>
+                    <p className="mt-1 text-sm text-[#7d6669]">{formatCompactCurrency(row.revenue)} em receita no periodo</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div style={cardStyle}>
+          <p className="text-xs uppercase tracking-[0.14em] text-[#8a6f73]">Fila critica</p>
+          <h3 className="mt-2 text-xl font-black tracking-[-0.03em] text-[#2f090d]">Pedidos que podem explodir SLA</h3>
+          {loadingLive ? (
+            <div className="mt-6 space-y-2">
+              {Array.from({ length: 4 }).map((_, index) => <Skeleton key={index} className="h-14 w-full rounded-xl" />)}
+            </div>
+          ) : criticalOrders.length === 0 ? (
+            <div className="mt-6">
+              <AdminEmptyState title="Fila sob controle" description="Nenhum pedido ativo ultrapassou 35 minutos neste momento." />
+            </div>
+          ) : (
+            <div className="mt-5 space-y-2">
+              {criticalOrders.slice(0, 6).map((order) => (
+                <div key={order.id} className="rounded-2xl border border-[#f5d0cb] bg-[#fff6f4] p-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <p className="text-sm font-bold text-[#2f090d]">#{order.id} · {order.customerName}</p>
+                      <p className="mt-1 text-xs text-[#8a6f73]">{serviceLabels[order.serviceType] ?? order.serviceType} · {formatCompactCurrency(Number(order.total))}</p>
+                    </div>
+                    <span className="rounded-full bg-[#b42318] px-2.5 py-1 text-[11px] font-bold text-white">{order.ageMinutes} min</span>
+                  </div>
+                  <div className="mt-2 flex items-center gap-2">
+                    <span className={`rounded-full px-2 py-1 text-[10px] font-bold ${statusTone[order.status] ?? "bg-[#f2f4f7] text-[#667085]"}`}>
+                      {STATUS_LABELS[order.status]?.label ?? order.status}
+                    </span>
+                    {order.deliveryNeighborhood && <span className="text-[11px] text-[#8a6f73]">{order.deliveryNeighborhood}</span>}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-[1.1fr_0.9fr_1fr]">
+        <div style={cardStyle}>
+          <p className="text-xs uppercase tracking-[0.14em] text-[#8a6f73]">Horario quente</p>
+          <h3 className="mt-2 text-xl font-black tracking-[-0.03em] text-[#2f090d]">Quando o volume concentra</h3>
+          {loadingPeriod ? (
+            <div className="mt-6 space-y-2">
+              {Array.from({ length: 4 }).map((_, index) => <Skeleton key={index} className="h-10 w-full rounded-xl" />)}
+            </div>
+          ) : (
+            <div className="mt-4 h-[250px]">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={hourlyVolume} margin={{ top: 8, right: 0, left: -18, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f1e6e6" vertical={false} />
+                  <XAxis dataKey="label" tick={{ fontSize: 10, fill: "#8a6f73" }} axisLine={false} tickLine={false} interval={2} />
+                  <YAxis tick={{ fontSize: 10, fill: "#8a6f73" }} axisLine={false} tickLine={false} allowDecimals={false} />
+                  <Tooltip
+                    contentStyle={{ borderRadius: 14, border: "1px solid #f1e6e6", boxShadow: "0 18px 40px rgba(81,15,20,0.10)" }}
+                    formatter={(value: number, _name: string, payload: { payload?: { receita: number } }) => [value, payload.payload ? formatCompactCurrency(payload.payload.receita) : ""]}
+                  />
+                  <Bar dataKey="pedidos" radius={[8, 8, 0, 0]} maxBarSize={22} fill="#b42318" />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+        </div>
+
+        <div style={cardStyle}>
+          <p className="text-xs uppercase tracking-[0.14em] text-[#8a6f73]">Bairros mais demandados</p>
+          <h3 className="mt-2 text-xl font-black tracking-[-0.03em] text-[#2f090d]">Onde vale reforcar entrega e cobertura</h3>
+          {neighborhoodRows.length === 0 ? (
+            <div className="mt-6">
+              <AdminEmptyState title="Sem historico de entrega" description="Os bairros aparecem quando houver pedidos delivery entregues no periodo." />
+            </div>
+          ) : (
+            <div className="mt-5 space-y-3">
+              {neighborhoodRows.map((row) => (
+                <div key={row.name} className="rounded-2xl border border-[#f1e6e6] bg-[#fffaf9] p-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="text-sm font-semibold text-[#3f1a1f]">{row.name}</p>
+                    <span className="text-sm font-black text-[#2f090d]">{row.orders} pedidos</span>
+                  </div>
+                  <div className="mt-2 flex items-center justify-between gap-3 text-sm text-[#7d6669]">
+                    <span>{formatCompactCurrency(row.revenue)}</span>
+                    <span>{row.avgMinutes ? `${row.avgMinutes.toFixed(0)} min medio` : "Sem SLA ainda"}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div style={cardStyle}>
+          <p className="text-xs uppercase tracking-[0.14em] text-[#8a6f73]">Mix de pagamento e PMIX</p>
+          <h3 className="mt-2 text-xl font-black tracking-[-0.03em] text-[#2f090d]">Leitura rapida de conversao e preferencia</h3>
+
+          <div className="mt-5 space-y-4">
+            <div>
+              <p className="text-xs font-bold uppercase tracking-[0.12em] text-[#8a6f73]">Pagamento</p>
+              <div className="mt-3 space-y-2">
+                {paymentMix.slice(0, 4).map((row) => {
+                  const share = totalRevenue > 0 ? (row.revenue / totalRevenue) * 100 : 0;
+                  return (
+                    <div key={row.key}>
+                      <div className="mb-1 flex items-center justify-between gap-3 text-sm">
+                        <span className="font-medium text-[#3f1a1f]">{row.label}</span>
+                        <span className="font-bold text-[#2f090d]">{share.toFixed(0)}%</span>
+                      </div>
+                      <div className="h-2 rounded-full bg-[#f5e9e8]">
+                        <div className="h-full rounded-full bg-[#7d0f14]" style={{ width: `${share}%` }} />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div>
+              <p className="text-xs font-bold uppercase tracking-[0.12em] text-[#8a6f73]">Itens que puxam volume</p>
+              {loadingProducts ? (
+                <div className="mt-3 space-y-2">
+                  {Array.from({ length: 4 }).map((_, index) => <Skeleton key={index} className="h-8 w-full rounded-xl" />)}
+                </div>
+              ) : !topProducts || topProducts.length === 0 ? (
+                <p className="mt-3 text-sm text-[#7d6669]">Sem dados de produto neste periodo.</p>
+              ) : (
+                <div className="mt-3 space-y-2">
+                  {topProducts.map((product, index) => (
+                    <div key={`${product.productName}-${index}`} className="flex items-center justify-between gap-3 rounded-2xl border border-[#f1e6e6] bg-[#fffaf9] px-3 py-2.5">
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-semibold text-[#3f1a1f]">{product.productName}</p>
+                      </div>
+                      <span className="text-sm font-black text-[#7d0f14]">{product.totalQuantity}x</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-[0.9fr_1.1fr]">
+        <div style={cardStyle}>
+          <p className="text-xs uppercase tracking-[0.14em] text-[#8a6f73]">Mix do servico</p>
+          <h3 className="mt-2 text-xl font-black tracking-[-0.03em] text-[#2f090d]">Delivery versus retirada, balcao e salao</h3>
+          {serviceMix.length === 0 ? (
+            <div className="mt-6">
+              <AdminEmptyState title="Sem pedidos no periodo" description="Assim que houver movimentacao, o mix operacional aparece aqui." />
+            </div>
+          ) : (
+            <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2">
+              {serviceMix.map((row) => {
+                const share = completedPeriodOrders.length > 0 ? (row.count / completedPeriodOrders.length) * 100 : 0;
+                return (
+                  <div key={row.key} className="rounded-2xl border border-[#f1e6e6] bg-[#fffaf9] p-4">
+                    <div className="flex items-center justify-between gap-3">
+                      <p className="text-sm font-semibold text-[#3f1a1f]">{row.label}</p>
+                      <span className="text-lg font-black text-[#2f090d]">{row.count}</span>
+                    </div>
+                    <p className="mt-2 text-sm text-[#7d6669]">{share.toFixed(0)}% do volume no periodo</p>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        <div style={cardStyle}>
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <p className="text-xs uppercase tracking-[0.14em] text-[#8a6f73]">Pedidos recentes</p>
+              <h3 className="mt-2 text-xl font-black tracking-[-0.03em] text-[#2f090d]">Radar de atendimento para equipe e gerente</h3>
+            </div>
+            <Badge className="rounded-full bg-[#fff1ef] text-[#7d0f14] border-0">{filteredRecentOrders.length} visiveis</Badge>
+          </div>
+
+          {loadingRecent || loadingOverview ? (
+            <div className="mt-6 space-y-2">
+              {Array.from({ length: 5 }).map((_, index) => <Skeleton key={index} className="h-14 w-full rounded-xl" />)}
+            </div>
+          ) : filteredRecentOrders.length === 0 ? (
+            <div className="mt-6">
+              <AdminEmptyState title="Nada encontrado" description="Tente outro nome de cliente ou numero de pedido." />
+            </div>
+          ) : (
+            <div className="mt-5 space-y-2">
+              {filteredRecentOrders.map((order) => (
+                <div key={order.id} className="rounded-2xl border border-[#f1e6e6] bg-[#fffaf9] p-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="text-sm font-bold text-[#2f090d]">#{order.id} · {order.customerName}</p>
+                      <div className="mt-1 flex flex-wrap items-center gap-2">
+                        <span className={`rounded-full px-2 py-1 text-[10px] font-bold ${statusTone[order.status] ?? "bg-[#f2f4f7] text-[#667085]"}`}>
+                          {STATUS_LABELS[order.status]?.label ?? order.status}
+                        </span>
+                        <span className="text-[11px] text-[#8a6f73]">{paymentLabels[order.paymentMethod] ?? order.paymentMethod}</span>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-sm font-black text-[#7d0f14]">{formatCompactCurrency(Number(order.total))}</p>
+                      <p className="mt-1 text-[11px] text-[#8a6f73]">
+                        {new Date(order.createdAt).toLocaleString("pt-BR", {
+                          timeZone: "America/Sao_Paulo",
+                          day: "2-digit",
+                          month: "2-digit",
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        })}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function OrderItemsExpand({ orderId }: { orderId: number }) {
   const { data, isLoading } = trpc.orders.byId.useQuery({ id: orderId });
   if (isLoading) return <div className="mt-3 text-xs text-muted-foreground">Carregando itens...</div>;
@@ -1340,7 +2223,17 @@ function MenuTab() {
   // Category form
   const [showCatForm, setShowCatForm] = useState(false);
   const [editingCat, setEditingCat] = useState<any | null>(null);
-  const [catForm, setCatForm] = useState({ name: "", slug: "", description: "", sortOrder: "" });
+  const [catForm, setCatForm] = useState({ name: "", slug: "", description: "", sortOrder: "", icon: "", imageUrl: "" });
+  const [magnificCategoryImages, setMagnificCategoryImages] = useState<MagnificCategoryImageAsset[]>([]);
+  const [magnificIcons, setMagnificIcons] = useState<MagnificIconAsset[]>([]);
+  const { data: storeSettings } = trpc.storeSettings.get.useQuery();
+  const [pizzaMultiFlavorEnabled, setPizzaMultiFlavorEnabled] = useState(false);
+  const [pizzaFlavorLimits, setPizzaFlavorLimits] = useState({
+    small: 1,
+    medium: 2,
+    large: 2,
+    family: 3,
+  });
 
   const createProduct = trpc.products.create.useMutation({
     onSuccess: () => {
@@ -1378,7 +2271,7 @@ function MenuTab() {
       utils.categories.listAll.invalidate();
       utils.categories.list.invalidate();
       setShowCatForm(false);
-      setCatForm({ name: "", slug: "", description: "", sortOrder: "" });
+      setCatForm({ name: "", slug: "", description: "", sortOrder: "", icon: "", imageUrl: "" });
       toast.success("Categoria criada!");
     },
     onError: (err) => toast.error(err.message),
@@ -1404,11 +2297,110 @@ function MenuTab() {
     onError: (err) => toast.error(err.message),
   });
 
+  const [categoryImageUploading, setCategoryImageUploading] = useState(false);
+  const categoryImageInputRef = useRef<HTMLInputElement>(null);
+  const uploadCategoryImage = trpc.categories.uploadImage.useMutation({
+    onSuccess: (data) => {
+      setCatForm((current) => ({ ...current, imageUrl: data.url }));
+      toast.success("Imagem da categoria enviada!");
+    },
+    onError: (err) => toast.error(err.message),
+    onSettled: () => setCategoryImageUploading(false),
+  });
+  const handleCategoryImageFile = (file: File) => {
+    if (!file) return;
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error("Imagem muito grande. Maximo de 5MB.");
+      return;
+    }
+    setCategoryImageUploading(true);
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const result = typeof ev.target?.result === "string" ? ev.target.result : "";
+      const base64 = result.split(",")[1];
+      if (!base64) {
+        setCategoryImageUploading(false);
+        toast.error("Nao foi possivel ler a imagem.");
+        return;
+      }
+      uploadCategoryImage.mutate({
+        base64,
+        mimeType: file.type as "image/jpeg" | "image/png" | "image/webp" | "image/gif",
+        fileName: file.name,
+      });
+    };
+    reader.readAsDataURL(file);
+  };
+
   const filteredProducts = selectedCatId
     ? products?.filter((p) => p.categoryId === selectedCatId)
     : products;
 
+  useEffect(() => {
+    let cancelled = false;
+
+    Promise.allSettled([loadMagnificCategoryImages(), loadMagnificIcons()]).then((results) => {
+      if (cancelled) return;
+      setMagnificCategoryImages(results[0].status === "fulfilled" ? results[0].value : []);
+      setMagnificIcons(results[1].status === "fulfilled" ? results[1].value : []);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const categoryImageSuggestions = useMemo(() => {
+    const categoryKey = `${catForm.name} ${catForm.slug}`.trim().toLowerCase();
+    if (!categoryKey) return magnificCategoryImages.slice(0, 6);
+
+    const matches = magnificCategoryImages.filter((asset) =>
+      asset.categoryKeys.some((key) => categoryKey.includes(key.toLowerCase())),
+    );
+
+    return (matches.length > 0 ? matches : magnificCategoryImages).slice(0, 6);
+  }, [catForm.name, catForm.slug, magnificCategoryImages]);
+
+  const categoryIconSuggestions = useMemo(() => {
+    const categoryKey = `${catForm.name} ${catForm.slug}`.trim().toLowerCase();
+    if (!categoryKey) return magnificIcons.slice(0, 5);
+
+    const matches = magnificIcons.filter((asset) => {
+      const haystack = `${asset.label} ${asset.term} ${asset.fallbackIconKey ?? ""}`.toLowerCase();
+      return categoryKey.split(/\s+/).some((token) => token && haystack.includes(token));
+    });
+
+    return (matches.length > 0 ? matches : magnificIcons).slice(0, 5);
+  }, [catForm.name, catForm.slug, magnificIcons]);
+
   // Paginação de produtos
+  useEffect(() => {
+    const config = getPizzaFlavorConfig(storeSettings?.pizzaFlavorConfig);
+    setPizzaMultiFlavorEnabled(config.enabled);
+    setPizzaFlavorLimits(config.maxFlavorsBySize);
+  }, [storeSettings?.pizzaFlavorConfig]);
+
+  const savePizzaFlavorConfig = trpc.storeSettings.savePizzaFlavorConfig.useMutation({
+    onSuccess: () => {
+      utils.storeSettings.get.invalidate();
+      toast.success("Configuracao de pizza por sabores salva!");
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
+  const handleSavePizzaFlavorConfig = () => {
+    savePizzaFlavorConfig.mutate({
+      enabled: pizzaMultiFlavorEnabled,
+      pricingMode: "highest",
+      maxFlavorsBySize: {
+        small: clampFlavorCount(pizzaFlavorLimits.small),
+        medium: clampFlavorCount(pizzaFlavorLimits.medium),
+        large: clampFlavorCount(pizzaFlavorLimits.large),
+        family: clampFlavorCount(pizzaFlavorLimits.family),
+      },
+    });
+  };
+
   const PRODUCTS_PER_PAGE = 10;
   const [productPage, setProductPage] = useState(1);
   const totalProductPages = Math.max(1, Math.ceil((filteredProducts?.length ?? 0) / PRODUCTS_PER_PAGE));
@@ -1531,6 +2523,8 @@ function MenuTab() {
       updateCategoryMut.mutate({
         id: editingCat.id,
         name: catForm.name,
+        icon: catForm.icon || undefined,
+        imageUrl: catForm.imageUrl || undefined,
         description: catForm.description || undefined,
         sortOrder: catForm.sortOrder ? parseInt(catForm.sortOrder) : undefined,
       });
@@ -1538,6 +2532,8 @@ function MenuTab() {
       createCategoryMut.mutate({
         name: catForm.name,
         slug: slugVal,
+        icon: catForm.icon || undefined,
+        imageUrl: catForm.imageUrl || undefined,
         description: catForm.description || undefined,
         sortOrder: catForm.sortOrder ? parseInt(catForm.sortOrder) : undefined,
       });
@@ -1559,7 +2555,14 @@ function MenuTab() {
 
   const startEditCat = (cat: any) => {
     setEditingCat(cat);
-    setCatForm({ name: cat.name, slug: cat.slug ?? "", description: cat.description ?? "", sortOrder: String(cat.sortOrder ?? "") });
+    setCatForm({
+      name: cat.name,
+      slug: cat.slug ?? "",
+      description: cat.description ?? "",
+      sortOrder: String(cat.sortOrder ?? ""),
+      icon: cat.icon ?? "",
+      imageUrl: cat.imageUrl ?? "",
+    });
     setShowCatForm(true);
   };
 
@@ -1584,7 +2587,7 @@ function MenuTab() {
               </Button>
             )}
             {activeMenuTab === "categories" && (
-              <Button onClick={() => { setEditingCat(null); setCatForm({ name: "", slug: "", description: "", sortOrder: "" }); setShowCatForm(true); setShowForm(false); }} className="gap-1.5 h-9 text-xs">
+              <Button onClick={() => { setEditingCat(null); setCatForm({ name: "", slug: "", description: "", sortOrder: "", icon: "", imageUrl: "" }); setShowCatForm(true); setShowForm(false); }} className="gap-1.5 h-9 text-xs">
                 <PlusCircle className="w-4 h-4" />
                 Nova categoria
               </Button>
@@ -1620,6 +2623,74 @@ function MenuTab() {
 
       {activeMenuTab === "products" && (
         <>
+          <Card className="border-primary/20 bg-gradient-to-br from-white to-[#fff7f7]">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base">Pizza com mais de um sabor</CardTitle>
+              <p className="text-sm text-muted-foreground">
+                Ative o modo multi-sabor no cardapio e defina quantos sabores cada tamanho pode aceitar.
+              </p>
+            </CardHeader>
+            <CardContent className="space-y-5">
+              <div className="flex flex-col gap-3 rounded-2xl border border-border/70 bg-background/80 p-4 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <p className="text-sm font-semibold text-foreground">Liberar montagem por sabores</p>
+                  <p className="text-xs text-muted-foreground">
+                    Quando ativo, a pizza passa a abrir no modal com selecao configuravel de sabores.
+                  </p>
+                </div>
+                <Switch
+                  checked={pizzaMultiFlavorEnabled}
+                  onCheckedChange={setPizzaMultiFlavorEnabled}
+                  aria-label="Ativar pizza com mais de um sabor"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                {[
+                  { key: "small", label: "Pequena" },
+                  { key: "medium", label: "Media" },
+                  { key: "large", label: "Grande" },
+                  { key: "family", label: "Familia" },
+                ].map((size) => (
+                  <div key={size.key} className="space-y-1.5 rounded-2xl border border-border/70 bg-background/80 p-4">
+                    <Label htmlFor={`pizza-flavors-${size.key}`}>{size.label}</Label>
+                    <Input
+                      id={`pizza-flavors-${size.key}`}
+                      type="number"
+                      min={1}
+                      max={4}
+                      value={pizzaFlavorLimits[size.key as keyof typeof pizzaFlavorLimits]}
+                      onChange={(event) =>
+                        setPizzaFlavorLimits((current) => ({
+                          ...current,
+                          [size.key]: clampFlavorCount(event.target.value),
+                        }))
+                      }
+                    />
+                    <p className="text-xs text-muted-foreground">Quantidade maxima de sabores para este tamanho.</p>
+                  </div>
+                ))}
+              </div>
+
+              <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-dashed border-primary/30 bg-primary/5 p-4">
+                <div>
+                  <p className="text-sm font-semibold text-foreground">Regra de preco</p>
+                  <p className="text-xs text-muted-foreground">
+                    O sistema usa automaticamente o sabor mais caro entre os escolhidos.
+                  </p>
+                </div>
+                <Button
+                  onClick={handleSavePizzaFlavorConfig}
+                  disabled={savePizzaFlavorConfig.isPending}
+                  className="gap-2"
+                >
+                  {savePizzaFlavorConfig.isPending && <Loader2 className="w-4 h-4 animate-spin" />}
+                  Salvar configuracao
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+
           {/* Product Form */}
           {showForm && (
             <Card className="border-primary/30">
@@ -1864,6 +2935,53 @@ function MenuTab() {
               </CardHeader>
               <CardContent>
                 <form onSubmit={handleCatSubmit} className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="sm:col-span-2 rounded-2xl border border-border/70 bg-muted/20 p-4">
+                    <div className="flex items-center gap-4">
+                      <div className="relative h-20 w-20 overflow-hidden rounded-2xl border border-border bg-white">
+                        <img
+                          src={getCategoryImage({ ...(editingCat ?? {}), ...catForm })}
+                          alt={catForm.name || "Preview da categoria"}
+                          className="h-full w-full object-cover"
+                        />
+                        <div className="absolute inset-0 bg-gradient-to-t from-black/45 to-transparent" />
+                        <div className="absolute bottom-2 left-2 rounded-full bg-white/90 p-1.5 shadow-sm">
+                          {(() => {
+                            const Icon = getCategoryIcon({ ...(editingCat ?? {}), ...catForm });
+                            return <Icon className="h-4 w-4 text-primary" />;
+                          })()}
+                        </div>
+                      </div>
+                      <div className="flex-1 space-y-3">
+                        <div>
+                          <p className="text-sm font-semibold text-foreground">Preview da categoria</p>
+                          <p className="text-xs text-muted-foreground">A mesma capa e o mesmo icone vao aparecer no cardapio e nas vitrines da loja.</p>
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          <Button type="button" variant="outline" className="gap-2" onClick={() => categoryImageInputRef.current?.click()} disabled={categoryImageUploading}>
+                            {categoryImageUploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
+                            Enviar imagem
+                          </Button>
+                          {catForm.imageUrl && (
+                            <Button type="button" variant="ghost" className="gap-2 text-muted-foreground" onClick={() => setCatForm((current) => ({ ...current, imageUrl: "" }))}>
+                              <Trash2 className="h-4 w-4" />
+                              Remover capa
+                            </Button>
+                          )}
+                        </div>
+                        <input
+                          ref={categoryImageInputRef}
+                          type="file"
+                          accept="image/png,image/jpeg,image/webp,image/gif"
+                          className="hidden"
+                          onChange={(event) => {
+                            const file = event.target.files?.[0];
+                            if (file) handleCategoryImageFile(file);
+                            event.currentTarget.value = "";
+                          }}
+                        />
+                      </div>
+                    </div>
+                  </div>
                   <div className="space-y-1.5">
                     <label className="text-sm font-medium">Nome *</label>
                     <input
@@ -1875,7 +2993,63 @@ function MenuTab() {
                     />
                   </div>
                   <div className="space-y-1.5">
-                    <label className="text-sm font-medium">Ordem de exibição</label>
+                    <label className="text-sm font-medium">Icone</label>
+                    <Select value={catForm.icon || "__default__"} onValueChange={(value) => setCatForm({ ...catForm, icon: value === "__default__" ? "" : value })}>
+                      <SelectTrigger className="h-9">
+                        <SelectValue placeholder="Escolha um icone" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="__default__">Automatico</SelectItem>
+                        {CATEGORY_ICON_OPTIONS.map((option) => (
+                          <SelectItem key={option.value} value={option.value}>
+                            <span className="flex items-center gap-2">
+                              <option.Icon className="h-4 w-4 text-primary" />
+                              <span>{option.label}</span>
+                            </span>
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    {categoryIconSuggestions.length > 0 && (
+                      <div className="grid grid-cols-1 gap-2 pt-2 sm:grid-cols-2">
+                        {categoryIconSuggestions.map((asset) => {
+                          const option = CATEGORY_ICON_OPTIONS.find((entry) => entry.value === asset.fallbackIconKey);
+                          const IconComponent = option?.Icon;
+                          const isSelected = catForm.icon === asset.fallbackIconKey;
+
+                          return (
+                            <button
+                              key={asset.id}
+                              type="button"
+                              onClick={() => {
+                                if (!asset.fallbackIconKey) return;
+                                setCatForm((current) => ({ ...current, icon: asset.fallbackIconKey ?? current.icon }));
+                              }}
+                              className={`flex items-center gap-3 rounded-2xl border px-3 py-2 text-left transition-all hover:-translate-y-0.5 hover:shadow-sm ${
+                                isSelected ? "border-primary bg-primary/5" : "border-border/70 bg-white"
+                              }`}
+                            >
+                              <div className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-xl border border-border/70 bg-muted/20">
+                                {asset.src ? (
+                                  <img src={asset.src} alt={asset.label} className="h-5 w-5 object-contain" />
+                                ) : IconComponent ? (
+                                  <IconComponent className="h-4 w-4 text-primary" />
+                                ) : (
+                                  <ImageIcon className="h-4 w-4 text-primary" />
+                                )}
+                              </div>
+                              <div className="min-w-0">
+                                <p className="truncate text-sm font-medium text-foreground">{asset.label}</p>
+                                <p className="truncate text-[11px] text-muted-foreground">Sugestao premium do pack Magnific</p>
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-sm font-medium">Ordem de exibicao</label>
                     <input
                       className="w-full h-9 px-3 border border-input rounded-md text-sm bg-background"
                       value={catForm.sortOrder}
@@ -1884,19 +3058,58 @@ function MenuTab() {
                       placeholder="Ex: 1"
                     />
                   </div>
+                  <div className="space-y-1.5">
+                    <label className="text-sm font-medium">URL da imagem</label>
+                    <div className="flex gap-2">
+                      <input
+                        className="w-full h-9 px-3 border border-input rounded-md text-sm bg-background"
+                        value={catForm.imageUrl}
+                        onChange={(e) => setCatForm({ ...catForm, imageUrl: e.target.value })}
+                        placeholder="https://..."
+                      />
+                      <Button type="button" variant="outline" className="shrink-0 gap-2" onClick={() => categoryImageInputRef.current?.click()} disabled={categoryImageUploading}>
+                        <ImageIcon className="h-4 w-4" />
+                        Buscar
+                      </Button>
+                    </div>
+                    {categoryImageSuggestions.length > 0 && (
+                      <div className="grid grid-cols-2 gap-3 pt-2 lg:grid-cols-3">
+                        {categoryImageSuggestions.map((asset) => {
+                          const isSelected = catForm.imageUrl === asset.src;
+
+                          return (
+                            <button
+                              key={asset.id}
+                              type="button"
+                              onClick={() => setCatForm((current) => ({ ...current, imageUrl: asset.src }))}
+                              className={`overflow-hidden rounded-2xl border text-left transition-all hover:-translate-y-0.5 hover:shadow-md ${
+                                isSelected ? "border-primary shadow-sm ring-2 ring-primary/10" : "border-border/70 bg-white"
+                              }`}
+                            >
+                              <img src={asset.src} alt={asset.label} className="h-24 w-full object-cover" />
+                              <div className="space-y-1 p-2.5">
+                                <p className="truncate text-sm font-medium text-foreground">{asset.label}</p>
+                                <p className="truncate text-[11px] text-muted-foreground">Aplicar capa sugerida</p>
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
                   <div className="space-y-1.5 sm:col-span-2">
-                    <label className="text-sm font-medium">Descrição</label>
+                    <label className="text-sm font-medium">Descricao</label>
                     <input
                       className="w-full h-9 px-3 border border-input rounded-md text-sm bg-background"
                       value={catForm.description}
                       onChange={(e) => setCatForm({ ...catForm, description: e.target.value })}
-                      placeholder="Descrição opcional"
+                      placeholder="Descricao opcional"
                     />
                   </div>
                   <div className="flex gap-2 sm:col-span-2">
                     <Button type="submit" disabled={createCategoryMut.isPending || updateCategoryMut.isPending}>
                       {(createCategoryMut.isPending || updateCategoryMut.isPending) ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
-                      {editingCat ? "Salvar Alterações" : "Criar Categoria"}
+                      {editingCat ? "Salvar alteracoes" : "Criar categoria"}
                     </Button>
                     <Button type="button" variant="outline" onClick={() => { setShowCatForm(false); setEditingCat(null); }}>Cancelar</Button>
                   </div>
@@ -1920,35 +3133,52 @@ function MenuTab() {
                     </tr>
                   </thead>
                   <tbody>
-                    {categories?.map((cat) => (
-                      <tr key={cat.id} className="border-b hover:bg-muted/30 transition-colors">
-                        <td className="p-3 font-medium">{cat.name}</td>
-                        <td className="p-3 hidden sm:table-cell text-muted-foreground text-xs font-mono">{cat.slug}</td>
-                        <td className="p-3 text-center text-muted-foreground">{cat.sortOrder ?? "-"}</td>
-                        <td className="p-3 text-center">
-                          <button
-                            onClick={() => updateCategoryMut.mutate({ id: cat.id, active: !cat.active })}
-                            className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium transition-all ${
-                              cat.active ? "bg-[#f0fdf4] text-[#166534] hover:bg-[#dcfce7]" : "bg-[#fce8e8] text-[#450709] hover:bg-[#f9d0d0]"
-                            }`}
-                          >
-                            {cat.active ? "✓ Ativa" : "✕ Inativa"}
-                          </button>
-                        </td>
-                        <td className="p-3 text-right">
-                          <div className="flex items-center justify-end gap-1">
-                            <Button size="sm" variant="ghost" onClick={() => startEditCat(cat)}>Editar</Button>
-                            <Button
-                              size="sm" variant="ghost"
-                              className="text-destructive hover:text-destructive"
-                              onClick={() => { if (confirm("Remover esta categoria? Os produtos não serão excluídos.")) deleteCategoryMut.mutate({ id: cat.id }); }}
+                    {categories?.map((cat) => {
+                      const Icon = getCategoryIcon(cat);
+                      return (
+                        <tr key={cat.id} className="border-b hover:bg-muted/30 transition-colors">
+                          <td className="p-3">
+                            <div className="flex items-center gap-3">
+                              <div className="relative h-12 w-12 overflow-hidden rounded-xl border border-border bg-white">
+                                <img src={getCategoryImage(cat)} alt={cat.name} className="h-full w-full object-cover" />
+                                <div className="absolute inset-0 bg-gradient-to-t from-black/45 to-transparent" />
+                                <div className="absolute bottom-1.5 left-1.5 rounded-full bg-white/90 p-1 shadow-sm">
+                                  <Icon className="h-3.5 w-3.5 text-primary" />
+                                </div>
+                              </div>
+                              <div className="min-w-0">
+                                <p className="font-medium">{cat.name}</p>
+                                <p className="truncate text-xs text-muted-foreground">{cat.description || "Sem descricao personalizada"}</p>
+                              </div>
+                            </div>
+                          </td>
+                          <td className="p-3 hidden sm:table-cell text-muted-foreground text-xs font-mono">{cat.slug}</td>
+                          <td className="p-3 text-center text-muted-foreground">{cat.sortOrder ?? "-"}</td>
+                          <td className="p-3 text-center">
+                            <button
+                              onClick={() => updateCategoryMut.mutate({ id: cat.id, active: !cat.active })}
+                              className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium transition-all ${
+                                cat.active ? "bg-[#f0fdf4] text-[#166534] hover:bg-[#dcfce7]" : "bg-[#fce8e8] text-[#450709] hover:bg-[#f9d0d0]"
+                              }`}
                             >
-                              Remover
-                            </Button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
+                              {cat.active ? "Ativa" : "Inativa"}
+                            </button>
+                          </td>
+                          <td className="p-3 text-right">
+                            <div className="flex items-center justify-end gap-1">
+                              <Button size="sm" variant="ghost" onClick={() => startEditCat(cat)}>Editar</Button>
+                              <Button
+                                size="sm" variant="ghost"
+                                className="text-destructive hover:text-destructive"
+                                onClick={() => { if (confirm("Remover esta categoria? Os produtos nao serao excluidos.")) deleteCategoryMut.mutate({ id: cat.id }); }}
+                              >
+                                Remover
+                              </Button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
@@ -2468,52 +3698,198 @@ function CouponsTab() {
 
 // ─── REPORTS TAB ──────────────────────────────────────────────────────────────
 function ReportsTab() {
-  const [period, setPeriod] = useState("7");
+  const [period, setPeriod] = useState<"7" | "14" | "30" | "90" | "custom">("30");
   const [customStartStr, setCustomStartStr] = useState<string>(() => {
-    const d = new Date(); d.setDate(d.getDate() - 7); return d.toISOString().split('T')[0];
+    const d = new Date();
+    d.setDate(d.getDate() - 30);
+    return d.toISOString().split("T")[0];
   });
-  const [customEndStr, setCustomEndStr] = useState<string>(() => new Date().toISOString().split('T')[0]);
-  const periodNum = period === 'custom' ? 30 : parseInt(period);
+  const [customEndStr, setCustomEndStr] = useState<string>(() => new Date().toISOString().split("T")[0]);
   const { selectedStoreId, setSelectedStoreId, selectedStoreName, isManager, stores } = useAdminStore();
+  const [timezoneOffset] = useState(() => new Date().getTimezoneOffset());
+
+  const periodNum = period === "custom" ? 30 : Number(period);
   const { startDate, endDate } = useMemo(() => {
-    if (period === 'custom') {
-      // Interpreta as datas do input como America/Sao_Paulo
+    if (period === "custom") {
       return {
-        startDate: new Date(customStartStr + 'T00:00:00-03:00'),
-        endDate: new Date(customEndStr + 'T23:59:59-03:00'),
+        startDate: new Date(`${customStartStr}T00:00:00-03:00`),
+        endDate: new Date(`${customEndStr}T23:59:59-03:00`),
       };
     }
-    // Fim = agora; início = N dias atrás a partir de meia-noite em Sao_Paulo
+
     const end = new Date();
-    const todayBRT = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
-    const start = new Date(todayBRT + 'T00:00:00-03:00');
+    const todayBrt = new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
+    const start = new Date(`${todayBrt}T00:00:00-03:00`);
     start.setDate(start.getDate() - periodNum);
     return { startDate: start, endDate: end };
-  }, [period, periodNum, customStartStr, customEndStr]);
+  }, [customEndStr, customStartStr, period, periodNum]);
 
   const sendReport = trpc.system.sendDailyReport.useMutation({
     onSuccess: () => toast.success("Relatório enviado via WhatsApp!"),
-    onError: (e) => toast.error(e.message),
+    onError: (error) => toast.error(error.message),
   });
 
-  const [timezoneOffset] = useState(() => new Date().getTimezoneOffset());
-  const { data: sales, isLoading: loadingSales } = trpc.reports.sales.useQuery({ startDate, endDate, storeId: selectedStoreId });
-  const { data: topProducts, isLoading: loadingProducts } = trpc.reports.topProducts.useQuery({ limit: 10, storeId: selectedStoreId });
-  const { data: dailyRevenue, isLoading: loadingRevenue } = trpc.reports.dailyRevenue.useQuery({ days: periodNum, storeId: selectedStoreId, timezoneOffset });
-  const { data: topCategories, isLoading: loadingCategories } = trpc.reports.topCategories.useQuery({ startDate, endDate, storeId: selectedStoreId });
-  const isLoading = loadingSales || loadingProducts || loadingRevenue || loadingCategories;
+  const { data: overview, isLoading: loadingOverview } = trpc.analytics.salesOverview.useQuery({
+    startDate,
+    endDate,
+    storeId: selectedStoreId,
+  });
+  const { data: series, isLoading: loadingSeries } = trpc.analytics.salesTimeSeries.useQuery({
+    startDate,
+    endDate,
+    storeId: selectedStoreId,
+    timezoneOffset,
+  });
+  const { data: recentOrders, isLoading: loadingRecent } = trpc.analytics.recentOrders.useQuery({
+    limit: 8,
+    storeId: selectedStoreId,
+  });
+  const { data: ordersInPeriod, isLoading: loadingOrders } = trpc.reports.ordersByPeriod.useQuery({
+    startDate,
+    endDate,
+    storeId: selectedStoreId,
+  });
+  const { data: topProducts, isLoading: loadingProducts } = trpc.reports.topProducts.useQuery({
+    limit: 8,
+    startDate,
+    endDate,
+    storeId: selectedStoreId,
+  });
+  const { data: topCategories, isLoading: loadingCategories } = trpc.reports.topCategories.useQuery({
+    startDate,
+    endDate,
+    storeId: selectedStoreId,
+  });
 
-  const chartData = dailyRevenue?.map((d) => ({
-    date: new Date(d.date + "T00:00:00").toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" }),
-    receita: parseFloat(String(d.totalRevenue ?? 0)),
-    pedidos: Number(d.totalOrders),
-  })) ?? [];
+  const isLoading =
+    loadingOverview || loadingSeries || loadingRecent || loadingOrders || loadingProducts || loadingCategories;
+
+  const formatCurrency = (value: number) => `R$ ${value.toFixed(2).replace(".", ",")}`;
+  const formatPct = (value: number) => `${value >= 0 ? "+" : ""}${value.toFixed(1).replace(".", ",")}%`;
+  const totalRevenue = Number(overview?.totalRevenue ?? 0);
+  const totalOrders = Number(overview?.totalOrders ?? 0);
+  const avgTicket = Number(overview?.avgTicket ?? 0);
+  const previousRevenue = Number(overview?.prevTotalRevenue ?? 0);
+  const previousOrders = Number(overview?.prevTotalOrders ?? 0);
+  const revenueDelta = previousRevenue > 0 ? ((totalRevenue - previousRevenue) / previousRevenue) * 100 : 0;
+  const ordersDelta = previousOrders > 0 ? ((totalOrders - previousOrders) / previousOrders) * 100 : 0;
+  const chartData =
+    series?.map((day) => ({
+      date: new Date(`${day.date}T00:00:00`).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" }),
+      receita: Number(day.totalRevenue ?? 0),
+      pedidos: Number(day.totalOrders ?? 0),
+    })) ?? [];
+  const daysCount = Math.max(chartData.length, 1);
+  const avgDailyRevenue = totalRevenue / daysCount;
+  const avgDailyOrders = totalOrders / daysCount;
+  const periodOrders = ordersInPeriod ?? [];
+
+  const paymentLabels: Record<string, string> = {
+    credit_card: "Crédito",
+    debit_card: "Débito",
+    pix: "PIX",
+    cash: "Dinheiro",
+  };
+  const serviceLabels: Record<string, string> = {
+    delivery: "Delivery",
+    pickup: "Retirada",
+    dine_in: "Salão",
+    counter: "Balcão",
+  };
+  const statusLabels: Record<string, string> = {
+    pending: "Aguardando",
+    confirmed: "Confirmado",
+    preparing: "Preparando",
+    out_for_delivery: "Entrega",
+    delivered: "Entregue",
+    cancelled: "Cancelado",
+  };
+
+  const paymentMix = useMemo(() => {
+    const map = new Map<string, { key: string; label: string; orders: number; revenue: number }>();
+    for (const order of periodOrders) {
+      const key = order.paymentMethod;
+      const current = map.get(key) ?? {
+        key,
+        label: paymentLabels[key] ?? key,
+        orders: 0,
+        revenue: 0,
+      };
+      current.orders += 1;
+      current.revenue += Number(order.total);
+      map.set(key, current);
+    }
+    return Array.from(map.values()).sort((a, b) => b.revenue - a.revenue);
+  }, [periodOrders]);
+
+  const serviceMix = useMemo(() => {
+    const map = new Map<string, { key: string; label: string; orders: number; revenue: number }>();
+    for (const order of periodOrders) {
+      const key = order.serviceType;
+      const current = map.get(key) ?? {
+        key,
+        label: serviceLabels[key] ?? key,
+        orders: 0,
+        revenue: 0,
+      };
+      current.orders += 1;
+      current.revenue += Number(order.total);
+      map.set(key, current);
+    }
+    return Array.from(map.values()).sort((a, b) => b.revenue - a.revenue);
+  }, [periodOrders]);
+
+  const statusMix = useMemo(() => {
+    const map = new Map<string, { key: string; label: string; orders: number }>();
+    for (const order of periodOrders) {
+      const key = order.status;
+      const current = map.get(key) ?? {
+        key,
+        label: statusLabels[key] ?? key,
+        orders: 0,
+      };
+      current.orders += 1;
+      map.set(key, current);
+    }
+    return Array.from(map.values()).sort((a, b) => b.orders - a.orders);
+  }, [periodOrders]);
+
+  const hourMix = useMemo(() => {
+    const map = new Map<number, { hour: number; orders: number; revenue: number }>();
+    for (const order of periodOrders) {
+      const hour = new Date(order.createdAt).toLocaleString("en-US", {
+        hour: "2-digit",
+        hour12: false,
+        timeZone: "America/Sao_Paulo",
+      });
+      const key = Number(hour);
+      const current = map.get(key) ?? { hour: key, orders: 0, revenue: 0 };
+      current.orders += 1;
+      current.revenue += Number(order.total);
+      map.set(key, current);
+    }
+    return Array.from(map.values()).sort((a, b) => b.orders - a.orders);
+  }, [periodOrders]);
+
+  const peakHour = hourMix[0];
+  const bestDay = chartData.reduce<{ date: string; receita: number; pedidos: number } | null>(
+    (best, current) => (best === null || current.receita > best.receita ? current : best),
+    null,
+  );
+  const cancelledOrders = statusMix.find((entry) => entry.key === "cancelled")?.orders ?? 0;
+  const cancellationRate = totalOrders > 0 ? (cancelledOrders / totalOrders) * 100 : 0;
+  const deliveryRevenue = serviceMix.find((entry) => entry.key === "delivery")?.revenue ?? 0;
+  const deliveryShare = totalRevenue > 0 ? (deliveryRevenue / totalRevenue) * 100 : 0;
+  const pixRevenue = paymentMix.find((entry) => entry.key === "pix")?.revenue ?? 0;
+  const pixShare = totalRevenue > 0 ? (pixRevenue / totalRevenue) * 100 : 0;
+  const topCategoriesTotal = topCategories?.reduce((sum, item) => sum + item.totalQuantity, 0) ?? 0;
+  const categoryColors = ["#6E0D12", "#a01218", "#d54b51", "#f28b82", "#9a3412", "#dc2626"];
 
   return (
     <AdminPage>
       <AdminTopbar
-        title="Relatórios"
-        subtitle="Desempenho de vendas e produtos"
+        title="Relatórios e inteligência"
+        subtitle="Visão executiva para venda, operação e mix da loja por período."
         actions={
           <>
             <Button
@@ -2529,171 +3905,462 @@ function ReportsTab() {
             <AdminChipGroup
               size="sm"
               value={period}
-              onChange={setPeriod}
+              onChange={(value) => setPeriod(value)}
               items={[
-                { value: '7', label: '7d' },
-                { value: '14', label: '14d' },
-                { value: '30', label: '30d' },
-                { value: '90', label: '90d' },
-                { value: 'custom', label: 'Personalizado' },
+                { value: "7", label: "7d" },
+                { value: "14", label: "14d" },
+                { value: "30", label: "30d" },
+                { value: "90", label: "90d" },
+                { value: "custom", label: "Personalizado" },
               ]}
             />
           </>
         }
       />
 
-      {period === 'custom' && (
-        <div className="flex items-center gap-2 flex-wrap">
-          <input type="date" value={customStartStr} onChange={e => setCustomStartStr(e.target.value)}
-            className="text-xs border rounded-lg px-2 py-1.5 outline-none h-9"
-            style={{ borderColor: 'var(--admin-input-border)', color: 'var(--admin-text)', background: 'var(--admin-input-bg)' }}
-          />
-          <span className="text-xs" style={{ color: 'var(--admin-text-muted)' }}>até</span>
-          <input type="date" value={customEndStr} onChange={e => setCustomEndStr(e.target.value)}
-            className="text-xs border rounded-lg px-2 py-1.5 outline-none h-9"
-            style={{ borderColor: 'var(--admin-input-border)', color: 'var(--admin-text)', background: 'var(--admin-input-bg)' }}
-          />
-        </div>
-      )}
+      <AdminSurface>
+        <div className="flex flex-wrap items-center gap-3 justify-between">
+          <div className="flex flex-wrap items-center gap-2">
+            <AdminSectionLabel>Filtro do relatório</AdminSectionLabel>
+            {period === "custom" && (
+              <>
+                <input
+                  type="date"
+                  value={customStartStr}
+                  onChange={(event) => setCustomStartStr(event.target.value)}
+                  className="text-xs border rounded-lg px-2 py-1.5 outline-none h-9"
+                  style={{
+                    borderColor: "var(--admin-input-border)",
+                    color: "var(--admin-text)",
+                    background: "var(--admin-input-bg)",
+                  }}
+                />
+                <span className="text-xs" style={{ color: "var(--admin-text-muted)" }}>até</span>
+                <input
+                  type="date"
+                  value={customEndStr}
+                  onChange={(event) => setCustomEndStr(event.target.value)}
+                  className="text-xs border rounded-lg px-2 py-1.5 outline-none h-9"
+                  style={{
+                    borderColor: "var(--admin-input-border)",
+                    color: "var(--admin-text)",
+                    background: "var(--admin-input-bg)",
+                  }}
+                />
+              </>
+            )}
+          </div>
 
-      <div className="flex items-center gap-2 flex-wrap">
-          {isManager ? (
-            // Manager: badge fixo mostrando sua loja
-            <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#fce8e8] border border-[#6E0D12]/20">
-              <Store className="w-3.5 h-3.5 text-[#6E0D12]" />
-              <span className="text-xs font-semibold text-[#6E0D12]">{selectedStoreName}</span>
-              <Badge variant="outline" className="text-[10px] py-0 px-1.5 border-[#6E0D12]/30 text-[#6E0D12]/70 ml-1">Sua unidade</Badge>
-            </div>
-          ) : (
-            // Admin: seletor de loja inline
-            <div className="flex items-center gap-2">
-              <span className="text-xs text-muted-foreground font-medium">Filtrar por unidade:</span>
-              <Select
-                value={selectedStoreId ? String(selectedStoreId) : "all"}
-                onValueChange={(v) => setSelectedStoreId(v === "all" ? undefined : Number(v))}
-              >
-                <SelectTrigger className="h-8 text-xs w-44 border-[#6E0D12]/30 focus:ring-[#6E0D12]/20">
-                  <Store className="w-3.5 h-3.5 text-[#6E0D12] mr-1 shrink-0" />
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Todas as unidades</SelectItem>
-                  {stores.map((s) => (
-                    <SelectItem key={s.id} value={String(s.id)}>
-                      {s.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              {selectedStoreId && (
-                <button
-                  onClick={() => setSelectedStoreId(undefined)}
-                  className="text-xs text-muted-foreground hover:text-foreground underline underline-offset-2"
+          <div className="flex flex-wrap items-center gap-2">
+            {isManager ? (
+              <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#fce8e8] border border-[#6E0D12]/20">
+                <Store className="w-3.5 h-3.5 text-[#6E0D12]" />
+                <span className="text-xs font-semibold text-[#6E0D12]">{selectedStoreName}</span>
+                <Badge variant="outline" className="text-[10px] py-0 px-1.5 border-[#6E0D12]/30 text-[#6E0D12]/70 ml-1">
+                  Sua unidade
+                </Badge>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-muted-foreground font-medium">Unidade:</span>
+                <Select
+                  value={selectedStoreId ? String(selectedStoreId) : "all"}
+                  onValueChange={(value) => setSelectedStoreId(value === "all" ? undefined : Number(value))}
                 >
-                  Limpar
-                </button>
-              )}
-            </div>
-          )}
-          {isLoading && (
-            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-              <Loader2 className="w-3 h-3 animate-spin" />
-              Carregando...
-            </div>
-          )}
-      </div>
+                  <SelectTrigger className="h-8 text-xs w-44 border-[#6E0D12]/30 focus:ring-[#6E0D12]/20">
+                    <Store className="w-3.5 h-3.5 text-[#6E0D12] mr-1 shrink-0" />
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Todas as unidades</SelectItem>
+                    {stores.map((store) => (
+                      <SelectItem key={store.id} value={String(store.id)}>
+                        {store.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+            {isLoading && (
+              <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                <Loader2 className="w-3 h-3 animate-spin" />
+                Carregando
+              </div>
+            )}
+          </div>
+        </div>
+      </AdminSurface>
 
-      <AdminStatGrid className="grid-cols-1 sm:grid-cols-3 lg:grid-cols-3">
-        <AdminStat label="Total de Pedidos" value={String(sales?.totalOrders ?? 0)} icon={<ShoppingBag className="w-4 h-4" />} />
-        <AdminStat label="Receita Total" value={`R$ ${parseFloat(String(sales?.totalRevenue ?? 0)).toFixed(2).replace('.', ',')}`} icon={<DollarSign className="w-4 h-4" />} />
-        <AdminStat label="Ticket Médio" value={`R$ ${parseFloat(String(sales?.avgOrderValue ?? 0)).toFixed(2).replace('.', ',')}`} icon={<TrendingUp className="w-4 h-4" />} />
+      <AdminStatGrid className="grid-cols-1 sm:grid-cols-2 xl:grid-cols-4">
+        <AdminStat
+          label="Receita do período"
+          value={formatCurrency(totalRevenue)}
+          icon={<DollarSign className="w-4 h-4" />}
+          trend={revenueDelta > 0 ? "up" : revenueDelta < 0 ? "down" : "neutral"}
+          trendLabel={previousRevenue > 0 ? formatPct(revenueDelta) : "Sem base"}
+          sub={`Média diária ${formatCurrency(avgDailyRevenue)}`}
+        />
+        <AdminStat
+          label="Pedidos no período"
+          value={String(totalOrders)}
+          icon={<ShoppingBag className="w-4 h-4" />}
+          trend={ordersDelta > 0 ? "up" : ordersDelta < 0 ? "down" : "neutral"}
+          trendLabel={previousOrders > 0 ? formatPct(ordersDelta) : "Sem base"}
+          sub={`${avgDailyOrders.toFixed(1).replace(".", ",")} pedidos/dia`}
+        />
+        <AdminStat
+          label="Ticket médio"
+          value={formatCurrency(avgTicket)}
+          icon={<TrendingUp className="w-4 h-4" />}
+          sub={`${chartData.length || 0} dias analisados`}
+        />
+        <AdminStat
+          label="Taxa de cancelamento"
+          value={`${cancellationRate.toFixed(1).replace(".", ",")}%`}
+          icon={<XCircle className="w-4 h-4" />}
+          trend={cancellationRate > 8 ? "down" : cancellationRate > 0 ? "neutral" : "up"}
+          sub={`${cancelledOrders} cancelado${cancelledOrders === 1 ? "" : "s"}`}
+        />
       </AdminStatGrid>
 
-      {chartData.length > 0 && (
-        <AdminSurface title="Receita por dia">
-          <ResponsiveContainer width="100%" height={240}>
-            <BarChart data={chartData} margin={{ top: 4, right: 4, left: -20, bottom: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="var(--admin-chart-grid)" vertical={false} />
-              <XAxis dataKey="date" tick={{ fontSize: 11, fill: 'var(--admin-chart-tick)' }} axisLine={false} tickLine={false} />
-              <YAxis tick={{ fontSize: 11, fill: 'var(--admin-chart-tick)' }} axisLine={false} tickLine={false} tickFormatter={(v) => `R$${v}`} />
-              <Tooltip
-                cursor={{ fill: 'rgba(110,13,18,0.04)' }}
-                contentStyle={{ borderRadius: 8, border: 'none', boxShadow: 'var(--admin-tooltip-shadow)', fontSize: 12, background: 'var(--admin-tooltip-bg)', color: 'var(--admin-text)' }}
-                formatter={(value: number) => [`R$ ${value.toFixed(2).replace('.', ',')}`, 'Receita']}
-              />
-              <Bar dataKey="receita" fill="#920000" radius={[6, 6, 0, 0]} maxBarSize={48} />
-            </BarChart>
-          </ResponsiveContainer>
-        </AdminSurface>
-      )}
-
-      <AdminSurface title="Vendas por categoria" subtitle="Distribuição de pedidos no período selecionado">
-          {loadingCategories ? (
-            <div className="flex justify-center py-8"><Loader2 className="w-6 h-6 animate-spin" style={{ color: '#920000' }} /></div>
-          ) : !topCategories || topCategories.length === 0 ? (
-            <p className="text-sm text-center py-8" style={{ color: 'var(--admin-text-muted)' }}>Nenhum dado disponível</p>
+      <div className="grid grid-cols-1 xl:grid-cols-[1.6fr_0.9fr] gap-4">
+        <AdminSurface title="Evolução do período" subtitle="Receita e volume diário para leitura executiva rápida">
+          {chartData.length === 0 ? (
+            <AdminEmptyState
+              icon={<BarChart3 className="w-8 h-8" />}
+              title="Sem dados no período"
+              description="Assim que houver vendas nessa janela, a evolução aparecerá aqui."
+            />
           ) : (
-            <div className="flex flex-col md:flex-row items-center gap-6">
-              <div style={{ width: '100%', maxWidth: 300, height: 240 }}>
-                <PieChart width={300} height={240}>
-                  <Pie data={topCategories} dataKey="totalQuantity" nameKey="categoryName" cx="50%" cy="50%" outerRadius={90} innerRadius={45} paddingAngle={3}>
-                    {topCategories.map((_, i) => {
-                      const colors = ['#ff0000','#920000','#c41a1a','#e63333','#b30000','#ff4444','#7a0000','#ff6666'];
-                      return <Cell key={i} fill={colors[i % colors.length]} />;
-                    })}
+            <ResponsiveContainer width="100%" height={300}>
+              <ComposedChart data={chartData} margin={{ top: 12, right: 12, left: -20, bottom: 0 }}>
+                <defs>
+                  <linearGradient id="reportsRevenueFill" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#6E0D12" stopOpacity={0.26} />
+                    <stop offset="95%" stopColor="#6E0D12" stopOpacity={0.03} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" stroke="var(--admin-chart-grid)" vertical={false} />
+                <XAxis dataKey="date" tick={{ fontSize: 11, fill: "var(--admin-chart-tick)" }} axisLine={false} tickLine={false} />
+                <YAxis
+                  yAxisId="left"
+                  tick={{ fontSize: 11, fill: "var(--admin-chart-tick)" }}
+                  axisLine={false}
+                  tickLine={false}
+                  tickFormatter={(value) => `R$${value}`}
+                />
+                <YAxis
+                  yAxisId="right"
+                  orientation="right"
+                  tick={{ fontSize: 11, fill: "var(--admin-chart-tick)" }}
+                  axisLine={false}
+                  tickLine={false}
+                />
+                <Tooltip
+                  contentStyle={{
+                    borderRadius: 12,
+                    border: "1px solid var(--admin-card-border)",
+                    boxShadow: "var(--admin-tooltip-shadow)",
+                    fontSize: 12,
+                    background: "var(--admin-tooltip-bg)",
+                    color: "var(--admin-text)",
+                  }}
+                  formatter={(value: number, key: string) =>
+                    key === "receita"
+                      ? [formatCurrency(value), "Receita"]
+                      : [`${value} pedido${value === 1 ? "" : "s"}`, "Pedidos"]
+                  }
+                />
+                <ReferenceLine yAxisId="left" y={avgDailyRevenue} stroke="#d7a5a8" strokeDasharray="4 4" />
+                <Bar yAxisId="right" dataKey="pedidos" fill="#f5d6d8" radius={[6, 6, 0, 0]} maxBarSize={30} />
+                <Area yAxisId="left" type="monotone" dataKey="receita" stroke="#6E0D12" strokeWidth={2.5} fill="url(#reportsRevenueFill)" />
+              </ComposedChart>
+            </ResponsiveContainer>
+          )}
+        </AdminSurface>
+
+        <AdminSurface title="Resumo executivo" subtitle="Atalhos que dono e gerente mais consultam">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="rounded-2xl border border-[#f0dfdb] bg-[#fff8f6] p-4">
+              <p className="text-xs uppercase tracking-[0.14em] text-[#7d0f14]">Melhor dia</p>
+              <p className="mt-2 text-lg font-bold text-[#2f090d]">{bestDay?.date ?? "--"}</p>
+              <p className="text-xs text-[#8d5c60]">{bestDay ? formatCurrency(bestDay.receita) : "Sem base"}</p>
+            </div>
+            <div className="rounded-2xl border border-[#f0dfdb] bg-white p-4">
+              <p className="text-xs uppercase tracking-[0.14em] text-[#7d0f14]">Pico de demanda</p>
+              <p className="mt-2 text-lg font-bold text-[#2f090d]">
+                {peakHour ? `${String(peakHour.hour).padStart(2, "0")}:00` : "--"}
+              </p>
+              <p className="text-xs text-[#8d5c60]">
+                {peakHour ? `${peakHour.orders} pedidos na hora líder` : "Sem base"}
+              </p>
+            </div>
+            <div className="rounded-2xl border border-[#f0dfdb] bg-white p-4">
+              <p className="text-xs uppercase tracking-[0.14em] text-[#7d0f14]">Peso do delivery</p>
+              <p className="mt-2 text-lg font-bold text-[#2f090d]">{deliveryShare.toFixed(1).replace(".", ",")}%</p>
+              <p className="text-xs text-[#8d5c60]">Participação na receita</p>
+            </div>
+            <div className="rounded-2xl border border-[#f0dfdb] bg-white p-4">
+              <p className="text-xs uppercase tracking-[0.14em] text-[#7d0f14]">Força do PIX</p>
+              <p className="mt-2 text-lg font-bold text-[#2f090d]">{pixShare.toFixed(1).replace(".", ",")}%</p>
+              <p className="text-xs text-[#8d5c60]">Participação na receita</p>
+            </div>
+          </div>
+        </AdminSurface>
+      </div>
+
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
+        <AdminSurface title="Canais de venda" subtitle="Receita e volume por tipo de serviço">
+          <div className="space-y-3">
+            {serviceMix.length === 0 ? (
+              <AdminEmptyState
+                icon={<Truck className="w-8 h-8" />}
+                title="Sem canais no período"
+                description="Os canais aparecem quando houver pedidos."
+              />
+            ) : (
+              serviceMix.map((entry) => {
+                const share = totalRevenue > 0 ? (entry.revenue / totalRevenue) * 100 : 0;
+                return (
+                  <div key={entry.key} className="rounded-2xl border border-[#f0dfdb] p-3">
+                    <div className="mb-2 flex items-center justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-semibold text-[#2f090d]">{entry.label}</p>
+                        <p className="text-xs text-[#8d5c60]">{entry.orders} pedidos</p>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-sm font-bold text-[#7d0f14]">{formatCurrency(entry.revenue)}</p>
+                        <p className="text-xs text-[#8d5c60]">{share.toFixed(1).replace(".", ",")}% da receita</p>
+                      </div>
+                    </div>
+                    <div className="h-2 rounded-full bg-[#f4e7e8]">
+                      <div className="h-full rounded-full bg-[#6E0D12]" style={{ width: `${Math.min(share, 100)}%` }} />
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </AdminSurface>
+
+        <AdminSurface title="Pagamentos" subtitle="Como a receita está entrando">
+          <div className="space-y-3">
+            {paymentMix.length === 0 ? (
+              <AdminEmptyState
+                icon={<DollarSign className="w-8 h-8" />}
+                title="Sem pagamentos no período"
+                description="Os meios de pagamento serão exibidos conforme os pedidos entrarem."
+              />
+            ) : (
+              paymentMix.map((entry) => {
+                const share = totalRevenue > 0 ? (entry.revenue / totalRevenue) * 100 : 0;
+                return (
+                  <div key={entry.key} className="flex items-center justify-between gap-3 rounded-2xl border border-[#f0dfdb] bg-white p-3">
+                    <div>
+                      <p className="text-sm font-semibold text-[#2f090d]">{entry.label}</p>
+                      <p className="text-xs text-[#8d5c60]">{entry.orders} pedidos</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-sm font-bold text-[#7d0f14]">{formatCurrency(entry.revenue)}</p>
+                      <AdminPill tone={entry.key === "pix" ? "brand" : "neutral"}>{share.toFixed(1).replace(".", ",")}%</AdminPill>
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </AdminSurface>
+
+        <AdminSurface title="Status do período" subtitle="Saúde operacional dos pedidos">
+          <div className="space-y-3">
+            {statusMix.length === 0 ? (
+              <AdminEmptyState
+                icon={<Clock className="w-8 h-8" />}
+                title="Sem status para exibir"
+                description="Os status aparecem conforme o fluxo de pedidos roda."
+              />
+            ) : (
+              statusMix.map((entry) => {
+                const share = totalOrders > 0 ? (entry.orders / totalOrders) * 100 : 0;
+                const tone: "success" | "warning" | "danger" | "brand" | "neutral" =
+                  entry.key === "delivered"
+                    ? "success"
+                    : entry.key === "cancelled"
+                      ? "danger"
+                      : entry.key === "pending" || entry.key === "preparing"
+                        ? "warning"
+                        : "brand";
+                return (
+                  <div key={entry.key} className="rounded-2xl border border-[#f0dfdb] p-3">
+                    <div className="mb-2 flex items-center justify-between gap-3">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-semibold text-[#2f090d]">{entry.label}</span>
+                        <AdminPill tone={tone}>{entry.orders}</AdminPill>
+                      </div>
+                      <span className="text-xs text-[#8d5c60]">{share.toFixed(1).replace(".", ",")}%</span>
+                    </div>
+                    <div className="h-2 rounded-full bg-[#f4e7e8]">
+                      <div
+                        className="h-full rounded-full"
+                        style={{
+                          width: `${Math.min(share, 100)}%`,
+                          background:
+                            entry.key === "delivered"
+                              ? "#16a34a"
+                              : entry.key === "cancelled"
+                                ? "#dc2626"
+                                : "#6E0D12",
+                        }}
+                      />
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </AdminSurface>
+      </div>
+
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+        <AdminSurface title="Produtos líderes" subtitle="Itens com maior tração no período selecionado">
+          {topProducts && topProducts.length > 0 ? (
+            <div className="space-y-2">
+              {topProducts.map((product, index) => (
+                <div key={`${product.productName}-${index}`} className="flex items-center justify-between gap-3 rounded-2xl border border-[#f0dfdb] px-4 py-3">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-[#fdf2f2] text-xs font-bold text-[#7d0f14]">
+                      {index + 1}
+                    </div>
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-semibold text-[#2f090d]">{product.productName}</p>
+                      <p className="text-xs text-[#8d5c60]">{product.totalQuantity} unidades</p>
+                    </div>
+                  </div>
+                  <p className="text-sm font-bold text-[#7d0f14]">{formatCurrency(Number(product.totalRevenue ?? 0))}</p>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <AdminEmptyState
+              icon={<Package className="w-8 h-8" />}
+              title="Sem produtos ranqueados"
+              description="Assim que houver vendas no período, o ranking aparece aqui."
+            />
+          )}
+        </AdminSurface>
+
+        <AdminSurface title="Mix de categorias" subtitle="Participação das categorias no volume vendido">
+          {topCategories && topCategories.length > 0 ? (
+            <div className="grid grid-cols-1 md:grid-cols-[240px_1fr] gap-4 items-center">
+              <div className="mx-auto">
+                <PieChart width={220} height={220}>
+                  <Pie
+                    data={topCategories}
+                    dataKey="totalQuantity"
+                    nameKey="categoryName"
+                    cx="50%"
+                    cy="50%"
+                    outerRadius={82}
+                    innerRadius={48}
+                    paddingAngle={3}
+                  >
+                    {topCategories.map((_, index) => (
+                      <Cell key={`cat-${index}`} fill={categoryColors[index % categoryColors.length]} />
+                    ))}
                   </Pie>
-                  <Tooltip formatter={(value: number, name: string) => [`${value} unid.`, name]} contentStyle={{ background: 'var(--admin-tooltip-bg)', border: '1px solid var(--admin-card-border)', borderRadius: 10, fontSize: 12, color: 'var(--admin-text)' }} />
-                  <Legend iconType="circle" iconSize={8} formatter={(value) => <span style={{ fontSize: 11, color: 'var(--admin-text-heading)' }}>{value}</span>} />
+                  <Tooltip
+                    formatter={(value: number, name: string) => [`${value} itens`, name]}
+                    contentStyle={{
+                      background: "var(--admin-tooltip-bg)",
+                      border: "1px solid var(--admin-card-border)",
+                      borderRadius: 12,
+                      fontSize: 12,
+                      color: "var(--admin-text)",
+                    }}
+                  />
                 </PieChart>
               </div>
-              <div className="flex-1 w-full space-y-2">
-                {topCategories.map((cat, i) => {
-                  const colors = ['#ff0000','#920000','#c41a1a','#e63333','#b30000','#ff4444','#7a0000','#ff6666'];
-                  const total = topCategories.reduce((s, c) => s + c.totalQuantity, 0);
-                  const pct = total > 0 ? Math.round((cat.totalQuantity / total) * 100) : 0;
+              <div className="space-y-3">
+                {topCategories.map((category, index) => {
+                  const share = topCategoriesTotal > 0 ? (category.totalQuantity / topCategoriesTotal) * 100 : 0;
                   return (
-                    <div key={i} className="flex items-center gap-3">
-                      <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ background: colors[i % colors.length] }} />
-                      <div className="flex-1">
-                        <div className="flex justify-between mb-0.5">
-                          <span className="text-xs font-medium" style={{ color: 'var(--admin-text-heading)' }}>{cat.categoryName}</span>
-                          <span className="text-xs" style={{ color: 'var(--admin-text-muted)' }}>{cat.totalQuantity} unid. · {pct}%</span>
+                    <div key={`${category.categoryName}-${index}`} className="space-y-1.5">
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <span
+                            className="h-2.5 w-2.5 shrink-0 rounded-full"
+                            style={{ background: categoryColors[index % categoryColors.length] }}
+                          />
+                          <span className="truncate text-sm font-medium text-[#2f090d]">{category.categoryName}</span>
                         </div>
-                        <div className="h-1.5 rounded-full" style={{ background: 'var(--admin-progress-bg)' }}>
-                          <div className="h-full rounded-full" style={{ width: `${pct}%`, background: colors[i % colors.length] }} />
-                        </div>
+                        <span className="text-xs text-[#8d5c60]">
+                          {category.totalQuantity} itens • {share.toFixed(1).replace(".", ",")}%
+                        </span>
+                      </div>
+                      <div className="h-2 rounded-full bg-[#f4e7e8]">
+                        <div
+                          className="h-full rounded-full"
+                          style={{
+                            width: `${Math.min(share, 100)}%`,
+                            background: categoryColors[index % categoryColors.length],
+                          }}
+                        />
                       </div>
                     </div>
                   );
                 })}
               </div>
             </div>
+          ) : (
+            <AdminEmptyState
+              icon={<Tag className="w-8 h-8" />}
+              title="Sem categorias no período"
+              description="O mix aparece quando houver itens vendidos no período."
+            />
           )}
-      </AdminSurface>
+        </AdminSurface>
+      </div>
 
-      <AdminSurface title="Produtos mais vendidos">
-        {topProducts?.length === 0 ? (
-          <AdminEmptyState icon={<Package className="w-8 h-8" />} title="Sem dados" description="Nenhum produto vendido no período." />
-        ) : (
-          <div className="space-y-2">
-            {topProducts?.map((product, i) => (
-              <div key={i} className="flex items-center justify-between p-3 rounded-xl" style={{ background: i % 2 === 0 ? 'var(--admin-order-row-bg)' : 'transparent' }}>
-                <div className="flex items-center gap-3">
-                  <span className="w-7 h-7 rounded-lg flex items-center justify-center text-xs font-bold"
-                    style={i === 0 ? { background: 'linear-gradient(135deg, #ff0000 0%, #920000 100%)', color: '#fff' } : { background: 'var(--admin-badge-bg)', color: 'var(--admin-badge-text)' }}>
-                    {i + 1}
-                  </span>
-                  <span className="font-medium text-sm" style={{ color: 'var(--admin-text-heading)' }}>{product.productName}</span>
+      <AdminSurface title="Últimos pedidos" subtitle="Feed rápido para cruzar números com operação real">
+        {recentOrders && recentOrders.length > 0 ? (
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+            {recentOrders.map((order) => {
+              const statusMeta = STATUS_LABELS[order.status];
+              return (
+                <div key={order.id} className="rounded-2xl border border-[#f0dfdb] bg-white px-4 py-3">
+                  <div className="mb-2 flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-semibold text-[#2f090d]">#{order.id} • {order.customerName}</p>
+                      <p className="text-xs text-[#8d5c60]">
+                        {new Date(order.createdAt).toLocaleString("pt-BR", {
+                          day: "2-digit",
+                          month: "2-digit",
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        })}
+                      </p>
+                    </div>
+                    <div className="text-right shrink-0">
+                      <p className="text-sm font-bold text-[#7d0f14]">{formatCurrency(Number(order.total))}</p>
+                      <span className={`mt-1 inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold ${statusMeta?.color ?? ""}`}>
+                        {statusMeta?.label ?? order.status}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 text-xs text-[#8d5c60]">
+                    <AdminPill tone="neutral">{paymentLabels[order.paymentMethod] ?? order.paymentMethod}</AdminPill>
+                  </div>
                 </div>
-                <div className="text-right">
-                  <p className="font-bold text-sm" style={{ color: 'var(--admin-badge-text)' }}>{product.totalQuantity} unid.</p>
-                  <p className="text-xs" style={{ color: 'var(--admin-text-muted)' }}>
-                    R$ {parseFloat(String(product.totalRevenue ?? 0)).toFixed(2).replace('.', ',')}
-                  </p>
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
+        ) : (
+          <AdminEmptyState
+            icon={<ShoppingBag className="w-8 h-8" />}
+            title="Sem pedidos recentes"
+            description="Quando os pedidos começarem a entrar, este feed vai acompanhar."
+          />
         )}
       </AdminSurface>
     </AdminPage>
@@ -3082,10 +4749,11 @@ function CustomerJourneyHistoryModal({ userId, userName, onClose }: { userId: nu
 
 function UsersTab() {
   const utils = trpc.useUtils();
-  const { data: users, isLoading } = trpc.adminUsers.list.useQuery();
+  const { data: userPage, isLoading } = trpc.adminUsers.list.useQuery();
   const [sendCouponForm, setSendCouponForm] = useState<{ userId: number; userName: string } | null>(null);
   const [couponForm, setCouponForm] = useState({ code: "", discountType: "percentage" as "percentage" | "fixed", discountValue: "", minOrderValue: "" });
   const [journeyHistoryUser, setJourneyHistoryUser] = useState<{ userId: number; userName: string } | null>(null);
+  const users = userPage?.items ?? [];
 
   const sendCoupon = trpc.adminUsers.sendCoupon.useMutation({
     onSuccess: () => { utils.adminUsers.list.invalidate(); setSendCouponForm(null); setCouponForm({ code: "", discountType: "percentage", discountValue: "", minOrderValue: "" }); toast.success("Cupom enviado para o cliente!"); },
@@ -3132,10 +4800,14 @@ function UsersTab() {
         <Card>
           <CardContent className="p-0">
             <div className="overflow-x-auto">
+              <div className="flex items-center justify-between border-b bg-muted/20 px-3 py-2 text-sm text-muted-foreground">
+                <span>{userPage?.total ?? users.length} usuários encontrados</span>
+                <span>Página {userPage?.page ?? 1} de {userPage?.totalPages ?? 1}</span>
+              </div>
               <table className="w-full">
                 <thead><tr className="admin-table-head"><th className="text-left p-3">Nome</th><th className="text-left p-3 hidden sm:table-cell">Email</th><th className="text-left p-3 hidden md:table-cell">Função</th><th className="text-left p-3 hidden md:table-cell">Cadastro</th><th className="text-right p-3">Ações</th></tr></thead>
                 <tbody>
-                  {users?.map((u) => (
+                  {users.map((u) => (
                     <tr key={u.id} className="border-b hover:bg-muted/30 transition-colors">
                       <td className="p-3 font-medium">{u.name ?? "—"}</td>
                       <td className="p-3 text-muted-foreground hidden sm:table-cell">{u.email ?? "—"}</td>
@@ -3158,7 +4830,7 @@ function UsersTab() {
                   ))}
                 </tbody>
               </table>
-              {!users?.length && (
+              {!users.length && (
                 <AdminEmptyState icon={<Users className="w-8 h-8" />} title="Nenhum usuário cadastrado" description="Assim que clientes se cadastrarem, eles aparecerão aqui." />
               )}
             </div>
@@ -3172,6 +4844,350 @@ function UsersTab() {
           onClose={() => setJourneyHistoryUser(null)}
         />
       )}
+    </AdminPage>
+  );
+}
+
+function ClubTab() {
+  const utils = trpc.useUtils();
+  const { data: config, isLoading } = trpc.club.getAdminConfig.useQuery();
+  const [form, setForm] = useState<ClubAdminConfig | null>(null);
+
+  useEffect(() => {
+    if (!config) return;
+    setForm({
+      ...config,
+      highlightItems: [...config.highlightItems],
+      plans: config.plans.map((plan) => ({ ...plan, benefits: [...plan.benefits] })),
+    });
+  }, [config]);
+
+  const saveConfig = trpc.club.saveAdminConfig.useMutation({
+    onSuccess: async () => {
+      await Promise.all([
+        utils.club.getAdminConfig.invalidate(),
+        utils.club.getPublicConfig.invalidate(),
+        utils.club.getPlans.invalidate(),
+        utils.club.getMyPlan.invalidate(),
+      ]);
+      toast.success("Configurações do clube salvas com sucesso.");
+    },
+    onError: (error) => toast.error(error.message),
+  });
+
+  const updateField = <K extends keyof ClubAdminConfig,>(key: K, value: ClubAdminConfig[K]) => {
+    setForm((current) => (current ? { ...current, [key]: value } : current));
+  };
+
+  const updatePlan = <K extends keyof ClubAdminPlan,>(planId: ClubAdminPlanId, key: K, value: ClubAdminPlan[K]) => {
+    setForm((current) =>
+      current
+        ? {
+            ...current,
+            plans: current.plans.map((plan) => (plan.id === planId ? { ...plan, [key]: value } : plan)),
+          }
+        : current,
+    );
+  };
+
+  const serializeLines = (items: string[]) => items.join("\n");
+  const parseLines = (value: string) =>
+    value
+      .split(/\r?\n/)
+      .map((item) => item.trim())
+      .filter(Boolean);
+
+  const handleSave = () => {
+    if (!form) return;
+    saveConfig.mutate({
+      ...form,
+      highlightItems: form.highlightItems.length ? form.highlightItems : ["Benefício exclusivo"],
+      plans: form.plans.map((plan) => ({
+        ...plan,
+        benefits: plan.benefits.length ? plan.benefits : ["Benefício do plano"],
+      })),
+    });
+  };
+
+  if (isLoading || !form) {
+    return (
+      <AdminPage>
+        <AdminTopbar
+          title="Clube"
+          subtitle="Centralize textos, planos e benefícios do clube."
+          actions={<Skeleton className="h-10 w-32 rounded-full" />}
+        />
+        <AdminSurface className="space-y-4">
+          <Skeleton className="h-40 w-full rounded-3xl" />
+          <Skeleton className="h-64 w-full rounded-3xl" />
+          <Skeleton className="h-64 w-full rounded-3xl" />
+        </AdminSurface>
+      </AdminPage>
+    );
+  }
+
+  return (
+    <AdminPage>
+      <AdminTopbar
+        title="Clube"
+        subtitle="Tudo do clube agora sai desta configuração: home, checkout, página do clube e meu perfil."
+        actions={
+          <Button onClick={handleSave} disabled={saveConfig.isPending} className="gap-2">
+            {saveConfig.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Crown className="h-4 w-4" />}
+            Salvar clube
+          </Button>
+        }
+      />
+
+      <AdminStatGrid>
+        <AdminStat label="Planos ativos" value={`${form.plans.length}`} />
+        <AdminStat label="Benefícios de destaque" value={`${form.highlightItems.length}`} />
+        <AdminStat
+          label="Plano em destaque"
+          value={form.plans.find((plan) => plan.id === form.popularPlanId)?.name ?? "Premium"}
+        />
+      </AdminStatGrid>
+
+      <AdminSurface className="space-y-6">
+        <Card className="rounded-3xl border-[#f0dfdb]">
+          <CardHeader>
+            <CardTitle className="text-lg">Conteúdo principal do clube</CardTitle>
+          </CardHeader>
+          <CardContent className="grid gap-4 md:grid-cols-2">
+            <div className="space-y-2">
+              <Label htmlFor="club-badge-label">Badge</Label>
+              <Input id="club-badge-label" value={form.badgeLabel} onChange={(event) => updateField("badgeLabel", event.target.value)} />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="club-cta-label">CTA principal</Label>
+              <Input id="club-cta-label" value={form.ctaLabel} onChange={(event) => updateField("ctaLabel", event.target.value)} />
+            </div>
+            <div className="space-y-2 md:col-span-2">
+              <Label htmlFor="club-section-title">Título da vitrine</Label>
+              <Input id="club-section-title" value={form.sectionTitle} onChange={(event) => updateField("sectionTitle", event.target.value)} />
+            </div>
+            <div className="space-y-2 md:col-span-2">
+              <Label htmlFor="club-section-subtitle">Subtítulo da vitrine</Label>
+              <Textarea
+                id="club-section-subtitle"
+                rows={3}
+                value={form.sectionSubtitle}
+                onChange={(event) => updateField("sectionSubtitle", event.target.value)}
+              />
+            </div>
+            <div className="space-y-2 md:col-span-2">
+              <Label htmlFor="club-disclaimer">Rodapé / disclaimer</Label>
+              <Input id="club-disclaimer" value={form.disclaimer} onChange={(event) => updateField("disclaimer", event.target.value)} />
+            </div>
+            <div className="space-y-2 md:col-span-2">
+              <Label htmlFor="club-highlight-items">Benefícios em destaque</Label>
+              <Textarea
+                id="club-highlight-items"
+                rows={4}
+                value={serializeLines(form.highlightItems)}
+                onChange={(event) => updateField("highlightItems", parseLines(event.target.value))}
+              />
+              <p className="text-xs text-muted-foreground">Um benefício por linha.</p>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="rounded-3xl border-[#f0dfdb]">
+          <CardHeader>
+            <CardTitle className="text-lg">Checkout e perfil</CardTitle>
+          </CardHeader>
+          <CardContent className="grid gap-4 md:grid-cols-2">
+            <div className="space-y-2">
+              <Label htmlFor="club-checkout-title">Título no checkout</Label>
+              <Input id="club-checkout-title" value={form.checkoutTitle} onChange={(event) => updateField("checkoutTitle", event.target.value)} />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="club-profile-benefits-title">Título dos benefícios no perfil</Label>
+              <Input
+                id="club-profile-benefits-title"
+                value={form.profileBenefitsTitle}
+                onChange={(event) => updateField("profileBenefitsTitle", event.target.value)}
+              />
+            </div>
+            <div className="space-y-2 md:col-span-2">
+              <Label htmlFor="club-checkout-subtitle">Subtítulo no checkout</Label>
+              <Textarea
+                id="club-checkout-subtitle"
+                rows={2}
+                value={form.checkoutSubtitle}
+                onChange={(event) => updateField("checkoutSubtitle", event.target.value)}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="club-checkout-discount-label">Label de desconto</Label>
+              <Input
+                id="club-checkout-discount-label"
+                value={form.checkoutDiscountLabel}
+                onChange={(event) => updateField("checkoutDiscountLabel", event.target.value)}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="club-checkout-delivery-label">Label de frete grátis</Label>
+              <Input
+                id="club-checkout-delivery-label"
+                value={form.checkoutDeliveryLabel}
+                onChange={(event) => updateField("checkoutDeliveryLabel", event.target.value)}
+              />
+            </div>
+            <div className="space-y-2 md:col-span-2">
+              <Label htmlFor="club-checkout-free-pizza-label">Mensagem da pizza grátis</Label>
+              <Input
+                id="club-checkout-free-pizza-label"
+                value={form.checkoutFreePizzaLabel}
+                onChange={(event) => updateField("checkoutFreePizzaLabel", event.target.value)}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="club-profile-guest-title">Título para não assinante</Label>
+              <Input
+                id="club-profile-guest-title"
+                value={form.profileGuestTitle}
+                onChange={(event) => updateField("profileGuestTitle", event.target.value)}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="club-profile-primary-action">CTA do perfil</Label>
+              <Input
+                id="club-profile-primary-action"
+                value={form.profilePrimaryActionLabel}
+                onChange={(event) => updateField("profilePrimaryActionLabel", event.target.value)}
+              />
+            </div>
+            <div className="space-y-2 md:col-span-2">
+              <Label htmlFor="club-profile-guest-subtitle">Texto para convidar no perfil</Label>
+              <Textarea
+                id="club-profile-guest-subtitle"
+                rows={3}
+                value={form.profileGuestSubtitle}
+                onChange={(event) => updateField("profileGuestSubtitle", event.target.value)}
+              />
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="rounded-3xl border-[#f0dfdb]">
+          <CardHeader>
+            <CardTitle className="text-lg">Confirmação e planos</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="space-y-2">
+                <Label htmlFor="club-success-title">Título de sucesso</Label>
+                <Input id="club-success-title" value={form.successTitle} onChange={(event) => updateField("successTitle", event.target.value)} />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="club-popular-plan">Plano em destaque</Label>
+                <Select value={form.popularPlanId} onValueChange={(value) => updateField("popularPlanId", value as ClubAdminPlanId)}>
+                  <SelectTrigger id="club-popular-plan">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {form.plans.map((plan) => (
+                      <SelectItem key={plan.id} value={plan.id}>
+                        {plan.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2 md:col-span-2">
+                <Label htmlFor="club-success-subtitle">Texto de sucesso</Label>
+                <Textarea
+                  id="club-success-subtitle"
+                  rows={3}
+                  value={form.successSubtitle}
+                  onChange={(event) => updateField("successSubtitle", event.target.value)}
+                />
+              </div>
+            </div>
+
+            <div className="grid gap-6 xl:grid-cols-2">
+              {form.plans.map((plan) => (
+                <Card key={plan.id} className="rounded-3xl border-[#f0dfdb]">
+                  <CardHeader>
+                    <CardTitle className="flex items-center justify-between gap-3 text-base">
+                      <span>{plan.name}</span>
+                      {form.popularPlanId === plan.id && <Badge className="bg-[#7d0f14] text-white">Destaque</Badge>}
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="grid gap-4 md:grid-cols-2">
+                    <div className="space-y-2">
+                      <Label htmlFor={`plan-name-${plan.id}`}>Nome</Label>
+                      <Input id={`plan-name-${plan.id}`} value={plan.name} onChange={(event) => updatePlan(plan.id, "name", event.target.value)} />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor={`plan-badge-${plan.id}`}>Badge</Label>
+                      <Input id={`plan-badge-${plan.id}`} value={plan.badge} onChange={(event) => updatePlan(plan.id, "badge", event.target.value)} />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor={`plan-price-${plan.id}`}>Preço mensal</Label>
+                      <Input
+                        id={`plan-price-${plan.id}`}
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={plan.price}
+                        onChange={(event) => updatePlan(plan.id, "price", Number(event.target.value))}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor={`plan-discount-${plan.id}`}>Desconto (%)</Label>
+                      <Input
+                        id={`plan-discount-${plan.id}`}
+                        type="number"
+                        min="0"
+                        max="100"
+                        value={plan.discountPercent}
+                        onChange={(event) => updatePlan(plan.id, "discountPercent", Number(event.target.value))}
+                      />
+                    </div>
+                    <div className="space-y-2 md:col-span-2">
+                      <Label htmlFor={`plan-description-${plan.id}`}>Descrição</Label>
+                      <Textarea
+                        id={`plan-description-${plan.id}`}
+                        rows={2}
+                        value={plan.description}
+                        onChange={(event) => updatePlan(plan.id, "description", event.target.value)}
+                      />
+                    </div>
+                    <div className="space-y-2 md:col-span-2">
+                      <Label htmlFor={`plan-benefits-${plan.id}`}>Benefícios do plano</Label>
+                      <Textarea
+                        id={`plan-benefits-${plan.id}`}
+                        rows={5}
+                        value={serializeLines(plan.benefits)}
+                        onChange={(event) => updatePlan(plan.id, "benefits", parseLines(event.target.value))}
+                      />
+                    </div>
+                    <div className="flex items-center justify-between rounded-2xl border border-[#f0dfdb] px-4 py-3">
+                      <div>
+                        <p className="font-medium">Entrega grátis</p>
+                        <p className="text-xs text-muted-foreground">Aplica frete zero quando o plano estiver ativo.</p>
+                      </div>
+                      <Switch checked={plan.freeDelivery} onCheckedChange={(checked) => updatePlan(plan.id, "freeDelivery", checked)} />
+                    </div>
+                    <div className="flex items-center justify-between rounded-2xl border border-[#f0dfdb] px-4 py-3">
+                      <div>
+                        <p className="font-medium">Pizza grátis mensal</p>
+                        <p className="text-xs text-muted-foreground">Libera o benefício mensal para o assinante.</p>
+                      </div>
+                      <Switch
+                        checked={plan.freePizzaPerMonth}
+                        onCheckedChange={(checked) => updatePlan(plan.id, "freePizzaPerMonth", checked)}
+                      />
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      </AdminSurface>
     </AdminPage>
   );
 }
@@ -3193,11 +5209,10 @@ const DEFAULT_HOURS: Record<string, DaySchedule> = {
 
 function SettingsTab() {
   const utils = trpc.useUtils();
-  const { data: settings, isLoading } = trpc.storeSettings.get.useQuery();
+  const { data: settings, isLoading } = trpc.storeSettings.getAdmin.useQuery();
 
   const [hours, setHours] = useState<Record<string, DaySchedule>>(DEFAULT_HOURS);
   const [cepInput, setCepInput] = useState("");
-  const [pixKey, setPixKey] = useState("");
   const [whatsapp, setWhatsapp] = useState("");
   const [deliveryFee, setDeliveryFee] = useState("");
   const [minOrder, setMinOrder] = useState("");
@@ -3208,7 +5223,6 @@ function SettingsTab() {
     const h = settings.storeHours ? JSON.parse(settings.storeHours) as Record<string, DaySchedule> : DEFAULT_HOURS;
     setHours(h);
     setCepInput(settings.deliveryCepPrefixes ? (JSON.parse(settings.deliveryCepPrefixes) as string[]).join("\n") : "");
-    setPixKey(settings.pixKey ?? "");
     setWhatsapp(settings.whatsappNumber ?? "");
     setDeliveryFee(settings.deliveryFee ?? "");
     setMinOrder(settings.minOrderValue ?? "");
@@ -3217,6 +5231,7 @@ function SettingsTab() {
   const save = trpc.storeSettings.save.useMutation({
     onSuccess: () => {
       utils.storeSettings.get.invalidate();
+      utils.storeSettings.getAdmin.invalidate();
       toast.success("Configurações salvas com sucesso!");
     },
     onError: (e) => toast.error(e.message),
@@ -3246,7 +5261,6 @@ function SettingsTab() {
     save.mutate({
       storeHours: hours,
       deliveryCepPrefixes: prefixes,
-      pixKey: pixKey || undefined,
       whatsappNumber: whatsapp || undefined,
       deliveryFee: deliveryFee || undefined,
       minOrderValue: minOrder || undefined,
@@ -3259,7 +5273,7 @@ function SettingsTab() {
     <AdminPage className="max-w-2xl">
       <AdminTopbar
         title="Configurações da loja"
-        subtitle="Horários, entrega, pagamento e contato"
+        subtitle="Horários, entrega, contato e operação da loja"
       />
 
       {/* Horários */}
@@ -3345,24 +5359,16 @@ function SettingsTab() {
         </CardContent>
       </Card>
 
-      {/* Dados de Pagamento e Contato */}
+      {/* Contato e operação */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            <DollarSign className="w-5 h-5 text-primary" />
-            Pagamento e Contato
+            <Phone className="w-5 h-5 text-primary" />
+            Contato e Operação
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div className="space-y-1.5">
-              <Label>Chave PIX</Label>
-              <Input
-                value={pixKey}
-                onChange={(e) => setPixKey(e.target.value)}
-                placeholder="email@exemplo.com ou CPF/CNPJ"
-              />
-            </div>
             <div className="space-y-1.5">
               <Label>WhatsApp (com DDI)</Label>
               <Input
@@ -3395,6 +5401,9 @@ function SettingsTab() {
               />
             </div>
           </div>
+          <p className="text-xs text-muted-foreground">
+            Métodos de pagamento, chave PIX, webhooks e disponibilidade online ficam na aba <strong>Pagamentos</strong>.
+          </p>
         </CardContent>
       </Card>
 
@@ -3410,6 +5419,324 @@ function SettingsTab() {
           <><Settings className="w-4 h-4 mr-2" />Salvar Configurações</>
         )}
       </Button>
+    </AdminPage>
+  );
+}
+
+function PaymentsTab() {
+  const utils = trpc.useUtils();
+  const { data, isLoading } = trpc.paymentSettings.getAdmin.useQuery();
+  const [pixKey, setPixKey] = useState("");
+  const [config, setConfig] = useState<{
+    orders: {
+      onlineEnabled: boolean;
+      cardEnabled: boolean;
+      pixEnabled: boolean;
+      cashEnabled: boolean;
+      pixMode: "dynamic_asaas" | "manual_key";
+      savedCardsEnabled: boolean;
+    };
+    club: {
+      enabled: boolean;
+      checkoutMode: "manual_pix";
+    };
+    pix: {
+      merchantName: string;
+      merchantCity: string;
+      instructions: string;
+    };
+  } | null>(null);
+
+  useEffect(() => {
+    if (!data) return;
+    setPixKey(data.pixKey ?? "");
+    setConfig(data.config);
+  }, [data]);
+
+  const save = trpc.paymentSettings.save.useMutation({
+    onSuccess: () => {
+      utils.paymentSettings.getAdmin.invalidate();
+      utils.paymentSettings.getPublic.invalidate();
+      utils.storeSettings.get.invalidate();
+      toast.success("Pagamentos atualizados com sucesso!");
+    },
+    onError: (error) => toast.error(error.message),
+  });
+
+  function copyValue(value: string, label: string) {
+    navigator.clipboard.writeText(value).then(() => {
+      toast.success(`${label} copiado.`);
+    }).catch(() => {
+      toast.error(`Não foi possível copiar ${label.toLowerCase()}.`);
+    });
+  }
+
+  if (isLoading || !config || !data) {
+    return <Skeleton className="h-64 w-full" />;
+  }
+
+  return (
+    <AdminPage className="max-w-5xl">
+      <AdminTopbar
+        title="Pagamentos"
+        subtitle="Controle com segurança o checkout, o PIX e o clube sem expor credenciais do gateway no navegador."
+      />
+
+      <div className="grid gap-4 lg:grid-cols-2">
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <DollarSign className="w-5 h-5 text-primary" />
+              Status das integrações
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {[
+              {
+                label: "Stripe Checkout",
+                ready: data.runtime.stripeReady,
+                help: data.runtime.stripeReady ? "Chave secreta encontrada no servidor." : "Falta STRIPE_SECRET_KEY no ambiente.",
+              },
+              {
+                label: "Webhook Stripe",
+                ready: data.runtime.stripeWebhookReady,
+                help: data.runtime.stripeWebhookReady ? "Assinatura do webhook configurada." : "Falta STRIPE_WEBHOOK_SECRET no ambiente.",
+              },
+              {
+                label: "Asaas PIX automático",
+                ready: data.runtime.asaasReady,
+                help: data.runtime.asaasReady ? "Cobrança dinâmica pronta para pedidos." : "Falta ASAAS_API_KEY no ambiente.",
+              },
+              {
+                label: "PIX manual da loja",
+                ready: data.runtime.manualPixReady,
+                help: data.runtime.manualPixReady ? "Chave PIX cadastrada para uso manual." : "Cadastre uma chave PIX abaixo para liberar o modo manual.",
+              },
+            ].map((item) => (
+              <div key={item.label} className="rounded-2xl border border-border bg-background px-4 py-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="font-semibold">{item.label}</p>
+                    <p className="text-sm text-muted-foreground">{item.help}</p>
+                  </div>
+                  <Badge variant={item.ready ? "default" : "secondary"}>
+                    {item.ready ? "Pronto" : "Pendente"}
+                  </Badge>
+                </div>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <FileText className="w-5 h-5 text-primary" />
+              Webhooks e operação
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="space-y-2">
+              <Label>Webhook Stripe</Label>
+              <div className="flex gap-2">
+                <Input value={data.runtime.stripeWebhookUrl || "Configure PUBLIC_APP_URL para gerar a URL"} readOnly />
+                <Button type="button" variant="outline" size="icon" onClick={() => copyValue(data.runtime.stripeWebhookUrl, "Webhook Stripe")} disabled={!data.runtime.stripeWebhookUrl}>
+                  <Copy className="w-4 h-4" />
+                </Button>
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label>Webhook Asaas</Label>
+              <div className="flex gap-2">
+                <Input value={data.runtime.asaasWebhookUrl || "Configure PUBLIC_APP_URL para gerar a URL"} readOnly />
+                <Button type="button" variant="outline" size="icon" onClick={() => copyValue(data.runtime.asaasWebhookUrl, "Webhook Asaas")} disabled={!data.runtime.asaasWebhookUrl}>
+                  <Copy className="w-4 h-4" />
+                </Button>
+              </div>
+            </div>
+            <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+              As chaves de Stripe e Asaas ficam apenas nas variáveis do servidor. Esta tela controla disponibilidade, modo de PIX e instruções operacionais.
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-2">
+        <Card>
+          <CardHeader>
+            <CardTitle>Checkout de pedidos</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-5">
+            <div className="flex items-center justify-between gap-3 rounded-2xl border border-border px-4 py-3">
+              <div>
+                <p className="font-semibold">Receber pagamentos online</p>
+                <p className="text-sm text-muted-foreground">Liga ou desliga cartão e PIX online no checkout.</p>
+              </div>
+              <Switch
+                checked={config.orders.onlineEnabled}
+                onCheckedChange={(checked) => setConfig((prev) => prev ? { ...prev, orders: { ...prev.orders, onlineEnabled: checked } } : prev)}
+              />
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="rounded-2xl border border-border px-4 py-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="font-semibold">Cartão</p>
+                    <p className="text-sm text-muted-foreground">Checkout Stripe para crédito e débito.</p>
+                  </div>
+                  <Switch
+                    checked={config.orders.cardEnabled}
+                    onCheckedChange={(checked) => setConfig((prev) => prev ? { ...prev, orders: { ...prev.orders, cardEnabled: checked } } : prev)}
+                    disabled={!config.orders.onlineEnabled}
+                  />
+                </div>
+              </div>
+              <div className="rounded-2xl border border-border px-4 py-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="font-semibold">Cartões salvos</p>
+                    <p className="text-sm text-muted-foreground">Permite reuso seguro de métodos já tokenizados.</p>
+                  </div>
+                  <Switch
+                    checked={config.orders.savedCardsEnabled}
+                    onCheckedChange={(checked) => setConfig((prev) => prev ? { ...prev, orders: { ...prev.orders, savedCardsEnabled: checked } } : prev)}
+                    disabled={!config.orders.onlineEnabled || !config.orders.cardEnabled}
+                  />
+                </div>
+              </div>
+              <div className="rounded-2xl border border-border px-4 py-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="font-semibold">PIX</p>
+                    <p className="text-sm text-muted-foreground">PIX automático por gateway ou manual da loja.</p>
+                  </div>
+                  <Switch
+                    checked={config.orders.pixEnabled}
+                    onCheckedChange={(checked) => setConfig((prev) => prev ? { ...prev, orders: { ...prev.orders, pixEnabled: checked } } : prev)}
+                  />
+                </div>
+              </div>
+              <div className="rounded-2xl border border-border px-4 py-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="font-semibold">Dinheiro</p>
+                    <p className="text-sm text-muted-foreground">Mostra opção de pagamento na entrega.</p>
+                  </div>
+                  <Switch
+                    checked={config.orders.cashEnabled}
+                    onCheckedChange={(checked) => setConfig((prev) => prev ? { ...prev, orders: { ...prev.orders, cashEnabled: checked } } : prev)}
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Modo do PIX no checkout</Label>
+              <Select
+                value={config.orders.pixMode}
+                onValueChange={(value: "dynamic_asaas" | "manual_key") =>
+                  setConfig((prev) => prev ? { ...prev, orders: { ...prev.orders, pixMode: value } } : prev)
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Escolha como o PIX deve funcionar" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="dynamic_asaas">PIX automático via Asaas</SelectItem>
+                  <SelectItem value="manual_key">PIX manual com chave da loja</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                No modo automático o sistema cria cobrança dinâmica. No manual ele gera QR/copia e cola usando a chave cadastrada abaixo.
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>PIX e clube</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-5">
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-2">
+                <Label>Nome do recebedor no PIX</Label>
+                <Input
+                  value={config.pix.merchantName}
+                  onChange={(e) => setConfig((prev) => prev ? { ...prev, pix: { ...prev.pix, merchantName: e.target.value } } : prev)}
+                  maxLength={25}
+                  placeholder="Bonatto Pizza"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Cidade do PIX</Label>
+                <Input
+                  value={config.pix.merchantCity}
+                  onChange={(e) => setConfig((prev) => prev ? { ...prev, pix: { ...prev.pix, merchantCity: e.target.value.toUpperCase() } } : prev)}
+                  maxLength={15}
+                  placeholder="MATEUS LEME"
+                />
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Chave PIX da loja</Label>
+              <Input
+                type="password"
+                value={pixKey}
+                onChange={(e) => setPixKey(e.target.value)}
+                placeholder="email, CPF, CNPJ, telefone ou chave aleatória"
+                autoComplete="off"
+              />
+              <p className="text-xs text-muted-foreground">
+                Essa chave é tratada como dado sensível e não aparece no endpoint público do site.
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Instruções exibidas no checkout</Label>
+              <Textarea
+                value={config.pix.instructions}
+                onChange={(e) => setConfig((prev) => prev ? { ...prev, pix: { ...prev.pix, instructions: e.target.value } } : prev)}
+                rows={4}
+                placeholder="Ex: após pagar, envie o comprovante no WhatsApp para agilizar a conferência."
+              />
+            </div>
+
+            <div className="rounded-2xl border border-border px-4 py-3">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="font-semibold">Assinaturas do clube</p>
+                  <p className="text-sm text-muted-foreground">Mantém o fluxo de assinatura disponível para os planos ativos.</p>
+                </div>
+                <Switch
+                  checked={config.club.enabled}
+                  onCheckedChange={(checked) => setConfig((prev) => prev ? { ...prev, club: { ...prev.club, enabled: checked } } : prev)}
+                />
+              </div>
+              <p className="mt-2 text-xs text-muted-foreground">
+                Modo atual: PIX manual. Mais gateways podem ser adicionados depois sem reabrir a estrutura do admin.
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      <div className="flex justify-end">
+        <Button
+          onClick={() => save.mutate({ config, pixKey })}
+          disabled={save.isPending}
+          size="lg"
+          className="min-w-52"
+        >
+          {save.isPending ? (
+            <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Salvando...</>
+          ) : (
+            <><DollarSign className="w-4 h-4 mr-2" />Salvar pagamentos</>
+          )}
+        </Button>
+      </div>
     </AdminPage>
   );
 }
@@ -3477,7 +5804,7 @@ function DriversTab() {
       />
 
       {/* App Link */}
-      <Card className="bg-[#fdf5f5] border-primary/20" style={{ borderLeft: '3px solid #6E0D12' }}>
+      <Card className="border border-[#ead7d1] bg-[#fdf5f5] shadow-[0_8px_24px_rgba(110,13,18,0.06)]">
         <CardContent className="pt-4 pb-4">
           <div className="flex items-start gap-3">
             <MapPin className="w-5 h-5 text-primary mt-0.5 shrink-0" />
@@ -4034,3 +6361,5 @@ function RecoveryTab() {
     </AdminPage>
   );
 }
+
+

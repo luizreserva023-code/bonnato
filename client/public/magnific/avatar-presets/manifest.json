@@ -1,0 +1,38 @@
+[
+  {
+    "id": "avatar-chef-enzo",
+    "label": "Chef Enzo",
+    "style": "cartoon",
+    "src": "https://api.dicebear.com/9.x/adventurer/svg?seed=ChefEnzo&backgroundColor=f2d4c7,e7c1b2,d8b095"
+  },
+  {
+    "id": "avatar-bella",
+    "label": "Bella",
+    "style": "cartoon",
+    "src": "https://api.dicebear.com/9.x/adventurer/svg?seed=BellaBonatto&backgroundColor=f5ddd2,e9c4bb,ead8b3"
+  },
+  {
+    "id": "avatar-dante",
+    "label": "Dante",
+    "style": "cartoon",
+    "src": "https://api.dicebear.com/9.x/adventurer/svg?seed=DanteForno&backgroundColor=e8ccb8,d7b197,dfe4d2"
+  },
+  {
+    "id": "avatar-mia",
+    "label": "Mia",
+    "style": "cartoon",
+    "src": "https://api.dicebear.com/9.x/adventurer/svg?seed=MiaForneria&backgroundColor=f1d9d1,e7c7b5,dec59f"
+  },
+  {
+    "id": "avatar-luca",
+    "label": "Luca",
+    "style": "cartoon",
+    "src": "https://api.dicebear.com/9.x/adventurer/svg?seed=LucaMassa&backgroundColor=e4c3b0,d0a088,ddd8c8"
+  },
+  {
+    "id": "avatar-rosa",
+    "label": "Rosa",
+    "style": "cartoon",
+    "src": "https://api.dicebear.com/9.x/adventurer/svg?seed=RosaBonatto&backgroundColor=f0d8c8,e5c1af,e1d8bf"
+  }
+]
