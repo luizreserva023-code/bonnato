@@ -9151,10 +9151,10 @@ async function audit(input) {
   const db = await getDb();
   if (!db) return;
   await ensureRestaurantNetworkSchema();
-  await db.execute(sql5.raw(`
+  await db.execute(sql5`
     INSERT INTO network_audit_logs (actorUserId, storeId, action, entityType, entityId, metadata)
-    VALUES (${input.actorUserId ?? "NULL"}, ${input.storeId ?? "NULL"}, ${JSON.stringify(input.action)}, ${JSON.stringify(input.entityType)}, ${input.entityId ?? "NULL"}, ${JSON.stringify(JSON.stringify(input.metadata ?? {}))})
-  `));
+    VALUES (${input.actorUserId ?? null}, ${input.storeId ?? null}, ${input.action}, ${input.entityType}, ${input.entityId ?? null}, ${JSON.stringify(input.metadata ?? {})})
+  `);
 }
 var supplyOrderItemSchema = z6.object({
   productId: z6.number().int().positive(),
@@ -9214,22 +9214,22 @@ async function updateDistributionProduct(input, actorUserId) {
   const db = await getDb();
   if (!db) throw new Error("Database unavailable");
   const fields = [];
-  if (input.name !== void 0) fields.push(`name = ${JSON.stringify(input.name)}`);
-  if (input.category !== void 0) fields.push(`category = ${JSON.stringify(input.category || null)}`);
-  if (input.unit !== void 0) fields.push(`unit = ${JSON.stringify(input.unit)}`);
-  if (input.availableQuantity !== void 0) fields.push(`availableQuantity = ${JSON.stringify(input.availableQuantity)}`);
-  if (input.minimumQuantity !== void 0) fields.push(`minimumQuantity = ${JSON.stringify(input.minimumQuantity)}`);
-  if (input.minOrderQuantity !== void 0) fields.push(`minOrderQuantity = ${JSON.stringify(input.minOrderQuantity)}`);
-  if (input.maxOrderQuantity !== void 0) fields.push(`maxOrderQuantity = ${JSON.stringify(input.maxOrderQuantity || null)}`);
-  if (input.unitCost !== void 0) fields.push(`unitCost = ${JSON.stringify(input.unitCost)}`);
-  if (input.active !== void 0) fields.push(`active = ${input.active ? "true" : "false"}`);
-  if (input.notes !== void 0) fields.push(`notes = ${JSON.stringify(input.notes || null)}`);
+  if (input.name !== void 0) fields.push(sql5`name = ${input.name}`);
+  if (input.category !== void 0) fields.push(sql5`category = ${input.category || null}`);
+  if (input.unit !== void 0) fields.push(sql5`unit = ${input.unit}`);
+  if (input.availableQuantity !== void 0) fields.push(sql5`availableQuantity = ${input.availableQuantity}`);
+  if (input.minimumQuantity !== void 0) fields.push(sql5`minimumQuantity = ${input.minimumQuantity}`);
+  if (input.minOrderQuantity !== void 0) fields.push(sql5`minOrderQuantity = ${input.minOrderQuantity}`);
+  if (input.maxOrderQuantity !== void 0) fields.push(sql5`maxOrderQuantity = ${input.maxOrderQuantity || null}`);
+  if (input.unitCost !== void 0) fields.push(sql5`unitCost = ${input.unitCost}`);
+  if (input.active !== void 0) fields.push(sql5`active = ${input.active}`);
+  if (input.notes !== void 0) fields.push(sql5`notes = ${input.notes || null}`);
   if (fields.length === 0) return { ok: true };
-  await db.execute(sql5.raw(`
+  await db.execute(sql5`
     UPDATE distribution_products
-    SET ${fields.join(", ")}
+    SET ${sql5.join(fields, sql5`, `)}
     WHERE id = ${input.id}
-  `));
+  `);
   await audit({ actorUserId, action: "distribution_product.update", entityType: "distribution_product", entityId: input.id, metadata: input });
   return { ok: true };
 }
@@ -9326,12 +9326,31 @@ async function updateSupplyOrderStatus(input, actorUserId) {
   if (!db) throw new Error("Database unavailable");
   const details = await getSupplyOrderDetails(input.id);
   if (!details) throw new Error("Pedido ao CD nao encontrado");
-  const timestampColumn = input.status === "shipped" ? ", shippedAt = CURRENT_TIMESTAMP" : input.status === "received" ? ", receivedAt = CURRENT_TIMESTAMP" : ["approved", "rejected", "cancelled", "in_review"].includes(input.status) ? ", reviewedAt = CURRENT_TIMESTAMP" : "";
-  await db.execute(sql5.raw(`
-    UPDATE store_supply_orders
-    SET status = '${input.status}', reviewedByUserId = ${actorUserId}, notes = COALESCE(${JSON.stringify(input.notes ?? null)}, notes) ${timestampColumn}
-    WHERE id = ${input.id}
-  `));
+  if (input.status === "shipped") {
+    await db.execute(sql5`
+      UPDATE store_supply_orders
+      SET status = ${input.status}, reviewedByUserId = ${actorUserId}, notes = COALESCE(${input.notes ?? null}, notes), shippedAt = CURRENT_TIMESTAMP
+      WHERE id = ${input.id}
+    `);
+  } else if (input.status === "received") {
+    await db.execute(sql5`
+      UPDATE store_supply_orders
+      SET status = ${input.status}, reviewedByUserId = ${actorUserId}, notes = COALESCE(${input.notes ?? null}, notes), receivedAt = CURRENT_TIMESTAMP
+      WHERE id = ${input.id}
+    `);
+  } else if (["approved", "rejected", "cancelled", "in_review"].includes(input.status)) {
+    await db.execute(sql5`
+      UPDATE store_supply_orders
+      SET status = ${input.status}, reviewedByUserId = ${actorUserId}, notes = COALESCE(${input.notes ?? null}, notes), reviewedAt = CURRENT_TIMESTAMP
+      WHERE id = ${input.id}
+    `);
+  } else {
+    await db.execute(sql5`
+      UPDATE store_supply_orders
+      SET status = ${input.status}, reviewedByUserId = ${actorUserId}, notes = COALESCE(${input.notes ?? null}, notes)
+      WHERE id = ${input.id}
+    `);
+  }
   if (input.status === "shipped") {
     for (const item of details.items ?? []) {
       const quantity = Number(item.quantityApproved ?? item.quantityRequested ?? 0);
@@ -9352,14 +9371,15 @@ async function updateSupplyOrderStatus(input, actorUserId) {
       const productName = String(item.productName ?? item.distributionProductName ?? "Produto CD");
       const unit = String(item.unit ?? "unit");
       const unitCost = money(item.unitCost).toFixed(4);
-      const existingIngredient = await executeRows(db, `
+      const existingIngredientResult = await db.execute(sql5`
         SELECT id, currentStock
         FROM ingredients
         WHERE storeId = ${storeId}
-          AND name = ${JSON.stringify(productName)}
-          AND unit = ${JSON.stringify(unit)}
+          AND name = ${productName}
+          AND unit = ${unit}
         LIMIT 1
       `);
+      const existingIngredient = existingIngredientResult[0] ?? [];
       let ingredientId = Number(existingIngredient[0]?.id ?? 0);
       if (!ingredientId) {
         const inserted = await db.execute(sql5`
@@ -9368,22 +9388,22 @@ async function updateSupplyOrderStatus(input, actorUserId) {
         `);
         ingredientId = Number(inserted[0]?.insertId ?? 0);
       }
-      await db.execute(sql5.raw(`
+      await db.execute(sql5`
         UPDATE ingredients
-        SET currentStock = CAST(currentStock AS DECIMAL(12,3)) + ${quantity}, unitCost = ${JSON.stringify(unitCost)}
+        SET currentStock = CAST(currentStock AS DECIMAL(12,3)) + ${quantity}, unitCost = ${unitCost}
         WHERE id = ${ingredientId}
-      `));
-      await db.execute(sql5.raw(`
+      `);
+      await db.execute(sql5`
         INSERT INTO inventory_movements
           (ingredientId, storeId, movementType, quantityDelta, previousStock, nextStock, reason, performedByUserId)
-        SELECT id, ${storeId}, 'entry', '${quantity.toFixed(3)}',
+        SELECT id, ${storeId}, 'entry', ${quantity.toFixed(3)},
           CAST(currentStock AS DECIMAL(12,3)) - ${quantity},
           currentStock,
-          ${JSON.stringify(`Recebimento do pedido ao CD #${input.id}`)},
+          ${`Recebimento do pedido ao CD #${input.id}`},
           ${actorUserId}
         FROM ingredients
         WHERE id = ${ingredientId}
-      `));
+      `);
     }
   }
   await audit({ actorUserId, storeId: Number(details.storeId), action: `supply_order.${input.status}`, entityType: "store_supply_order", entityId: input.id, metadata: { notes: input.notes } });
@@ -9405,12 +9425,12 @@ async function createExpense(input, actorUserId, scopedStoreId) {
   const db = await getDb();
   if (!db) throw new Error("Database unavailable");
   const storeId = scopedStoreId ?? input.storeId ?? null;
-  const result = await db.execute(sql5.raw(`
+  const result = await db.execute(sql5`
     INSERT INTO network_expenses
       (storeId, category, description, amount, paymentMethod, status, expenseDate, receiptUrl, createdByUserId, notes)
     VALUES
-      (${storeId ?? "NULL"}, ${JSON.stringify(input.category)}, ${JSON.stringify(input.description)}, '${input.amount}', ${JSON.stringify(input.paymentMethod ?? null)}, '${input.status ?? "paid"}', '${toSqlDate(input.expenseDate).slice(0, 10)}', ${JSON.stringify(input.receiptUrl ?? null)}, ${actorUserId}, ${JSON.stringify(input.notes ?? null)})
-  `));
+      (${storeId}, ${input.category}, ${input.description}, ${input.amount}, ${input.paymentMethod ?? null}, ${input.status ?? "paid"}, ${toSqlDate(input.expenseDate).slice(0, 10)}, ${input.receiptUrl ?? null}, ${actorUserId}, ${input.notes ?? null})
+  `);
   const id = Number(result[0]?.insertId ?? 0);
   await audit({ actorUserId, storeId, action: "expense.create", entityType: "network_expense", entityId: id, metadata: input });
   return { id };
@@ -9431,12 +9451,12 @@ async function createFinancialFee(input, actorUserId, scopedStoreId) {
   const db = await getDb();
   if (!db) throw new Error("Database unavailable");
   const storeId = scopedStoreId ?? input.storeId ?? null;
-  const result = await db.execute(sql5.raw(`
+  const result = await db.execute(sql5`
     INSERT INTO network_financial_fees
       (storeId, name, category, calculationType, rate, amount, periodStart, periodEnd, notes, createdByUserId)
     VALUES
-      (${storeId ?? "NULL"}, ${JSON.stringify(input.name)}, ${JSON.stringify(input.category)}, '${input.calculationType}', '${input.rate ?? "0"}', '${input.amount}', '${toSqlDate(input.periodStart).slice(0, 10)}', '${toSqlDate(input.periodEnd).slice(0, 10)}', ${JSON.stringify(input.notes ?? null)}, ${actorUserId})
-  `));
+      (${storeId}, ${input.name}, ${input.category}, ${input.calculationType}, ${input.rate ?? "0"}, ${input.amount}, ${toSqlDate(input.periodStart).slice(0, 10)}, ${toSqlDate(input.periodEnd).slice(0, 10)}, ${input.notes ?? null}, ${actorUserId})
+  `);
   const id = Number(result[0]?.insertId ?? 0);
   await audit({ actorUserId, storeId, action: "fee.create", entityType: "network_financial_fee", entityId: id, metadata: input });
   return { id };
