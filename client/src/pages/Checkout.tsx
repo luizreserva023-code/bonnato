@@ -255,14 +255,21 @@ export default function Checkout() {
   const pointsBalance = loyaltyPointsQuery.data ?? 0;
   const maxRedeemable = Math.min(pointsBalance, Math.floor(total / 0.10)); // não pode descontar mais que o total
 
+  const appliedPointsToRedeem = pointsApplied && pointsDiscount > 0
+    ? Math.round(pointsDiscount / 0.10)
+    : 0;
+
   const handleRedeemPoints = () => {
     const pts = parseInt(pointsToRedeem);
     if (!pts || pts < 50) { toast.error("Mínimo de 50 pontos para resgatar."); return; }
     if (pts > pointsBalance) { toast.error("Você não tem pontos suficientes."); return; }
-    const discount = parseFloat((Math.min(pts, maxRedeemable) * 0.10).toFixed(2));
+    const effectivePts = Math.min(pts, maxRedeemable);
+    if (effectivePts < 50) { toast.error("O total do pedido precisa permitir pelo menos R$ 5,00 de desconto."); return; }
+    const discount = parseFloat((effectivePts * 0.10).toFixed(2));
     setPointsDiscount(discount);
+    setPointsToRedeem(String(effectivePts));
     setPointsApplied(true);
-    toast.success(`R$ ${discount.toFixed(2).replace(".",",")} de desconto reservado com ${pts} pontos! O débito acontece ao confirmar o pedido.`);
+    toast.success(`R$ ${discount.toFixed(2).replace(".",",")} de desconto reservado com ${effectivePts} pontos! O débito acontece ao confirmar o pedido.`);
   };
 
   const handleApplyCoupon = async () => {
@@ -288,7 +295,7 @@ export default function Checkout() {
         deliveryNeighborhood: deliveryMode === "delivery" ? neighborhood || undefined : undefined,
         paymentMethod,
         couponCode: couponApplied ? couponCode : undefined,
-        pointsToRedeem: pointsApplied && parseInt(pointsToRedeem) >= 50 ? parseInt(pointsToRedeem) : undefined,
+        pointsToRedeem: appliedPointsToRedeem >= 50 ? appliedPointsToRedeem : undefined,
         items: items.map((item) => ({
           productId: item.productId,
           productName: item.productName,
@@ -349,7 +356,7 @@ export default function Checkout() {
         deliveryNeighborhood: deliveryMode === "delivery" ? neighborhood || undefined : undefined,
         paymentMethod,
         couponCode: couponApplied ? couponCode : undefined,
-        pointsToRedeem: pointsApplied && parseInt(pointsToRedeem) >= 50 ? parseInt(pointsToRedeem) : undefined,
+        pointsToRedeem: appliedPointsToRedeem >= 50 ? appliedPointsToRedeem : undefined,
         items: items.map((item) => ({
           productId: item.productId,
           productName: item.productName,

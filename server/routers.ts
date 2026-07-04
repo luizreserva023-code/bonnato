@@ -1169,15 +1169,6 @@ export const appRouter = router({
         const POINTS_TO_BRL = 0.10;
         let pointsDiscount = 0;
         let pointsUsed = 0;
-        if (input.pointsToRedeem && input.pointsToRedeem >= 50) {
-          const userBalance = await getUserLoyaltyPoints(ctx.user.id);
-          const pts = Math.min(input.pointsToRedeem, userBalance);
-          if (pts >= 50) {
-            pointsDiscount = parseFloat((pts * POINTS_TO_BRL).toFixed(2));
-            pointsUsed = pts;
-            discountAmount += pointsDiscount;
-          }
-        }
         // Calcular taxa de entrega server-side. Preferir a zona por bairro
         // (tabela delivery_zones); se não houver, cai para a taxa global em
         // store_settings. Membros Bonattão têm entrega grátis.
@@ -1196,6 +1187,18 @@ export const appRouter = router({
           }
         }
         const deliveryFee = clubFreeDelivery ? 0 : rawDeliveryFee;
+
+        if (input.pointsToRedeem && input.pointsToRedeem >= 50) {
+          const userBalance = await getUserLoyaltyPoints(ctx.user.id);
+          const payableBeforePoints = Math.max(0, subtotal - discountAmount + deliveryFee);
+          const maxPointsByTotal = Math.floor(payableBeforePoints / POINTS_TO_BRL);
+          const pts = Math.min(input.pointsToRedeem, userBalance, maxPointsByTotal);
+          if (pts >= 50) {
+            pointsDiscount = parseFloat((pts * POINTS_TO_BRL).toFixed(2));
+            pointsUsed = pts;
+            discountAmount += pointsDiscount;
+          }
+        }
         // Validar valor mínimo do pedido
         const minOrderValueStr = dbSettings.minOrderValue;
         const minOrderValue = minOrderValueStr ? parseFloat(minOrderValueStr) : 0;
