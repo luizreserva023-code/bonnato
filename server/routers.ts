@@ -1433,6 +1433,20 @@ export const appRouter = router({
         if (allowedFrom.length === 0) {
           throw new TRPCError({ code: "BAD_REQUEST", message: `Transição inválida para ${input.status}.` });
         }
+        const currentOrder = await getOrderById(input.id);
+        if (!currentOrder) {
+          throw new TRPCError({ code: "NOT_FOUND", message: "Pedido nÃ£o encontrado." });
+        }
+        if (
+          input.status === "preparing" &&
+          currentOrder.paymentMethod === "pix" &&
+          currentOrder.paymentStatus !== "paid"
+        ) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "Marque o PIX como recebido antes de preparar este pedido.",
+          });
+        }
         const guard = await updateOrderStatusGuarded(input.id, input.status, allowedFrom);
         if (!guard.ok) {
           throw new TRPCError({
@@ -1609,6 +1623,20 @@ export const appRouter = router({
       .mutation(({ input }) =>
         updateOrderPaymentStatus(input.id, input.paymentStatus, input.stripePaymentIntentId)
       ),
+
+    confirmPixReceived: staffProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ input }) => {
+        const order = await getOrderById(input.id);
+        if (!order) throw new TRPCError({ code: "NOT_FOUND", message: "Pedido nÃ£o encontrado." });
+        if (order.paymentMethod !== "pix") {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "Este pedido nÃ£o foi feito com PIX." });
+        }
+        if (order.paymentStatus !== "paid") {
+          await updateOrderPaymentStatus(input.id, "paid");
+        }
+        return { ok: true };
+      }),
   }),
 
   // --- MARKETPLACES ----------------------------------------------------------

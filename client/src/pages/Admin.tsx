@@ -1961,8 +1961,10 @@ function KanbanCard({ order, onOpen }: { order: any; onOpen: (o: any) => void })
 function OrderDetailModal({ order, onClose, drivers }: { order: any; onClose: () => void; drivers: any[] }) {
   const utils = trpc.useUtils();
   const [selectedDriver, setSelectedDriver] = useState("");
+  const [pixConfirmedLocally, setPixConfirmedLocally] = useState(order.paymentStatus === "paid");
   const s = STATUS_LABELS[order.status];
   const isActive = ["pending","confirmed","preparing","out_for_delivery"].includes(order.status);
+  const pixNeedsReceipt = order.paymentMethod === "pix" && !pixConfirmedLocally;
   const activeDrivers = drivers?.filter(d => d.active) ?? [];
   const emitirNfce = trpc.nfce.emitir.useMutation({
     onSuccess: (data) => {
@@ -1974,6 +1976,14 @@ function OrderDetailModal({ order, onClose, drivers }: { order: any; onClose: ()
   });
   const updateStatus = trpc.orders.updateStatus.useMutation({
     onSuccess: () => { utils.orders.list.invalidate(); onClose(); toast.success("Status atualizado!"); },
+    onError: (err) => toast.error(err.message),
+  });
+  const confirmPixReceived = trpc.orders.confirmPixReceived.useMutation({
+    onSuccess: () => {
+      setPixConfirmedLocally(true);
+      utils.orders.list.invalidate();
+      toast.success("PIX marcado como recebido!");
+    },
     onError: (err) => toast.error(err.message),
   });
   const assignDriver = trpc.drivers.assignToOrder.useMutation({
@@ -1992,8 +2002,11 @@ function OrderDetailModal({ order, onClose, drivers }: { order: any; onClose: ()
           <div className="flex items-center gap-2">
             <span className="font-black text-xl">#{order.id}</span>
             <Badge className={`${s?.color} border-0`}>{s?.label}</Badge>
-            {order.paymentStatus === "paid" && (
+            {pixConfirmedLocally && (
               <Badge className="bg-[#f0fdf4] text-[#166534] border-0 text-xs gap-1"><CheckCircle className="w-3 h-3" />Pago</Badge>
+            )}
+            {pixNeedsReceipt && (
+              <Badge className="bg-amber-50 text-amber-700 border border-amber-200 text-xs">PIX pendente</Badge>
             )}
           </div>
           <button type="button" onClick={onClose} className="text-muted-foreground hover:text-foreground transition-colors">
@@ -2024,6 +2037,23 @@ function OrderDetailModal({ order, onClose, drivers }: { order: any; onClose: ()
             <span className="text-sm text-muted-foreground">{PAYMENT_LABELS[order.paymentMethod] ?? order.paymentMethod}</span>
             <span className="font-black text-lg text-primary">R$ {parseFloat(order.total).toFixed(2).replace(".",",")}</span>
           </div>
+
+          {pixNeedsReceipt && (
+            <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+              <p className="font-bold">PIX aguardando confirmaÃ§Ã£o</p>
+              <p className="mt-1 text-xs text-amber-800">Marque como recebido antes de enviar o pedido para preparo.</p>
+              <Button
+                type="button"
+                size="sm"
+                className="mt-3 bg-amber-600 text-white hover:bg-amber-700"
+                onClick={() => confirmPixReceived.mutate({ id: order.id })}
+                disabled={confirmPixReceived.isPending}
+              >
+                {confirmPixReceived.isPending ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <CheckCircle className="mr-1.5 h-3.5 w-3.5" />}
+                Marcar PIX recebido
+              </Button>
+            </div>
+          )}
 
           {/* NFC-e */}
           {(order.status === "delivered" || order.status === "cancelled") && (
@@ -2081,12 +2111,16 @@ function OrderDetailModal({ order, onClose, drivers }: { order: any; onClose: ()
                 <Button
                   size="sm"
                   onClick={() => {
+                    if (s.next === "preparing" && pixNeedsReceipt) {
+                      toast.error("Marque o PIX como recebido antes de preparar o pedido.");
+                      return;
+                    }
                     updateStatus.mutate({ id: order.id, status: s.next as any });
                     if (s.next === "out_for_delivery" && selectedDriver) {
                       assignDriver.mutate({ orderId: order.id, driverId: parseInt(selectedDriver) });
                     }
                   }}
-                  disabled={updateStatus.isPending}
+                  disabled={updateStatus.isPending || (s.next === "preparing" && pixNeedsReceipt)}
                   className="gap-1.5"
                 >
                   {updateStatus.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}

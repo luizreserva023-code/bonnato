@@ -3126,7 +3126,9 @@ async function updateOrderPaymentStatus(id, paymentStatus, stripePaymentIntentId
     if (stripePaymentIntentId) updateFields.stripePaymentIntentId = stripePaymentIntentId;
     if (stripeCheckoutSessionId) updateFields.stripeCheckoutSessionId = stripeCheckoutSessionId;
     if (asaasPaymentId) updateFields.asaasPaymentId = asaasPaymentId;
-    if (paymentStatus === "paid") updateFields.status = "confirmed";
+    if (paymentStatus === "paid") {
+      updateFields.status = sql`CASE WHEN ${orders.status} = 'pending' THEN 'confirmed' ELSE ${orders.status} END`;
+    }
     await db.update(orders).set(updateFields).where(eq(orders.id, id));
   });
 }
@@ -11008,6 +11010,16 @@ ${itemsList}
       if (allowedFrom.length === 0) {
         throw new TRPCError6({ code: "BAD_REQUEST", message: `Transi\xE7\xE3o inv\xE1lida para ${input.status}.` });
       }
+      const currentOrder = await getOrderById(input.id);
+      if (!currentOrder) {
+        throw new TRPCError6({ code: "NOT_FOUND", message: "Pedido n\xC3\xA3o encontrado." });
+      }
+      if (input.status === "preparing" && currentOrder.paymentMethod === "pix" && currentOrder.paymentStatus !== "paid") {
+        throw new TRPCError6({
+          code: "BAD_REQUEST",
+          message: "Marque o PIX como recebido antes de preparar este pedido."
+        });
+      }
       const guard = await updateOrderStatusGuarded(input.id, input.status, allowedFrom);
       if (!guard.ok) {
         throw new TRPCError6({
@@ -11169,7 +11181,18 @@ ${itemsList}
       })
     ).mutation(
       ({ input }) => updateOrderPaymentStatus(input.id, input.paymentStatus, input.stripePaymentIntentId)
-    )
+    ),
+    confirmPixReceived: staffProcedure.input(z7.object({ id: z7.number() })).mutation(async ({ input }) => {
+      const order = await getOrderById(input.id);
+      if (!order) throw new TRPCError6({ code: "NOT_FOUND", message: "Pedido n\xC3\xA3o encontrado." });
+      if (order.paymentMethod !== "pix") {
+        throw new TRPCError6({ code: "BAD_REQUEST", message: "Este pedido n\xC3\xA3o foi feito com PIX." });
+      }
+      if (order.paymentStatus !== "paid") {
+        await updateOrderPaymentStatus(input.id, "paid");
+      }
+      return { ok: true };
+    })
   }),
   // --- MARKETPLACES ----------------------------------------------------------
   marketplaces: router({

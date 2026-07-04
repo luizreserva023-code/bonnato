@@ -2068,11 +2068,13 @@ export async function updateOrderPaymentStatus(
   asaasPaymentId?: string
 ) {
   await withDbRetry(async (db) => {
-    const updateFields: Partial<Order> = { paymentStatus };
+    const updateFields: Record<string, unknown> = { paymentStatus };
     if (stripePaymentIntentId) updateFields.stripePaymentIntentId = stripePaymentIntentId;
     if (stripeCheckoutSessionId) updateFields.stripeCheckoutSessionId = stripeCheckoutSessionId;
     if (asaasPaymentId) updateFields.asaasPaymentId = asaasPaymentId;
-    if (paymentStatus === "paid") updateFields.status = "confirmed";
+    if (paymentStatus === "paid") {
+      updateFields.status = sql`CASE WHEN ${orders.status} = 'pending' THEN 'confirmed' ELSE ${orders.status} END`;
+    }
     await db.update(orders).set(updateFields).where(eq(orders.id, id));
   });
 }
