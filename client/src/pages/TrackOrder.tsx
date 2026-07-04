@@ -5,7 +5,6 @@ import {
   Bike,
   Clock,
   MapPin,
-  MessageCircle,
   Navigation,
   RefreshCw,
   Timer,
@@ -13,7 +12,6 @@ import {
 
 import { useAuth } from "@/_core/hooks/useAuth";
 import { MapView, searchAddress, type LatLngLiteral, type MapMarker } from "@/components/Map";
-import { OrderChat } from "@/components/OrderChat";
 import { trpc } from "@/lib/trpc";
 
 const POLL_INTERVAL_MS = 5000;
@@ -65,7 +63,6 @@ export default function TrackOrder() {
   const [, params] = useRoute("/rastrear/:orderId");
   const orderId = params?.orderId ? parseInt(params.orderId, 10) : 0;
   const { user } = useAuth();
-  const [showChat, setShowChat] = useState(false);
   const [destinationPosition, setDestinationPosition] = useState<LatLngLiteral | null>(null);
   const [destinationLoading, setDestinationLoading] = useState(false);
 
@@ -346,32 +343,9 @@ export default function TrackOrder() {
 
         <div className="mb-3 h-px bg-white/5" />
 
-        <div className="flex items-center justify-between">
-          {user ? (
-            <button
-              onClick={() => setShowChat((value) => !value)}
-              className="flex items-center gap-2 text-sm font-medium transition-colors"
-              style={{ color: showChat ? "#ff6b6b" : "#a01218" }}
-            >
-              <MessageCircle className="h-4 w-4" />
-              <span>{showChat ? "Fechar chat" : "Falar com o restaurante"}</span>
-            </button>
-          ) : (
-            <div />
-          )}
+        <div className="flex items-center justify-end">
           <p className="text-xs text-zinc-600">Atualiza a cada 5s</p>
         </div>
-
-        {showChat && user && (
-          <div className="mt-3">
-            <OrderChat
-              orderId={orderId}
-              currentUserRole="customer"
-              currentUserName={user.name ?? "Cliente"}
-              inline
-            />
-          </div>
-        )}
       </div>
     </div>
   );

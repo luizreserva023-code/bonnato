@@ -47,12 +47,6 @@ export function Navbar() {
   const { selectedStore, setShowCityModal } = useStore();
   const tenant = useTenantConfig(selectedStore?.slug);
 
-  const { data: unreadData } = trpc.chat.totalUnread.useQuery(undefined, {
-    enabled: isAuthenticated,
-    refetchInterval: 30000,
-  });
-  const unreadCount = unreadData?.count ?? 0;
-
   const { data: notifData } = trpc.notifications.unreadCount.useQuery(undefined, {
     enabled: isAuthenticated,
     refetchInterval: 60000,
@@ -84,7 +78,7 @@ export function Navbar() {
     ? (JSON.parse(storeSettings.storeHours as string) as Record<string, DaySchedule | null>)
     : undefined;
   const storeOpen = isStoreOpenWithHours(dbStoreHours);
-  const totalAlerts = notifCount + unreadCount + alertsCount + activeOrdersCount;
+  const totalAlerts = notifCount + alertsCount + activeOrdersCount;
   const brandName = tenant.brand.name;
   const brandTagline = tenant.brand.tagline;
   const locationLabel = selectedStore ? `Entrega em ${selectedStore.city}` : tenant.brand.deliveryLabel;

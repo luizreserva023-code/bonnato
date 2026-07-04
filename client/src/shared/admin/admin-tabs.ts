@@ -1,7 +1,6 @@
 export const ADMIN_TABS = [
   "dashboard",
   "orders",
-  "messages",
   "menu",
   "inventory",
   "staff",

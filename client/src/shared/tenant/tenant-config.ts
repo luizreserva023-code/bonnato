@@ -65,7 +65,6 @@ const BONATTO_FEATURES: TenantFeatureFlags = {
   adminTabs: {
     dashboard: true,
     orders: true,
-    messages: true,
     menu: true,
     inventory: true,
     staff: true,

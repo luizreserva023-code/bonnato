@@ -1,4 +1,3 @@
-import { OrderChat } from "@/components/OrderChat";
 import { SavedCards } from "@/components/SavedCards";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -271,7 +270,6 @@ function AbandonedCartsTab() {
 function OrdersTab() {
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const { data: orders, isLoading } = trpc.orders.myOrders.useQuery(undefined, { refetchInterval: 30000 });
-  const { user } = useAuth();
   const [, navigate] = useLocation();
   const orderRefs = useRef<Record<number, HTMLDivElement | null>>({});
 
@@ -368,11 +366,6 @@ function OrdersTab() {
                 </Link>
               )}
               {order.status === "delivered" && order.driverId && <DeliveryRatingSection orderId={order.id} />}
-              {["pending", "confirmed", "preparing", "out_for_delivery"].includes(order.status) && (
-                <div className="mt-3">
-                  <OrderChat orderId={order.id} currentUserRole="customer" currentUserName={user?.name?.split(" ")[0] ?? "Cliente"} currentUserAvatarUrl={(user as any)?.avatarUrl ?? null} />
-                </div>
-              )}
             </CardContent>
           </Card>
         );

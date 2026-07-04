@@ -16,7 +16,6 @@ import {
   Loader2,
   MapPin,
   Megaphone,
-  MessageCircle,
   Package,
   RefreshCcw,
   Settings,
@@ -84,7 +83,6 @@ export const ADMIN_NAV_ITEMS: AdminNavItem[] = [
     icon: <Users className="h-[18px] w-[18px]" />,
     children: [
       { id: "users", label: "Usuários", icon: <Users className="h-4 w-4" /> },
-      { id: "messages", label: "Mensagens", icon: <MessageCircle className="h-4 w-4" /> },
     ],
   },
   { id: "reports", label: "Relatórios", icon: <TrendingUp className="h-[18px] w-[18px]" /> },
@@ -112,7 +110,6 @@ export interface AdminSidebarProps {
   activeTab: AdminTabId;
   setActiveTab: (tab: AdminTabId) => void;
   pendingCount: number;
-  unreadMessagesCount: number;
   stopAlert: () => void;
   onClose?: () => void;
   isSubscribed: boolean;
@@ -127,7 +124,6 @@ export function AdminSidebar({
   activeTab,
   setActiveTab,
   pendingCount,
-  unreadMessagesCount,
   stopAlert,
   onClose,
   isSubscribed,
@@ -201,9 +197,7 @@ export function AdminSidebar({
             const badge =
               item.id === "orders" && pendingCount > 0
                 ? pendingCount
-                : childIds.includes("messages") && unreadMessagesCount > 0
-                  ? unreadMessagesCount
-                  : null;
+                : null;
 
             return (
               <div key={item.label}>
@@ -252,9 +246,7 @@ export function AdminSidebar({
                       const childBadge =
                         child.id === "orders" && pendingCount > 0
                           ? pendingCount
-                          : child.id === "messages" && unreadMessagesCount > 0
-                            ? unreadMessagesCount
-                            : null;
+                          : null;
 
                       return (
                         <button

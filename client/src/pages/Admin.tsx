@@ -1,4 +1,3 @@
-import { OrderChat } from "@/components/OrderChat";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -35,7 +34,6 @@ import {
   Bike,
   Copy,
   MapPin,
-  MessageCircle,
   Phone,
   PlusCircle,
   Trash2,
@@ -108,7 +106,7 @@ const PAYMENT_LABELS: Record<string, string> = {
   cash: "Dinheiro",
 };
 
-type AdminTab = "dashboard" | "orders" | "messages" | "menu" | "club" | "coupons" | "reports" | "network" | "distribution" | "promotions" | "raffles" | "upsells" | "users" | "drivers" | "settings" | "payments" | "marketplaces" | "stores" | "recovery";
+type AdminTab = "dashboard" | "orders" | "menu" | "club" | "coupons" | "reports" | "network" | "distribution" | "promotions" | "raffles" | "upsells" | "users" | "drivers" | "settings" | "payments" | "marketplaces" | "stores" | "recovery";
 type ClubAdminPlanId = "bonattao" | "basico";
 type ClubAdminPlan = {
   id: ClubAdminPlanId;
@@ -169,7 +167,6 @@ const NAV_ITEMS: NavItem[] = [
     id: "users" as AdminTab, label: "Clientes", icon: <Users className="w-[18px] h-[18px]" />,
     children: [
       { id: "users" as AdminTab, label: "Usuários", icon: <Users className="w-4 h-4" /> },
-      { id: "messages" as AdminTab, label: "Mensagens", icon: <MessageCircle className="w-4 h-4" /> },
     ],
   },
   { id: "reports" as AdminTab, label: "Relatórios", icon: <TrendingUp className="w-[18px] h-[18px]" /> },
@@ -211,7 +208,6 @@ function AdminSidebar({
   activeTab,
   setActiveTab,
   pendingCount,
-  unreadMessagesCount,
   stopAlert,
   onClose,
   isSubscribed,
@@ -226,7 +222,6 @@ function AdminSidebar({
   activeTab: AdminTab;
   setActiveTab: (t: AdminTab) => void;
   pendingCount: number;
-  unreadMessagesCount: number;
   stopAlert: () => void;
   onClose?: () => void;
   isSubscribed: boolean;
@@ -308,9 +303,7 @@ function AdminSidebar({
             const isDirectActive = !hasChildren && activeTab === item.id;
             const isActive = isDirectActive || isParentActive;
             const isOpen = openSubmenu === item.label;
-            const badge = item.id === 'orders' && pendingCount > 0 ? pendingCount
-              : childIds.includes('messages' as AdminTab) && unreadMessagesCount > 0 ? unreadMessagesCount
-              : null;
+            const badge = item.id === 'orders' && pendingCount > 0 ? pendingCount : null;
 
             return (
               <div key={item.label}>
@@ -348,9 +341,7 @@ function AdminSidebar({
                   <div className="ml-5 mt-0.5 space-y-0.5 border-l pl-3" style={{ borderColor: 'rgba(255,255,255,0.14)' }}>
                     {item.children!.filter(c => !c.adminOnly || isAdmin).map((child) => {
                       const isChildActive = activeTab === child.id;
-                      const childBadge = child.id === 'orders' && pendingCount > 0 ? pendingCount
-                        : child.id === 'messages' && unreadMessagesCount > 0 ? unreadMessagesCount
-                        : null;
+                      const childBadge = child.id === 'orders' && pendingCount > 0 ? pendingCount : null;
                       return (
                         <button
                           key={child.id}
@@ -483,11 +474,6 @@ export default function Admin() {
   const { stopAlert } = useNewOrderAlert(alertOrderIds, !loading && isAuthenticated && user?.role === "admin");
   const { isSubscribed, isLoading: pushLoading, isSupported: pushSupported, subscribe: subscribePush, unsubscribe: unsubscribePush } = usePushNotifications();
   const pendingCount = allOrdersForAlert?.filter(o => o.status === "pending").length ?? 0;
-  const { data: totalUnreadData } = trpc.chat.totalUnread.useQuery(undefined, {
-    refetchInterval: 15000,
-    enabled: !loading && isAuthenticated && user?.role === "admin",
-  });
-  const unreadMessagesCount = totalUnreadData?.count ?? 0;
 
   const isAdmin = user?.role === "admin";
 
@@ -509,7 +495,6 @@ export default function Admin() {
     activeTab,
     setActiveTab,
     pendingCount,
-    unreadMessagesCount,
     stopAlert,
     isSubscribed,
     pushLoading,
@@ -602,7 +587,6 @@ export default function Admin() {
             {activeTab === "network" && <NetworkFinanceTab />}
             {activeTab === "distribution" && <NetworkFinanceTab mode="distribution" />}
             {activeTab === "drivers" && <DriversTab />}
-            {activeTab === "messages" && <MessagesTab />}
             {activeTab === "payments" && isAdmin && <PaymentsTab />}
             {activeTab === "marketplaces" && isAdmin && <MarketplacesTab />}
             {activeTab === "settings" && <SettingsTab />}
@@ -1892,18 +1876,6 @@ function OrderItemsExpand({ orderId }: { orderId: number }) {
   );
 }
 
-function UnreadChatBadge({ orderId }: { orderId: number }) {
-  const { data } = trpc.chat.unreadCount.useQuery({ orderId }, { refetchInterval: 15000 });
-  const count = data?.count ?? 0;
-  if (count === 0) return null;
-  return (
-    <span className="inline-flex items-center gap-1 bg-[#6E0D12] btn-bonatto text-white text-xs rounded-full px-2 py-0.5 font-bold">
-      <MessageCircle className="w-3 h-3" />
-      {count > 9 ? "9+" : count} nova{count !== 1 ? "s" : ""}
-    </span>
-  );
-}
-
 const STATUS_CHIPS = [
   { value: "all", label: "Todos", color: "bg-muted text-muted-foreground hover:bg-muted/80" },
   { value: "pending", label: "Aguardando", color: "bg-[#fff8f0] text-[#7a3a00] hover:bg-[#ffeedd]" },
@@ -1944,7 +1916,6 @@ const KANBAN_COLS_DARK = [
 ];
 
 function KanbanCard({ order, onOpen }: { order: any; onOpen: (o: any) => void }) {
-  const isActive = ["pending","confirmed","preparing","out_for_delivery"].includes(order.status);
   return (
     <button
       type="button"
@@ -1954,7 +1925,6 @@ function KanbanCard({ order, onOpen }: { order: any; onOpen: (o: any) => void })
       <div className="flex items-center justify-between">
         <span className="font-black text-sm text-foreground">#{order.id}</span>
         <div className="flex items-center gap-1">
-          {isActive && <UnreadChatBadge orderId={order.id} />}
           <ElapsedTime createdAt={order.createdAt} />
         </div>
       </div>
@@ -1980,7 +1950,6 @@ function OrderDetailModal({ order, onClose, drivers }: { order: any; onClose: ()
   const [selectedDriver, setSelectedDriver] = useState("");
   const [pixConfirmedLocally, setPixConfirmedLocally] = useState(order.paymentStatus === "paid");
   const s = STATUS_LABELS[order.status];
-  const isActive = ["pending","confirmed","preparing","out_for_delivery"].includes(order.status);
   const pixNeedsReceipt = order.paymentMethod === "pix" && !pixConfirmedLocally;
   const activeDrivers = drivers?.filter(d => d.active) ?? [];
   const emitirNfce = trpc.nfce.emitir.useMutation({
@@ -2096,13 +2065,6 @@ function OrderDetailModal({ order, onClose, drivers }: { order: any; onClose: ()
                   Emitir NFC-e
                 </Button>
               )}
-            </div>
-          )}
-
-          {/* Chat */}
-          {isActive && (
-            <div>
-              <OrderChat orderId={order.id} currentUserRole="admin" currentUserName="Bonatto Pizza" inline />
             </div>
           )}
 
@@ -6093,19 +6055,17 @@ function ActiveDriversMap() {
 }
 
 // ─── MESSAGES TAB ─────────────────────────────────────────────────────────────
-function MessagesTab() {
+function DisabledRestaurantChatTab() {
   const { user } = useAuth();
   const utils = trpc.useUtils();
-  const { data: conversations, isLoading, refetch } = trpc.chat.ordersWithMessages.useQuery(undefined, {
-    refetchInterval: 10000,
-  });
+  const conversations: Array<any> = [];
+  const isLoading = false;
+  const refetch = () => undefined;
   const [selectedOrderId, setSelectedOrderId] = useState<number | null>(null);
 
   function handleSelectOrder(orderId: number) {
     setSelectedOrderId(orderId);
     // Invalida o totalUnread para atualizar o badge da sidebar
-    utils.chat.totalUnread.invalidate();
-    utils.chat.ordersWithMessages.invalidate();
   }
 
   const selected = conversations?.find(c => c.orderId === selectedOrderId);
@@ -6127,7 +6087,7 @@ function MessagesTab() {
         )}
         {!isLoading && (!conversations || conversations.length === 0) && (
           <div className="flex flex-col items-center justify-center h-48 text-muted-foreground gap-2">
-            <MessageCircle className="w-10 h-10 opacity-30" />
+            <Bot className="w-10 h-10 opacity-30" />
             <p className="text-sm">Nenhuma conversa ainda</p>
           </div>
         )}
@@ -6176,16 +6136,12 @@ function MessagesTab() {
       {/* Chat inline */}
       <div className="flex-1 min-w-0 border rounded-2xl overflow-hidden bg-card">
         {selectedOrderId ? (
-          <OrderChat
-            orderId={selectedOrderId}
-            currentUserRole="admin"
-            currentUserName={user?.name ?? "Admin"}
-            currentUserAvatarUrl={user?.avatarUrl ?? undefined}
-            inline
-          />
+          <div className="flex h-full items-center justify-center p-6 text-sm text-muted-foreground">
+            Chat com restaurante desativado.
+          </div>
         ) : (
           <div className="flex flex-col items-center justify-center h-full text-muted-foreground gap-3">
-            <MessageCircle className="w-16 h-16 opacity-20" />
+            <Bot className="w-16 h-16 opacity-20" />
             <p className="text-base font-medium">Selecione uma conversa</p>
             <p className="text-sm opacity-70">Escolha um pedido na lista ao lado para abrir o chat</p>
           </div>
