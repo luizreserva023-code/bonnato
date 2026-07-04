@@ -7,6 +7,7 @@ import { ThemeProvider } from "./contexts/ThemeContext";
 import { CartProvider } from "./contexts/CartContext";
 import { CartDrawer } from "./components/CartDrawer";
 import { Navbar } from "./components/Navbar";
+import { InAppNotificationBridge } from "./components/InAppNotificationBridge";
 import { PushAudioBridge } from "./components/PushAudioBridge";
 import { StoreRibbon } from "./components/StoreRibbon";
 import Home from "./pages/Home";
@@ -104,6 +105,7 @@ function App() {
           <TooltipProvider>
             <Toaster richColors position="top-right" />
             <PushAudioBridge />
+            <InAppNotificationBridge />
             <Router />
           </TooltipProvider>
         </CartProvider>

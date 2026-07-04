@@ -4904,11 +4904,49 @@ __export(push_exports, {
   sendPushToUser: () => sendPushToUser
 });
 import webpush from "web-push";
-import { eq as eq2, and as and2 } from "drizzle-orm";
+import { eq as eq2, and as and2, inArray as inArray2 } from "drizzle-orm";
+function inferInAppType(payload) {
+  const source = `${payload.tag ?? ""} ${payload.url ?? ""} ${payload.title ?? ""}`.toLowerCase();
+  if (source.includes("order") || source.includes("pedido") || source.includes("delivery")) return "order";
+  if (source.includes("promo") || source.includes("coupon") || source.includes("cupom") || source.includes("cart")) return "promo";
+  return "system";
+}
+async function saveInAppNotification(userId, payload) {
+  const db = await getDb();
+  if (!db) return;
+  await db.insert(clientNotifications).values({
+    userId,
+    title: payload.title,
+    message: payload.body,
+    type: inferInAppType(payload)
+  });
+}
+async function saveInAppNotificationsForUsers(userIds, payload) {
+  const uniqueUserIds = Array.from(new Set(userIds.filter((id) => Number.isFinite(id))));
+  if (uniqueUserIds.length === 0) return;
+  const db = await getDb();
+  if (!db) return;
+  await db.insert(clientNotifications).values(
+    uniqueUserIds.map((userId) => ({
+      userId,
+      title: payload.title,
+      message: payload.body,
+      type: inferInAppType(payload)
+    }))
+  );
+}
 async function sendPushToUser(userId, payload) {
   const db = await getDb();
   if (!db) return;
+  if (!isVapidConfigured) {
+    await saveInAppNotification(userId, payload);
+    return;
+  }
   const subs = await db.select().from(pushSubscriptions).where(eq2(pushSubscriptions.userId, userId));
+  if (subs.length === 0) {
+    await saveInAppNotification(userId, payload);
+    return;
+  }
   const icon = payload.icon ?? "/icon-192.png";
   const badge = payload.badge ?? "/icon-192.png";
   await Promise.allSettled(
@@ -4931,6 +4969,10 @@ async function sendPushToAdmins(payload) {
   if (!db) return;
   const { users: users2 } = await Promise.resolve().then(() => (init_schema(), schema_exports));
   const adminUsers = await db.select({ id: users2.id }).from(users2).where(eq2(users2.role, "admin"));
+  if (!isVapidConfigured) {
+    await saveInAppNotificationsForUsers(adminUsers.map((u) => u.id), payload);
+    return;
+  }
   await Promise.allSettled(adminUsers.map((u) => sendPushToUser(u.id, payload)));
 }
 async function savePushSubscription(userId, endpoint, p256dh, auth, userAgent) {
@@ -4946,10 +4988,15 @@ async function savePushSubscription(userId, endpoint, p256dh, auth, userAgent) {
 async function sendPushToAllUsers(payload, userIds) {
   const db = await getDb();
   if (!db) return { sent: 0, failed: 0 };
+  if (!isVapidConfigured) {
+    const { users: users2 } = await Promise.resolve().then(() => (init_schema(), schema_exports));
+    const targetRows = userIds && userIds.length > 0 ? await db.select({ id: users2.id }).from(users2).where(inArray2(users2.id, userIds)) : await db.select({ id: users2.id }).from(users2);
+    await saveInAppNotificationsForUsers(targetRows.map((row) => row.id), payload);
+    return { sent: targetRows.length, failed: 0 };
+  }
   let query = db.select({ userId: pushSubscriptions.userId, id: pushSubscriptions.id, endpoint: pushSubscriptions.endpoint, p256dh: pushSubscriptions.p256dh, auth: pushSubscriptions.auth }).from(pushSubscriptions).$dynamic();
   if (userIds && userIds.length > 0) {
-    const { inArray: inArray4 } = await import("drizzle-orm");
-    query = query.where(inArray4(pushSubscriptions.userId, userIds));
+    query = query.where(inArray2(pushSubscriptions.userId, userIds));
   }
   const subs = await query;
   const icon = payload.icon ?? "/icon-192.png";
@@ -5000,7 +5047,7 @@ async function removePushSubscription(userId, endpoint) {
   if (!db) return;
   await db.delete(pushSubscriptions).where(and2(eq2(pushSubscriptions.userId, userId), eq2(pushSubscriptions.endpoint, endpoint)));
 }
-var vapidPublicKey, vapidPrivateKey;
+var vapidPublicKey, vapidPrivateKey, isVapidConfigured;
 var init_push = __esm({
   "server/push.ts"() {
     "use strict";
@@ -5008,7 +5055,8 @@ var init_push = __esm({
     init_schema();
     vapidPublicKey = process.env.VAPID_PUBLIC_KEY ?? "";
     vapidPrivateKey = process.env.VAPID_PRIVATE_KEY ?? "";
-    if (vapidPublicKey && vapidPrivateKey) {
+    isVapidConfigured = Boolean(vapidPublicKey && vapidPrivateKey);
+    if (isVapidConfigured) {
       webpush.setVapidDetails(
         process.env.VAPID_EMAIL ?? "mailto:contato@bonattopizza.com.br",
         vapidPublicKey,
@@ -5706,7 +5754,7 @@ import { eq as eq4 } from "drizzle-orm";
 // server/automation.ts
 init_db();
 init_schema();
-import { eq as eq3, and as and3, lt, gte as gte2, sql as sql2, inArray as inArray2 } from "drizzle-orm";
+import { eq as eq3, and as and3, lt, gte as gte2, sql as sql2, inArray as inArray3 } from "drizzle-orm";
 
 // server/whatsapp.ts
 var ZApiProvider = class {
@@ -5883,7 +5931,7 @@ async function refreshCustomerTags() {
       await db.delete(customerTags).where(
         and3(
           eq3(customerTags.userId, row.userId),
-          inArray2(customerTags.tag, toRemove)
+          inArray3(customerTags.tag, toRemove)
         )
       );
     }
@@ -5907,7 +5955,7 @@ async function refreshCustomerTags() {
           const existingExec = await db.select({ id: journeyExecutions.id }).from(journeyExecutions).where(and3(
             eq3(journeyExecutions.journeyId, cj.id),
             eq3(journeyExecutions.userId, row.userId),
-            inArray2(journeyExecutions.status, ["running", "completed"])
+            inArray3(journeyExecutions.status, ["running", "completed"])
           )).limit(1);
           if (!existingExec.length) {
             await startJourneyExecution(cj.id, row.userId);
@@ -6019,7 +6067,7 @@ async function processExecution(exec) {
         and3(
           eq3(orders.userId, exec.userId),
           gte2(orders.createdAt, exec.startedAt),
-          inArray2(orders.status, ["pending", "confirmed", "preparing", "out_for_delivery", "delivered"])
+          inArray3(orders.status, ["pending", "confirmed", "preparing", "out_for_delivery", "delivered"])
         )
       ).limit(1);
       if (exitOrder.length > 0) {
@@ -6087,7 +6135,7 @@ async function processExecution(exec) {
           and3(
             eq3(orders.userId, exec.userId),
             gte2(orders.createdAt, exec.startedAt),
-            inArray2(orders.status, ["pending", "confirmed", "preparing", "out_for_delivery", "delivered"])
+            inArray3(orders.status, ["pending", "confirmed", "preparing", "out_for_delivery", "delivered"])
           )
         ).limit(1);
         conditionMet = recentOrder.length > 0;
@@ -6593,7 +6641,7 @@ init_db();
 init_db();
 init_schema();
 import { TRPCError as TRPCError6 } from "@trpc/server";
-import { eq as eq12, gte as gte4, desc as desc3, inArray as inArray3, and as and9, isNotNull as isNotNull2, lte as lte3 } from "drizzle-orm";
+import { eq as eq12, gte as gte4, desc as desc3, inArray as inArray4, and as and9, isNotNull as isNotNull2, lte as lte3 } from "drizzle-orm";
 
 // server/routers/club.ts
 import { TRPCError as TRPCError3 } from "@trpc/server";
@@ -12270,11 +12318,11 @@ Telefone/WhatsApp: ${dbSettings.whatsappNumber ?? "(37) 99999-0000"}`
       let revenueA = 0;
       let revenueB = 0;
       if (convOrderIdsA.length > 0) {
-        const ordersA = await db.select({ total: orders.total }).from(orders).where(inArray3(orders.id, convOrderIdsA));
+        const ordersA = await db.select({ total: orders.total }).from(orders).where(inArray4(orders.id, convOrderIdsA));
         revenueA = ordersA.reduce((sum, o) => sum + Number(o.total ?? 0), 0);
       }
       if (convOrderIdsB.length > 0) {
-        const ordersB = await db.select({ total: orders.total }).from(orders).where(inArray3(orders.id, convOrderIdsB));
+        const ordersB = await db.select({ total: orders.total }).from(orders).where(inArray4(orders.id, convOrderIdsB));
         revenueB = ordersB.reduce((sum, o) => sum + Number(o.total ?? 0), 0);
       }
       return {
@@ -12306,7 +12354,7 @@ Telefone/WhatsApp: ${dbSettings.whatsappNumber ?? "(37) 99999-0000"}`
       const convOrderIds = allExecs.map((e) => e.conversionOrderId).filter(Boolean);
       let attributedRevenue = 0;
       if (convOrderIds.length > 0) {
-        const convOrders = await db.select({ total: orders.total }).from(orders).where(inArray3(orders.id, convOrderIds));
+        const convOrders = await db.select({ total: orders.total }).from(orders).where(inArray4(orders.id, convOrderIds));
         attributedRevenue = convOrders.reduce((sum, o) => sum + Number(o.total ?? 0), 0);
       }
       const activeJourneysList = await db.select({ id: journeys.id, name: journeys.name }).from(journeys).where(eq12(journeys.status, "active"));
@@ -12337,7 +12385,7 @@ Telefone/WhatsApp: ${dbSettings.whatsappNumber ?? "(37) 99999-0000"}`
       if (!db) return [];
       const execs = await db.select().from(journeyExecutions).where(eq12(journeyExecutions.userId, input.userId)).orderBy(desc3(journeyExecutions.startedAt)).limit(50);
       const journeyIds = Array.from(new Set(execs.map((e) => e.journeyId)));
-      const journeyList = journeyIds.length > 0 ? await db.select({ id: journeys.id, name: journeys.name, trigger: journeys.trigger }).from(journeys).where(inArray3(journeys.id, journeyIds)) : [];
+      const journeyList = journeyIds.length > 0 ? await db.select({ id: journeys.id, name: journeys.name, trigger: journeys.trigger }).from(journeys).where(inArray4(journeys.id, journeyIds)) : [];
       return execs.map((e) => ({
         ...e,
         journeyName: journeyList.find((j) => j.id === e.journeyId)?.name ?? `Jornada #${e.journeyId}`,

@@ -1,13 +1,14 @@
 import webpush from "web-push";
 import { getDb } from "./db.ts";
-import { pushSubscriptions, driverPushSubscriptions } from "../drizzle/schema.ts";
-import { eq, and } from "drizzle-orm";
+import { pushSubscriptions, driverPushSubscriptions, clientNotifications } from "../drizzle/schema.ts";
+import { eq, and, inArray } from "drizzle-orm";
 import type { PushSubscription as PushSubRow, DriverPushSubscription as DriverPushSubRow } from "../drizzle/schema.ts";
 
 // Configurar VAPID com as chaves do ambiente (graceful: não travar se chaves ausentes)
 const vapidPublicKey = process.env.VAPID_PUBLIC_KEY ?? "";
 const vapidPrivateKey = process.env.VAPID_PRIVATE_KEY ?? "";
-if (vapidPublicKey && vapidPrivateKey) {
+const isVapidConfigured = Boolean(vapidPublicKey && vapidPrivateKey);
+if (isVapidConfigured) {
   webpush.setVapidDetails(
     process.env.VAPID_EMAIL ?? "mailto:contato@bonattopizza.com.br",
     vapidPublicKey,
@@ -27,6 +28,42 @@ export interface PushPayload {
   soundUrl?: string;
 }
 
+function inferInAppType(payload: PushPayload): "order" | "promo" | "system" {
+  const source = `${payload.tag ?? ""} ${payload.url ?? ""} ${payload.title ?? ""}`.toLowerCase();
+  if (source.includes("order") || source.includes("pedido") || source.includes("delivery")) return "order";
+  if (source.includes("promo") || source.includes("coupon") || source.includes("cupom") || source.includes("cart")) return "promo";
+  return "system";
+}
+
+async function saveInAppNotification(userId: number, payload: PushPayload): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+
+  await db.insert(clientNotifications).values({
+    userId,
+    title: payload.title,
+    message: payload.body,
+    type: inferInAppType(payload),
+  });
+}
+
+async function saveInAppNotificationsForUsers(userIds: number[], payload: PushPayload): Promise<void> {
+  const uniqueUserIds = Array.from(new Set(userIds.filter((id) => Number.isFinite(id))));
+  if (uniqueUserIds.length === 0) return;
+
+  const db = await getDb();
+  if (!db) return;
+
+  await db.insert(clientNotifications).values(
+    uniqueUserIds.map((userId) => ({
+      userId,
+      title: payload.title,
+      message: payload.body,
+      type: inferInAppType(payload),
+    }))
+  );
+}
+
 /**
  * Envia notificação push para todas as subscriptions de um usuário.
  * Remove automaticamente subscriptions expiradas/inválidas.
@@ -34,10 +71,21 @@ export interface PushPayload {
 export async function sendPushToUser(userId: number, payload: PushPayload): Promise<void> {
   const db = await getDb();
   if (!db) return;
+
+  if (!isVapidConfigured) {
+    await saveInAppNotification(userId, payload);
+    return;
+  }
+
   const subs = await db
     .select()
     .from(pushSubscriptions)
     .where(eq(pushSubscriptions.userId, userId));
+
+  if (subs.length === 0) {
+    await saveInAppNotification(userId, payload);
+    return;
+  }
 
   const icon = payload.icon ?? "/icon-192.png";
   const badge = payload.badge ?? "/icon-192.png";
@@ -70,6 +118,11 @@ export async function sendPushToAdmins(payload: PushPayload): Promise<void> {
     .select({ id: users.id })
     .from(users)
     .where(eq(users.role, "admin"));
+
+  if (!isVapidConfigured) {
+    await saveInAppNotificationsForUsers(adminUsers.map((u: { id: number }) => u.id), payload);
+    return;
+  }
 
   await Promise.allSettled(adminUsers.map((u: { id: number }) => sendPushToUser(u.id, payload)));
 }
@@ -114,9 +167,17 @@ export async function sendPushToAllUsers(
   const db = await getDb();
   if (!db) return { sent: 0, failed: 0 };
 
+  if (!isVapidConfigured) {
+    const { users } = await import("../drizzle/schema.ts");
+    const targetRows = userIds && userIds.length > 0
+      ? await db.select({ id: users.id }).from(users).where(inArray(users.id, userIds))
+      : await db.select({ id: users.id }).from(users);
+    await saveInAppNotificationsForUsers(targetRows.map((row: { id: number }) => row.id), payload);
+    return { sent: targetRows.length, failed: 0 };
+  }
+
   let query = db.select({ userId: pushSubscriptions.userId, id: pushSubscriptions.id, endpoint: pushSubscriptions.endpoint, p256dh: pushSubscriptions.p256dh, auth: pushSubscriptions.auth }).from(pushSubscriptions).$dynamic();
   if (userIds && userIds.length > 0) {
-    const { inArray } = await import("drizzle-orm");
     query = query.where(inArray(pushSubscriptions.userId, userIds));
   }
   const subs = await query;
@@ -127,7 +188,7 @@ export async function sendPushToAllUsers(
   let failed = 0;
 
   await Promise.allSettled(
-    subs.map(async (sub) => {
+    subs.map(async (sub: PushSubRow) => {
       try {
         await webpush.sendNotification(
           { endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } },
