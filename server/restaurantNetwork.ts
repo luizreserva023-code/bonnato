@@ -202,7 +202,8 @@ export async function listSupplyOrders(opts: { storeId?: number; status?: string
   const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
 
   return executeRows(db, `
-    SELECT o.*, s.name AS storeName, COUNT(i.id) AS itemCount
+    SELECT o.*, s.name AS storeName, COUNT(i.id) AS itemCount,
+      GROUP_CONCAT(CONCAT(i.productName, ' - ', CAST(i.quantityRequested AS CHAR), ' ', i.unit) ORDER BY i.id SEPARATOR ' | ') AS itemSummary
     FROM store_supply_orders o
     LEFT JOIN stores s ON s.id = o.storeId
     LEFT JOIN store_supply_order_items i ON i.supplyOrderId = o.id
@@ -251,22 +252,22 @@ export async function createSupplyOrder(input: z.infer<typeof createSupplyOrderS
     return sum + Number(item.quantityRequested) * money(ingredient?.unitCost);
   }, 0);
   const status = input.submit ? "submitted" : "draft";
-  const result = await db.execute(sql.raw(`
+  const result = await db.execute(sql`
     INSERT INTO store_supply_orders (storeId, requestedByUserId, status, estimatedCost, notes)
-    VALUES (${input.storeId}, ${actorUserId}, '${status}', '${estimatedCost.toFixed(2)}', ${JSON.stringify(input.notes ?? null)})
-  `));
+    VALUES (${input.storeId}, ${actorUserId}, ${status}, ${estimatedCost.toFixed(2)}, ${input.notes ?? null})
+  `);
   const orderId = Number(((result as unknown as [{ insertId?: number }])[0]?.insertId) ?? 0);
 
   for (const item of input.items) {
     const ingredient = ingredientById.get(item.ingredientId);
     if (!ingredient) continue;
     const approved = item.quantityApproved ?? item.quantityRequested;
-    await db.execute(sql.raw(`
+    await db.execute(sql`
       INSERT INTO store_supply_order_items
         (supplyOrderId, ingredientId, productName, unit, quantityRequested, quantityApproved, unitCost)
       VALUES
-        (${orderId}, ${item.ingredientId}, ${JSON.stringify(ingredient.name)}, ${JSON.stringify(ingredient.unit)}, '${item.quantityRequested}', '${approved}', '${money(ingredient.unitCost).toFixed(4)}')
-    `));
+        (${orderId}, ${item.ingredientId}, ${ingredient.name}, ${ingredient.unit}, ${item.quantityRequested}, ${approved}, ${money(ingredient.unitCost).toFixed(4)})
+    `);
   }
   await audit({ actorUserId, storeId: input.storeId, action: "supply_order.create", entityType: "store_supply_order", entityId: orderId, metadata: { status } });
   return { id: orderId };

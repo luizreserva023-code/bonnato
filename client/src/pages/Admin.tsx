@@ -108,7 +108,7 @@ const PAYMENT_LABELS: Record<string, string> = {
   cash: "Dinheiro",
 };
 
-type AdminTab = "dashboard" | "orders" | "messages" | "menu" | "club" | "coupons" | "reports" | "network" | "promotions" | "raffles" | "upsells" | "users" | "drivers" | "settings" | "payments" | "marketplaces" | "stores" | "recovery";
+type AdminTab = "dashboard" | "orders" | "messages" | "menu" | "club" | "coupons" | "reports" | "network" | "distribution" | "promotions" | "raffles" | "upsells" | "users" | "drivers" | "settings" | "payments" | "marketplaces" | "stores" | "recovery";
 type ClubAdminPlanId = "bonattao" | "basico";
 type ClubAdminPlan = {
   id: ClubAdminPlanId;
@@ -174,6 +174,7 @@ const NAV_ITEMS: NavItem[] = [
   },
   { id: "reports" as AdminTab, label: "Relatórios", icon: <TrendingUp className="w-[18px] h-[18px]" /> },
   { id: "network" as AdminTab, label: "Rede & Financeiro", icon: <Building2 className="w-[18px] h-[18px]" /> },
+  { id: "distribution" as AdminTab, label: "Centro de Distribuição", icon: <Package className="w-[18px] h-[18px]" /> },
   {
     id: "drivers" as AdminTab, label: "Entregas", icon: <Bike className="w-[18px] h-[18px]" />,
     children: [
@@ -584,6 +585,7 @@ export default function Admin() {
             {activeTab === "users" && <UsersTab />}
             {activeTab === "reports" && <ReportsTab />}
             {activeTab === "network" && <NetworkFinanceTab />}
+            {activeTab === "distribution" && <NetworkFinanceTab mode="distribution" />}
             {activeTab === "drivers" && <DriversTab />}
             {activeTab === "messages" && <MessagesTab />}
             {activeTab === "payments" && isAdmin && <PaymentsTab />}

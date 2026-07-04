@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Building2, FileCheck2, PackageCheck, Plus, ReceiptText, RefreshCw, Scale, Send, WalletCards } from "lucide-react";
+import { Building2, FileCheck2, PackageCheck, Plus, ReceiptText, RefreshCw, Scale, Send, Trash2, WalletCards } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -35,7 +35,15 @@ function statusLabel(status: string) {
   return labels[status] ?? status;
 }
 
-export function NetworkFinanceTab() {
+type SupplyDraftItem = {
+  ingredientId: number;
+  name: string;
+  unit: string;
+  quantityRequested: string;
+  unitCost: number;
+};
+
+export function NetworkFinanceTab({ mode = "finance" }: { mode?: "finance" | "distribution" }) {
   const utils = trpc.useUtils();
   const { selectedStoreId, selectedStoreName, stores, isManager } = useAdminStore();
   const now = new Date();
@@ -44,6 +52,7 @@ export function NetworkFinanceTab() {
   const [expenseForm, setExpenseForm] = useState({ category: "fornecedores", description: "", amount: "", paymentMethod: "pix", notes: "" });
   const [feeForm, setFeeForm] = useState({ name: "", category: "taxas de aplicativo", amount: "", calculationType: "fixed" as "fixed" | "percentage", rate: "0" });
   const [supplyForm, setSupplyForm] = useState({ ingredientId: "", quantity: "", notes: "" });
+  const [supplyItems, setSupplyItems] = useState<SupplyDraftItem[]>([]);
 
   const range = useMemo(() => monthRange(year, month), [year, month]);
   const queryInput = { storeId: selectedStoreId, startDate: range.startDate, endDate: range.endDate };
@@ -87,6 +96,7 @@ export function NetworkFinanceTab() {
     onSuccess: async () => {
       toast.success("Pedido ao centro de distribuição criado.");
       setSupplyForm({ ingredientId: "", quantity: "", notes: "" });
+      setSupplyItems([]);
       await invalidateNetwork();
     },
     onError: (error) => toast.error(error.message),
@@ -110,11 +120,37 @@ export function NetworkFinanceTab() {
 
   const selectedStoreLabel = selectedStoreId ? selectedStoreName : "Rede completa";
   const selectedIngredient = ingredients.find((item: any) => String(item.id) === supplyForm.ingredientId) as any;
+  const supplyEstimate = supplyItems.reduce((sum, item) => sum + Number(item.quantityRequested || 0) * item.unitCost, 0);
+  const addSupplyItem = () => {
+    if (!selectedIngredient) return toast.error("Selecione um produto/insumo.");
+    if (!supplyForm.quantity || Number(supplyForm.quantity) <= 0) return toast.error("Informe uma quantidade valida.");
+    setSupplyItems((current) => {
+      const existing = current.find((item) => item.ingredientId === Number(selectedIngredient.id));
+      if (existing) {
+        return current.map((item) =>
+          item.ingredientId === Number(selectedIngredient.id)
+            ? { ...item, quantityRequested: String(Number(item.quantityRequested) + Number(supplyForm.quantity)) }
+            : item
+        );
+      }
+      return [
+        ...current,
+        {
+          ingredientId: Number(selectedIngredient.id),
+          name: selectedIngredient.name,
+          unit: selectedIngredient.unit,
+          quantityRequested: supplyForm.quantity,
+          unitCost: Number(selectedIngredient.unitCost ?? 0),
+        },
+      ];
+    });
+    setSupplyForm((state) => ({ ...state, ingredientId: "", quantity: "" }));
+  };
 
   return (
     <AdminPage>
       <AdminTopbar
-        title="Rede & Financeiro"
+        title={mode === "distribution" ? "Centro de Distribuição" : "Rede & Financeiro"}
         subtitle={`Centro de distribuição, gastos e fechamento mensal — ${selectedStoreLabel}`}
         onRefresh={() => refetch()}
         refreshing={isLoading}
@@ -134,14 +170,16 @@ export function NetworkFinanceTab() {
       />
 
       <div className="space-y-5 p-4 md:p-6">
+        {mode === "finance" && (
         <AdminStatGrid>
           <AdminStat label="Receita" value={BRL.format(totals?.revenueTotal ?? 0)} icon={<WalletCards className="h-4 w-4" />} sub={`${totals?.orderCount ?? 0} pedidos`} trend="neutral" />
           <AdminStat label="Despesas" value={BRL.format(totals?.expenseTotal ?? 0)} icon={<ReceiptText className="h-4 w-4" />} sub={`${totals?.expenseCount ?? 0} lançamentos`} trend="down" />
           <AdminStat label="Taxas + CD" value={BRL.format((totals?.feeTotal ?? 0) + (totals?.supplyCostTotal ?? 0))} icon={<Scale className="h-4 w-4" />} sub="taxas e pedidos internos" trend="neutral" />
           <AdminStat label="Resultado" value={BRL.format(totals?.netResult ?? 0)} icon={<Building2 className="h-4 w-4" />} sub={`${totals?.marginPercent ?? 0}% margem`} trend={(totals?.netResult ?? 0) >= 0 ? "up" : "down"} />
         </AdminStatGrid>
+        )}
 
-        <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
+        <div className={`grid grid-cols-1 ${mode === "distribution" ? "xl:grid-cols-[420px,1fr]" : "xl:grid-cols-3"} gap-4`}>
           <AdminSurface title="Pedido ao centro de distribuição" subtitle="Use os ingredientes já cadastrados no estoque.">
             <div className="space-y-3">
               {!selectedStoreId && !isManager ? (
@@ -169,16 +207,45 @@ export function NetworkFinanceTab() {
                 </div>
               </div>
               <Textarea value={supplyForm.notes} onChange={(e) => setSupplyForm((state) => ({ ...state, notes: e.target.value }))} placeholder="Observações para o CD..." />
+              <Button type="button" variant="outline" className="w-full gap-2" onClick={addSupplyItem} disabled={!supplyForm.ingredientId || !supplyForm.quantity}>
+                <Plus className="h-4 w-4" />
+                Adicionar produto ao pedido
+              </Button>
+
+              <div className="rounded-xl border bg-muted/20 p-3">
+                <div className="mb-2 flex items-center justify-between">
+                  <p className="text-sm font-bold">Itens do pedido</p>
+                  <p className="text-xs text-muted-foreground">{supplyItems.length} itens - {BRL.format(supplyEstimate)}</p>
+                </div>
+                {supplyItems.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">Adicione os produtos/insumos que a loja quer pedir ao CD.</p>
+                ) : (
+                  <div className="space-y-2">
+                    {supplyItems.map((item) => (
+                      <div key={item.ingredientId} className="flex items-center justify-between gap-2 rounded-lg bg-background px-3 py-2">
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-semibold">{item.name}</p>
+                          <p className="text-xs text-muted-foreground">{item.quantityRequested} {item.unit} - {BRL.format(item.unitCost * Number(item.quantityRequested || 0))}</p>
+                        </div>
+                        <Button type="button" size="icon" variant="ghost" className="h-8 w-8 text-destructive" onClick={() => setSupplyItems((current) => current.filter((row) => row.ingredientId !== item.ingredientId))}>
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
               <Button
                 className="w-full gap-2"
-                disabled={!selectedStoreId || !supplyForm.ingredientId || !supplyForm.quantity || createSupplyOrder.isPending}
+                disabled={!selectedStoreId || supplyItems.length === 0 || createSupplyOrder.isPending}
                 onClick={() => {
                   if (!selectedStoreId) return toast.error("Selecione uma loja.");
                   createSupplyOrder.mutate({
                     storeId: selectedStoreId,
                     notes: supplyForm.notes || undefined,
                     submit: true,
-                    items: [{ ingredientId: Number(supplyForm.ingredientId), quantityRequested: supplyForm.quantity }],
+                    items: supplyItems.map((item) => ({ ingredientId: item.ingredientId, quantityRequested: item.quantityRequested })),
                   });
                 }}
               >
@@ -265,7 +332,7 @@ export function NetworkFinanceTab() {
           </AdminSurface>
         </div>
 
-        <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+        <div className={`grid grid-cols-1 ${mode === "finance" ? "xl:grid-cols-2" : ""} gap-4`}>
           <AdminSurface
             title="Pedidos das lojas para o CD"
             subtitle="Fluxo real: loja solicita, CD aprova/separa/envia, loja recebe."
@@ -275,7 +342,7 @@ export function NetworkFinanceTab() {
               <AdminEmptyState icon={<PackageCheck />} title="Nenhum pedido ao CD" description="Os pedidos criados pelas lojas aparecerão aqui." />
             ) : (
               <div className="space-y-2">
-                {supplyOrders.slice(0, 12).map((order) => (
+                {supplyOrders.slice(0, mode === "distribution" ? 80 : 12).map((order) => (
                   <div key={order.id} className="flex items-center justify-between gap-3 rounded-xl border p-3">
                     <div className="min-w-0">
                       <p className="font-semibold">#{order.id} · {order.storeName ?? "Loja"}</p>
