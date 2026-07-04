@@ -8978,13 +8978,14 @@ async function executeRows(db, query) {
   return result[0] ?? [];
 }
 async function hasColumn3(db, tableName, columnName) {
-  const rows = await executeRows(db, `
+  const result = await db.execute(sql5`
     SELECT COUNT(*) AS count
     FROM INFORMATION_SCHEMA.COLUMNS
     WHERE TABLE_SCHEMA = DATABASE()
-      AND TABLE_NAME = ${JSON.stringify(tableName)}
-      AND COLUMN_NAME = ${JSON.stringify(columnName)}
+      AND TABLE_NAME = ${tableName}
+      AND COLUMN_NAME = ${columnName}
   `);
+  const rows = result[0] ?? [];
   return Number(rows[0]?.count ?? 0) > 0;
 }
 async function ensureRestaurantNetworkSchema() {

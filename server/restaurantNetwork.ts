@@ -20,13 +20,14 @@ async function executeRows<T = Record<string, unknown>>(db: Db, query: string): 
 }
 
 async function hasColumn(db: Db, tableName: string, columnName: string) {
-  const rows = await executeRows<{ count: number }>(db, `
+  const result = await db.execute(sql`
     SELECT COUNT(*) AS count
     FROM INFORMATION_SCHEMA.COLUMNS
     WHERE TABLE_SCHEMA = DATABASE()
-      AND TABLE_NAME = ${JSON.stringify(tableName)}
-      AND COLUMN_NAME = ${JSON.stringify(columnName)}
+      AND TABLE_NAME = ${tableName}
+      AND COLUMN_NAME = ${columnName}
   `);
+  const rows = ((result as unknown as [Array<{ count: number }>])[0] ?? []) as Array<{ count: number }>;
   return Number(rows[0]?.count ?? 0) > 0;
 }
 
