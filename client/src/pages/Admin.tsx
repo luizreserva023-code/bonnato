@@ -66,6 +66,7 @@ import { usePushNotifications } from "@/hooks/usePushNotifications";
 import { Bell, BellOff } from "lucide-react";
 import { JoinedPagination } from "@/components/ui/joined-pagination";
 import { MarketplacesTab } from "./admin/MarketplacesTab";
+import { NetworkFinanceTab } from "./admin/NetworkFinanceTab";
 import { StoresTab } from "./admin/StoresTab";
 import { Building2, Store, ChevronDown, ChevronLeft, ChevronRight } from "lucide-react";
 import { AdminStoreProvider, useAdminStore } from "@/contexts/AdminStoreContext";
@@ -107,7 +108,7 @@ const PAYMENT_LABELS: Record<string, string> = {
   cash: "Dinheiro",
 };
 
-type AdminTab = "dashboard" | "orders" | "messages" | "menu" | "club" | "coupons" | "reports" | "promotions" | "raffles" | "upsells" | "users" | "drivers" | "settings" | "payments" | "marketplaces" | "stores" | "recovery";
+type AdminTab = "dashboard" | "orders" | "messages" | "menu" | "club" | "coupons" | "reports" | "network" | "promotions" | "raffles" | "upsells" | "users" | "drivers" | "settings" | "payments" | "marketplaces" | "stores" | "recovery";
 type ClubAdminPlanId = "bonattao" | "basico";
 type ClubAdminPlan = {
   id: ClubAdminPlanId;
@@ -172,6 +173,7 @@ const NAV_ITEMS: NavItem[] = [
     ],
   },
   { id: "reports" as AdminTab, label: "Relatórios", icon: <TrendingUp className="w-[18px] h-[18px]" /> },
+  { id: "network" as AdminTab, label: "Rede & Financeiro", icon: <Building2 className="w-[18px] h-[18px]" /> },
   {
     id: "drivers" as AdminTab, label: "Entregas", icon: <Bike className="w-[18px] h-[18px]" />,
     children: [
@@ -581,6 +583,7 @@ export default function Admin() {
             {activeTab === "upsells" && <UpsellsTab />}
             {activeTab === "users" && <UsersTab />}
             {activeTab === "reports" && <ReportsTab />}
+            {activeTab === "network" && <NetworkFinanceTab />}
             {activeTab === "drivers" && <DriversTab />}
             {activeTab === "messages" && <MessagesTab />}
             {activeTab === "payments" && isAdmin && <PaymentsTab />}

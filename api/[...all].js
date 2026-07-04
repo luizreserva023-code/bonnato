@@ -7465,7 +7465,7 @@ var storesRouter = router({
 
 // server/routers.ts
 init_push();
-import { z as z6 } from "zod";
+import { z as z7 } from "zod";
 init_db();
 init_timezone();
 init_db();
@@ -8960,6 +8960,485 @@ async function pullMarketplaceOrders(providerId) {
   return { success: true };
 }
 
+// server/restaurantNetwork.ts
+init_db();
+import { sql as sql5 } from "drizzle-orm";
+import { z as z6 } from "zod";
+function toSqlDate(date) {
+  return date.toISOString().slice(0, 19).replace("T", " ");
+}
+function money(value) {
+  const parsed = Number(value ?? 0);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+async function executeRows(db, query) {
+  const result = await db.execute(sql5.raw(query));
+  return result[0] ?? [];
+}
+async function ensureRestaurantNetworkSchema() {
+  const db = await getDb();
+  if (!db) throw new Error("Database unavailable");
+  await db.execute(sql5.raw(`
+    CREATE TABLE IF NOT EXISTS distribution_stock (
+      id int NOT NULL AUTO_INCREMENT,
+      ingredientId int NOT NULL,
+      quantity decimal(12,3) NOT NULL DEFAULT '0.000',
+      minimumStock decimal(12,3) NOT NULL DEFAULT '0.000',
+      averageCost decimal(10,4) NOT NULL DEFAULT '0.0000',
+      updatedAt timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      PRIMARY KEY (id),
+      UNIQUE KEY distribution_stock_ingredient_uq (ingredientId),
+      KEY distribution_stock_low_idx (quantity, minimumStock)
+    )
+  `));
+  await db.execute(sql5.raw(`
+    CREATE TABLE IF NOT EXISTS store_supply_orders (
+      id int NOT NULL AUTO_INCREMENT,
+      storeId int NOT NULL,
+      requestedByUserId int,
+      status enum('draft','submitted','in_review','approved','picking','shipped','received','rejected','cancelled') NOT NULL DEFAULT 'draft',
+      estimatedCost decimal(12,2) NOT NULL DEFAULT '0.00',
+      notes text,
+      reviewedByUserId int,
+      reviewedAt timestamp NULL,
+      shippedAt timestamp NULL,
+      receivedAt timestamp NULL,
+      createdAt timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updatedAt timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      PRIMARY KEY (id),
+      KEY store_supply_orders_store_idx (storeId),
+      KEY store_supply_orders_status_idx (status),
+      KEY store_supply_orders_created_idx (createdAt)
+    )
+  `));
+  await db.execute(sql5.raw(`
+    CREATE TABLE IF NOT EXISTS store_supply_order_items (
+      id int NOT NULL AUTO_INCREMENT,
+      supplyOrderId int NOT NULL,
+      ingredientId int NOT NULL,
+      productName varchar(180) NOT NULL,
+      unit varchar(20) NOT NULL,
+      quantityRequested decimal(12,3) NOT NULL,
+      quantityApproved decimal(12,3),
+      unitCost decimal(10,4) NOT NULL DEFAULT '0.0000',
+      PRIMARY KEY (id),
+      KEY supply_items_order_idx (supplyOrderId),
+      KEY supply_items_ingredient_idx (ingredientId)
+    )
+  `));
+  await db.execute(sql5.raw(`
+    CREATE TABLE IF NOT EXISTS network_expenses (
+      id int NOT NULL AUTO_INCREMENT,
+      storeId int,
+      category varchar(120) NOT NULL,
+      description varchar(255) NOT NULL,
+      amount decimal(12,2) NOT NULL,
+      paymentMethod varchar(80),
+      status enum('pending','paid','cancelled') NOT NULL DEFAULT 'paid',
+      expenseDate date NOT NULL,
+      receiptUrl text,
+      createdByUserId int,
+      notes text,
+      createdAt timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updatedAt timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      PRIMARY KEY (id),
+      KEY network_expenses_store_date_idx (storeId, expenseDate),
+      KEY network_expenses_category_idx (category),
+      KEY network_expenses_status_idx (status)
+    )
+  `));
+  await db.execute(sql5.raw(`
+    CREATE TABLE IF NOT EXISTS network_financial_fees (
+      id int NOT NULL AUTO_INCREMENT,
+      storeId int,
+      name varchar(160) NOT NULL,
+      category varchar(120) NOT NULL,
+      calculationType enum('fixed','percentage') NOT NULL DEFAULT 'fixed',
+      rate decimal(10,4) NOT NULL DEFAULT '0.0000',
+      amount decimal(12,2) NOT NULL DEFAULT '0.00',
+      periodStart date NOT NULL,
+      periodEnd date NOT NULL,
+      notes text,
+      createdByUserId int,
+      createdAt timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updatedAt timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      PRIMARY KEY (id),
+      KEY network_fees_store_period_idx (storeId, periodStart, periodEnd),
+      KEY network_fees_category_idx (category)
+    )
+  `));
+  await db.execute(sql5.raw(`
+    CREATE TABLE IF NOT EXISTS network_monthly_closings (
+      id int NOT NULL AUTO_INCREMENT,
+      storeId int,
+      year int NOT NULL,
+      month int NOT NULL,
+      status enum('open','in_review','closed','reopened') NOT NULL DEFAULT 'open',
+      revenueTotal decimal(12,2) NOT NULL DEFAULT '0.00',
+      expenseTotal decimal(12,2) NOT NULL DEFAULT '0.00',
+      feeTotal decimal(12,2) NOT NULL DEFAULT '0.00',
+      supplyCostTotal decimal(12,2) NOT NULL DEFAULT '0.00',
+      netResult decimal(12,2) NOT NULL DEFAULT '0.00',
+      marginPercent decimal(7,2) NOT NULL DEFAULT '0.00',
+      notes text,
+      closedByUserId int,
+      closedAt timestamp NULL,
+      createdAt timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updatedAt timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      PRIMARY KEY (id),
+      UNIQUE KEY network_closings_store_month_uq (storeId, year, month),
+      KEY network_closings_period_idx (year, month),
+      KEY network_closings_status_idx (status)
+    )
+  `));
+  await db.execute(sql5.raw(`
+    CREATE TABLE IF NOT EXISTS network_audit_logs (
+      id int NOT NULL AUTO_INCREMENT,
+      actorUserId int,
+      storeId int,
+      action varchar(120) NOT NULL,
+      entityType varchar(80) NOT NULL,
+      entityId int,
+      metadata text,
+      createdAt timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (id),
+      KEY network_audit_actor_idx (actorUserId),
+      KEY network_audit_store_idx (storeId),
+      KEY network_audit_action_idx (action),
+      KEY network_audit_created_idx (createdAt)
+    )
+  `));
+}
+async function audit(input) {
+  const db = await getDb();
+  if (!db) return;
+  await ensureRestaurantNetworkSchema();
+  await db.execute(sql5.raw(`
+    INSERT INTO network_audit_logs (actorUserId, storeId, action, entityType, entityId, metadata)
+    VALUES (${input.actorUserId ?? "NULL"}, ${input.storeId ?? "NULL"}, ${JSON.stringify(input.action)}, ${JSON.stringify(input.entityType)}, ${input.entityId ?? "NULL"}, ${JSON.stringify(JSON.stringify(input.metadata ?? {}))})
+  `));
+}
+var supplyOrderItemSchema = z6.object({
+  ingredientId: z6.number().int().positive(),
+  quantityRequested: z6.string().regex(/^\d+(\.\d{1,3})?$/),
+  quantityApproved: z6.string().regex(/^\d+(\.\d{1,3})?$/).optional()
+});
+var createSupplyOrderSchema = z6.object({
+  storeId: z6.number().int().positive(),
+  notes: z6.string().max(5e3).optional(),
+  submit: z6.boolean().optional(),
+  items: z6.array(supplyOrderItemSchema).min(1).max(100)
+});
+async function listSupplyOrders(opts) {
+  await ensureRestaurantNetworkSchema();
+  const db = await getDb();
+  if (!db) return [];
+  const conditions = [
+    opts.storeId ? `o.storeId = ${opts.storeId}` : "",
+    opts.status ? `o.status = ${JSON.stringify(opts.status)}` : ""
+  ].filter(Boolean);
+  const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
+  return executeRows(db, `
+    SELECT o.*, s.name AS storeName, COUNT(i.id) AS itemCount
+    FROM store_supply_orders o
+    LEFT JOIN stores s ON s.id = o.storeId
+    LEFT JOIN store_supply_order_items i ON i.supplyOrderId = o.id
+    ${where}
+    GROUP BY o.id
+    ORDER BY o.createdAt DESC
+    LIMIT 250
+  `);
+}
+async function getSupplyOrderDetails(id) {
+  await ensureRestaurantNetworkSchema();
+  const db = await getDb();
+  if (!db) return null;
+  const [order] = await executeRows(db, `
+    SELECT o.*, s.name AS storeName
+    FROM store_supply_orders o
+    LEFT JOIN stores s ON s.id = o.storeId
+    WHERE o.id = ${id}
+    LIMIT 1
+  `);
+  if (!order) return null;
+  const items = await executeRows(db, `
+    SELECT i.*, ing.name AS ingredientName, ing.category, ing.currentStock, ing.minimumStock
+    FROM store_supply_order_items i
+    LEFT JOIN ingredients ing ON ing.id = i.ingredientId
+    WHERE i.supplyOrderId = ${id}
+    ORDER BY i.id
+  `);
+  return { ...order, items };
+}
+async function createSupplyOrder(input, actorUserId) {
+  await ensureRestaurantNetworkSchema();
+  const db = await getDb();
+  if (!db) throw new Error("Database unavailable");
+  const ingredientRows = await executeRows(db, `
+    SELECT id, name, unit, unitCost
+    FROM ingredients
+    WHERE id IN (${input.items.map((item) => item.ingredientId).join(",")})
+  `);
+  const ingredientById = new Map(ingredientRows.map((row) => [Number(row.id), row]));
+  const estimatedCost = input.items.reduce((sum, item) => {
+    const ingredient = ingredientById.get(item.ingredientId);
+    return sum + Number(item.quantityRequested) * money(ingredient?.unitCost);
+  }, 0);
+  const status = input.submit ? "submitted" : "draft";
+  const result = await db.execute(sql5.raw(`
+    INSERT INTO store_supply_orders (storeId, requestedByUserId, status, estimatedCost, notes)
+    VALUES (${input.storeId}, ${actorUserId}, '${status}', '${estimatedCost.toFixed(2)}', ${JSON.stringify(input.notes ?? null)})
+  `));
+  const orderId = Number(result[0]?.insertId ?? 0);
+  for (const item of input.items) {
+    const ingredient = ingredientById.get(item.ingredientId);
+    if (!ingredient) continue;
+    const approved = item.quantityApproved ?? item.quantityRequested;
+    await db.execute(sql5.raw(`
+      INSERT INTO store_supply_order_items
+        (supplyOrderId, ingredientId, productName, unit, quantityRequested, quantityApproved, unitCost)
+      VALUES
+        (${orderId}, ${item.ingredientId}, ${JSON.stringify(ingredient.name)}, ${JSON.stringify(ingredient.unit)}, '${item.quantityRequested}', '${approved}', '${money(ingredient.unitCost).toFixed(4)}')
+    `));
+  }
+  await audit({ actorUserId, storeId: input.storeId, action: "supply_order.create", entityType: "store_supply_order", entityId: orderId, metadata: { status } });
+  return { id: orderId };
+}
+var updateSupplyOrderStatusSchema = z6.object({
+  id: z6.number().int().positive(),
+  status: z6.enum(["submitted", "in_review", "approved", "picking", "shipped", "received", "rejected", "cancelled"]),
+  notes: z6.string().max(5e3).optional()
+});
+async function updateSupplyOrderStatus(input, actorUserId) {
+  await ensureRestaurantNetworkSchema();
+  const db = await getDb();
+  if (!db) throw new Error("Database unavailable");
+  const details = await getSupplyOrderDetails(input.id);
+  if (!details) throw new Error("Pedido ao CD nao encontrado");
+  const timestampColumn = input.status === "shipped" ? ", shippedAt = CURRENT_TIMESTAMP" : input.status === "received" ? ", receivedAt = CURRENT_TIMESTAMP" : ["approved", "rejected", "cancelled", "in_review"].includes(input.status) ? ", reviewedAt = CURRENT_TIMESTAMP" : "";
+  await db.execute(sql5.raw(`
+    UPDATE store_supply_orders
+    SET status = '${input.status}', reviewedByUserId = ${actorUserId}, notes = COALESCE(${JSON.stringify(input.notes ?? null)}, notes) ${timestampColumn}
+    WHERE id = ${input.id}
+  `));
+  if (input.status === "received") {
+    for (const item of details.items ?? []) {
+      const quantity = Number(item.quantityApproved ?? item.quantityRequested ?? 0);
+      if (quantity <= 0) continue;
+      await db.execute(sql5.raw(`
+        UPDATE ingredients
+        SET currentStock = CAST(currentStock AS DECIMAL(12,3)) + ${quantity}
+        WHERE id = ${Number(item.ingredientId)}
+      `));
+      await db.execute(sql5.raw(`
+        INSERT INTO inventory_movements
+          (ingredientId, storeId, movementType, quantityDelta, previousStock, nextStock, reason, performedByUserId)
+        SELECT id, ${Number(details.storeId)}, 'entry', '${quantity.toFixed(3)}',
+          CAST(currentStock AS DECIMAL(12,3)) - ${quantity},
+          currentStock,
+          ${JSON.stringify(`Recebimento do pedido ao CD #${input.id}`)},
+          ${actorUserId}
+        FROM ingredients
+        WHERE id = ${Number(item.ingredientId)}
+      `));
+    }
+  }
+  await audit({ actorUserId, storeId: Number(details.storeId), action: `supply_order.${input.status}`, entityType: "store_supply_order", entityId: input.id, metadata: { notes: input.notes } });
+  return { ok: true };
+}
+var createExpenseSchema = z6.object({
+  storeId: z6.number().int().positive().optional(),
+  category: z6.string().min(1).max(120),
+  description: z6.string().min(1).max(255),
+  amount: z6.string().regex(/^\d+(\.\d{1,2})?$/),
+  paymentMethod: z6.string().max(80).optional(),
+  status: z6.enum(["pending", "paid", "cancelled"]).optional(),
+  expenseDate: z6.date(),
+  receiptUrl: z6.string().url().optional(),
+  notes: z6.string().max(5e3).optional()
+});
+async function createExpense(input, actorUserId, scopedStoreId) {
+  await ensureRestaurantNetworkSchema();
+  const db = await getDb();
+  if (!db) throw new Error("Database unavailable");
+  const storeId = scopedStoreId ?? input.storeId ?? null;
+  const result = await db.execute(sql5.raw(`
+    INSERT INTO network_expenses
+      (storeId, category, description, amount, paymentMethod, status, expenseDate, receiptUrl, createdByUserId, notes)
+    VALUES
+      (${storeId ?? "NULL"}, ${JSON.stringify(input.category)}, ${JSON.stringify(input.description)}, '${input.amount}', ${JSON.stringify(input.paymentMethod ?? null)}, '${input.status ?? "paid"}', '${toSqlDate(input.expenseDate).slice(0, 10)}', ${JSON.stringify(input.receiptUrl ?? null)}, ${actorUserId}, ${JSON.stringify(input.notes ?? null)})
+  `));
+  const id = Number(result[0]?.insertId ?? 0);
+  await audit({ actorUserId, storeId, action: "expense.create", entityType: "network_expense", entityId: id, metadata: input });
+  return { id };
+}
+var createFinancialFeeSchema = z6.object({
+  storeId: z6.number().int().positive().optional(),
+  name: z6.string().min(1).max(160),
+  category: z6.string().min(1).max(120),
+  calculationType: z6.enum(["fixed", "percentage"]).default("fixed"),
+  rate: z6.string().regex(/^\d+(\.\d{1,4})?$/).optional(),
+  amount: z6.string().regex(/^\d+(\.\d{1,2})?$/),
+  periodStart: z6.date(),
+  periodEnd: z6.date(),
+  notes: z6.string().max(5e3).optional()
+});
+async function createFinancialFee(input, actorUserId, scopedStoreId) {
+  await ensureRestaurantNetworkSchema();
+  const db = await getDb();
+  if (!db) throw new Error("Database unavailable");
+  const storeId = scopedStoreId ?? input.storeId ?? null;
+  const result = await db.execute(sql5.raw(`
+    INSERT INTO network_financial_fees
+      (storeId, name, category, calculationType, rate, amount, periodStart, periodEnd, notes, createdByUserId)
+    VALUES
+      (${storeId ?? "NULL"}, ${JSON.stringify(input.name)}, ${JSON.stringify(input.category)}, '${input.calculationType}', '${input.rate ?? "0"}', '${input.amount}', '${toSqlDate(input.periodStart).slice(0, 10)}', '${toSqlDate(input.periodEnd).slice(0, 10)}', ${JSON.stringify(input.notes ?? null)}, ${actorUserId})
+  `));
+  const id = Number(result[0]?.insertId ?? 0);
+  await audit({ actorUserId, storeId, action: "fee.create", entityType: "network_financial_fee", entityId: id, metadata: input });
+  return { id };
+}
+async function getFinancialOverview(opts) {
+  await ensureRestaurantNetworkSchema();
+  const db = await getDb();
+  if (!db) return { totals: {}, expenses: [], fees: [], supplyOrders: [], storeRanking: [] };
+  const start = toSqlDate(opts.startDate);
+  const end = toSqlDate(opts.endDate);
+  const storeFilter = opts.storeId ? `AND storeId = ${opts.storeId}` : "";
+  const nullableStoreFilter = opts.storeId ? `AND (storeId = ${opts.storeId} OR storeId IS NULL)` : "";
+  const [revenue] = await executeRows(db, `
+    SELECT COALESCE(SUM(total), 0) AS total, COUNT(*) AS count
+    FROM orders
+    WHERE createdAt BETWEEN '${start}' AND '${end}' ${storeFilter} AND status <> 'cancelled'
+  `);
+  const [expenses] = await executeRows(db, `
+    SELECT COALESCE(SUM(amount), 0) AS total, COUNT(*) AS count
+    FROM network_expenses
+    WHERE expenseDate BETWEEN '${start.slice(0, 10)}' AND '${end.slice(0, 10)}' ${nullableStoreFilter} AND status <> 'cancelled'
+  `);
+  const [fees] = await executeRows(db, `
+    SELECT COALESCE(SUM(amount), 0) AS total, COUNT(*) AS count
+    FROM network_financial_fees
+    WHERE periodStart <= '${end.slice(0, 10)}' AND periodEnd >= '${start.slice(0, 10)}' ${nullableStoreFilter}
+  `);
+  const [supply] = await executeRows(db, `
+    SELECT COALESCE(SUM(estimatedCost), 0) AS total, COUNT(*) AS count
+    FROM store_supply_orders
+    WHERE createdAt BETWEEN '${start}' AND '${end}' ${storeFilter} AND status IN ('approved','picking','shipped','received')
+  `);
+  const revenueTotal = money(revenue?.total);
+  const expenseTotal = money(expenses?.total);
+  const feeTotal = money(fees?.total);
+  const supplyCostTotal = money(supply?.total);
+  const netResult = revenueTotal - expenseTotal - feeTotal - supplyCostTotal;
+  const expensesByCategory = await executeRows(db, `
+    SELECT category, COALESCE(SUM(amount), 0) AS total, COUNT(*) AS count
+    FROM network_expenses
+    WHERE expenseDate BETWEEN '${start.slice(0, 10)}' AND '${end.slice(0, 10)}' ${nullableStoreFilter} AND status <> 'cancelled'
+    GROUP BY category
+    ORDER BY total DESC
+    LIMIT 20
+  `);
+  const storeRanking = await executeRows(db, `
+    SELECT s.id, s.name,
+      COALESCE(SUM(o.total), 0) AS revenue,
+      COALESCE((SELECT SUM(e.amount) FROM network_expenses e WHERE e.storeId = s.id AND e.expenseDate BETWEEN '${start.slice(0, 10)}' AND '${end.slice(0, 10)}' AND e.status <> 'cancelled'), 0) AS expenses
+    FROM stores s
+    LEFT JOIN orders o ON o.storeId = s.id AND o.createdAt BETWEEN '${start}' AND '${end}' AND o.status <> 'cancelled'
+    WHERE s.active = true
+    GROUP BY s.id
+    ORDER BY revenue DESC
+    LIMIT 25
+  `);
+  const supplyOrders = await listSupplyOrders({ storeId: opts.storeId });
+  return {
+    totals: {
+      revenueTotal,
+      orderCount: Number(revenue?.count ?? 0),
+      expenseTotal,
+      expenseCount: Number(expenses?.count ?? 0),
+      feeTotal,
+      feeCount: Number(fees?.count ?? 0),
+      supplyCostTotal,
+      supplyOrderCount: Number(supply?.count ?? 0),
+      netResult,
+      marginPercent: revenueTotal > 0 ? Number((netResult / revenueTotal * 100).toFixed(2)) : 0
+    },
+    expensesByCategory,
+    storeRanking,
+    supplyOrders
+  };
+}
+var createMonthlyClosingSchema = z6.object({
+  storeId: z6.number().int().positive().optional(),
+  year: z6.number().int().min(2020).max(2100),
+  month: z6.number().int().min(1).max(12),
+  status: z6.enum(["open", "in_review", "closed", "reopened"]).default("in_review"),
+  notes: z6.string().max(5e3).optional()
+});
+async function upsertMonthlyClosing(input, actorUserId, scopedStoreId) {
+  await ensureRestaurantNetworkSchema();
+  const db = await getDb();
+  if (!db) throw new Error("Database unavailable");
+  const storeId = scopedStoreId ?? input.storeId ?? null;
+  const start = new Date(input.year, input.month - 1, 1);
+  const end = new Date(input.year, input.month, 0, 23, 59, 59);
+  const overview = await getFinancialOverview({ storeId: storeId ?? void 0, startDate: start, endDate: end });
+  const totals = overview.totals;
+  const closedAt = input.status === "closed" ? "CURRENT_TIMESTAMP" : "NULL";
+  await db.execute(sql5.raw(`
+    INSERT INTO network_monthly_closings
+      (storeId, year, month, status, revenueTotal, expenseTotal, feeTotal, supplyCostTotal, netResult, marginPercent, notes, closedByUserId, closedAt)
+    VALUES
+      (${storeId ?? "NULL"}, ${input.year}, ${input.month}, '${input.status}', '${totals.revenueTotal.toFixed(2)}', '${totals.expenseTotal.toFixed(2)}', '${totals.feeTotal.toFixed(2)}', '${totals.supplyCostTotal.toFixed(2)}', '${totals.netResult.toFixed(2)}', '${totals.marginPercent.toFixed(2)}', ${JSON.stringify(input.notes ?? null)}, ${actorUserId}, ${closedAt})
+    ON DUPLICATE KEY UPDATE
+      status = VALUES(status),
+      revenueTotal = VALUES(revenueTotal),
+      expenseTotal = VALUES(expenseTotal),
+      feeTotal = VALUES(feeTotal),
+      supplyCostTotal = VALUES(supplyCostTotal),
+      netResult = VALUES(netResult),
+      marginPercent = VALUES(marginPercent),
+      notes = VALUES(notes),
+      closedByUserId = VALUES(closedByUserId),
+      closedAt = VALUES(closedAt),
+      updatedAt = CURRENT_TIMESTAMP
+  `));
+  await audit({ actorUserId, storeId, action: `monthly_closing.${input.status}`, entityType: "network_monthly_closing", metadata: input });
+  return { ok: true };
+}
+async function listMonthlyClosings(opts) {
+  await ensureRestaurantNetworkSchema();
+  const db = await getDb();
+  if (!db) return [];
+  const conditions = [
+    opts.storeId ? `c.storeId = ${opts.storeId}` : "",
+    opts.year ? `c.year = ${opts.year}` : ""
+  ].filter(Boolean);
+  const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
+  return executeRows(db, `
+    SELECT c.*, s.name AS storeName
+    FROM network_monthly_closings c
+    LEFT JOIN stores s ON s.id = c.storeId
+    ${where}
+    ORDER BY c.year DESC, c.month DESC, s.name
+    LIMIT 120
+  `);
+}
+async function listAuditLogs(opts) {
+  await ensureRestaurantNetworkSchema();
+  const db = await getDb();
+  if (!db) return [];
+  const where = opts.storeId ? `WHERE storeId = ${opts.storeId}` : "";
+  return executeRows(db, `
+    SELECT *
+    FROM network_audit_logs
+    ${where}
+    ORDER BY createdAt DESC
+    LIMIT ${opts.limit ?? 100}
+  `);
+}
+
 // server/focusnfe.ts
 init_db();
 init_schema();
@@ -9243,7 +9722,7 @@ async function sendWelcomeEmail(to, name) {
 // server/orderLifecycle.ts
 init_schema();
 init_db();
-import { and as and8, eq as eq11, sql as sql5 } from "drizzle-orm";
+import { and as and8, eq as eq11, sql as sql6 } from "drizzle-orm";
 var STAGE_BY_STATUS = {
   pending: "created",
   confirmed: "confirmed",
@@ -9288,7 +9767,7 @@ async function computePredictionWindow(order) {
   const activeRows = await db.select({ id: orders.id }).from(orders).where(
     and8(
       order.storeId ? eq11(orders.storeId, order.storeId) : void 0,
-      sql5`${orders.status} IN ('pending', 'confirmed', 'preparing', 'out_for_delivery')`
+      sql6`${orders.status} IN ('pending', 'confirmed', 'preparing', 'out_for_delivery')`
     )
   );
   const queuePressure = Math.max(0, activeRows.length - 1);
@@ -9326,7 +9805,7 @@ async function computePredictionWindow(order) {
 async function syncCustomerMetricsForScope(userId, scopeStoreId) {
   const db = await getDb();
   if (!db) return;
-  const rows = await db.execute(sql5`
+  const rows = await db.execute(sql6`
     SELECT
       MIN(CASE WHEN status = 'delivered' THEN createdAt END) AS firstOrderAt,
       MAX(createdAt) AS lastOrderAt,
@@ -9753,10 +10232,10 @@ var appRouter = router({
       ctx.res.clearCookie(COOKIE_NAME, { ...cookieOptions, maxAge: -1 });
       return { success: true };
     }),
-    registerEmail: publicProcedure.input(z6.object({
-      name: z6.string().min(2, "Nome deve ter pelo menos 2 caracteres"),
-      email: z6.string().email("E-mail inv\xE1lido"),
-      password: z6.string().min(6, "Senha deve ter pelo menos 6 caracteres")
+    registerEmail: publicProcedure.input(z7.object({
+      name: z7.string().min(2, "Nome deve ter pelo menos 2 caracteres"),
+      email: z7.string().email("E-mail inv\xE1lido"),
+      password: z7.string().min(6, "Senha deve ter pelo menos 6 caracteres")
     })).mutation(async ({ input, ctx }) => {
       const existing = await getUserByEmail(input.email);
       if (existing) {
@@ -9771,9 +10250,9 @@ var appRouter = router({
       ctx.res.cookie(COOKIE_NAME, sessionToken, { ...cookieOptions, maxAge: DEFAULT_SESSION_MS });
       return { success: true };
     }),
-    loginEmail: publicProcedure.input(z6.object({
-      email: z6.string().email("E-mail inv\xE1lido"),
-      password: z6.string().min(1)
+    loginEmail: publicProcedure.input(z7.object({
+      email: z7.string().email("E-mail inv\xE1lido"),
+      password: z7.string().min(1)
     })).mutation(async ({ input, ctx }) => {
       const user = await getUserByEmail(input.email);
       if (!user || !user.passwordHash) {
@@ -9788,8 +10267,8 @@ var appRouter = router({
       ctx.res.cookie(COOKIE_NAME, sessionToken, { ...cookieOptions, maxAge: DEFAULT_SESSION_MS });
       return { success: true };
     }),
-    forgotPassword: publicProcedure.input(z6.object({
-      email: z6.string().email("E-mail inv\xE1lido")
+    forgotPassword: publicProcedure.input(z7.object({
+      email: z7.string().email("E-mail inv\xE1lido")
     })).mutation(async ({ input, ctx }) => {
       const user = await getUserByEmail(input.email);
       if (!user) return { success: true, emailSent: false };
@@ -9815,9 +10294,9 @@ var appRouter = router({
       }
       return { success: true, emailSent };
     }),
-    resetPassword: publicProcedure.input(z6.object({
-      token: z6.string().min(1),
-      password: z6.string().min(6, "Senha deve ter pelo menos 6 caracteres")
+    resetPassword: publicProcedure.input(z7.object({
+      token: z7.string().min(1),
+      password: z7.string().min(6, "Senha deve ter pelo menos 6 caracteres")
     })).mutation(async ({ input, ctx }) => {
       const user = await getUserByResetToken(input.token);
       if (!user || !user.resetTokenExpiresAt) {
@@ -9834,9 +10313,9 @@ var appRouter = router({
       ctx.res.cookie(COOKIE_NAME, sessionToken, { ...cookieOptions, maxAge: DEFAULT_SESSION_MS });
       return { success: true };
     }),
-    requestPhoneOtp: publicProcedure.input(z6.object({
-      phone: z6.string().min(10, "Telefone inv\xE1lido"),
-      purpose: z6.enum(["login", "verify_phone"]).optional()
+    requestPhoneOtp: publicProcedure.input(z7.object({
+      phone: z7.string().min(10, "Telefone inv\xE1lido"),
+      purpose: z7.enum(["login", "verify_phone"]).optional()
     })).mutation(async ({ input, ctx }) => {
       const phone = normalizePhone(input.phone);
       if (phone.length < 10) {
@@ -9874,11 +10353,11 @@ var appRouter = router({
         previewCode: process.env.NODE_ENV === "production" ? void 0 : code
       };
     }),
-    verifyPhoneOtp: publicProcedure.input(z6.object({
-      phone: z6.string().min(10, "Telefone inv\xE1lido"),
-      code: z6.string().length(6, "C\xF3digo inv\xE1lido"),
-      purpose: z6.enum(["login", "verify_phone"]).optional(),
-      name: z6.string().min(2).optional()
+    verifyPhoneOtp: publicProcedure.input(z7.object({
+      phone: z7.string().min(10, "Telefone inv\xE1lido"),
+      code: z7.string().length(6, "C\xF3digo inv\xE1lido"),
+      purpose: z7.enum(["login", "verify_phone"]).optional(),
+      name: z7.string().min(2).optional()
     })).mutation(async ({ input, ctx }) => {
       const phone = normalizePhone(input.phone);
       const otp = await getLatestOtpCode(phone, input.purpose ?? "login");
@@ -9922,36 +10401,36 @@ var appRouter = router({
   }),
   // --- CATEGORIES -------------------------------------------------------------
   categories: router({
-    list: publicProcedure.input(z6.object({ activeOnly: z6.boolean().optional() }).optional()).query(({ input }) => getCategories(input?.activeOnly ?? true)),
+    list: publicProcedure.input(z7.object({ activeOnly: z7.boolean().optional() }).optional()).query(({ input }) => getCategories(input?.activeOnly ?? true)),
     listAll: staffProcedure.query(() => getCategories(false)),
     create: staffProcedure.input(
-      z6.object({
-        name: z6.string().min(1),
-        slug: z6.string().min(1),
-        description: z6.string().optional(),
-        imageUrl: z6.string().max(2048).optional(),
-        icon: z6.string().max(64).optional(),
-        sortOrder: z6.number().optional()
+      z7.object({
+        name: z7.string().min(1),
+        slug: z7.string().min(1),
+        description: z7.string().optional(),
+        imageUrl: z7.string().max(2048).optional(),
+        icon: z7.string().max(64).optional(),
+        sortOrder: z7.number().optional()
       })
     ).mutation(({ input }) => createCategory({ ...input, active: true })),
     update: staffProcedure.input(
-      z6.object({
-        id: z6.number(),
-        name: z6.string().optional(),
-        description: z6.string().optional(),
-        imageUrl: z6.string().max(2048).optional(),
-        icon: z6.string().max(64).optional(),
-        sortOrder: z6.number().optional(),
-        active: z6.boolean().optional()
+      z7.object({
+        id: z7.number(),
+        name: z7.string().optional(),
+        description: z7.string().optional(),
+        imageUrl: z7.string().max(2048).optional(),
+        icon: z7.string().max(64).optional(),
+        sortOrder: z7.number().optional(),
+        active: z7.boolean().optional()
       })
     ).mutation(({ input }) => {
       const { id, ...data } = input;
       return updateCategory(id, data);
     }),
-    uploadImage: staffProcedure.input(z6.object({
-      base64: z6.string().max(43e5),
-      mimeType: z6.enum(["image/jpeg", "image/png", "image/webp", "image/gif"]),
-      fileName: z6.string().max(255).optional()
+    uploadImage: staffProcedure.input(z7.object({
+      base64: z7.string().max(43e5),
+      mimeType: z7.enum(["image/jpeg", "image/png", "image/webp", "image/gif"]),
+      fileName: z7.string().max(255).optional()
     })).mutation(async ({ input }) => {
       const { storagePutAdapter: storagePut2 } = await Promise.resolve().then(() => (init_storage2(), storage_exports2));
       const { compressToWebP: compressToWebP2 } = await Promise.resolve().then(() => (init_imageUtils(), imageUtils_exports));
@@ -9962,47 +10441,47 @@ var appRouter = router({
       console.log(`[upload] categoria comprimida ${reductionPct}% -> WebP`);
       return { url };
     }),
-    delete: staffProcedure.input(z6.object({ id: z6.number() })).mutation(({ input }) => deleteCategory(input.id))
+    delete: staffProcedure.input(z7.object({ id: z7.number() })).mutation(({ input }) => deleteCategory(input.id))
   }),
   // --- PRODUCTS ---------------------------------------------------------------
   products: router({
-    list: publicProcedure.input(z6.object({ categoryId: z6.number().optional() }).optional()).query(({ input }) => getProducts({ categoryId: input?.categoryId, activeOnly: true })),
+    list: publicProcedure.input(z7.object({ categoryId: z7.number().optional() }).optional()).query(({ input }) => getProducts({ categoryId: input?.categoryId, activeOnly: true })),
     listAll: staffProcedure.query(() => getProducts({ activeOnly: false })),
-    byId: publicProcedure.input(z6.object({ id: z6.number() })).query(({ input }) => getProductById(input.id)),
-    byIds: publicProcedure.input(z6.object({ ids: z6.array(z6.number()).max(100) })).query(({ input }) => getProductsByIds(Array.from(new Set(input.ids)))),
+    byId: publicProcedure.input(z7.object({ id: z7.number() })).query(({ input }) => getProductById(input.id)),
+    byIds: publicProcedure.input(z7.object({ ids: z7.array(z7.number()).max(100) })).query(({ input }) => getProductsByIds(Array.from(new Set(input.ids)))),
     create: staffProcedure.input(
-      z6.object({
-        categoryId: z6.number(),
-        name: z6.string().min(1).max(200),
-        description: z6.string().max(2e3).optional(),
-        price: z6.string().regex(/^\d+(\.\d{1,2})?$/, "Pre\xE7o inv\xE1lido"),
-        imageUrl: z6.string().max(2048).optional(),
-        featured: z6.boolean().optional(),
-        sortOrder: z6.number().int().optional()
+      z7.object({
+        categoryId: z7.number(),
+        name: z7.string().min(1).max(200),
+        description: z7.string().max(2e3).optional(),
+        price: z7.string().regex(/^\d+(\.\d{1,2})?$/, "Pre\xE7o inv\xE1lido"),
+        imageUrl: z7.string().max(2048).optional(),
+        featured: z7.boolean().optional(),
+        sortOrder: z7.number().int().optional()
       })
     ).mutation(({ input }) => createProduct({ ...input, active: true, featured: input.featured ?? false })),
     update: staffProcedure.input(
-      z6.object({
-        id: z6.number(),
-        categoryId: z6.number().optional(),
-        name: z6.string().min(1).max(200).optional(),
-        description: z6.string().max(2e3).optional(),
-        price: z6.string().regex(/^\d+(\.\d{1,2})?$/, "Pre\xE7o inv\xE1lido").optional(),
-        imageUrl: z6.string().max(2048).optional(),
-        featured: z6.boolean().optional(),
-        active: z6.boolean().optional(),
-        sortOrder: z6.number().int().optional()
+      z7.object({
+        id: z7.number(),
+        categoryId: z7.number().optional(),
+        name: z7.string().min(1).max(200).optional(),
+        description: z7.string().max(2e3).optional(),
+        price: z7.string().regex(/^\d+(\.\d{1,2})?$/, "Pre\xE7o inv\xE1lido").optional(),
+        imageUrl: z7.string().max(2048).optional(),
+        featured: z7.boolean().optional(),
+        active: z7.boolean().optional(),
+        sortOrder: z7.number().int().optional()
       })
     ).mutation(({ input }) => {
       const { id, ...data } = input;
       return updateProduct(id, data);
     }),
-    delete: staffProcedure.input(z6.object({ id: z6.number() })).mutation(({ input }) => deleteProduct(input.id)),
-    uploadImage: staffProcedure.input(z6.object({
-      base64: z6.string().max(43e5),
+    delete: staffProcedure.input(z7.object({ id: z7.number() })).mutation(({ input }) => deleteProduct(input.id)),
+    uploadImage: staffProcedure.input(z7.object({
+      base64: z7.string().max(43e5),
       // keep below Vercel request-size limits
-      mimeType: z6.enum(["image/jpeg", "image/png", "image/webp", "image/gif"]),
-      fileName: z6.string().max(255).optional()
+      mimeType: z7.enum(["image/jpeg", "image/png", "image/webp", "image/gif"]),
+      fileName: z7.string().max(255).optional()
     })).mutation(async ({ input, ctx }) => {
       const { storagePutAdapter: storagePut2 } = await Promise.resolve().then(() => (init_storage2(), storage_exports2));
       const { compressToWebP: compressToWebP2 } = await Promise.resolve().then(() => (init_imageUtils(), imageUtils_exports));
@@ -10016,7 +10495,7 @@ var appRouter = router({
   }),
   // --- COUPONS ----------------------------------------------------------------
   coupons: router({
-    validate: publicProcedure.input(z6.object({ code: z6.string(), orderTotal: z6.number() })).mutation(async ({ input, ctx }) => {
+    validate: publicProcedure.input(z7.object({ code: z7.string(), orderTotal: z7.number() })).mutation(async ({ input, ctx }) => {
       const coupon = await getCouponByCode(input.code);
       if (!coupon) throw new TRPCError6({ code: "NOT_FOUND", message: "Cupom n\xE3o encontrado" });
       if (!coupon.active) throw new TRPCError6({ code: "BAD_REQUEST", message: "Cupom inativo" });
@@ -10046,13 +10525,13 @@ var appRouter = router({
       )
     ),
     create: staffProcedure.input(
-      z6.object({
-        code: z6.string().min(1),
-        discountType: z6.enum(["percentage", "fixed"]),
-        discountValue: z6.string(),
-        minOrderValue: z6.string().optional(),
-        maxUses: z6.number().optional(),
-        expiresAt: z6.date().optional()
+      z7.object({
+        code: z7.string().min(1),
+        discountType: z7.enum(["percentage", "fixed"]),
+        discountValue: z7.string(),
+        minOrderValue: z7.string().optional(),
+        maxUses: z7.number().optional(),
+        expiresAt: z7.date().optional()
       })
     ).mutation(async ({ input, ctx }) => {
       const result = await createCoupon({ ...input, active: true, usedCount: 0 });
@@ -10067,14 +10546,14 @@ var appRouter = router({
       });
       return result;
     }),
-    update: staffProcedure.input(z6.object({
-      id: z6.number(),
-      active: z6.boolean().optional(),
-      maxUses: z6.number().int().min(0).optional(),
-      discountType: z6.enum(["percentage", "fixed"]).optional(),
-      discountValue: z6.string().regex(/^\d+(\.\d{1,2})?$/, "Valor inv\xE1lido").optional(),
-      minOrderValue: z6.string().regex(/^\d+(\.\d{1,2})?$/, "Valor inv\xE1lido").optional(),
-      expiresAt: z6.date().nullable().optional()
+    update: staffProcedure.input(z7.object({
+      id: z7.number(),
+      active: z7.boolean().optional(),
+      maxUses: z7.number().int().min(0).optional(),
+      discountType: z7.enum(["percentage", "fixed"]).optional(),
+      discountValue: z7.string().regex(/^\d+(\.\d{1,2})?$/, "Valor inv\xE1lido").optional(),
+      minOrderValue: z7.string().regex(/^\d+(\.\d{1,2})?$/, "Valor inv\xE1lido").optional(),
+      expiresAt: z7.date().nullable().optional()
     })).mutation(({ input }) => {
       const { id, ...data } = input;
       return updateCoupon(id, data);
@@ -10097,31 +10576,31 @@ var appRouter = router({
   // --- ORDERS -----------------------------------------------------------------
   orders: router({
     create: protectedProcedure.input(
-      z6.object({
-        customerName: z6.string().min(1).max(200),
-        customerEmail: z6.string().email().max(320).optional(),
-        customerPhone: z6.string().trim().max(30).refine((v) => {
+      z7.object({
+        customerName: z7.string().min(1).max(200),
+        customerEmail: z7.string().email().max(320).optional(),
+        customerPhone: z7.string().trim().max(30).refine((v) => {
           const digits = v.replace(/\D/g, "");
           return digits.length >= 10 && digits.length <= 15;
         }, { message: "Telefone inv\xE1lido. Informe DDD + n\xFAmero (10 a 15 d\xEDgitos)." }).optional(),
-        deliveryAddress: z6.string().min(1).max(500),
-        deliveryCity: z6.string().max(100).optional(),
-        deliveryCep: z6.string().regex(/^\d{5}-?\d{3}$/, "CEP inv\xE1lido").optional(),
-        deliveryNeighborhood: z6.string().max(100).optional(),
-        deliveryComplement: z6.string().max(200).optional(),
-        paymentMethod: z6.enum(["credit_card", "debit_card", "pix", "cash"]),
-        couponCode: z6.string().max(50).optional(),
-        pointsToRedeem: z6.number().int().min(0).max(5e3).optional(),
-        notes: z6.string().max(1e3).optional(),
+        deliveryAddress: z7.string().min(1).max(500),
+        deliveryCity: z7.string().max(100).optional(),
+        deliveryCep: z7.string().regex(/^\d{5}-?\d{3}$/, "CEP inv\xE1lido").optional(),
+        deliveryNeighborhood: z7.string().max(100).optional(),
+        deliveryComplement: z7.string().max(200).optional(),
+        paymentMethod: z7.enum(["credit_card", "debit_card", "pix", "cash"]),
+        couponCode: z7.string().max(50).optional(),
+        pointsToRedeem: z7.number().int().min(0).max(5e3).optional(),
+        notes: z7.string().max(1e3).optional(),
         // deliveryFeeOverride foi removido: taxa sempre calculada server-side a partir
         // do CEP/bairro para evitar manipulação do valor pelo cliente.
-        items: z6.array(
-          z6.object({
-            productId: z6.number().int().positive(),
-            productName: z6.string().max(200),
-            productPrice: z6.string().regex(/^\d+(\.\d{1,2})?$/, "Pre\xE7o inv\xE1lido"),
-            quantity: z6.number().int().min(1).max(99),
-            notes: z6.string().max(500).optional()
+        items: z7.array(
+          z7.object({
+            productId: z7.number().int().positive(),
+            productName: z7.string().max(200),
+            productPrice: z7.string().regex(/^\d+(\.\d{1,2})?$/, "Pre\xE7o inv\xE1lido"),
+            quantity: z7.number().int().min(1).max(99),
+            notes: z7.string().max(500).optional()
           })
         ).min(1, "O pedido precisa ter pelo menos 1 item.").max(50, "Pedido excede o n\xFAmero m\xE1ximo de itens.")
       })
@@ -10477,7 +10956,7 @@ ${itemsList}
       return { orderId, total };
     }),
     myOrders: protectedProcedure.query(({ ctx }) => getOrdersByUser(ctx.user.id)),
-    byId: protectedProcedure.input(z6.object({ id: z6.number() })).query(async ({ input, ctx }) => {
+    byId: protectedProcedure.input(z7.object({ id: z7.number() })).query(async ({ input, ctx }) => {
       const order = await getOrderById(input.id);
       if (!order) throw new TRPCError6({ code: "NOT_FOUND" });
       if (order.userId !== ctx.user.id && ctx.user.role !== "admin") {
@@ -10488,31 +10967,31 @@ ${itemsList}
     }),
     // Admin
     list: staffProcedure.input(
-      z6.object({
-        status: z6.enum(["pending", "confirmed", "preparing", "out_for_delivery", "delivered", "cancelled"]).optional(),
-        limit: z6.number().int().min(1).max(5e4).optional(),
-        offset: z6.number().int().min(0).optional(),
-        storeId: z6.number().optional(),
-        startDate: z6.date().optional(),
-        endDate: z6.date().optional()
+      z7.object({
+        status: z7.enum(["pending", "confirmed", "preparing", "out_for_delivery", "delivered", "cancelled"]).optional(),
+        limit: z7.number().int().min(1).max(5e4).optional(),
+        offset: z7.number().int().min(0).optional(),
+        storeId: z7.number().optional(),
+        startDate: z7.date().optional(),
+        endDate: z7.date().optional()
       }).optional()
     ).query(async ({ input, ctx }) => {
       const storeId = await resolveStoreId(ctx.user, input?.storeId);
       return getAllOrders({ ...input, storeId });
     }),
     alertFeed: staffProcedure.input(
-      z6.object({
-        limit: z6.number().int().min(1).max(50).optional(),
-        storeId: z6.number().optional()
+      z7.object({
+        limit: z7.number().int().min(1).max(50).optional(),
+        storeId: z7.number().optional()
       }).optional()
     ).query(async ({ input, ctx }) => {
       const storeId = await resolveStoreId(ctx.user, input?.storeId);
       return getOrderAlertFeed(storeId, input?.limit ?? 20);
     }),
     updateStatus: staffProcedure.input(
-      z6.object({
-        id: z6.number(),
-        status: z6.enum(["pending", "confirmed", "preparing", "out_for_delivery", "delivered", "cancelled"])
+      z7.object({
+        id: z7.number(),
+        status: z7.enum(["pending", "confirmed", "preparing", "out_for_delivery", "delivered", "cancelled"])
       })
     ).mutation(async ({ input, ctx }) => {
       const TRANSITIONS = {
@@ -10683,10 +11162,10 @@ ${itemsList}
       return { ok: true };
     }),
     updatePaymentStatus: staffProcedure.input(
-      z6.object({
-        id: z6.number(),
-        paymentStatus: z6.enum(["pending", "paid", "failed", "refunded"]),
-        stripePaymentIntentId: z6.string().optional()
+      z7.object({
+        id: z7.number(),
+        paymentStatus: z7.enum(["pending", "paid", "failed", "refunded"]),
+        stripePaymentIntentId: z7.string().optional()
       })
     ).mutation(
       ({ input }) => updateOrderPaymentStatus(input.id, input.paymentStatus, input.stripePaymentIntentId)
@@ -10698,24 +11177,24 @@ ${itemsList}
       return getMarketplaceOverview();
     }),
     saveConfig: adminProcedure3.input(
-      z6.object({
+      z7.object({
         providerId: marketplaceProviderIdSchema,
         config: marketplaceConfigSchema.partial()
       })
     ).mutation(async ({ input }) => {
       return saveMarketplaceConfig(input.providerId, input.config);
     }),
-    testConnection: adminProcedure3.input(z6.object({ providerId: marketplaceProviderIdSchema })).mutation(async ({ input }) => {
+    testConnection: adminProcedure3.input(z7.object({ providerId: marketplaceProviderIdSchema })).mutation(async ({ input }) => {
       return testMarketplaceConnection(input.providerId);
     }),
-    syncCatalog: adminProcedure3.input(z6.object({ providerId: marketplaceProviderIdSchema, merchantId: z6.string().optional() })).mutation(async ({ input }) => {
+    syncCatalog: adminProcedure3.input(z7.object({ providerId: marketplaceProviderIdSchema, merchantId: z7.string().optional() })).mutation(async ({ input }) => {
       return runMarketplaceCatalogSync(input.providerId, input.merchantId);
     }),
     syncPromotions: adminProcedure3.input(
-      z6.object({
+      z7.object({
         providerId: marketplaceProviderIdSchema,
-        merchantId: z6.string().optional(),
-        aggregationIds: z6.array(z6.string().min(1)).optional()
+        merchantId: z7.string().optional(),
+        aggregationIds: z7.array(z7.string().min(1)).optional()
       })
     ).mutation(async ({ input }) => {
       return runMarketplacePromotionsSync(input.providerId, {
@@ -10723,7 +11202,7 @@ ${itemsList}
         aggregationIds: input.aggregationIds
       });
     }),
-    pullOrders: adminProcedure3.input(z6.object({ providerId: marketplaceProviderIdSchema })).mutation(async ({ input }) => {
+    pullOrders: adminProcedure3.input(z7.object({ providerId: marketplaceProviderIdSchema })).mutation(async ({ input }) => {
       return pullMarketplaceOrders(input.providerId);
     })
   }),
@@ -10732,13 +11211,13 @@ ${itemsList}
     merchants: adminProcedure3.query(async () => {
       return listIfoodMerchants();
     }),
-    syncCatalog: adminProcedure3.input(z6.object({ merchantId: z6.string().optional() }).optional()).mutation(async ({ input }) => {
+    syncCatalog: adminProcedure3.input(z7.object({ merchantId: z7.string().optional() }).optional()).mutation(async ({ input }) => {
       return syncIfoodCatalog(input?.merchantId);
     }),
     syncPromotions: adminProcedure3.input(
-      z6.object({
-        merchantId: z6.string().optional(),
-        aggregationIds: z6.array(z6.string().min(1)).optional()
+      z7.object({
+        merchantId: z7.string().optional(),
+        aggregationIds: z7.array(z7.string().min(1)).optional()
       }).optional()
     ).mutation(async ({ input }) => {
       return syncIfoodPromotions({
@@ -10746,31 +11225,31 @@ ${itemsList}
         aggregationIds: input?.aggregationIds
       });
     }),
-    confirmOrder: adminProcedure3.input(z6.object({ ifoodOrderId: z6.string() })).mutation(async ({ input }) => {
+    confirmOrder: adminProcedure3.input(z7.object({ ifoodOrderId: z7.string() })).mutation(async ({ input }) => {
       await confirmIfoodOrder(input.ifoodOrderId);
       return { success: true };
     }),
-    startPreparation: adminProcedure3.input(z6.object({ ifoodOrderId: z6.string() })).mutation(async ({ input }) => {
+    startPreparation: adminProcedure3.input(z7.object({ ifoodOrderId: z7.string() })).mutation(async ({ input }) => {
       await startPreparationIfoodOrder(input.ifoodOrderId);
       return { success: true };
     }),
-    dispatch: adminProcedure3.input(z6.object({ ifoodOrderId: z6.string() })).mutation(async ({ input }) => {
+    dispatch: adminProcedure3.input(z7.object({ ifoodOrderId: z7.string() })).mutation(async ({ input }) => {
       await dispatchIfoodOrder(input.ifoodOrderId);
       return { success: true };
     }),
-    cancelOrder: adminProcedure3.input(z6.object({ ifoodOrderId: z6.string(), reason: z6.string().default("Pedido cancelado pelo restaurante") })).mutation(async ({ input }) => {
+    cancelOrder: adminProcedure3.input(z7.object({ ifoodOrderId: z7.string(), reason: z7.string().default("Pedido cancelado pelo restaurante") })).mutation(async ({ input }) => {
       await cancelIfoodOrder(input.ifoodOrderId, input.reason);
       return { success: true };
     })
   }),
   // --- NFC-e (Focus NFe) -------------------------------------------------------
   nfce: router({
-    emitir: adminProcedure3.input(z6.object({ orderId: z6.number() })).mutation(async ({ input }) => {
+    emitir: adminProcedure3.input(z7.object({ orderId: z7.number() })).mutation(async ({ input }) => {
       const result = await emitirNfce(input.orderId);
       if (!result.success) throw new TRPCError6({ code: "INTERNAL_SERVER_ERROR", message: result.error || "Erro ao emitir NFC-e" });
       return result;
     }),
-    cancelar: adminProcedure3.input(z6.object({ orderId: z6.number(), justificativa: z6.string().min(15) })).mutation(async ({ input }) => {
+    cancelar: adminProcedure3.input(z7.object({ orderId: z7.number(), justificativa: z7.string().min(15) })).mutation(async ({ input }) => {
       const result = await cancelarNfce(input.orderId, input.justificativa);
       if (!result.success) throw new TRPCError6({ code: "INTERNAL_SERVER_ERROR", message: result.error || "Erro ao cancelar NFC-e" });
       return result;
@@ -10778,7 +11257,7 @@ ${itemsList}
   }),
   // --- PAYMENTS ---------------------------------------------------------------
   payments: router({
-    createIntent: protectedProcedure.input(z6.object({ orderId: z6.number() })).mutation(async ({ input, ctx }) => {
+    createIntent: protectedProcedure.input(z7.object({ orderId: z7.number() })).mutation(async ({ input, ctx }) => {
       await assertPaymentMethodEnabled("credit_card");
       const order = await getOrderById(input.orderId);
       if (!order) throw new TRPCError6({ code: "NOT_FOUND", message: "Pedido n\xE3o encontrado" });
@@ -10790,9 +11269,9 @@ ${itemsList}
       });
       return { clientSecret: paymentIntent.client_secret };
     }),
-    createCheckoutSession: protectedProcedure.input(z6.object({
-      orderId: z6.number(),
-      origin: z6.string().url()
+    createCheckoutSession: protectedProcedure.input(z7.object({
+      orderId: z7.number(),
+      origin: z7.string().url()
     })).mutation(async ({ input, ctx }) => {
       await assertPaymentMethodEnabled("credit_card");
       const order = await getOrderById(input.orderId);
@@ -10816,7 +11295,7 @@ ${itemsList}
     }),
     getMyTransactions: protectedProcedure.query(({ ctx }) => getTransactionsByUser(ctx.user.id)),
     // ─── Saved Cards ─────────────────────────────────────────────────────────────
-    createSetupIntent: protectedProcedure.input(z6.object({ origin: z6.string().url() })).mutation(async ({ ctx }) => {
+    createSetupIntent: protectedProcedure.input(z7.object({ origin: z7.string().url() })).mutation(async ({ ctx }) => {
       const user = await getUserById(ctx.user.id);
       if (!user) throw new TRPCError6({ code: "NOT_FOUND" });
       const stripeCustomerId = await getOrCreateStripeCustomer({
@@ -10837,7 +11316,7 @@ ${itemsList}
         return [];
       }
     }),
-    deleteCard: protectedProcedure.input(z6.object({ paymentMethodId: z6.string() })).mutation(async ({ input, ctx }) => {
+    deleteCard: protectedProcedure.input(z7.object({ paymentMethodId: z7.string() })).mutation(async ({ input, ctx }) => {
       const user = await getUserById(ctx.user.id);
       if (!user?.stripeCustomerId) throw new TRPCError6({ code: "BAD_REQUEST", message: "Nenhum cart\xE3o salvo" });
       const cards = await listSavedCards(user.stripeCustomerId);
@@ -10846,10 +11325,10 @@ ${itemsList}
       await detachPaymentMethod(input.paymentMethodId);
       return { success: true };
     }),
-    checkoutWithSavedCard: protectedProcedure.input(z6.object({
-      orderId: z6.number(),
-      paymentMethodId: z6.string(),
-      origin: z6.string().url()
+    checkoutWithSavedCard: protectedProcedure.input(z7.object({
+      orderId: z7.number(),
+      paymentMethodId: z7.string(),
+      origin: z7.string().url()
     })).mutation(async ({ input, ctx }) => {
       const paymentSettings = await assertPaymentMethodEnabled("credit_card");
       if (!paymentSettings.config.orders.savedCardsEnabled) {
@@ -10882,7 +11361,7 @@ ${itemsList}
       });
       return { checkoutUrl: session.url, sessionId: session.id };
     }),
-    createManualPixCode: protectedProcedure.input(z6.object({ orderId: z6.number() })).mutation(async ({ input, ctx }) => {
+    createManualPixCode: protectedProcedure.input(z7.object({ orderId: z7.number() })).mutation(async ({ input, ctx }) => {
       const paymentSettings = await assertPaymentMethodEnabled("pix");
       if (paymentSettings.config.orders.pixMode !== "manual_key") {
         throw new TRPCError6({
@@ -10925,7 +11404,7 @@ ${itemsList}
   // --- ASAAS PIX ---------------------------------------------------------------
   asaas: router({
     /** Gera cobrança PIX via Asaas e retorna QR Code */
-    createPix: protectedProcedure.input(z6.object({ orderId: z6.number() })).mutation(async ({ input, ctx }) => {
+    createPix: protectedProcedure.input(z7.object({ orderId: z7.number() })).mutation(async ({ input, ctx }) => {
       const paymentSettings = await assertPaymentMethodEnabled("pix");
       if (paymentSettings.config.orders.pixMode !== "dynamic_asaas") {
         throw new TRPCError6({
@@ -10971,7 +11450,7 @@ ${itemsList}
       };
     }),
     /** Consulta status de cobrança PIX */
-    checkPixStatus: protectedProcedure.input(z6.object({ orderId: z6.number() })).query(async ({ input, ctx }) => {
+    checkPixStatus: protectedProcedure.input(z7.object({ orderId: z7.number() })).query(async ({ input, ctx }) => {
       const order = await getOrderById(input.orderId);
       if (!order) throw new TRPCError6({ code: "NOT_FOUND" });
       if (order.userId !== ctx.user.id) throw new TRPCError6({ code: "FORBIDDEN" });
@@ -10998,38 +11477,38 @@ ${itemsList}
       } = user;
       return safeUser;
     }),
-    update: protectedProcedure.input(z6.object({
-      name: z6.string().optional(),
-      phone: z6.string().optional(),
-      savedAddress: z6.string().optional(),
-      savedCep: z6.string().optional(),
-      savedCity: z6.string().optional()
+    update: protectedProcedure.input(z7.object({
+      name: z7.string().optional(),
+      phone: z7.string().optional(),
+      savedAddress: z7.string().optional(),
+      savedCep: z7.string().optional(),
+      savedCity: z7.string().optional()
     })).mutation(({ input, ctx }) => updateUserProfile(ctx.user.id, input)),
     myCoupons: protectedProcedure.query(({ ctx }) => getCouponsByUser(ctx.user.id))
   }),
   // --- UP-SELLS ---------------------------------------------------------------
   upsells: router({
-    forCart: publicProcedure.input(z6.object({ productIds: z6.array(z6.number()), cartTotal: z6.number() })).query(({ input }) => getUpsellsForCart(input.productIds, input.cartTotal)),
+    forCart: publicProcedure.input(z7.object({ productIds: z7.array(z7.number()), cartTotal: z7.number() })).query(({ input }) => getUpsellsForCart(input.productIds, input.cartTotal)),
     all: staffProcedure.query(() => getAllUpsells()),
-    create: staffProcedure.input(z6.object({
-      suggestedProductId: z6.number(),
-      triggerProductId: z6.number().optional(),
-      triggerMinTotal: z6.string().optional(),
-      type: z6.enum(["upsell", "downsell"]).default("upsell"),
-      title: z6.string().min(1),
-      description: z6.string().optional(),
-      discountPercent: z6.number().default(0),
-      active: z6.boolean().default(true),
-      sortOrder: z6.number().default(0)
+    create: staffProcedure.input(z7.object({
+      suggestedProductId: z7.number(),
+      triggerProductId: z7.number().optional(),
+      triggerMinTotal: z7.string().optional(),
+      type: z7.enum(["upsell", "downsell"]).default("upsell"),
+      title: z7.string().min(1),
+      description: z7.string().optional(),
+      discountPercent: z7.number().default(0),
+      active: z7.boolean().default(true),
+      sortOrder: z7.number().default(0)
     })).mutation(({ input }) => createUpsell(input)),
-    update: staffProcedure.input(z6.object({ id: z6.number(), data: z6.object({
-      title: z6.string().optional(),
-      description: z6.string().optional(),
-      discountPercent: z6.number().optional(),
-      active: z6.boolean().optional(),
-      sortOrder: z6.number().optional()
+    update: staffProcedure.input(z7.object({ id: z7.number(), data: z7.object({
+      title: z7.string().optional(),
+      description: z7.string().optional(),
+      discountPercent: z7.number().optional(),
+      active: z7.boolean().optional(),
+      sortOrder: z7.number().optional()
     }) })).mutation(({ input }) => updateUpsell(input.id, input.data)),
-    delete: staffProcedure.input(z6.object({ id: z6.number() })).mutation(({ input }) => deleteUpsell(input.id))
+    delete: staffProcedure.input(z7.object({ id: z7.number() })).mutation(({ input }) => deleteUpsell(input.id))
   }),
   // --- PROMOTIONS ---------------------------------------------------------------
   promotions: router({
@@ -11040,15 +11519,15 @@ ${itemsList}
       () => getActivePromotions().then((promos) => promos.filter((p) => !p.requiresLogin))
     ),
     all: staffProcedure.query(() => getAllPromotions()),
-    create: staffProcedure.input(z6.object({
-      title: z6.string().min(1),
-      description: z6.string().optional(),
-      imageUrl: z6.string().optional(),
-      couponCode: z6.string().optional(),
-      active: z6.boolean().default(true),
-      requiresLogin: z6.boolean().default(true),
-      startsAt: z6.date().optional(),
-      endsAt: z6.date().optional()
+    create: staffProcedure.input(z7.object({
+      title: z7.string().min(1),
+      description: z7.string().optional(),
+      imageUrl: z7.string().optional(),
+      couponCode: z7.string().optional(),
+      active: z7.boolean().default(true),
+      requiresLogin: z7.boolean().default(true),
+      startsAt: z7.date().optional(),
+      endsAt: z7.date().optional()
     })).mutation(async ({ input }) => {
       const result = await createPromotion(input);
       await createClientAlert({
@@ -11061,30 +11540,30 @@ ${itemsList}
       });
       return result;
     }),
-    update: staffProcedure.input(z6.object({ id: z6.number(), data: z6.object({
-      title: z6.string().optional(),
-      description: z6.string().optional(),
-      imageUrl: z6.string().optional(),
-      couponCode: z6.string().optional(),
-      active: z6.boolean().optional(),
-      requiresLogin: z6.boolean().optional(),
-      endsAt: z6.date().optional()
+    update: staffProcedure.input(z7.object({ id: z7.number(), data: z7.object({
+      title: z7.string().optional(),
+      description: z7.string().optional(),
+      imageUrl: z7.string().optional(),
+      couponCode: z7.string().optional(),
+      active: z7.boolean().optional(),
+      requiresLogin: z7.boolean().optional(),
+      endsAt: z7.date().optional()
     }) })).mutation(({ input }) => updatePromotion(input.id, input.data)),
-    delete: staffProcedure.input(z6.object({ id: z6.number() })).mutation(({ input }) => deletePromotion(input.id))
+    delete: staffProcedure.input(z7.object({ id: z7.number() })).mutation(({ input }) => deletePromotion(input.id))
   }),
   // --- RAFFLES ---------------------------------------------------------------
   raffles: router({
     active: publicProcedure.query(() => getActiveRaffles()),
     all: staffProcedure.query(() => getAllRaffles()),
-    entries: staffProcedure.input(z6.object({ raffleId: z6.number() })).query(({ input }) => getRaffleEntries(input.raffleId)),
-    enter: protectedProcedure.input(z6.object({ raffleId: z6.number() })).mutation(({ input, ctx }) => enterRaffle(input.raffleId, ctx.user.id, ctx.user.name ?? "Cliente")),
-    draw: staffProcedure.input(z6.object({ raffleId: z6.number() })).mutation(({ input }) => drawRaffleWinner(input.raffleId)),
-    create: staffProcedure.input(z6.object({
-      title: z6.string().min(1),
-      description: z6.string().optional(),
-      prize: z6.string().min(1),
-      imageUrl: z6.string().optional(),
-      endsAt: z6.date().optional()
+    entries: staffProcedure.input(z7.object({ raffleId: z7.number() })).query(({ input }) => getRaffleEntries(input.raffleId)),
+    enter: protectedProcedure.input(z7.object({ raffleId: z7.number() })).mutation(({ input, ctx }) => enterRaffle(input.raffleId, ctx.user.id, ctx.user.name ?? "Cliente")),
+    draw: staffProcedure.input(z7.object({ raffleId: z7.number() })).mutation(({ input }) => drawRaffleWinner(input.raffleId)),
+    create: staffProcedure.input(z7.object({
+      title: z7.string().min(1),
+      description: z7.string().optional(),
+      prize: z7.string().min(1),
+      imageUrl: z7.string().optional(),
+      endsAt: z7.date().optional()
     })).mutation(async ({ input }) => {
       const result = await createRaffle({ ...input, status: "active" });
       await createClientAlert({
@@ -11097,32 +11576,32 @@ ${itemsList}
       });
       return result;
     }),
-    update: staffProcedure.input(z6.object({ id: z6.number(), data: z6.object({
-      title: z6.string().optional(),
-      description: z6.string().optional(),
-      prize: z6.string().optional(),
-      status: z6.enum(["active", "closed", "drawn"]).optional(),
-      endsAt: z6.date().optional()
+    update: staffProcedure.input(z7.object({ id: z7.number(), data: z7.object({
+      title: z7.string().optional(),
+      description: z7.string().optional(),
+      prize: z7.string().optional(),
+      status: z7.enum(["active", "closed", "drawn"]).optional(),
+      endsAt: z7.date().optional()
     }) })).mutation(({ input }) => updateRaffle(input.id, input.data))
   }),
   inventory: router({
-    list: staffProcedure.input(z6.object({
-      storeId: z6.number().optional(),
-      activeOnly: z6.boolean().optional(),
-      lowStockOnly: z6.boolean().optional()
+    list: staffProcedure.input(z7.object({
+      storeId: z7.number().optional(),
+      activeOnly: z7.boolean().optional(),
+      lowStockOnly: z7.boolean().optional()
     }).optional()).query(async ({ input, ctx }) => {
       const storeId = await resolveStoreId(ctx.user, input?.storeId);
       return getIngredients({ storeId, activeOnly: input?.activeOnly ?? true, lowStockOnly: input?.lowStockOnly ?? false });
     }),
-    lowStock: staffProcedure.input(z6.object({ storeId: z6.number().optional() }).optional()).query(async ({ input, ctx }) => {
+    lowStock: staffProcedure.input(z7.object({ storeId: z7.number().optional() }).optional()).query(async ({ input, ctx }) => {
       const storeId = await resolveStoreId(ctx.user, input?.storeId);
       return getIngredients({ storeId, activeOnly: true, lowStockOnly: true });
     }),
-    movements: staffProcedure.input(z6.object({
-      storeId: z6.number().optional(),
-      ingredientId: z6.number().optional(),
-      orderId: z6.number().optional(),
-      limit: z6.number().min(1).max(500).optional()
+    movements: staffProcedure.input(z7.object({
+      storeId: z7.number().optional(),
+      ingredientId: z7.number().optional(),
+      orderId: z7.number().optional(),
+      limit: z7.number().min(1).max(500).optional()
     }).optional()).query(async ({ input, ctx }) => {
       const storeId = await resolveStoreId(ctx.user, input?.storeId);
       return getInventoryMovements({
@@ -11132,17 +11611,17 @@ ${itemsList}
         limit: input?.limit
       });
     }),
-    create: staffProcedure.input(z6.object({
-      storeId: z6.number().optional(),
-      name: z6.string().min(1).max(160),
-      category: z6.string().max(120).optional(),
-      unit: z6.enum(["g", "kg", "ml", "l", "unit", "pack", "slice", "portion"]),
-      currentStock: z6.string().regex(/^-?\d+(\.\d{1,3})?$/),
-      minimumStock: z6.string().regex(/^-?\d+(\.\d{1,3})?$/),
-      unitCost: z6.string().regex(/^-?\d+(\.\d{1,4})?$/).optional(),
-      supplier: z6.string().max(160).optional(),
-      notes: z6.string().max(5e3).optional(),
-      active: z6.boolean().optional()
+    create: staffProcedure.input(z7.object({
+      storeId: z7.number().optional(),
+      name: z7.string().min(1).max(160),
+      category: z7.string().max(120).optional(),
+      unit: z7.enum(["g", "kg", "ml", "l", "unit", "pack", "slice", "portion"]),
+      currentStock: z7.string().regex(/^-?\d+(\.\d{1,3})?$/),
+      minimumStock: z7.string().regex(/^-?\d+(\.\d{1,3})?$/),
+      unitCost: z7.string().regex(/^-?\d+(\.\d{1,4})?$/).optional(),
+      supplier: z7.string().max(160).optional(),
+      notes: z7.string().max(5e3).optional(),
+      active: z7.boolean().optional()
     })).mutation(async ({ input, ctx }) => {
       const storeId = await resolveStoreId(ctx.user, input.storeId);
       return createIngredient({
@@ -11158,31 +11637,31 @@ ${itemsList}
         active: input.active ?? true
       });
     }),
-    update: staffProcedure.input(z6.object({
-      id: z6.number(),
-      name: z6.string().min(1).max(160).optional(),
-      category: z6.string().max(120).optional(),
-      unit: z6.enum(["g", "kg", "ml", "l", "unit", "pack", "slice", "portion"]).optional(),
-      currentStock: z6.string().regex(/^-?\d+(\.\d{1,3})?$/).optional(),
-      minimumStock: z6.string().regex(/^-?\d+(\.\d{1,3})?$/).optional(),
-      unitCost: z6.string().regex(/^-?\d+(\.\d{1,4})?$/).optional(),
-      supplier: z6.string().max(160).optional(),
-      notes: z6.string().max(5e3).optional(),
-      active: z6.boolean().optional()
+    update: staffProcedure.input(z7.object({
+      id: z7.number(),
+      name: z7.string().min(1).max(160).optional(),
+      category: z7.string().max(120).optional(),
+      unit: z7.enum(["g", "kg", "ml", "l", "unit", "pack", "slice", "portion"]).optional(),
+      currentStock: z7.string().regex(/^-?\d+(\.\d{1,3})?$/).optional(),
+      minimumStock: z7.string().regex(/^-?\d+(\.\d{1,3})?$/).optional(),
+      unitCost: z7.string().regex(/^-?\d+(\.\d{1,4})?$/).optional(),
+      supplier: z7.string().max(160).optional(),
+      notes: z7.string().max(5e3).optional(),
+      active: z7.boolean().optional()
     })).mutation(async ({ input }) => {
       const { id, ...data } = input;
       await updateIngredient(id, data);
       return { ok: true };
     }),
-    delete: staffProcedure.input(z6.object({ id: z6.number() })).mutation(async ({ input }) => {
+    delete: staffProcedure.input(z7.object({ id: z7.number() })).mutation(async ({ input }) => {
       await deleteIngredient(input.id);
       return { ok: true };
     }),
-    adjust: staffProcedure.input(z6.object({
-      ingredientId: z6.number(),
-      quantityDelta: z6.string().regex(/^-?\d+(\.\d{1,3})?$/),
-      movementType: z6.enum(["entry", "manual_adjustment", "waste", "reversal"]),
-      reason: z6.string().max(255).optional()
+    adjust: staffProcedure.input(z7.object({
+      ingredientId: z7.number(),
+      quantityDelta: z7.string().regex(/^-?\d+(\.\d{1,3})?$/),
+      movementType: z7.enum(["entry", "manual_adjustment", "waste", "reversal"]),
+      reason: z7.string().max(255).optional()
     })).mutation(async ({ input, ctx }) => {
       return adjustIngredientStock({
         ingredientId: input.ingredientId,
@@ -11192,24 +11671,24 @@ ${itemsList}
         performedByUserId: ctx.user.id
       });
     }),
-    recipe: staffProcedure.input(z6.object({ productId: z6.number() })).query(({ input }) => getProductRecipe(input.productId)),
-    setRecipe: staffProcedure.input(z6.object({
-      productId: z6.number(),
-      items: z6.array(z6.object({
-        ingredientId: z6.number(),
-        quantity: z6.string().regex(/^\d+(\.\d{1,3})?$/),
-        wastePercent: z6.string().regex(/^\d+(\.\d{1,2})?$/).optional()
+    recipe: staffProcedure.input(z7.object({ productId: z7.number() })).query(({ input }) => getProductRecipe(input.productId)),
+    setRecipe: staffProcedure.input(z7.object({
+      productId: z7.number(),
+      items: z7.array(z7.object({
+        ingredientId: z7.number(),
+        quantity: z7.string().regex(/^\d+(\.\d{1,3})?$/),
+        wastePercent: z7.string().regex(/^\d+(\.\d{1,2})?$/).optional()
       }))
     })).mutation(({ input }) => setProductRecipe(input.productId, input.items)),
-    syncOrderConsumption: staffProcedure.input(z6.object({ orderId: z6.number(), mode: z6.enum(["consume", "reverse"]) })).mutation(async ({ input }) => {
+    syncOrderConsumption: staffProcedure.input(z7.object({ orderId: z7.number(), mode: z7.enum(["consume", "reverse"]) })).mutation(async ({ input }) => {
       return input.mode === "consume" ? consumeInventoryForOrder(input.orderId) : reverseInventoryForOrder(input.orderId);
     })
   }),
   staffMembers: router({
-    list: staffProcedure.input(z6.object({
-      storeId: z6.number().optional(),
-      role: z6.enum(["waiter", "cashier", "attendant", "kitchen", "driver", "manager", "admin"]).optional(),
-      activeOnly: z6.boolean().optional()
+    list: staffProcedure.input(z7.object({
+      storeId: z7.number().optional(),
+      role: z7.enum(["waiter", "cashier", "attendant", "kitchen", "driver", "manager", "admin"]).optional(),
+      activeOnly: z7.boolean().optional()
     }).optional()).query(async ({ input, ctx }) => {
       const storeId = await resolveStoreId(ctx.user, input?.storeId);
       const staff = await getStaffMembers({ storeId, role: input?.role, activeOnly: input?.activeOnly ?? true });
@@ -11221,14 +11700,14 @@ ${itemsList}
         })
       );
     }),
-    create: staffProcedure.input(z6.object({
-      storeId: z6.number().optional(),
-      userId: z6.number().optional(),
-      name: z6.string().min(2).max(200),
-      phone: z6.string().optional(),
-      email: z6.string().email().optional(),
-      role: z6.enum(["waiter", "cashier", "attendant", "kitchen", "driver", "manager", "admin"]),
-      active: z6.boolean().optional()
+    create: staffProcedure.input(z7.object({
+      storeId: z7.number().optional(),
+      userId: z7.number().optional(),
+      name: z7.string().min(2).max(200),
+      phone: z7.string().optional(),
+      email: z7.string().email().optional(),
+      role: z7.enum(["waiter", "cashier", "attendant", "kitchen", "driver", "manager", "admin"]),
+      active: z7.boolean().optional()
     })).mutation(async ({ input, ctx }) => {
       const storeId = await resolveStoreId(ctx.user, input.storeId);
       const id = await createStaffMember({
@@ -11243,37 +11722,37 @@ ${itemsList}
       const accessToken = input.role === "waiter" ? await ensureStaffAccessToken(id) : null;
       return { id, accessToken };
     }),
-    update: staffProcedure.input(z6.object({
-      id: z6.number(),
-      name: z6.string().min(2).max(200).optional(),
-      phone: z6.string().optional(),
-      email: z6.string().email().optional(),
-      role: z6.enum(["waiter", "cashier", "attendant", "kitchen", "driver", "manager", "admin"]).optional(),
-      active: z6.boolean().optional()
+    update: staffProcedure.input(z7.object({
+      id: z7.number(),
+      name: z7.string().min(2).max(200).optional(),
+      phone: z7.string().optional(),
+      email: z7.string().email().optional(),
+      role: z7.enum(["waiter", "cashier", "attendant", "kitchen", "driver", "manager", "admin"]).optional(),
+      active: z7.boolean().optional()
     })).mutation(async ({ input }) => {
       const { id, ...data } = input;
       await updateStaffMember(id, data);
       return { ok: true };
     }),
-    delete: staffProcedure.input(z6.object({ id: z6.number() })).mutation(async ({ input }) => {
+    delete: staffProcedure.input(z7.object({ id: z7.number() })).mutation(async ({ input }) => {
       await deleteStaffMember(input.id);
       return { ok: true };
     }),
-    regenerateAccessToken: staffProcedure.input(z6.object({ id: z6.number() })).mutation(async ({ input }) => {
+    regenerateAccessToken: staffProcedure.input(z7.object({ id: z7.number() })).mutation(async ({ input }) => {
       const accessToken = await regenerateStaffAccessToken(input.id);
       return { accessToken };
     })
   }),
   diningRoom: router({
-    tables: staffProcedure.input(z6.object({ storeId: z6.number().optional(), activeOnly: z6.boolean().optional() }).optional()).query(async ({ input, ctx }) => {
+    tables: staffProcedure.input(z7.object({ storeId: z7.number().optional(), activeOnly: z7.boolean().optional() }).optional()).query(async ({ input, ctx }) => {
       const storeId = await resolveStoreId(ctx.user, input?.storeId);
       return getDiningTables({ storeId, activeOnly: input?.activeOnly ?? true });
     }),
-    createTable: staffProcedure.input(z6.object({
-      storeId: z6.number().optional(),
-      name: z6.string().min(1).max(80),
-      capacity: z6.number().int().min(1).max(50).optional(),
-      active: z6.boolean().optional()
+    createTable: staffProcedure.input(z7.object({
+      storeId: z7.number().optional(),
+      name: z7.string().min(1).max(80),
+      capacity: z7.number().int().min(1).max(50).optional(),
+      active: z7.boolean().optional()
     })).mutation(async ({ input, ctx }) => {
       const storeId = await resolveStoreId(ctx.user, input.storeId);
       return createDiningTable({
@@ -11284,36 +11763,36 @@ ${itemsList}
         active: input.active ?? true
       });
     }),
-    updateTable: staffProcedure.input(z6.object({
-      id: z6.number(),
-      name: z6.string().min(1).max(80).optional(),
-      status: z6.enum(["free", "occupied", "reserved", "awaiting_closure"]).optional(),
-      capacity: z6.number().int().min(1).max(50).optional(),
-      active: z6.boolean().optional()
+    updateTable: staffProcedure.input(z7.object({
+      id: z7.number(),
+      name: z7.string().min(1).max(80).optional(),
+      status: z7.enum(["free", "occupied", "reserved", "awaiting_closure"]).optional(),
+      capacity: z7.number().int().min(1).max(50).optional(),
+      active: z7.boolean().optional()
     })).mutation(async ({ input }) => {
       const { id, ...data } = input;
       await updateDiningTable(id, data);
       return { ok: true };
     }),
-    deleteTable: staffProcedure.input(z6.object({ id: z6.number() })).mutation(async ({ input }) => {
+    deleteTable: staffProcedure.input(z7.object({ id: z7.number() })).mutation(async ({ input }) => {
       await deleteDiningTable(input.id);
       return { ok: true };
     }),
-    sessions: staffProcedure.input(z6.object({
-      storeId: z6.number().optional(),
-      status: z6.enum(["open", "awaiting_closure", "closed", "cancelled"]).optional(),
-      waiterStaffId: z6.number().optional()
+    sessions: staffProcedure.input(z7.object({
+      storeId: z7.number().optional(),
+      status: z7.enum(["open", "awaiting_closure", "closed", "cancelled"]).optional(),
+      waiterStaffId: z7.number().optional()
     }).optional()).query(async ({ input, ctx }) => {
       const storeId = await resolveStoreId(ctx.user, input?.storeId);
       return getTableSessions({ storeId, status: input?.status, waiterStaffId: input?.waiterStaffId });
     }),
-    openSession: staffProcedure.input(z6.object({
-      storeId: z6.number().optional(),
-      tableId: z6.number(),
-      waiterStaffId: z6.number().optional(),
-      customerName: z6.string().max(200).optional(),
-      guestCount: z6.number().int().min(1).max(50).optional(),
-      notes: z6.string().max(5e3).optional()
+    openSession: staffProcedure.input(z7.object({
+      storeId: z7.number().optional(),
+      tableId: z7.number(),
+      waiterStaffId: z7.number().optional(),
+      customerName: z7.string().max(200).optional(),
+      guestCount: z7.number().int().min(1).max(50).optional(),
+      notes: z7.string().max(5e3).optional()
     })).mutation(async ({ input, ctx }) => {
       const storeId = await resolveStoreId(ctx.user, input.storeId);
       return openTableSession({
@@ -11329,29 +11808,29 @@ ${itemsList}
         total: "0.00"
       });
     }),
-    updateSession: staffProcedure.input(z6.object({
-      id: z6.number(),
-      waiterStaffId: z6.number().optional(),
-      customerName: z6.string().max(200).optional(),
-      guestCount: z6.number().int().min(1).max(50).optional(),
-      notes: z6.string().max(5e3).optional(),
-      status: z6.enum(["open", "awaiting_closure", "closed", "cancelled"]).optional(),
-      subtotal: z6.string().regex(/^\d+(\.\d{1,2})?$/).optional(),
-      discountAmount: z6.string().regex(/^\d+(\.\d{1,2})?$/).optional(),
-      total: z6.string().regex(/^\d+(\.\d{1,2})?$/).optional()
+    updateSession: staffProcedure.input(z7.object({
+      id: z7.number(),
+      waiterStaffId: z7.number().optional(),
+      customerName: z7.string().max(200).optional(),
+      guestCount: z7.number().int().min(1).max(50).optional(),
+      notes: z7.string().max(5e3).optional(),
+      status: z7.enum(["open", "awaiting_closure", "closed", "cancelled"]).optional(),
+      subtotal: z7.string().regex(/^\d+(\.\d{1,2})?$/).optional(),
+      discountAmount: z7.string().regex(/^\d+(\.\d{1,2})?$/).optional(),
+      total: z7.string().regex(/^\d+(\.\d{1,2})?$/).optional()
     })).mutation(async ({ input }) => {
       const { id, ...data } = input;
       await updateTableSession(id, data);
       return { ok: true };
     }),
-    closeSession: staffProcedure.input(z6.object({
-      id: z6.number(),
-      subtotal: z6.string().regex(/^\d+(\.\d{1,2})?$/).optional(),
-      discountAmount: z6.string().regex(/^\d+(\.\d{1,2})?$/).optional(),
-      tipAmount: z6.string().regex(/^\d+(\.\d{1,2})?$/).optional(),
-      total: z6.string().regex(/^\d+(\.\d{1,2})?$/).optional(),
-      status: z6.enum(["awaiting_closure", "closed", "cancelled"]).optional(),
-      closedByStaffId: z6.number().optional()
+    closeSession: staffProcedure.input(z7.object({
+      id: z7.number(),
+      subtotal: z7.string().regex(/^\d+(\.\d{1,2})?$/).optional(),
+      discountAmount: z7.string().regex(/^\d+(\.\d{1,2})?$/).optional(),
+      tipAmount: z7.string().regex(/^\d+(\.\d{1,2})?$/).optional(),
+      total: z7.string().regex(/^\d+(\.\d{1,2})?$/).optional(),
+      status: z7.enum(["awaiting_closure", "closed", "cancelled"]).optional(),
+      closedByStaffId: z7.number().optional()
     })).mutation(async ({ input }) => {
       await closeTableSessionWithComputedTotals(input.id, {
         subtotal: input.subtotal,
@@ -11363,16 +11842,16 @@ ${itemsList}
       });
       return { ok: true };
     }),
-    attachOrder: staffProcedure.input(z6.object({ tableSessionId: z6.number(), orderId: z6.number() })).mutation(async ({ input }) => {
+    attachOrder: staffProcedure.input(z7.object({ tableSessionId: z7.number(), orderId: z7.number() })).mutation(async ({ input }) => {
       await attachOrderToTableSessionAndSync(input.tableSessionId, input.orderId);
       return { ok: true };
     }),
-    addItem: staffProcedure.input(z6.object({
-      tableSessionId: z6.number(),
-      productId: z6.number(),
-      quantity: z6.number().int().min(1).max(100),
-      notes: z6.string().max(500).optional(),
-      addedByStaffId: z6.number().optional()
+    addItem: staffProcedure.input(z7.object({
+      tableSessionId: z7.number(),
+      productId: z7.number(),
+      quantity: z7.number().int().min(1).max(100),
+      notes: z7.string().max(500).optional(),
+      addedByStaffId: z7.number().optional()
     })).mutation(async ({ input }) => {
       const itemId = await addTableSessionItem({
         tableSessionId: input.tableSessionId,
@@ -11383,36 +11862,36 @@ ${itemsList}
       });
       return { ok: true, itemId };
     }),
-    removeItem: staffProcedure.input(z6.object({ id: z6.number() })).mutation(async ({ input }) => {
+    removeItem: staffProcedure.input(z7.object({ id: z7.number() })).mutation(async ({ input }) => {
       await removeTableSessionItem(input.id);
       return { ok: true };
     }),
-    updateItemStatus: staffProcedure.input(z6.object({
-      id: z6.number(),
-      status: z6.enum(["pending", "preparing", "ready", "served", "cancelled"])
+    updateItemStatus: staffProcedure.input(z7.object({
+      id: z7.number(),
+      status: z7.enum(["pending", "preparing", "ready", "served", "cancelled"])
     })).mutation(async ({ input }) => {
       await updateTableSessionItemStatus(input.id, input.status);
       return { ok: true };
     })
   }),
   customerMetrics: router({
-    list: staffProcedure.input(z6.object({ storeId: z6.number().optional(), limit: z6.number().min(1).max(500).optional() }).optional()).query(async ({ input, ctx }) => {
+    list: staffProcedure.input(z7.object({ storeId: z7.number().optional(), limit: z7.number().min(1).max(500).optional() }).optional()).query(async ({ input, ctx }) => {
       const storeId = await resolveStoreId(ctx.user, input?.storeId);
       return getCustomerMetricsReport({ storeId: storeId ?? 0, limit: input?.limit });
     })
   }),
   // --- ADMIN USERS ---------------------------------------------------------------
   adminUsers: router({
-    list: staffProcedure.input(z6.object({
-      page: z6.number().int().min(1).optional(),
-      pageSize: z6.number().int().min(1).max(100).optional(),
-      search: z6.string().max(160).optional(),
-      role: z6.enum(["user", "admin", "manager"]).optional(),
-      status: z6.enum(["active", "inactive", "suspended", "setup_pending"]).optional(),
-      clubStatus: z6.enum(["active", "pending", "cancelled", "none"]).optional(),
-      loginMethod: z6.enum(["email", "phone", "google", "apple", "facebook", "instagram", "manus"]).optional(),
-      hasOrders: z6.enum(["with_orders", "without_orders"]).optional(),
-      storeId: z6.number().optional()
+    list: staffProcedure.input(z7.object({
+      page: z7.number().int().min(1).optional(),
+      pageSize: z7.number().int().min(1).max(100).optional(),
+      search: z7.string().max(160).optional(),
+      role: z7.enum(["user", "admin", "manager"]).optional(),
+      status: z7.enum(["active", "inactive", "suspended", "setup_pending"]).optional(),
+      clubStatus: z7.enum(["active", "pending", "cancelled", "none"]).optional(),
+      loginMethod: z7.enum(["email", "phone", "google", "apple", "facebook", "instagram", "manus"]).optional(),
+      hasOrders: z7.enum(["with_orders", "without_orders"]).optional(),
+      storeId: z7.number().optional()
     }).optional()).query(async ({ input, ctx }) => {
       const storeId = await resolveStoreId(ctx.user, input?.storeId);
       return getAdminUsersPage({
@@ -11427,27 +11906,27 @@ ${itemsList}
         storeId
       });
     }),
-    sendCoupon: adminProcedure3.input(z6.object({
-      userId: z6.number(),
-      code: z6.string().min(1),
-      discountType: z6.enum(["percentage", "fixed"]),
-      discountValue: z6.string(),
-      minOrderValue: z6.string().optional(),
-      maxUses: z6.number().optional(),
-      expiresAt: z6.date().optional()
+    sendCoupon: adminProcedure3.input(z7.object({
+      userId: z7.number(),
+      code: z7.string().min(1),
+      discountType: z7.enum(["percentage", "fixed"]),
+      discountValue: z7.string(),
+      minOrderValue: z7.string().optional(),
+      maxUses: z7.number().optional(),
+      expiresAt: z7.date().optional()
     })).mutation(({ input }) => createUserCoupon(input))
   }),
   reports: router({
-    sales: staffProcedure.input(z6.object({ startDate: z6.date(), endDate: z6.date(), storeId: z6.number().optional() })).query(async ({ input, ctx }) => {
+    sales: staffProcedure.input(z7.object({ startDate: z7.date(), endDate: z7.date(), storeId: z7.number().optional() })).query(async ({ input, ctx }) => {
       const storeId = await resolveStoreId(ctx.user, input.storeId);
       return getSalesReport(input.startDate, input.endDate, storeId);
     }),
     topProducts: staffProcedure.input(
-      z6.object({
-        limit: z6.number().optional(),
-        storeId: z6.number().optional(),
-        startDate: z6.date().optional(),
-        endDate: z6.date().optional()
+      z7.object({
+        limit: z7.number().optional(),
+        storeId: z7.number().optional(),
+        startDate: z7.date().optional(),
+        endDate: z7.date().optional()
       }).optional()
     ).query(async ({ input, ctx }) => {
       const storeId = await resolveStoreId(ctx.user, input?.storeId);
@@ -11456,20 +11935,20 @@ ${itemsList}
         endDate: input?.endDate
       });
     }),
-    topCategories: staffProcedure.input(z6.object({ startDate: z6.date(), endDate: z6.date(), storeId: z6.number().optional() })).query(async ({ input, ctx }) => {
+    topCategories: staffProcedure.input(z7.object({ startDate: z7.date(), endDate: z7.date(), storeId: z7.number().optional() })).query(async ({ input, ctx }) => {
       const storeId = await resolveStoreId(ctx.user, input.storeId);
       return getTopCategories(input.startDate, input.endDate, storeId);
     }),
-    ordersByPeriod: staffProcedure.input(z6.object({ startDate: z6.date(), endDate: z6.date(), storeId: z6.number().optional() })).query(async ({ input, ctx }) => {
+    ordersByPeriod: staffProcedure.input(z7.object({ startDate: z7.date(), endDate: z7.date(), storeId: z7.number().optional() })).query(async ({ input, ctx }) => {
       const storeId = await resolveStoreId(ctx.user, input.storeId);
       return getOrdersByPeriod(input.startDate, input.endDate, storeId);
     }),
-    dailyRevenue: staffProcedure.input(z6.object({ days: z6.number().optional(), storeId: z6.number().optional(), timezoneOffset: z6.number().optional() }).optional()).query(async ({ input, ctx }) => {
+    dailyRevenue: staffProcedure.input(z7.object({ days: z7.number().optional(), storeId: z7.number().optional(), timezoneOffset: z7.number().optional() }).optional()).query(async ({ input, ctx }) => {
       const storeId = await resolveStoreId(ctx.user, input?.storeId);
       return getDailyRevenue(input?.days, storeId, input?.timezoneOffset);
     }),
     // Resumo de hoje calculado no servidor com suporte a timezone do cliente
-    todaySummary: staffProcedure.input(z6.object({ timezoneOffset: z6.number().optional(), storeId: z6.number().optional() })).query(async ({ input, ctx }) => {
+    todaySummary: staffProcedure.input(z7.object({ timezoneOffset: z7.number().optional(), storeId: z7.number().optional() })).query(async ({ input, ctx }) => {
       const storeId = await resolveStoreId(ctx.user, input.storeId);
       const now = /* @__PURE__ */ new Date();
       const todayStart = getTodayStartUtc(now);
@@ -11485,19 +11964,19 @@ ${itemsList}
   }),
   // --- DRIVERS (MOTOBOYS) -----------------------------------------------------
   drivers: router({
-    list: staffProcedure.input(z6.object({ storeId: z6.number().optional() }).optional()).query(async ({ input, ctx }) => {
+    list: staffProcedure.input(z7.object({ storeId: z7.number().optional() }).optional()).query(async ({ input, ctx }) => {
       const storeId = await resolveStoreId(ctx.user, input?.storeId);
       return getAllDrivers(false, storeId);
     }),
-    create: staffProcedure.input(z6.object({ name: z6.string(), phone: z6.string().optional(), storeId: z6.number().optional() })).mutation(async ({ input, ctx }) => {
+    create: staffProcedure.input(z7.object({ name: z7.string(), phone: z7.string().optional(), storeId: z7.number().optional() })).mutation(async ({ input, ctx }) => {
       const storeId = await resolveStoreId(ctx.user, input.storeId);
       const token = crypto2.randomBytes(32).toString("hex");
       const id = await createDriver({ name: input.name, phone: input.phone ?? null, accessToken: token, active: true, storeId: storeId ?? null });
       return { id, accessToken: token };
     }),
-    update: staffProcedure.input(z6.object({ id: z6.number(), name: z6.string().optional(), phone: z6.string().optional(), active: z6.boolean().optional() })).mutation(({ input }) => updateDriver(input.id, { name: input.name, phone: input.phone, active: input.active })),
-    delete: staffProcedure.input(z6.object({ id: z6.number() })).mutation(({ input }) => deleteDriver(input.id)),
-    assignToOrder: staffProcedure.input(z6.object({ orderId: z6.number(), driverId: z6.number().nullable() })).mutation(async ({ input }) => {
+    update: staffProcedure.input(z7.object({ id: z7.number(), name: z7.string().optional(), phone: z7.string().optional(), active: z7.boolean().optional() })).mutation(({ input }) => updateDriver(input.id, { name: input.name, phone: input.phone, active: input.active })),
+    delete: staffProcedure.input(z7.object({ id: z7.number() })).mutation(({ input }) => deleteDriver(input.id)),
+    assignToOrder: staffProcedure.input(z7.object({ orderId: z7.number(), driverId: z7.number().nullable() })).mutation(async ({ input }) => {
       const prevOrder = await getOrderById(input.orderId);
       await assignDriverToOrder(input.orderId, input.driverId);
       const order = await getOrderById(input.orderId);
@@ -11525,23 +12004,23 @@ ${itemsList}
         });
       }
     }),
-    allLocations: staffProcedure.input(z6.object({ storeId: z6.number().optional() }).optional()).query(async ({ ctx, input }) => {
+    allLocations: staffProcedure.input(z7.object({ storeId: z7.number().optional() }).optional()).query(async ({ ctx, input }) => {
       const storeId = await resolveStoreId(ctx.user, input?.storeId);
       return getAllActiveDriverLocations(storeId);
     }),
-    updateLocation: publicProcedure.input(z6.object({ token: z6.string(), lat: z6.string(), lng: z6.string(), orderId: z6.number().optional() })).mutation(async ({ input }) => {
+    updateLocation: publicProcedure.input(z7.object({ token: z7.string(), lat: z7.string(), lng: z7.string(), orderId: z7.number().optional() })).mutation(async ({ input }) => {
       const driver = await getDriverByToken(input.token);
       if (!driver) throw new TRPCError6({ code: "UNAUTHORIZED", message: "Token inv\xE1lido" });
       await upsertDriverLocation(driver.id, input.lat, input.lng, input.orderId);
       return { ok: true };
     }),
-    myActiveOrder: publicProcedure.input(z6.object({ token: z6.string() })).query(async ({ input }) => {
+    myActiveOrder: publicProcedure.input(z7.object({ token: z7.string() })).query(async ({ input }) => {
       const driver = await getDriverByToken(input.token);
       if (!driver) throw new TRPCError6({ code: "UNAUTHORIZED", message: "Token inv\xE1lido" });
       const loc = await getDriverLocation(driver.id);
       return { driver: { id: driver.id, name: driver.name }, activeOrderId: loc?.orderId ?? null };
     }),
-    locationByOrder: protectedProcedure.input(z6.object({ orderId: z6.number() })).query(async ({ input, ctx }) => {
+    locationByOrder: protectedProcedure.input(z7.object({ orderId: z7.number() })).query(async ({ input, ctx }) => {
       const order = await getOrderById(input.orderId);
       if (!order) throw new TRPCError6({ code: "NOT_FOUND", message: "Pedido n\xE3o encontrado" });
       const isStaff = ctx.user.role === "admin" || ctx.user.role === "manager";
@@ -11557,31 +12036,31 @@ ${itemsList}
     }),
     // --- DRIVER APP: novas procedures ---
     // Dashboard do dia: entregas, ganhos, avaliação
-    todayStats: publicProcedure.input(z6.object({ token: z6.string() })).query(async ({ input }) => {
+    todayStats: publicProcedure.input(z7.object({ token: z7.string() })).query(async ({ input }) => {
       const driver = await getDriverByToken(input.token);
       if (!driver) throw new TRPCError6({ code: "UNAUTHORIZED", message: "Token inv\xE1lido" });
       return getDriverTodayStats(driver.id);
     }),
     // Detalhes do pedido ativo (endereço, itens, cliente) — mantido por compatibilidade
-    activeOrderDetails: publicProcedure.input(z6.object({ token: z6.string() })).query(async ({ input }) => {
+    activeOrderDetails: publicProcedure.input(z7.object({ token: z7.string() })).query(async ({ input }) => {
       const driver = await getDriverByToken(input.token);
       if (!driver) throw new TRPCError6({ code: "UNAUTHORIZED", message: "Token inv\xE1lido" });
       return getDriverActiveOrderDetails(driver.id);
     }),
     // Lista de TODOS os pedidos atribuídos ao motoboy (out_for_delivery)
-    assignedOrders: publicProcedure.input(z6.object({ token: z6.string() })).query(async ({ input }) => {
+    assignedOrders: publicProcedure.input(z7.object({ token: z7.string() })).query(async ({ input }) => {
       const driver = await getDriverByToken(input.token);
       if (!driver) throw new TRPCError6({ code: "UNAUTHORIZED", message: "Token inv\xE1lido" });
       return getDriverAssignedOrders(driver.id);
     }),
     // Histórico de entregas do dia
-    todayDeliveries: publicProcedure.input(z6.object({ token: z6.string() })).query(async ({ input }) => {
+    todayDeliveries: publicProcedure.input(z7.object({ token: z7.string() })).query(async ({ input }) => {
       const driver = await getDriverByToken(input.token);
       if (!driver) throw new TRPCError6({ code: "UNAUTHORIZED", message: "Token inv\xE1lido" });
       return getDriverTodayDeliveries(driver.id);
     }),
     // Confirmar entrega: status → delivered + push para cliente
-    confirmDelivery: publicProcedure.input(z6.object({ token: z6.string(), orderId: z6.number() })).mutation(async ({ input }) => {
+    confirmDelivery: publicProcedure.input(z7.object({ token: z7.string(), orderId: z7.number() })).mutation(async ({ input }) => {
       const driver = await getDriverByToken(input.token);
       if (!driver) throw new TRPCError6({ code: "UNAUTHORIZED", message: "Token inv\xE1lido" });
       const result = await driverConfirmDelivery(driver.id, input.orderId);
@@ -11609,12 +12088,12 @@ ${itemsList}
       return { success: true };
     }),
     // Salvar push subscription do motoboy
-    savePushSubscription: publicProcedure.input(z6.object({
-      token: z6.string(),
-      endpoint: z6.string(),
-      p256dh: z6.string(),
-      auth: z6.string(),
-      userAgent: z6.string().optional()
+    savePushSubscription: publicProcedure.input(z7.object({
+      token: z7.string(),
+      endpoint: z7.string(),
+      p256dh: z7.string(),
+      auth: z7.string(),
+      userAgent: z7.string().optional()
     })).mutation(async ({ input }) => {
       const driver = await getDriverByToken(input.token);
       if (!driver) throw new TRPCError6({ code: "UNAUTHORIZED", message: "Token inv\xE1lido" });
@@ -11622,7 +12101,7 @@ ${itemsList}
       return { ok: true };
     }),
     // Remover push subscription do motoboy
-    removePushSubscription: publicProcedure.input(z6.object({ token: z6.string(), endpoint: z6.string() })).mutation(async ({ input }) => {
+    removePushSubscription: publicProcedure.input(z7.object({ token: z7.string(), endpoint: z7.string() })).mutation(async ({ input }) => {
       const driver = await getDriverByToken(input.token);
       if (!driver) throw new TRPCError6({ code: "UNAUTHORIZED", message: "Token inv\xE1lido" });
       await removeDriverPushSubscription(driver.id, input.endpoint);
@@ -11630,21 +12109,21 @@ ${itemsList}
     })
   }),
   waiters: router({
-    me: publicProcedure.input(z6.object({ token: z6.string() })).query(async ({ input }) => {
+    me: publicProcedure.input(z7.object({ token: z7.string() })).query(async ({ input }) => {
       const waiter = await getStaffMemberByAccessToken(input.token);
       if (!waiter || waiter.role !== "waiter") {
         throw new TRPCError6({ code: "UNAUTHORIZED", message: "Token invalido" });
       }
       return waiter;
     }),
-    tables: publicProcedure.input(z6.object({ token: z6.string() })).query(async ({ input }) => {
+    tables: publicProcedure.input(z7.object({ token: z7.string() })).query(async ({ input }) => {
       const waiter = await getStaffMemberByAccessToken(input.token);
       if (!waiter || waiter.role !== "waiter") {
         throw new TRPCError6({ code: "UNAUTHORIZED", message: "Token invalido" });
       }
       return getDiningTables({ storeId: waiter.storeId ?? void 0, activeOnly: true });
     }),
-    sessions: publicProcedure.input(z6.object({ token: z6.string() })).query(async ({ input }) => {
+    sessions: publicProcedure.input(z7.object({ token: z7.string() })).query(async ({ input }) => {
       const waiter = await getStaffMemberByAccessToken(input.token);
       if (!waiter || waiter.role !== "waiter") {
         throw new TRPCError6({ code: "UNAUTHORIZED", message: "Token invalido" });
@@ -11654,19 +12133,19 @@ ${itemsList}
         (session) => (session.status === "open" || session.status === "awaiting_closure") && (session.waiterStaffId == null || session.waiterStaffId === waiter.id)
       );
     }),
-    menu: publicProcedure.input(z6.object({ token: z6.string() })).query(async ({ input }) => {
+    menu: publicProcedure.input(z7.object({ token: z7.string() })).query(async ({ input }) => {
       const waiter = await getStaffMemberByAccessToken(input.token);
       if (!waiter || waiter.role !== "waiter") {
         throw new TRPCError6({ code: "UNAUTHORIZED", message: "Token invalido" });
       }
       return getProducts({ storeId: waiter.storeId ?? void 0, activeOnly: true });
     }),
-    openSession: publicProcedure.input(z6.object({
-      token: z6.string(),
-      tableId: z6.number(),
-      customerName: z6.string().max(200).optional(),
-      guestCount: z6.number().int().min(1).max(50).optional(),
-      notes: z6.string().max(5e3).optional()
+    openSession: publicProcedure.input(z7.object({
+      token: z7.string(),
+      tableId: z7.number(),
+      customerName: z7.string().max(200).optional(),
+      guestCount: z7.number().int().min(1).max(50).optional(),
+      notes: z7.string().max(5e3).optional()
     })).mutation(async ({ input }) => {
       const waiter = await getStaffMemberByAccessToken(input.token);
       if (!waiter || waiter.role !== "waiter") {
@@ -11687,12 +12166,12 @@ ${itemsList}
       });
       return { id };
     }),
-    addItem: publicProcedure.input(z6.object({
-      token: z6.string(),
-      tableSessionId: z6.number(),
-      productId: z6.number(),
-      quantity: z6.number().int().min(1).max(100),
-      notes: z6.string().max(500).optional()
+    addItem: publicProcedure.input(z7.object({
+      token: z7.string(),
+      tableSessionId: z7.number(),
+      productId: z7.number(),
+      quantity: z7.number().int().min(1).max(100),
+      notes: z7.string().max(500).optional()
     })).mutation(async ({ input }) => {
       const waiter = await getStaffMemberByAccessToken(input.token);
       if (!waiter || waiter.role !== "waiter") {
@@ -11708,11 +12187,11 @@ ${itemsList}
       });
       return { itemId };
     }),
-    closeSession: publicProcedure.input(z6.object({
-      token: z6.string(),
-      id: z6.number(),
-      discountAmount: z6.string().regex(/^\d+(\.\d{1,2})?$/).optional(),
-      tipAmount: z6.string().regex(/^\d+(\.\d{1,2})?$/).optional()
+    closeSession: publicProcedure.input(z7.object({
+      token: z7.string(),
+      id: z7.number(),
+      discountAmount: z7.string().regex(/^\d+(\.\d{1,2})?$/).optional(),
+      tipAmount: z7.string().regex(/^\d+(\.\d{1,2})?$/).optional()
     })).mutation(async ({ input }) => {
       const waiter = await getStaffMemberByAccessToken(input.token);
       if (!waiter || waiter.role !== "waiter") {
@@ -11732,9 +12211,9 @@ ${itemsList}
   paymentSettings: router({
     getPublic: publicProcedure.query(() => getPaymentSettingsPublic()),
     getAdmin: adminProcedure3.query(() => getPaymentSettingsAdmin()),
-    save: adminProcedure3.input(z6.object({
+    save: adminProcedure3.input(z7.object({
       config: paymentConfigSchema,
-      pixKey: z6.string().max(120)
+      pixKey: z7.string().max(120)
     })).mutation(async ({ input }) => {
       await savePaymentSettings(input);
       return getPaymentSettingsAdmin();
@@ -11751,16 +12230,16 @@ ${itemsList}
     // Staff endpoint with all settings including sensitive fields
     getAdmin: staffProcedure.query(() => getAllStoreSettings()),
     // Staff pode salvar configurações da loja
-    save: staffProcedure.input(z6.object({
-      storeHours: z6.record(z6.string(), z6.union([
-        z6.null(),
-        z6.object({ open: z6.string(), close: z6.string() })
+    save: staffProcedure.input(z7.object({
+      storeHours: z7.record(z7.string(), z7.union([
+        z7.null(),
+        z7.object({ open: z7.string(), close: z7.string() })
       ])),
-      deliveryCepPrefixes: z6.array(z6.string()),
-      pixKey: z6.string().optional(),
-      whatsappNumber: z6.string().optional(),
-      deliveryFee: z6.string().optional(),
-      minOrderValue: z6.string().optional()
+      deliveryCepPrefixes: z7.array(z7.string()),
+      pixKey: z7.string().optional(),
+      whatsappNumber: z7.string().optional(),
+      deliveryFee: z7.string().optional(),
+      minOrderValue: z7.string().optional()
     })).mutation(async ({ input }) => {
       await setStoreSetting("storeHours", JSON.stringify(input.storeHours));
       await setStoreSetting("deliveryCepPrefixes", JSON.stringify(input.deliveryCepPrefixes));
@@ -11770,14 +12249,14 @@ ${itemsList}
       if (input.minOrderValue !== void 0) await setStoreSetting("minOrderValue", input.minOrderValue);
       return { success: true };
     }),
-    savePizzaFlavorConfig: staffProcedure.input(z6.object({
-      enabled: z6.boolean(),
-      pricingMode: z6.enum(["highest"]).default("highest"),
-      maxFlavorsBySize: z6.object({
-        small: z6.number().int().min(1).max(4),
-        medium: z6.number().int().min(1).max(4),
-        large: z6.number().int().min(1).max(4),
-        family: z6.number().int().min(1).max(4)
+    savePizzaFlavorConfig: staffProcedure.input(z7.object({
+      enabled: z7.boolean(),
+      pricingMode: z7.enum(["highest"]).default("highest"),
+      maxFlavorsBySize: z7.object({
+        small: z7.number().int().min(1).max(4),
+        medium: z7.number().int().min(1).max(4),
+        large: z7.number().int().min(1).max(4),
+        family: z7.number().int().min(1).max(4)
       })
     })).mutation(async ({ input }) => {
       await setStoreSetting("pizzaFlavorConfig", JSON.stringify(input));
@@ -11787,10 +12266,10 @@ ${itemsList}
   // --- DELIVERY RATINGS -----------------------------------------------------------
   ratings: router({
     // Cliente avalia a entrega após receber o pedido
-    submit: protectedProcedure.input(z6.object({
-      orderId: z6.number(),
-      rating: z6.number().min(1).max(5),
-      comment: z6.string().optional()
+    submit: protectedProcedure.input(z7.object({
+      orderId: z7.number(),
+      rating: z7.number().min(1).max(5),
+      comment: z7.string().optional()
     })).mutation(async ({ ctx, input }) => {
       const order = await getOrderById(input.orderId);
       if (!order) throw new TRPCError6({ code: "NOT_FOUND", message: "Pedido n\xE3o encontrado" });
@@ -11816,13 +12295,13 @@ ${itemsList}
       return { success: true };
     }),
     // Verificar se um pedido já foi avaliado
-    getByOrder: protectedProcedure.input(z6.object({ orderId: z6.number() })).query(async ({ ctx, input }) => {
+    getByOrder: protectedProcedure.input(z7.object({ orderId: z7.number() })).query(async ({ ctx, input }) => {
       const order = await getOrderById(input.orderId);
       if (!order || order.userId !== ctx.user.id) return null;
       return getRatingByOrder(input.orderId);
     }),
     // Perfil público do motoboy com avaliações e histórico
-    driverProfile: publicProcedure.input(z6.object({ driverId: z6.number() })).query(async ({ input }) => {
+    driverProfile: publicProcedure.input(z7.object({ driverId: z7.number() })).query(async ({ input }) => {
       const driver = await getDriverById(input.driverId);
       if (!driver) throw new TRPCError6({ code: "NOT_FOUND", message: "Motoboy n\xE3o encontrado" });
       const [ratings, stats, history] = await Promise.all([
@@ -11835,57 +12314,57 @@ ${itemsList}
       return { driver: safeDriver, ratings: safeRatings, stats, history };
     }),
     // Admin: ver todas as avaliações de um motoboy
-    driverRatings: adminProcedure3.input(z6.object({ driverId: z6.number() })).query(({ input }) => getDriverRatings(input.driverId))
+    driverRatings: adminProcedure3.input(z7.object({ driverId: z7.number() })).query(({ input }) => getDriverRatings(input.driverId))
   }),
   // --- ADDRESSES --------------------------------------------------------------
   addresses: router({
     list: protectedProcedure.query(({ ctx }) => getUserAddresses(ctx.user.id)),
-    create: protectedProcedure.input(z6.object({
-      label: z6.string().min(1).max(50),
-      address: z6.string().min(1),
-      cep: z6.string().optional(),
-      city: z6.string().optional(),
-      isDefault: z6.boolean().optional()
+    create: protectedProcedure.input(z7.object({
+      label: z7.string().min(1).max(50),
+      address: z7.string().min(1),
+      cep: z7.string().optional(),
+      city: z7.string().optional(),
+      isDefault: z7.boolean().optional()
     })).mutation(({ ctx, input }) => createUserAddress({ ...input, userId: ctx.user.id, isDefault: input.isDefault ?? false })),
-    update: protectedProcedure.input(z6.object({
-      id: z6.number(),
-      label: z6.string().min(1).max(50).optional(),
-      address: z6.string().min(1).optional(),
-      cep: z6.string().optional(),
-      city: z6.string().optional(),
-      isDefault: z6.boolean().optional()
+    update: protectedProcedure.input(z7.object({
+      id: z7.number(),
+      label: z7.string().min(1).max(50).optional(),
+      address: z7.string().min(1).optional(),
+      cep: z7.string().optional(),
+      city: z7.string().optional(),
+      isDefault: z7.boolean().optional()
     })).mutation(({ ctx, input }) => {
       const { id, ...data } = input;
       return updateUserAddress(id, ctx.user.id, data);
     }),
-    delete: protectedProcedure.input(z6.object({ id: z6.number() })).mutation(({ ctx, input }) => deleteUserAddress(input.id, ctx.user.id))
+    delete: protectedProcedure.input(z7.object({ id: z7.number() })).mutation(({ ctx, input }) => deleteUserAddress(input.id, ctx.user.id))
   }),
   // --- FAVORITES --------------------------------------------------------------
   favorites: router({
     list: protectedProcedure.query(({ ctx }) => getUserFavorites(ctx.user.id)),
-    toggle: protectedProcedure.input(z6.object({ productId: z6.number() })).mutation(({ ctx, input }) => toggleFavorite(ctx.user.id, input.productId))
+    toggle: protectedProcedure.input(z7.object({ productId: z7.number() })).mutation(({ ctx, input }) => toggleFavorite(ctx.user.id, input.productId))
   }),
   // --- NOTIFICATIONS ----------------------------------------------------------
   notifications: router({
     list: protectedProcedure.query(({ ctx }) => getClientNotifications(ctx.user.id)),
     unreadCount: protectedProcedure.query(({ ctx }) => getUnreadNotificationCount(ctx.user.id)),
     markRead: protectedProcedure.mutation(({ ctx }) => markNotificationsRead(ctx.user.id)),
-    send: adminProcedure3.input(z6.object({
-      userId: z6.number(),
-      title: z6.string(),
-      message: z6.string(),
-      type: z6.enum(["order", "promo", "system"]).optional()
+    send: adminProcedure3.input(z7.object({
+      userId: z7.number(),
+      title: z7.string(),
+      message: z7.string(),
+      type: z7.enum(["order", "promo", "system"]).optional()
     })).mutation(({ input }) => createClientNotification({ ...input, type: input.type ?? "system" })),
     // --- Agendamento de notificações ---
     scheduleList: staffProcedure.query(() => listScheduledNotifications()),
-    scheduleCreate: adminProcedure3.input(z6.object({
-      title: z6.string().min(1).max(200),
-      message: z6.string().min(1),
-      channel: z6.enum(["push", "whatsapp", "both"]).default("push"),
-      targetAudience: z6.enum(["all", "active", "inactive", "club"]).default("all"),
-      scheduledAt: z6.date(),
-      recurrence: z6.enum(["once", "daily", "weekly"]).default("once"),
-      neighborhoodFilter: z6.array(z6.string()).optional().nullable()
+    scheduleCreate: adminProcedure3.input(z7.object({
+      title: z7.string().min(1).max(200),
+      message: z7.string().min(1),
+      channel: z7.enum(["push", "whatsapp", "both"]).default("push"),
+      targetAudience: z7.enum(["all", "active", "inactive", "club"]).default("all"),
+      scheduledAt: z7.date(),
+      recurrence: z7.enum(["once", "daily", "weekly"]).default("once"),
+      neighborhoodFilter: z7.array(z7.string()).optional().nullable()
     })).mutation(({ ctx, input }) => createScheduledNotification({
       title: input.title,
       message: input.message,
@@ -11898,8 +12377,8 @@ ${itemsList}
       sentCount: 0,
       createdBy: ctx.user.id
     })),
-    scheduleCancel: adminProcedure3.input(z6.object({ id: z6.number() })).mutation(({ input }) => cancelScheduledNotification(input.id)),
-    scheduleDelete: adminProcedure3.input(z6.object({ id: z6.number() })).mutation(({ input }) => deleteScheduledNotification(input.id))
+    scheduleCancel: adminProcedure3.input(z7.object({ id: z7.number() })).mutation(({ input }) => cancelScheduledNotification(input.id)),
+    scheduleDelete: adminProcedure3.input(z7.object({ id: z7.number() })).mutation(({ input }) => deleteScheduledNotification(input.id))
   }),
   // --- LOYALTY ----------------------------------------------------------------
   loyalty: router({
@@ -11907,7 +12386,7 @@ ${itemsList}
     spendingHistory: protectedProcedure.query(({ ctx }) => getUserSpendingHistory(ctx.user.id)),
     history: protectedProcedure.query(({ ctx }) => getLoyaltyHistory(ctx.user.id)),
     // Preview do desconto de pontos (sem debitar — o débito acontece no createOrder)
-    preview: protectedProcedure.input(z6.object({ points: z6.number().int().min(50).max(5e3) })).query(async ({ ctx, input }) => {
+    preview: protectedProcedure.input(z7.object({ points: z7.number().int().min(50).max(5e3) })).query(async ({ ctx, input }) => {
       const POINTS_TO_BRL = 0.1;
       const balance = await getUserLoyaltyPoints(ctx.user.id);
       const pts = Math.min(input.points, balance);
@@ -11916,17 +12395,17 @@ ${itemsList}
       return { discount, pointsUsed: pts, balance };
     }),
     // Admin: adicionar pontos manualmente
-    adminAdd: adminProcedure3.input(z6.object({ userId: z6.number(), points: z6.number().int().min(1), description: z6.string().optional() })).mutation(async ({ input }) => {
+    adminAdd: adminProcedure3.input(z7.object({ userId: z7.number(), points: z7.number().int().min(1), description: z7.string().optional() })).mutation(async ({ input }) => {
       await addLoyaltyPoints(input.userId, input.points, void 0, input.description ?? `+${input.points} pontos (manual)`);
       return { ok: true };
     })
   }),
   // --- AVATAR -----------------------------------------------------------------------------
   avatar: router({
-    upload: protectedProcedure.input(z6.object({
-      base64: z6.string().max(4e6),
+    upload: protectedProcedure.input(z7.object({
+      base64: z7.string().max(4e6),
       // ~3MB base64 limit for avatars
-      mimeType: z6.enum(["image/jpeg", "image/png", "image/webp", "image/gif"])
+      mimeType: z7.enum(["image/jpeg", "image/png", "image/webp", "image/gif"])
     })).mutation(async ({ ctx, input }) => {
       const { storagePutAdapter: storagePut2 } = await Promise.resolve().then(() => (init_storage2(), storage_exports2));
       const buffer = Buffer.from(input.base64, "base64");
@@ -11936,11 +12415,11 @@ ${itemsList}
       await updateUserAvatar(ctx.user.id, url);
       return { url };
     }),
-    update: protectedProcedure.input(z6.object({ avatarUrl: z6.string().url() })).mutation(({ ctx, input }) => updateUserAvatar(ctx.user.id, input.avatarUrl))
+    update: protectedProcedure.input(z7.object({ avatarUrl: z7.string().url() })).mutation(({ ctx, input }) => updateUserAvatar(ctx.user.id, input.avatarUrl))
   }),
   // --- CHAT (mensagens do pedido) ---
   chat: router({
-    messages: protectedProcedure.input(z6.object({ orderId: z6.number() })).query(async ({ ctx, input }) => {
+    messages: protectedProcedure.input(z7.object({ orderId: z7.number() })).query(async ({ ctx, input }) => {
       const order = await getOrderById(input.orderId);
       if (!order) throw new TRPCError6({ code: "NOT_FOUND" });
       if (order.userId !== ctx.user.id && ctx.user.role !== "admin") {
@@ -11949,7 +12428,7 @@ ${itemsList}
       const msgs = await getOrderMessages(input.orderId);
       return { messages: msgs, aiPaused: order.aiPaused ?? false };
     }),
-    send: protectedProcedure.input(z6.object({ orderId: z6.number(), message: z6.string().min(1).max(1e3), senderRole: z6.enum(["customer", "admin"]).optional() })).mutation(async ({ ctx, input }) => {
+    send: protectedProcedure.input(z7.object({ orderId: z7.number(), message: z7.string().min(1).max(1e3), senderRole: z7.enum(["customer", "admin"]).optional() })).mutation(async ({ ctx, input }) => {
       const order = await getOrderById(input.orderId);
       if (!order) throw new TRPCError6({ code: "NOT_FOUND" });
       if (order.userId !== ctx.user.id && ctx.user.role !== "admin") {
@@ -11987,7 +12466,7 @@ ${itemsList}
       }
       return msg;
     }),
-    markRead: protectedProcedure.input(z6.object({ orderId: z6.number() })).mutation(async ({ ctx, input }) => {
+    markRead: protectedProcedure.input(z7.object({ orderId: z7.number() })).mutation(async ({ ctx, input }) => {
       if (ctx.user.role !== "admin") {
         const order = await getOrderById(input.orderId);
         if (!order || order.userId !== ctx.user.id) throw new TRPCError6({ code: "FORBIDDEN" });
@@ -11996,7 +12475,7 @@ ${itemsList}
       await markMessagesRead(input.orderId, readerRole);
       return { ok: true };
     }),
-    unreadCount: protectedProcedure.input(z6.object({ orderId: z6.number() })).query(async ({ ctx, input }) => {
+    unreadCount: protectedProcedure.input(z7.object({ orderId: z7.number() })).query(async ({ ctx, input }) => {
       if (ctx.user.role !== "admin") {
         const order = await getOrderById(input.orderId);
         if (!order || order.userId !== ctx.user.id) return { count: 0 };
@@ -12011,7 +12490,7 @@ ${itemsList}
       return { count: await getTotalUnreadForUser(ctx.user.id) };
     }),
     // IA responde automaticamente quando o cliente envia uma mensagem
-    aiReply: protectedProcedure.input(z6.object({ orderId: z6.number() })).mutation(async ({ ctx, input }) => {
+    aiReply: protectedProcedure.input(z7.object({ orderId: z7.number() })).mutation(async ({ ctx, input }) => {
       const order = await getOrderById(input.orderId);
       if (!order) throw new TRPCError6({ code: "NOT_FOUND" });
       if (order.userId !== ctx.user.id && ctx.user.role !== "admin") {
@@ -12075,7 +12554,7 @@ Telefone/WhatsApp: ${dbSettings.whatsappNumber ?? "(37) 99999-0000"}`
       return { reply };
     }),
     // Solicitar atendente humano — pausa a IA e notifica o admin
-    requestHuman: protectedProcedure.input(z6.object({ orderId: z6.number() })).mutation(async ({ ctx, input }) => {
+    requestHuman: protectedProcedure.input(z7.object({ orderId: z7.number() })).mutation(async ({ ctx, input }) => {
       const order = await getOrderById(input.orderId);
       if (!order) throw new TRPCError6({ code: "NOT_FOUND" });
       if (order.userId !== ctx.user.id) throw new TRPCError6({ code: "FORBIDDEN" });
@@ -12090,29 +12569,29 @@ Telefone/WhatsApp: ${dbSettings.whatsappNumber ?? "(37) 99999-0000"}`
       return { ok: true };
     }),
     // Retomar IA (admin pode reativar)
-    resumeAI: protectedProcedure.input(z6.object({ orderId: z6.number() })).mutation(async ({ ctx, input }) => {
+    resumeAI: protectedProcedure.input(z7.object({ orderId: z7.number() })).mutation(async ({ ctx, input }) => {
       if (ctx.user.role !== "admin") throw new TRPCError6({ code: "FORBIDDEN" });
       await setOrderAiPaused(input.orderId, false);
       return { ok: true };
     }),
-    ordersWithMessages: staffProcedure.input(z6.object({ storeId: z6.number().optional() }).optional()).query(async ({ ctx, input }) => {
+    ordersWithMessages: staffProcedure.input(z7.object({ storeId: z7.number().optional() }).optional()).query(async ({ ctx, input }) => {
       const storeId = await resolveStoreId(ctx.user, input?.storeId);
       return getOrdersWithMessages(storeId);
     })
   }),
   // ─── PUSH NOTIFICATIONS ────────────────────────────────────────────────────
   push: router({
-    subscribe: protectedProcedure.input(z6.object({
-      endpoint: z6.string().url(),
-      p256dh: z6.string(),
-      auth: z6.string(),
-      userAgent: z6.string().max(512).optional()
+    subscribe: protectedProcedure.input(z7.object({
+      endpoint: z7.string().url(),
+      p256dh: z7.string(),
+      auth: z7.string(),
+      userAgent: z7.string().max(512).optional()
     })).mutation(async ({ ctx, input }) => {
       const safeUserAgent = input.userAgent?.substring(0, 512);
       await savePushSubscription(ctx.user.id, input.endpoint, input.p256dh, input.auth, safeUserAgent);
       return { ok: true };
     }),
-    unsubscribe: protectedProcedure.input(z6.object({ endpoint: z6.string() })).mutation(async ({ ctx, input }) => {
+    unsubscribe: protectedProcedure.input(z7.object({ endpoint: z7.string() })).mutation(async ({ ctx, input }) => {
       await removePushSubscription(ctx.user.id, input.endpoint);
       return { ok: true };
     }),
@@ -12126,109 +12605,109 @@ Telefone/WhatsApp: ${dbSettings.whatsappNumber ?? "(37) 99999-0000"}`
       const list = await listJourneys();
       return list.map((j) => ({ ...j, steps: JSON.parse(j.steps) }));
     }),
-    getJourney: adminProcedure3.input(z6.object({ id: z6.number() })).query(async ({ input }) => {
+    getJourney: adminProcedure3.input(z7.object({ id: z7.number() })).query(async ({ input }) => {
       const j = await getJourneyById(input.id);
       if (!j) throw new TRPCError6({ code: "NOT_FOUND" });
       return { ...j, steps: JSON.parse(j.steps) };
     }),
-    createJourney: adminProcedure3.input(z6.object({
-      name: z6.string().min(1),
-      description: z6.string().optional(),
-      trigger: z6.enum(["checkout_abandoned", "tag_inativo_15", "tag_inativo_30", "tag_inativo_60", "tag_inativo_custom", "first_order", "new_user", "club_subscriber", "manual", "order_delivered", "order_cancelled", "birthday", "loyalty_milestone", "rating_submitted", "rating_negative", "club_expiring", "first_order_month"]),
-      steps: z6.array(z6.object({
-        id: z6.string(),
-        type: z6.enum(["wait", "send_whatsapp", "send_push", "condition", "add_tag", "remove_tag", "webhook", "send_coupon", "update_loyalty", "send_alert", "split_ab", "pause_journey", "notify_admin"]),
-        label: z6.string(),
-        delayMinutes: z6.number().optional(),
-        message: z6.string().optional(),
-        title: z6.string().optional(),
-        condition: z6.enum(["purchased_since_start", "has_tag", "has_min_orders", "has_min_points"]).optional(),
-        conditionTag: z6.string().optional(),
-        conditionValue: z6.number().optional(),
-        onTrue: z6.enum(["continue", "stop"]).optional(),
-        onFalse: z6.enum(["continue", "stop"]).optional(),
-        tag: z6.string().optional(),
-        couponDiscountType: z6.enum(["percentage", "fixed"]).optional(),
-        couponDiscountValue: z6.number().optional(),
-        couponExpiryDays: z6.number().optional(),
-        loyaltyPoints: z6.number().optional(),
-        loyaltyDescription: z6.string().optional(),
-        alertTitle: z6.string().optional(),
-        alertMessage: z6.string().optional(),
-        alertIcon: z6.string().optional(),
-        alertUrl: z6.string().optional(),
-        messageA: z6.string().optional(),
-        messageB: z6.string().optional(),
-        titleA: z6.string().optional(),
-        titleB: z6.string().optional(),
-        splitChannel: z6.enum(["whatsapp", "push"]).optional(),
-        webhookUrl: z6.string().optional(),
-        secret: z6.string().optional(),
-        pauseJourneyId: z6.number().optional(),
-        adminTaskTitle: z6.string().optional(),
-        adminTaskMessage: z6.string().optional(),
-        adminTaskPriority: z6.enum(["low", "normal", "high"]).optional()
+    createJourney: adminProcedure3.input(z7.object({
+      name: z7.string().min(1),
+      description: z7.string().optional(),
+      trigger: z7.enum(["checkout_abandoned", "tag_inativo_15", "tag_inativo_30", "tag_inativo_60", "tag_inativo_custom", "first_order", "new_user", "club_subscriber", "manual", "order_delivered", "order_cancelled", "birthday", "loyalty_milestone", "rating_submitted", "rating_negative", "club_expiring", "first_order_month"]),
+      steps: z7.array(z7.object({
+        id: z7.string(),
+        type: z7.enum(["wait", "send_whatsapp", "send_push", "condition", "add_tag", "remove_tag", "webhook", "send_coupon", "update_loyalty", "send_alert", "split_ab", "pause_journey", "notify_admin"]),
+        label: z7.string(),
+        delayMinutes: z7.number().optional(),
+        message: z7.string().optional(),
+        title: z7.string().optional(),
+        condition: z7.enum(["purchased_since_start", "has_tag", "has_min_orders", "has_min_points"]).optional(),
+        conditionTag: z7.string().optional(),
+        conditionValue: z7.number().optional(),
+        onTrue: z7.enum(["continue", "stop"]).optional(),
+        onFalse: z7.enum(["continue", "stop"]).optional(),
+        tag: z7.string().optional(),
+        couponDiscountType: z7.enum(["percentage", "fixed"]).optional(),
+        couponDiscountValue: z7.number().optional(),
+        couponExpiryDays: z7.number().optional(),
+        loyaltyPoints: z7.number().optional(),
+        loyaltyDescription: z7.string().optional(),
+        alertTitle: z7.string().optional(),
+        alertMessage: z7.string().optional(),
+        alertIcon: z7.string().optional(),
+        alertUrl: z7.string().optional(),
+        messageA: z7.string().optional(),
+        messageB: z7.string().optional(),
+        titleA: z7.string().optional(),
+        titleB: z7.string().optional(),
+        splitChannel: z7.enum(["whatsapp", "push"]).optional(),
+        webhookUrl: z7.string().optional(),
+        secret: z7.string().optional(),
+        pauseJourneyId: z7.number().optional(),
+        adminTaskTitle: z7.string().optional(),
+        adminTaskMessage: z7.string().optional(),
+        adminTaskPriority: z7.enum(["low", "normal", "high"]).optional()
       })),
-      daysInactive: z6.number().optional()
+      daysInactive: z7.number().optional()
     })).mutation(async ({ input }) => {
       const id = await createJourney(input);
       return { id };
     }),
-    updateJourney: adminProcedure3.input(z6.object({
-      id: z6.number(),
-      name: z6.string().optional(),
-      description: z6.string().optional(),
-      trigger: z6.enum(["checkout_abandoned", "tag_inativo_15", "tag_inativo_30", "tag_inativo_60", "tag_inativo_custom", "first_order", "new_user", "club_subscriber", "manual", "order_delivered", "order_cancelled", "birthday", "loyalty_milestone", "rating_submitted", "rating_negative", "club_expiring", "first_order_month"]).optional(),
-      status: z6.enum(["active", "paused", "draft"]).optional(),
-      steps: z6.array(z6.object({
-        id: z6.string(),
-        type: z6.enum(["wait", "send_whatsapp", "send_push", "condition", "add_tag", "remove_tag", "webhook", "send_coupon", "update_loyalty", "send_alert", "split_ab", "pause_journey", "notify_admin"]),
-        label: z6.string(),
-        delayMinutes: z6.number().optional(),
-        message: z6.string().optional(),
-        title: z6.string().optional(),
-        condition: z6.enum(["purchased_since_start", "has_tag", "has_min_orders", "has_min_points"]).optional(),
-        conditionTag: z6.string().optional(),
-        conditionValue: z6.number().optional(),
-        onTrue: z6.enum(["continue", "stop"]).optional(),
-        onFalse: z6.enum(["continue", "stop"]).optional(),
-        tag: z6.string().optional(),
-        couponDiscountType: z6.enum(["percentage", "fixed"]).optional(),
-        couponDiscountValue: z6.number().optional(),
-        couponExpiryDays: z6.number().optional(),
-        loyaltyPoints: z6.number().optional(),
-        loyaltyDescription: z6.string().optional(),
-        alertTitle: z6.string().optional(),
-        alertMessage: z6.string().optional(),
-        alertIcon: z6.string().optional(),
-        alertUrl: z6.string().optional(),
-        messageA: z6.string().optional(),
-        messageB: z6.string().optional(),
-        titleA: z6.string().optional(),
-        titleB: z6.string().optional(),
-        splitChannel: z6.enum(["whatsapp", "push"]).optional(),
-        webhookUrl: z6.string().optional(),
-        secret: z6.string().optional()
+    updateJourney: adminProcedure3.input(z7.object({
+      id: z7.number(),
+      name: z7.string().optional(),
+      description: z7.string().optional(),
+      trigger: z7.enum(["checkout_abandoned", "tag_inativo_15", "tag_inativo_30", "tag_inativo_60", "tag_inativo_custom", "first_order", "new_user", "club_subscriber", "manual", "order_delivered", "order_cancelled", "birthday", "loyalty_milestone", "rating_submitted", "rating_negative", "club_expiring", "first_order_month"]).optional(),
+      status: z7.enum(["active", "paused", "draft"]).optional(),
+      steps: z7.array(z7.object({
+        id: z7.string(),
+        type: z7.enum(["wait", "send_whatsapp", "send_push", "condition", "add_tag", "remove_tag", "webhook", "send_coupon", "update_loyalty", "send_alert", "split_ab", "pause_journey", "notify_admin"]),
+        label: z7.string(),
+        delayMinutes: z7.number().optional(),
+        message: z7.string().optional(),
+        title: z7.string().optional(),
+        condition: z7.enum(["purchased_since_start", "has_tag", "has_min_orders", "has_min_points"]).optional(),
+        conditionTag: z7.string().optional(),
+        conditionValue: z7.number().optional(),
+        onTrue: z7.enum(["continue", "stop"]).optional(),
+        onFalse: z7.enum(["continue", "stop"]).optional(),
+        tag: z7.string().optional(),
+        couponDiscountType: z7.enum(["percentage", "fixed"]).optional(),
+        couponDiscountValue: z7.number().optional(),
+        couponExpiryDays: z7.number().optional(),
+        loyaltyPoints: z7.number().optional(),
+        loyaltyDescription: z7.string().optional(),
+        alertTitle: z7.string().optional(),
+        alertMessage: z7.string().optional(),
+        alertIcon: z7.string().optional(),
+        alertUrl: z7.string().optional(),
+        messageA: z7.string().optional(),
+        messageB: z7.string().optional(),
+        titleA: z7.string().optional(),
+        titleB: z7.string().optional(),
+        splitChannel: z7.enum(["whatsapp", "push"]).optional(),
+        webhookUrl: z7.string().optional(),
+        secret: z7.string().optional()
       })).optional()
     })).mutation(async ({ input }) => {
       const { id, ...data } = input;
       await updateJourney(id, data);
       return { ok: true };
     }),
-    deleteJourney: adminProcedure3.input(z6.object({ id: z6.number() })).mutation(async ({ input }) => {
+    deleteJourney: adminProcedure3.input(z7.object({ id: z7.number() })).mutation(async ({ input }) => {
       await deleteJourney(input.id);
       return { ok: true };
     }),
-    duplicateJourney: adminProcedure3.input(z6.object({ id: z6.number() })).mutation(async ({ input }) => {
+    duplicateJourney: adminProcedure3.input(z7.object({ id: z7.number() })).mutation(async ({ input }) => {
       const newId = await duplicateJourney(input.id);
       if (newId === -1) throw new TRPCError6({ code: "NOT_FOUND", message: "Jornada n\xE3o encontrada" });
       return { id: newId };
     }),
-    toggleJourney: adminProcedure3.input(z6.object({ id: z6.number(), status: z6.enum(["active", "paused", "draft"]) })).mutation(async ({ input }) => {
+    toggleJourney: adminProcedure3.input(z7.object({ id: z7.number(), status: z7.enum(["active", "paused", "draft"]) })).mutation(async ({ input }) => {
       await updateJourney(input.id, { status: input.status });
       return { ok: true };
     }),
-    listExecutions: adminProcedure3.input(z6.object({ journeyId: z6.number().optional(), storeId: z6.number().optional() })).query(async ({ input, ctx }) => {
+    listExecutions: adminProcedure3.input(z7.object({ journeyId: z7.number().optional(), storeId: z7.number().optional() })).query(async ({ input, ctx }) => {
       const executions = await listExecutions(input.journeyId);
       const storeId = await resolveStoreId(ctx.user, input.storeId);
       if (!storeId || executions.length === 0) return executions;
@@ -12238,11 +12717,11 @@ Telefone/WhatsApp: ${dbSettings.whatsappNumber ?? "(37) 99999-0000"}`
       const allowedUserIds = new Set(storeUserRows.map((row) => row.userId).filter((value) => typeof value === "number"));
       return executions.filter((execution) => allowedUserIds.has(execution.userId));
     }),
-    cancelExecution: adminProcedure3.input(z6.object({ id: z6.number() })).mutation(async ({ input }) => {
+    cancelExecution: adminProcedure3.input(z7.object({ id: z7.number() })).mutation(async ({ input }) => {
       await cancelExecution(input.id);
       return { ok: true };
     }),
-    triggerJourney: adminProcedure3.input(z6.object({ journeyId: z6.number(), userIds: z6.array(z6.number()) })).mutation(async ({ input }) => {
+    triggerJourney: adminProcedure3.input(z7.object({ journeyId: z7.number(), userIds: z7.array(z7.number()) })).mutation(async ({ input }) => {
       let started = 0;
       for (const uid of input.userIds) {
         const r = await startJourneyExecution(input.journeyId, uid);
@@ -12258,27 +12737,27 @@ Telefone/WhatsApp: ${dbSettings.whatsappNumber ?? "(37) 99999-0000"}`
       await refreshCustomerTags();
       return { ok: true };
     }),
-    listAbandonedCarts: adminProcedure3.input(z6.object({ status: z6.enum(["pending", "recovered", "expired"]).optional() })).query(async ({ input }) => listAbandonedCarts(input.status)),
-    registerAbandonedCart: protectedProcedure.input(z6.object({
-      customerName: z6.string(),
-      customerPhone: z6.string().optional(),
-      items: z6.array(z6.object({
-        productId: z6.number(),
-        productName: z6.string(),
-        quantity: z6.number(),
-        productPrice: z6.string()
+    listAbandonedCarts: adminProcedure3.input(z7.object({ status: z7.enum(["pending", "recovered", "expired"]).optional() })).query(async ({ input }) => listAbandonedCarts(input.status)),
+    registerAbandonedCart: protectedProcedure.input(z7.object({
+      customerName: z7.string(),
+      customerPhone: z7.string().optional(),
+      items: z7.array(z7.object({
+        productId: z7.number(),
+        productName: z7.string(),
+        quantity: z7.number(),
+        productPrice: z7.string()
       })),
-      total: z6.string()
+      total: z7.string()
     })).mutation(async ({ ctx, input }) => {
       const id = await registerAbandonedCart({ userId: ctx.user.id, ...input });
       return { id };
     }),
-    generateWebhookToken: adminProcedure3.input(z6.object({ id: z6.number() })).mutation(async ({ input }) => {
+    generateWebhookToken: adminProcedure3.input(z7.object({ id: z7.number() })).mutation(async ({ input }) => {
       const token = crypto2.randomBytes(32).toString("hex");
       await updateJourney(input.id, { webhookToken: token });
       return { token };
     }),
-    getWebhookToken: adminProcedure3.input(z6.object({ id: z6.number() })).query(async ({ input }) => {
+    getWebhookToken: adminProcedure3.input(z7.object({ id: z7.number() })).query(async ({ input }) => {
       const j = await getJourneyById(input.id);
       if (!j) throw new TRPCError6({ code: "NOT_FOUND" });
       return { token: j.webhookToken };
@@ -12287,7 +12766,7 @@ Telefone/WhatsApp: ${dbSettings.whatsappNumber ?? "(37) 99999-0000"}`
       await processJourneyExecutions();
       return { ok: true };
     }),
-    getExecutionLogs: adminProcedure3.input(z6.object({ executionId: z6.number() })).query(async ({ input }) => {
+    getExecutionLogs: adminProcedure3.input(z7.object({ executionId: z7.number() })).query(async ({ input }) => {
       const execs = await listExecutions();
       const exec = execs.find((e) => e.id === input.executionId);
       if (!exec) throw new TRPCError6({ code: "NOT_FOUND" });
@@ -12296,18 +12775,18 @@ Telefone/WhatsApp: ${dbSettings.whatsappNumber ?? "(37) 99999-0000"}`
         logs: exec.logs ? JSON.parse(exec.logs) : []
       };
     }),
-    testTrigger: adminProcedure3.input(z6.object({
-      journeyId: z6.number(),
-      trigger: z6.enum(["checkout_abandoned", "tag_inativo_15", "tag_inativo_30", "tag_inativo_60", "tag_inativo_custom", "first_order", "new_user", "club_subscriber", "manual", "order_delivered", "order_cancelled", "birthday", "loyalty_milestone", "rating_submitted", "rating_negative", "club_expiring", "first_order_month"]),
-      userId: z6.number().optional(),
-      phone: z6.string().optional()
+    testTrigger: adminProcedure3.input(z7.object({
+      journeyId: z7.number(),
+      trigger: z7.enum(["checkout_abandoned", "tag_inativo_15", "tag_inativo_30", "tag_inativo_60", "tag_inativo_custom", "first_order", "new_user", "club_subscriber", "manual", "order_delivered", "order_cancelled", "birthday", "loyalty_milestone", "rating_submitted", "rating_negative", "club_expiring", "first_order_month"]),
+      userId: z7.number().optional(),
+      phone: z7.string().optional()
     })).mutation(async ({ input, ctx }) => {
       const targetUserId = input.userId ?? ctx.user.id;
       await startJourneyExecution(input.journeyId, targetUserId, input.phone);
       return { ok: true, message: `Gatilho disparado para jornada #${input.journeyId} com usu\xE1rio #${targetUserId}` };
     }),
     // ── Painel A/B: estatísticas de grupos A e B por jornada ─────────────────
-    getAbStats: adminProcedure3.input(z6.object({ journeyId: z6.number() })).query(async ({ input }) => {
+    getAbStats: adminProcedure3.input(z7.object({ journeyId: z7.number() })).query(async ({ input }) => {
       const db = await getDb();
       if (!db) return { groupA: 0, groupB: 0, conversionA: 0, conversionB: 0, revenueA: 0, revenueB: 0 };
       const execs = await db.select().from(journeyExecutions).where(eq12(journeyExecutions.journeyId, input.journeyId));
@@ -12339,7 +12818,7 @@ Telefone/WhatsApp: ${dbSettings.whatsappNumber ?? "(37) 99999-0000"}`
       };
     }),
     // ── Métricas globais de automações ───────────────────────────────────────
-    getGlobalMetrics: adminProcedure3.input(z6.object({ storeId: z6.number().optional() }).optional()).query(async ({ input, ctx }) => {
+    getGlobalMetrics: adminProcedure3.input(z7.object({ storeId: z7.number().optional() }).optional()).query(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) return { totalExecutions: 0, completedExecutions: 0, conversions: 0, conversionRate: 0, attributedRevenue: 0, activeJourneys: 0, topJourneys: [] };
       const storeId = await resolveStoreId(ctx.user, input?.storeId);
@@ -12382,7 +12861,7 @@ Telefone/WhatsApp: ${dbSettings.whatsappNumber ?? "(37) 99999-0000"}`
       };
     }),
     // ── Histórico de jornadas por cliente ────────────────────────────────────
-    getCustomerJourneyHistory: adminProcedure3.input(z6.object({ userId: z6.number() })).query(async ({ input }) => {
+    getCustomerJourneyHistory: adminProcedure3.input(z7.object({ userId: z7.number() })).query(async ({ input }) => {
       const db = await getDb();
       if (!db) return [];
       const execs = await db.select().from(journeyExecutions).where(eq12(journeyExecutions.userId, input.userId)).orderBy(desc3(journeyExecutions.startedAt)).limit(50);
@@ -12398,12 +12877,12 @@ Telefone/WhatsApp: ${dbSettings.whatsappNumber ?? "(37) 99999-0000"}`
   }),
   // ─── CRM ───────────────────────────────────────────────────────────────────
   crm: router({
-    listCustomers: staffProcedure.input(z6.object({
-      search: z6.string().optional(),
-      tag: z6.string().optional(),
-      limit: z6.number().optional(),
-      offset: z6.number().optional(),
-      storeId: z6.number().optional()
+    listCustomers: staffProcedure.input(z7.object({
+      search: z7.string().optional(),
+      tag: z7.string().optional(),
+      limit: z7.number().optional(),
+      offset: z7.number().optional(),
+      storeId: z7.number().optional()
     })).query(async ({ input, ctx }) => {
       const storeId = await resolveStoreId(ctx.user, input.storeId);
       if (input.tag) {
@@ -12416,7 +12895,7 @@ Telefone/WhatsApp: ${dbSettings.whatsappNumber ?? "(37) 99999-0000"}`
       ]);
       return { customers, total };
     }),
-    getCustomerDetail: adminProcedure3.input(z6.object({ userId: z6.number(), storeId: z6.number().optional() })).query(async ({ input, ctx }) => {
+    getCustomerDetail: adminProcedure3.input(z7.object({ userId: z7.number(), storeId: z7.number().optional() })).query(async ({ input, ctx }) => {
       const storeId = await resolveStoreId(ctx.user, input.storeId);
       const detail = await getCrmCustomerDetail(input.userId, storeId);
       if (!detail) throw new TRPCError6({ code: "NOT_FOUND" });
@@ -12427,15 +12906,15 @@ Telefone/WhatsApp: ${dbSettings.whatsappNumber ?? "(37) 99999-0000"}`
       ]);
       return { ...detail, tags, executions, carts };
     }),
-    assignTag: adminProcedure3.input(z6.object({ userId: z6.number(), tag: z6.string() })).mutation(async ({ input }) => {
+    assignTag: adminProcedure3.input(z7.object({ userId: z7.number(), tag: z7.string() })).mutation(async ({ input }) => {
       await assignTagToCustomer(input.userId, input.tag);
       return { ok: true };
     }),
-    removeTag: adminProcedure3.input(z6.object({ userId: z6.number(), tag: z6.string() })).mutation(async ({ input }) => {
+    removeTag: adminProcedure3.input(z7.object({ userId: z7.number(), tag: z7.string() })).mutation(async ({ input }) => {
       await removeTagFromCustomer(input.userId, input.tag);
       return { ok: true };
     }),
-    getStats: adminProcedure3.input(z6.object({ storeId: z6.number().optional() }).optional()).query(async ({ input, ctx }) => {
+    getStats: adminProcedure3.input(z7.object({ storeId: z7.number().optional() }).optional()).query(async ({ input, ctx }) => {
       const storeId = await resolveStoreId(ctx.user, input?.storeId);
       return getCrmStats(storeId);
     }),
@@ -12443,34 +12922,34 @@ Telefone/WhatsApp: ${dbSettings.whatsappNumber ?? "(37) 99999-0000"}`
     listCustomTags: adminProcedure3.query(async () => {
       return listCustomTags();
     }),
-    createCustomTag: adminProcedure3.input(z6.object({ name: z6.string().min(1).max(100), color: z6.string().default("#6b7280"), description: z6.string().optional() })).mutation(async ({ input }) => {
+    createCustomTag: adminProcedure3.input(z7.object({ name: z7.string().min(1).max(100), color: z7.string().default("#6b7280"), description: z7.string().optional() })).mutation(async ({ input }) => {
       const id = await createCustomTag(input);
       return { id };
     }),
-    updateCustomTag: adminProcedure3.input(z6.object({ id: z6.number(), name: z6.string().optional(), color: z6.string().optional(), description: z6.string().optional() })).mutation(async ({ input }) => {
+    updateCustomTag: adminProcedure3.input(z7.object({ id: z7.number(), name: z7.string().optional(), color: z7.string().optional(), description: z7.string().optional() })).mutation(async ({ input }) => {
       const { id, ...data } = input;
       await updateCustomTag(id, data);
       return { ok: true };
     }),
-    deleteCustomTag: adminProcedure3.input(z6.object({ id: z6.number() })).mutation(async ({ input }) => {
+    deleteCustomTag: adminProcedure3.input(z7.object({ id: z7.number() })).mutation(async ({ input }) => {
       await deleteCustomTag(input.id);
       return { ok: true };
     }),
-    assignCustomTag: adminProcedure3.input(z6.object({ userId: z6.number(), tagId: z6.number() })).mutation(async ({ input }) => {
+    assignCustomTag: adminProcedure3.input(z7.object({ userId: z7.number(), tagId: z7.number() })).mutation(async ({ input }) => {
       await assignCustomTagToCustomer(input.userId, input.tagId);
       return { ok: true };
     }),
-    removeCustomTag: adminProcedure3.input(z6.object({ userId: z6.number(), tagId: z6.number() })).mutation(async ({ input }) => {
+    removeCustomTag: adminProcedure3.input(z7.object({ userId: z7.number(), tagId: z7.number() })).mutation(async ({ input }) => {
       await removeCustomTagFromCustomer(input.userId, input.tagId);
       return { ok: true };
     }),
-    getCustomTagsForCustomer: adminProcedure3.input(z6.object({ userId: z6.number() })).query(async ({ input }) => {
+    getCustomTagsForCustomer: adminProcedure3.input(z7.object({ userId: z7.number() })).query(async ({ input }) => {
       return getCustomTagsForCustomer(input.userId);
     }),
-    getCustomersByCustomTag: adminProcedure3.input(z6.object({ tagName: z6.string() })).query(async ({ input }) => {
+    getCustomersByCustomTag: adminProcedure3.input(z7.object({ tagName: z7.string() })).query(async ({ input }) => {
       return getCustomersByCustomTagName(input.tagName);
     }),
-    triggerJourneyForTag: adminProcedure3.input(z6.object({ journeyId: z6.number(), tag: z6.string() })).mutation(async ({ input }) => {
+    triggerJourneyForTag: adminProcedure3.input(z7.object({ journeyId: z7.number(), tag: z7.string() })).mutation(async ({ input }) => {
       const customers = await getCrmCustomersByTag(input.tag);
       let started = 0;
       for (const c of customers) {
@@ -12479,7 +12958,7 @@ Telefone/WhatsApp: ${dbSettings.whatsappNumber ?? "(37) 99999-0000"}`
       }
       return { started, total: customers.length };
     }),
-    triggerJourneyForCustomer: adminProcedure3.input(z6.object({ journeyId: z6.number(), userId: z6.number() })).mutation(async ({ input }) => {
+    triggerJourneyForCustomer: adminProcedure3.input(z7.object({ journeyId: z7.number(), userId: z7.number() })).mutation(async ({ input }) => {
       const db = await Promise.resolve().then(() => (init_db(), db_exports));
       const detail = await db.getCrmCustomerDetail(input.userId);
       if (!detail) throw new TRPCError6({ code: "NOT_FOUND", message: "Cliente n\xE3o encontrado" });
@@ -12489,45 +12968,45 @@ Telefone/WhatsApp: ${dbSettings.whatsappNumber ?? "(37) 99999-0000"}`
   }),
   // ── Templates de Notificação ──────────────────────────────────────────────
   notificationTemplates: router({
-    list: staffProcedure.input(z6.object({ event: z6.string().optional(), channel: z6.string().optional() }).optional()).query(async ({ input }) => listNotificationTemplates(input ?? {})),
+    list: staffProcedure.input(z7.object({ event: z7.string().optional(), channel: z7.string().optional() }).optional()).query(async ({ input }) => listNotificationTemplates(input ?? {})),
     seed: staffProcedure.mutation(async () => {
       await seedNotificationTemplates();
       return { ok: true };
     }),
-    create: staffProcedure.input(z6.object({
-      event: z6.enum(["order_confirmed", "order_preparing", "order_out_for_delivery", "order_delivered", "order_cancelled", "cart_abandoned_step1", "cart_abandoned_step2", "cart_abandoned_step3", "reactivation_15", "reactivation_30", "reactivation_60", "custom"]),
-      channel: z6.enum(["push", "whatsapp", "both"]).default("both"),
-      title: z6.string().min(1).max(200),
-      body: z6.string().min(1),
-      redirectUrl: z6.string().max(500).optional(),
-      isActive: z6.boolean().default(true)
+    create: staffProcedure.input(z7.object({
+      event: z7.enum(["order_confirmed", "order_preparing", "order_out_for_delivery", "order_delivered", "order_cancelled", "cart_abandoned_step1", "cart_abandoned_step2", "cart_abandoned_step3", "reactivation_15", "reactivation_30", "reactivation_60", "custom"]),
+      channel: z7.enum(["push", "whatsapp", "both"]).default("both"),
+      title: z7.string().min(1).max(200),
+      body: z7.string().min(1),
+      redirectUrl: z7.string().max(500).optional(),
+      isActive: z7.boolean().default(true)
     })).mutation(async ({ input }) => {
       const id = await createNotificationTemplate(input);
       return { id };
     }),
-    update: staffProcedure.input(z6.object({
-      id: z6.number(),
-      title: z6.string().min(1).max(200).optional(),
-      body: z6.string().min(1).optional(),
-      isActive: z6.boolean().optional(),
-      channel: z6.enum(["push", "whatsapp", "both"]).optional(),
-      redirectUrl: z6.string().max(500).optional().nullable()
+    update: staffProcedure.input(z7.object({
+      id: z7.number(),
+      title: z7.string().min(1).max(200).optional(),
+      body: z7.string().min(1).optional(),
+      isActive: z7.boolean().optional(),
+      channel: z7.enum(["push", "whatsapp", "both"]).optional(),
+      redirectUrl: z7.string().max(500).optional().nullable()
     })).mutation(async ({ input }) => {
       const { id, ...data } = input;
       await updateNotificationTemplate(id, data);
       return { ok: true };
     }),
-    delete: staffProcedure.input(z6.object({ id: z6.number() })).mutation(async ({ input }) => {
+    delete: staffProcedure.input(z7.object({ id: z7.number() })).mutation(async ({ input }) => {
       await deleteNotificationTemplate(input.id);
       return { ok: true };
     }),
     // Disparo de notificação personalizada em massa
-    sendCustom: staffProcedure.input(z6.object({
-      title: z6.string().min(1).max(200),
-      body: z6.string().min(1),
-      redirectUrl: z6.string().optional(),
+    sendCustom: staffProcedure.input(z7.object({
+      title: z7.string().min(1).max(200),
+      body: z7.string().min(1),
+      redirectUrl: z7.string().optional(),
       // ex: "/cardapio", "/promocoes", URL completa
-      tag: z6.string().optional()
+      tag: z7.string().optional()
       // tag de cliente para segmentar (ex: "inativo_30")
       // se tag for undefined, envia para todos
     })).mutation(async ({ input }) => {
@@ -12558,80 +13037,124 @@ Telefone/WhatsApp: ${dbSettings.whatsappNumber ?? "(37) 99999-0000"}`
   // --- ZONAS DE ENTREGA POR BAIRRO ---
   deliveryZones: router({
     // Público: buscar zona por bairro (usado no checkout)
-    search: publicProcedure.input(z6.object({ query: z6.string().min(1) })).query(async ({ input }) => {
+    search: publicProcedure.input(z7.object({ query: z7.string().min(1) })).query(async ({ input }) => {
       return searchDeliveryZones(input.query);
     }),
-    getByNeighborhood: publicProcedure.input(z6.object({ neighborhood: z6.string() })).query(async ({ input }) => {
+    getByNeighborhood: publicProcedure.input(z7.object({ neighborhood: z7.string() })).query(async ({ input }) => {
       return getDeliveryZoneByNeighborhood(input.neighborhood);
     }),
     // Staff: CRUD completo
     list: staffProcedure.query(async () => {
       return getAllDeliveryZones(false);
     }),
-    create: staffProcedure.input(z6.object({
-      neighborhood: z6.string().min(1).max(200),
-      city: z6.string().max(200).optional(),
-      deliveryFee: z6.string(),
-      estimatedMinutes: z6.number().int().min(1).optional()
+    create: staffProcedure.input(z7.object({
+      neighborhood: z7.string().min(1).max(200),
+      city: z7.string().max(200).optional(),
+      deliveryFee: z7.string(),
+      estimatedMinutes: z7.number().int().min(1).optional()
     })).mutation(async ({ input }) => {
       const id = await createDeliveryZone(input);
       return { id };
     }),
-    update: staffProcedure.input(z6.object({
-      id: z6.number(),
-      neighborhood: z6.string().min(1).max(200).optional(),
-      city: z6.string().max(200).optional(),
-      deliveryFee: z6.string().optional(),
-      estimatedMinutes: z6.number().int().min(1).optional(),
-      isActive: z6.boolean().optional()
+    update: staffProcedure.input(z7.object({
+      id: z7.number(),
+      neighborhood: z7.string().min(1).max(200).optional(),
+      city: z7.string().max(200).optional(),
+      deliveryFee: z7.string().optional(),
+      estimatedMinutes: z7.number().int().min(1).optional(),
+      isActive: z7.boolean().optional()
     })).mutation(async ({ input }) => {
       const { id, ...data } = input;
       await updateDeliveryZone(id, data);
       return { ok: true };
     }),
-    delete: staffProcedure.input(z6.object({ id: z6.number() })).mutation(async ({ input }) => {
+    delete: staffProcedure.input(z7.object({ id: z7.number() })).mutation(async ({ input }) => {
       await deleteDeliveryZone(input.id);
       return { ok: true };
     })
   }),
   // --- LOJAS (MULTI-TENANT) --------------------------------------------------
   stores: storesRouter,
+  restaurantNetwork: router({
+    overview: staffProcedure.input(z7.object({
+      storeId: z7.number().optional(),
+      startDate: z7.date(),
+      endDate: z7.date()
+    })).query(async ({ ctx, input }) => {
+      const storeId = await resolveStoreId(ctx.user, input.storeId);
+      return getFinancialOverview({ storeId, startDate: input.startDate, endDate: input.endDate });
+    }),
+    supplyOrders: staffProcedure.input(z7.object({
+      storeId: z7.number().optional(),
+      status: z7.string().optional()
+    }).optional()).query(async ({ ctx, input }) => {
+      const storeId = await resolveStoreId(ctx.user, input?.storeId);
+      return listSupplyOrders({ storeId, status: input?.status });
+    }),
+    supplyOrderDetails: staffProcedure.input(z7.object({ id: z7.number() })).query(async ({ input }) => getSupplyOrderDetails(input.id)),
+    createSupplyOrder: staffProcedure.input(createSupplyOrderSchema).mutation(async ({ ctx, input }) => {
+      const storeId = await resolveStoreId(ctx.user, input.storeId);
+      if (!storeId) throw new TRPCError6({ code: "BAD_REQUEST", message: "Selecione uma loja para criar o pedido ao centro de distribui\xE7\xE3o." });
+      return createSupplyOrder({ ...input, storeId }, ctx.user.id);
+    }),
+    updateSupplyOrderStatus: staffProcedure.input(updateSupplyOrderStatusSchema).mutation(async ({ ctx, input }) => updateSupplyOrderStatus(input, ctx.user.id)),
+    createExpense: staffProcedure.input(createExpenseSchema).mutation(async ({ ctx, input }) => {
+      const scopedStoreId = await resolveStoreId(ctx.user, input.storeId);
+      return createExpense(input, ctx.user.id, scopedStoreId);
+    }),
+    createFinancialFee: staffProcedure.input(createFinancialFeeSchema).mutation(async ({ ctx, input }) => {
+      const scopedStoreId = await resolveStoreId(ctx.user, input.storeId);
+      return createFinancialFee(input, ctx.user.id, scopedStoreId);
+    }),
+    upsertMonthlyClosing: staffProcedure.input(createMonthlyClosingSchema).mutation(async ({ ctx, input }) => {
+      const scopedStoreId = await resolveStoreId(ctx.user, input.storeId);
+      return upsertMonthlyClosing(input, ctx.user.id, scopedStoreId);
+    }),
+    monthlyClosings: staffProcedure.input(z7.object({ storeId: z7.number().optional(), year: z7.number().optional() }).optional()).query(async ({ ctx, input }) => {
+      const storeId = await resolveStoreId(ctx.user, input?.storeId);
+      return listMonthlyClosings({ storeId, year: input?.year });
+    }),
+    auditLogs: staffProcedure.input(z7.object({ storeId: z7.number().optional(), limit: z7.number().min(1).max(250).optional() }).optional()).query(async ({ ctx, input }) => {
+      const storeId = await resolveStoreId(ctx.user, input?.storeId);
+      return listAuditLogs({ storeId, limit: input?.limit });
+    })
+  }),
   // --- CLUBE DO BONATTO -------------------------------------------------------
   club: clubRouter,
   // --- MENU SLIDES -----------------------------------------------------------
   analytics: router({
-    salesOverview: staffProcedure.input(z6.object({
-      startDate: z6.date(),
-      endDate: z6.date(),
-      storeId: z6.number().optional()
+    salesOverview: staffProcedure.input(z7.object({
+      startDate: z7.date(),
+      endDate: z7.date(),
+      storeId: z7.number().optional()
     })).query(async ({ input, ctx }) => {
       const storeId = await resolveStoreId(ctx.user, input.storeId);
       return getSalesOverview(input.startDate, input.endDate, storeId);
     }),
-    salesTimeSeries: staffProcedure.input(z6.object({
-      startDate: z6.date(),
-      endDate: z6.date(),
-      storeId: z6.number().optional(),
-      timezoneOffset: z6.number().optional()
+    salesTimeSeries: staffProcedure.input(z7.object({
+      startDate: z7.date(),
+      endDate: z7.date(),
+      storeId: z7.number().optional(),
+      timezoneOffset: z7.number().optional()
     })).query(async ({ input, ctx }) => {
       const storeId = await resolveStoreId(ctx.user, input.storeId);
       return getSalesTimeSeries(input.startDate, input.endDate, storeId, input.timezoneOffset);
     }),
-    recentOrders: staffProcedure.input(z6.object({ limit: z6.number().int().min(1).max(50).optional(), storeId: z6.number().optional() })).query(async ({ input, ctx }) => {
+    recentOrders: staffProcedure.input(z7.object({ limit: z7.number().int().min(1).max(50).optional(), storeId: z7.number().optional() })).query(async ({ input, ctx }) => {
       const storeId = await resolveStoreId(ctx.user, input.storeId);
       return getRecentOrdersFeed(input.limit ?? 20, storeId);
     }),
-    globalSearch: staffProcedure.input(z6.object({ query: z6.string().trim().min(2).max(80), storeId: z6.number().optional() })).query(async ({ input, ctx }) => {
+    globalSearch: staffProcedure.input(z7.object({ query: z7.string().trim().min(2).max(80), storeId: z7.number().optional() })).query(async ({ input, ctx }) => {
       const storeId = await resolveStoreId(ctx.user, input.storeId);
       const db = await getDb();
       if (!db) throw new TRPCError6({ code: "INTERNAL_SERVER_ERROR" });
-      const { sql: sql6 } = await import("drizzle-orm");
+      const { sql: sql7 } = await import("drizzle-orm");
       const likeQuery = `%${input.query}%`;
-      const storeClause = storeId ? sql6`AND o.storeId = ${storeId}` : sql6``;
-      const messageStoreClause = storeId ? sql6`AND ord.storeId = ${storeId}` : sql6``;
-      const tableStoreClause = storeId ? sql6`AND dt.storeId = ${storeId}` : sql6``;
+      const storeClause = storeId ? sql7`AND o.storeId = ${storeId}` : sql7``;
+      const messageStoreClause = storeId ? sql7`AND ord.storeId = ${storeId}` : sql7``;
+      const tableStoreClause = storeId ? sql7`AND dt.storeId = ${storeId}` : sql7``;
       const [ordersResult, customersResult, tablesResult, conversationsResult] = await Promise.all([
-        db.execute(sql6`
+        db.execute(sql7`
             SELECT o.id, o.customerName, o.customerPhone, o.status, o.total, o.createdAt
             FROM orders o
             WHERE (
@@ -12643,7 +13166,7 @@ Telefone/WhatsApp: ${dbSettings.whatsappNumber ?? "(37) 99999-0000"}`
             ORDER BY o.createdAt DESC
             LIMIT 8
           `),
-        db.execute(sql6`
+        db.execute(sql7`
             SELECT u.id, u.name, u.email, u.phone, MAX(o.createdAt) AS lastOrderAt
             FROM users u
             LEFT JOIN orders o ON o.userId = u.id
@@ -12653,12 +13176,12 @@ Telefone/WhatsApp: ${dbSettings.whatsappNumber ?? "(37) 99999-0000"}`
                 OR u.email LIKE ${likeQuery}
                 OR u.phone LIKE ${likeQuery}
               )
-              ${storeId ? sql6`AND EXISTS (SELECT 1 FROM orders ox WHERE ox.userId = u.id AND ox.storeId = ${storeId})` : sql6``}
+              ${storeId ? sql7`AND EXISTS (SELECT 1 FROM orders ox WHERE ox.userId = u.id AND ox.storeId = ${storeId})` : sql7``}
             GROUP BY u.id, u.name, u.email, u.phone
             ORDER BY lastOrderAt DESC
             LIMIT 8
           `),
-        db.execute(sql6`
+        db.execute(sql7`
             SELECT dt.id, dt.name, dt.status, ts.id AS sessionId, ts.customerName, ts.updatedAt
             FROM dining_tables dt
             LEFT JOIN table_sessions ts ON ts.tableId = dt.id AND ts.status IN ('open', 'awaiting_closure')
@@ -12670,7 +13193,7 @@ Telefone/WhatsApp: ${dbSettings.whatsappNumber ?? "(37) 99999-0000"}`
             ORDER BY ts.updatedAt DESC, dt.updatedAt DESC
             LIMIT 8
           `),
-        db.execute(sql6`
+        db.execute(sql7`
             SELECT ord.id AS orderId, ord.customerName, MAX(om.createdAt) AS lastMessageAt, MAX(om.message) AS lastMessage
             FROM order_messages om
             INNER JOIN orders ord ON ord.id = om.orderId
@@ -12692,17 +13215,17 @@ Telefone/WhatsApp: ${dbSettings.whatsappNumber ?? "(37) 99999-0000"}`
         conversations: conversationsResult[0]
       };
     }),
-    dashboardSnapshot: staffProcedure.input(z6.object({ storeId: z6.number().optional() }).optional()).query(async ({ input, ctx }) => {
+    dashboardSnapshot: staffProcedure.input(z7.object({ storeId: z7.number().optional() }).optional()).query(async ({ input, ctx }) => {
       const storeId = await resolveStoreId(ctx.user, input?.storeId);
       return getAdminDashboardSnapshot(storeId);
     })
   }),
   menuSlides: router({
-    uploadImage: staffProcedure.input(z6.object({
-      base64: z6.string().max(43e5),
+    uploadImage: staffProcedure.input(z7.object({
+      base64: z7.string().max(43e5),
       // keep below Vercel request-size limits
-      mimeType: z6.enum(["image/jpeg", "image/png", "image/webp", "image/gif"]),
-      fileName: z6.string().max(255).optional()
+      mimeType: z7.enum(["image/jpeg", "image/png", "image/webp", "image/gif"]),
+      fileName: z7.string().max(255).optional()
     })).mutation(async ({ input }) => {
       const { storagePutAdapter: storagePut2 } = await Promise.resolve().then(() => (init_storage2(), storage_exports2));
       const { compressToWebP: compressToWebP2 } = await Promise.resolve().then(() => (init_imageUtils(), imageUtils_exports));
@@ -12716,32 +13239,32 @@ Telefone/WhatsApp: ${dbSettings.whatsappNumber ?? "(37) 99999-0000"}`
     list: publicProcedure.query(() => getMenuSlides(true)),
     listAll: staffProcedure.query(() => getMenuSlides(false)),
     seed: staffProcedure.mutation(() => seedMenuSlides()),
-    create: staffProcedure.input(z6.object({
-      title: z6.string().min(1).max(200),
-      subtitle: z6.string().max(300).optional().nullable(),
-      imageUrl: z6.string().max(2e3).optional().nullable(),
-      videoUrl: z6.string().max(2e3).optional().nullable(),
-      badgeText: z6.string().max(80).optional().nullable(),
-      ctaText: z6.string().max(80).optional().nullable(),
-      ctaLink: z6.string().max(500).optional().nullable(),
-      sortOrder: z6.number().int().optional()
+    create: staffProcedure.input(z7.object({
+      title: z7.string().min(1).max(200),
+      subtitle: z7.string().max(300).optional().nullable(),
+      imageUrl: z7.string().max(2e3).optional().nullable(),
+      videoUrl: z7.string().max(2e3).optional().nullable(),
+      badgeText: z7.string().max(80).optional().nullable(),
+      ctaText: z7.string().max(80).optional().nullable(),
+      ctaLink: z7.string().max(500).optional().nullable(),
+      sortOrder: z7.number().int().optional()
     })).mutation(({ input }) => createMenuSlide(input)),
-    update: staffProcedure.input(z6.object({
-      id: z6.number(),
-      title: z6.string().min(1).max(200).optional(),
-      subtitle: z6.string().max(300).optional().nullable(),
-      imageUrl: z6.string().max(2e3).optional().nullable(),
-      videoUrl: z6.string().max(2e3).optional().nullable(),
-      badgeText: z6.string().max(80).optional().nullable(),
-      ctaText: z6.string().max(80).optional().nullable(),
-      ctaLink: z6.string().max(500).optional().nullable(),
-      sortOrder: z6.number().int().optional(),
-      isActive: z6.boolean().optional()
+    update: staffProcedure.input(z7.object({
+      id: z7.number(),
+      title: z7.string().min(1).max(200).optional(),
+      subtitle: z7.string().max(300).optional().nullable(),
+      imageUrl: z7.string().max(2e3).optional().nullable(),
+      videoUrl: z7.string().max(2e3).optional().nullable(),
+      badgeText: z7.string().max(80).optional().nullable(),
+      ctaText: z7.string().max(80).optional().nullable(),
+      ctaLink: z7.string().max(500).optional().nullable(),
+      sortOrder: z7.number().int().optional(),
+      isActive: z7.boolean().optional()
     })).mutation(async ({ input }) => {
       const { id, ...data } = input;
       return updateMenuSlide(id, data);
     }),
-    delete: staffProcedure.input(z6.object({ id: z6.number() })).mutation(async ({ input }) => {
+    delete: staffProcedure.input(z7.object({ id: z7.number() })).mutation(async ({ input }) => {
       await deleteMenuSlide(input.id);
       return { ok: true };
     })
@@ -12750,11 +13273,11 @@ Telefone/WhatsApp: ${dbSettings.whatsappNumber ?? "(37) 99999-0000"}`
   carousel: router({
     list: publicProcedure.query(() => getCarouselImages(true)),
     listAll: staffProcedure.query(() => getCarouselImages(false)),
-    uploadImage: staffProcedure.input(z6.object({
-      base64: z6.string().max(43e5),
+    uploadImage: staffProcedure.input(z7.object({
+      base64: z7.string().max(43e5),
       // keep below Vercel request-size limits
-      mimeType: z6.enum(["image/jpeg", "image/png", "image/webp", "image/gif"]),
-      fileName: z6.string().max(255).optional()
+      mimeType: z7.enum(["image/jpeg", "image/png", "image/webp", "image/gif"]),
+      fileName: z7.string().max(255).optional()
     })).mutation(async ({ input }) => {
       const { storagePutAdapter: storagePut2 } = await Promise.resolve().then(() => (init_storage2(), storage_exports2));
       const { compressToWebP: compressToWebP2 } = await Promise.resolve().then(() => (init_imageUtils(), imageUtils_exports));
@@ -12765,12 +13288,12 @@ Telefone/WhatsApp: ${dbSettings.whatsappNumber ?? "(37) 99999-0000"}`
       console.log(`[upload] carrossel comprimido ${reductionPct}% \u2192 WebP`);
       return { url };
     }),
-    create: staffProcedure.input(z6.object({ imageUrl: z6.string().min(1), title: z6.string().optional().nullable(), sortOrder: z6.number().optional() })).mutation(({ input }) => createCarouselImage(input)),
-    update: staffProcedure.input(z6.object({ id: z6.number(), imageUrl: z6.string().optional(), title: z6.string().optional().nullable(), sortOrder: z6.number().optional(), active: z6.boolean().optional() })).mutation(({ input }) => {
+    create: staffProcedure.input(z7.object({ imageUrl: z7.string().min(1), title: z7.string().optional().nullable(), sortOrder: z7.number().optional() })).mutation(({ input }) => createCarouselImage(input)),
+    update: staffProcedure.input(z7.object({ id: z7.number(), imageUrl: z7.string().optional(), title: z7.string().optional().nullable(), sortOrder: z7.number().optional(), active: z7.boolean().optional() })).mutation(({ input }) => {
       const { id, ...data } = input;
       return updateCarouselImage(id, data);
     }),
-    delete: staffProcedure.input(z6.object({ id: z6.number() })).mutation(async ({ input }) => {
+    delete: staffProcedure.input(z7.object({ id: z7.number() })).mutation(async ({ input }) => {
       await deleteCarouselImage(input.id);
       return { ok: true };
     })
@@ -12778,16 +13301,16 @@ Telefone/WhatsApp: ${dbSettings.whatsappNumber ?? "(37) 99999-0000"}`
   // ─── RECOVERY DASHBOARD ─────────────────────────────────────────────────────────────
   recovery: router({
     /** KPIs gerais de recuperação de receita */
-    stats: adminProcedure3.input(z6.object({
-      period: z6.enum(["7d", "30d", "90d"]).default("30d")
+    stats: adminProcedure3.input(z7.object({
+      period: z7.enum(["7d", "30d", "90d"]).default("30d")
     })).query(async ({ input }) => {
       const { getDb: getDb2 } = await Promise.resolve().then(() => (init_db(), db_exports));
-      const { sql: sql6 } = await import("drizzle-orm");
+      const { sql: sql7 } = await import("drizzle-orm");
       const db = await getDb2();
       if (!db) throw new TRPCError6({ code: "INTERNAL_SERVER_ERROR" });
       const days = input.period === "7d" ? 7 : input.period === "30d" ? 30 : 90;
       const since = new Date(Date.now() - days * 24 * 60 * 60 * 1e3);
-      const [cartStats] = await db.execute(sql6`
+      const [cartStats] = await db.execute(sql7`
           SELECT
             COUNT(*) AS total,
             SUM(CASE WHEN status = 'recovered' THEN 1 ELSE 0 END) AS recovered,
@@ -12797,7 +13320,7 @@ Telefone/WhatsApp: ${dbSettings.whatsappNumber ?? "(37) 99999-0000"}`
           FROM abandoned_carts
           WHERE createdAt >= ${since}
         `);
-      const [reactivationStats] = await db.execute(sql6`
+      const [reactivationStats] = await db.execute(sql7`
           SELECT
             COUNT(DISTINCT userId) AS totalInactive,
             SUM(CASE WHEN type = 'reactivation_15d' THEN 1 ELSE 0 END) AS sent15d,
@@ -12806,7 +13329,7 @@ Telefone/WhatsApp: ${dbSettings.whatsappNumber ?? "(37) 99999-0000"}`
           FROM automation_events
           WHERE createdAt >= ${since} AND type LIKE 'reactivation_%' AND channel = 'whatsapp'
         `);
-      const [conversionStats] = await db.execute(sql6`
+      const [conversionStats] = await db.execute(sql7`
           SELECT
             COUNT(*) AS totalConversions,
             ROUND(SUM(o.total), 2) AS conversionRevenue
@@ -12814,7 +13337,7 @@ Telefone/WhatsApp: ${dbSettings.whatsappNumber ?? "(37) 99999-0000"}`
           JOIN orders o ON o.id = ae.orderId
           WHERE ae.createdAt >= ${since} AND ae.type = 'conversion'
         `);
-      const [stepStats] = await db.execute(sql6`
+      const [stepStats] = await db.execute(sql7`
           SELECT
             step,
             COUNT(*) AS sent,
@@ -12858,9 +13381,9 @@ Telefone/WhatsApp: ${dbSettings.whatsappNumber ?? "(37) 99999-0000"}`
       };
     }),
     /** Lista de carrinhos abandonados com filtro */
-    abandonedCarts: adminProcedure3.input(z6.object({
-      status: z6.enum(["pending", "recovered", "expired"]).optional(),
-      limit: z6.number().min(1).max(100).default(50)
+    abandonedCarts: adminProcedure3.input(z7.object({
+      status: z7.enum(["pending", "recovered", "expired"]).optional(),
+      limit: z7.number().min(1).max(100).default(50)
     })).query(async ({ input }) => {
       const { getDb: getDb2 } = await Promise.resolve().then(() => (init_db(), db_exports));
       const db = await getDb2();
@@ -12873,9 +13396,9 @@ Telefone/WhatsApp: ${dbSettings.whatsappNumber ?? "(37) 99999-0000"}`
       return rows.map((r) => ({ ...r, items: JSON.parse(r.items) }));
     }),
     /** Lista de eventos de automação para auditoria */
-    events: adminProcedure3.input(z6.object({
-      type: z6.string().optional(),
-      limit: z6.number().min(1).max(200).default(100)
+    events: adminProcedure3.input(z7.object({
+      type: z7.string().optional(),
+      limit: z7.number().min(1).max(200).default(100)
     })).query(async ({ input }) => {
       const { getDb: getDb3 } = await Promise.resolve().then(() => (init_db(), db_exports));
       const db = await getDb3();
@@ -12913,7 +13436,7 @@ Telefone/WhatsApp: ${dbSettings.whatsappNumber ?? "(37) 99999-0000"}`
       }));
     }),
     /** Descarta (marca como expirado) um carrinho abandonado do usuário */
-    dismiss: protectedProcedure.input(z6.object({ cartId: z6.number() })).mutation(async ({ ctx, input }) => {
+    dismiss: protectedProcedure.input(z7.object({ cartId: z7.number() })).mutation(async ({ ctx, input }) => {
       const { getDb: getDb4 } = await Promise.resolve().then(() => (init_db(), db_exports));
       const db = await getDb4();
       if (!db) throw new TRPCError6({ code: "INTERNAL_SERVER_ERROR" });
@@ -12923,7 +13446,7 @@ Telefone/WhatsApp: ${dbSettings.whatsappNumber ?? "(37) 99999-0000"}`
       return { ok: true };
     }),
     /** Busca um carrinho pelo ID para restaurar no checkout */
-    getById: protectedProcedure.input(z6.object({ cartId: z6.number() })).query(async ({ ctx, input }) => {
+    getById: protectedProcedure.input(z7.object({ cartId: z7.number() })).query(async ({ ctx, input }) => {
       const { getDb: getDb4 } = await Promise.resolve().then(() => (init_db(), db_exports));
       const db = await getDb4();
       if (!db) return null;
@@ -12946,21 +13469,21 @@ Telefone/WhatsApp: ${dbSettings.whatsappNumber ?? "(37) 99999-0000"}`
     // Conta alertas não lidos (para badge no nav)
     unreadCount: protectedProcedure.query(({ ctx }) => countUnreadClientAlerts(ctx.user.id)),
     // Marca alerta como lido
-    dismiss: protectedProcedure.input(z6.object({ alertId: z6.number() })).mutation(({ input, ctx }) => dismissClientAlert(input.alertId, ctx.user.id)),
+    dismiss: protectedProcedure.input(z7.object({ alertId: z7.number() })).mutation(({ input, ctx }) => dismissClientAlert(input.alertId, ctx.user.id)),
     // Admin: criar alerta manual (novidades do clube, comunicados etc.)
-    createManual: staffProcedure.input(z6.object({
-      type: z6.enum(["promotion", "raffle", "coupon", "club", "custom"]),
-      title: z6.string().min(1),
-      message: z6.string().min(1),
-      icon: z6.string().optional(),
-      url: z6.string().optional(),
-      expiresAt: z6.date().optional()
+    createManual: staffProcedure.input(z7.object({
+      type: z7.enum(["promotion", "raffle", "coupon", "club", "custom"]),
+      title: z7.string().min(1),
+      message: z7.string().min(1),
+      icon: z7.string().optional(),
+      url: z7.string().optional(),
+      expiresAt: z7.date().optional()
     })).mutation(({ input }) => createClientAlert(input))
   })
 });
 
 // server/_core/bootstrapRoute.ts
-import { z as z7 } from "zod";
+import { z as z8 } from "zod";
 
 // server/bootstrapAccess.ts
 init_schema();
@@ -13036,12 +13559,12 @@ async function bootstrapAdminAndDriver(input = {}) {
 }
 
 // server/_core/bootstrapRoute.ts
-var bootstrapSchema = z7.object({
-  adminEmail: z7.string().email().optional(),
-  adminName: z7.string().min(2).max(120).optional(),
-  adminPassword: z7.string().min(8).max(120).optional(),
-  driverName: z7.string().min(2).max(120).optional(),
-  driverPhone: z7.string().max(30).nullable().optional()
+var bootstrapSchema = z8.object({
+  adminEmail: z8.string().email().optional(),
+  adminName: z8.string().min(2).max(120).optional(),
+  adminPassword: z8.string().min(8).max(120).optional(),
+  driverName: z8.string().min(2).max(120).optional(),
+  driverPhone: z8.string().max(30).nullable().optional()
 });
 function registerBootstrapRoute(app) {
   app.post("/api/bootstrap/access", async (req, res) => {

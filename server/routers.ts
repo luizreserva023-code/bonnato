@@ -188,6 +188,23 @@ import {
   saveMarketplaceConfig,
   testMarketplaceConnection,
 } from "./marketplaces.ts";
+import {
+  createExpense,
+  createExpenseSchema,
+  createFinancialFee,
+  createFinancialFeeSchema,
+  createMonthlyClosingSchema,
+  createSupplyOrder,
+  createSupplyOrderSchema,
+  getFinancialOverview,
+  getSupplyOrderDetails,
+  listAuditLogs,
+  listMonthlyClosings,
+  listSupplyOrders,
+  updateSupplyOrderStatus,
+  updateSupplyOrderStatusSchema,
+  upsertMonthlyClosing,
+} from "./restaurantNetwork.ts";
 import { emitirNfce, cancelarNfce } from "./focusnfe.ts";
 import { getOrCreateAsaasCustomer, createPixCharge, getChargeStatus } from "./asaas.ts";
 import bcrypt from "bcryptjs";
@@ -3932,6 +3949,71 @@ export const appRouter = router({
   }),
   // --- LOJAS (MULTI-TENANT) --------------------------------------------------
   stores: storesRouter,
+
+  restaurantNetwork: router({
+    overview: staffProcedure
+      .input(z.object({
+        storeId: z.number().optional(),
+        startDate: z.date(),
+        endDate: z.date(),
+      }))
+      .query(async ({ ctx, input }) => {
+        const storeId = await resolveStoreId(ctx.user, input.storeId);
+        return getFinancialOverview({ storeId, startDate: input.startDate, endDate: input.endDate });
+      }),
+    supplyOrders: staffProcedure
+      .input(z.object({
+        storeId: z.number().optional(),
+        status: z.string().optional(),
+      }).optional())
+      .query(async ({ ctx, input }) => {
+        const storeId = await resolveStoreId(ctx.user, input?.storeId);
+        return listSupplyOrders({ storeId, status: input?.status });
+      }),
+    supplyOrderDetails: staffProcedure
+      .input(z.object({ id: z.number() }))
+      .query(async ({ input }) => getSupplyOrderDetails(input.id)),
+    createSupplyOrder: staffProcedure
+      .input(createSupplyOrderSchema)
+      .mutation(async ({ ctx, input }) => {
+        const storeId = await resolveStoreId(ctx.user, input.storeId);
+        if (!storeId) throw new TRPCError({ code: "BAD_REQUEST", message: "Selecione uma loja para criar o pedido ao centro de distribuição." });
+        return createSupplyOrder({ ...input, storeId }, ctx.user.id);
+      }),
+    updateSupplyOrderStatus: staffProcedure
+      .input(updateSupplyOrderStatusSchema)
+      .mutation(async ({ ctx, input }) => updateSupplyOrderStatus(input, ctx.user.id)),
+    createExpense: staffProcedure
+      .input(createExpenseSchema)
+      .mutation(async ({ ctx, input }) => {
+        const scopedStoreId = await resolveStoreId(ctx.user, input.storeId);
+        return createExpense(input, ctx.user.id, scopedStoreId);
+      }),
+    createFinancialFee: staffProcedure
+      .input(createFinancialFeeSchema)
+      .mutation(async ({ ctx, input }) => {
+        const scopedStoreId = await resolveStoreId(ctx.user, input.storeId);
+        return createFinancialFee(input, ctx.user.id, scopedStoreId);
+      }),
+    upsertMonthlyClosing: staffProcedure
+      .input(createMonthlyClosingSchema)
+      .mutation(async ({ ctx, input }) => {
+        const scopedStoreId = await resolveStoreId(ctx.user, input.storeId);
+        return upsertMonthlyClosing(input, ctx.user.id, scopedStoreId);
+      }),
+    monthlyClosings: staffProcedure
+      .input(z.object({ storeId: z.number().optional(), year: z.number().optional() }).optional())
+      .query(async ({ ctx, input }) => {
+        const storeId = await resolveStoreId(ctx.user, input?.storeId);
+        return listMonthlyClosings({ storeId, year: input?.year });
+      }),
+    auditLogs: staffProcedure
+      .input(z.object({ storeId: z.number().optional(), limit: z.number().min(1).max(250).optional() }).optional())
+      .query(async ({ ctx, input }) => {
+        const storeId = await resolveStoreId(ctx.user, input?.storeId);
+        return listAuditLogs({ storeId, limit: input?.limit });
+      }),
+  }),
 
   // --- CLUBE DO BONATTO -------------------------------------------------------
   club: clubRouter,
