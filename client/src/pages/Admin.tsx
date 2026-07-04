@@ -456,7 +456,22 @@ function AdminSidebar({
 }
 export default function Admin() {
   const { user, isAuthenticated, loading } = useAuth();
-  const [activeTab, setActiveTab] = useState<AdminTab>("dashboard");
+  const [activeTab, setActiveTabState] = useState<AdminTab>(() => {
+    try {
+      const tab = new URLSearchParams(window.location.search).get("tab") as AdminTab | null;
+      return tab && NAV_ITEMS.flatMap((item) => item.children ? [item, ...item.children] : [item]).some((item) => item.id === tab) ? tab : "dashboard";
+    } catch {
+      return "dashboard";
+    }
+  });
+  const setActiveTab = useCallback((tab: AdminTab) => {
+    setActiveTabState(tab);
+    try {
+      const url = new URL(window.location.href);
+      url.searchParams.set("tab", tab);
+      window.history.replaceState({}, "", url.toString());
+    } catch {}
+  }, []);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
 
   // Polling de pedidos para detectar novos (apenas quando autenticado como admin)

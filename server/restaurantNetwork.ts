@@ -19,9 +19,42 @@ async function executeRows<T = Record<string, unknown>>(db: Db, query: string): 
   return ((result as unknown as [T[]])[0] ?? []) as T[];
 }
 
+async function hasColumn(db: Db, tableName: string, columnName: string) {
+  const rows = await executeRows<{ count: number }>(db, `
+    SELECT COUNT(*) AS count
+    FROM INFORMATION_SCHEMA.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE()
+      AND TABLE_NAME = ${JSON.stringify(tableName)}
+      AND COLUMN_NAME = ${JSON.stringify(columnName)}
+  `);
+  return Number(rows[0]?.count ?? 0) > 0;
+}
+
 export async function ensureRestaurantNetworkSchema() {
   const db = await getDb();
   if (!db) throw new Error("Database unavailable");
+
+  await db.execute(sql.raw(`
+    CREATE TABLE IF NOT EXISTS distribution_products (
+      id int NOT NULL AUTO_INCREMENT,
+      name varchar(180) NOT NULL,
+      category varchar(120),
+      unit enum('g','kg','ml','l','unit','pack','slice','portion') NOT NULL DEFAULT 'unit',
+      availableQuantity decimal(12,3) NOT NULL DEFAULT '0.000',
+      minimumQuantity decimal(12,3) NOT NULL DEFAULT '0.000',
+      minOrderQuantity decimal(12,3) NOT NULL DEFAULT '1.000',
+      maxOrderQuantity decimal(12,3),
+      unitCost decimal(10,4) NOT NULL DEFAULT '0.0000',
+      active boolean NOT NULL DEFAULT true,
+      notes text,
+      createdAt timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updatedAt timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      PRIMARY KEY (id),
+      KEY distribution_products_active_idx (active),
+      KEY distribution_products_category_idx (category),
+      KEY distribution_products_name_idx (name)
+    )
+  `));
 
   await db.execute(sql.raw(`
     CREATE TABLE IF NOT EXISTS distribution_stock (
@@ -73,6 +106,11 @@ export async function ensureRestaurantNetworkSchema() {
       KEY supply_items_ingredient_idx (ingredientId)
     )
   `));
+
+  if (!(await hasColumn(db, "store_supply_order_items", "distributionProductId"))) {
+    await db.execute(sql.raw("ALTER TABLE store_supply_order_items ADD COLUMN distributionProductId int NULL AFTER supplyOrderId"));
+    await db.execute(sql.raw("ALTER TABLE store_supply_order_items ADD KEY supply_items_distribution_product_idx (distributionProductId)"));
+  }
 
   await db.execute(sql.raw(`
     CREATE TABLE IF NOT EXISTS network_expenses (
@@ -179,7 +217,7 @@ async function audit(input: {
 }
 
 export const supplyOrderItemSchema = z.object({
-  ingredientId: z.number().int().positive(),
+  productId: z.number().int().positive(),
   quantityRequested: z.string().regex(/^\d+(\.\d{1,3})?$/),
   quantityApproved: z.string().regex(/^\d+(\.\d{1,3})?$/).optional(),
 });
@@ -190,6 +228,77 @@ export const createSupplyOrderSchema = z.object({
   submit: z.boolean().optional(),
   items: z.array(supplyOrderItemSchema).min(1).max(100),
 });
+
+export const distributionProductSchema = z.object({
+  name: z.string().min(1).max(180),
+  category: z.string().max(120).optional(),
+  unit: z.enum(["g", "kg", "ml", "l", "unit", "pack", "slice", "portion"]),
+  availableQuantity: z.string().regex(/^\d+(\.\d{1,3})?$/),
+  minimumQuantity: z.string().regex(/^\d+(\.\d{1,3})?$/).optional(),
+  minOrderQuantity: z.string().regex(/^\d+(\.\d{1,3})?$/).optional(),
+  maxOrderQuantity: z.string().regex(/^\d+(\.\d{1,3})?$/).optional(),
+  unitCost: z.string().regex(/^\d+(\.\d{1,4})?$/),
+  active: z.boolean().optional(),
+  notes: z.string().max(5000).optional(),
+});
+
+export const updateDistributionProductSchema = distributionProductSchema.partial().extend({
+  id: z.number().int().positive(),
+});
+
+export async function listDistributionProducts(opts?: { activeOnly?: boolean }) {
+  await ensureRestaurantNetworkSchema();
+  const db = await getDb();
+  if (!db) return [];
+  const where = opts?.activeOnly === false ? "" : "WHERE active = true";
+  return executeRows(db, `
+    SELECT *
+    FROM distribution_products
+    ${where}
+    ORDER BY active DESC, category, name
+    LIMIT 500
+  `);
+}
+
+export async function createDistributionProduct(input: z.infer<typeof distributionProductSchema>, actorUserId: number) {
+  await ensureRestaurantNetworkSchema();
+  const db = await getDb();
+  if (!db) throw new Error("Database unavailable");
+  const result = await db.execute(sql`
+    INSERT INTO distribution_products
+      (name, category, unit, availableQuantity, minimumQuantity, minOrderQuantity, maxOrderQuantity, unitCost, active, notes)
+    VALUES
+      (${input.name}, ${input.category ?? null}, ${input.unit}, ${input.availableQuantity}, ${input.minimumQuantity ?? "0"}, ${input.minOrderQuantity ?? "1"}, ${input.maxOrderQuantity ?? null}, ${input.unitCost}, ${input.active ?? true}, ${input.notes ?? null})
+  `);
+  const id = Number(((result as unknown as [{ insertId?: number }])[0]?.insertId) ?? 0);
+  await audit({ actorUserId, action: "distribution_product.create", entityType: "distribution_product", entityId: id, metadata: input });
+  return { id };
+}
+
+export async function updateDistributionProduct(input: z.infer<typeof updateDistributionProductSchema>, actorUserId: number) {
+  await ensureRestaurantNetworkSchema();
+  const db = await getDb();
+  if (!db) throw new Error("Database unavailable");
+  const fields: string[] = [];
+  if (input.name !== undefined) fields.push(`name = ${JSON.stringify(input.name)}`);
+  if (input.category !== undefined) fields.push(`category = ${JSON.stringify(input.category || null)}`);
+  if (input.unit !== undefined) fields.push(`unit = ${JSON.stringify(input.unit)}`);
+  if (input.availableQuantity !== undefined) fields.push(`availableQuantity = ${JSON.stringify(input.availableQuantity)}`);
+  if (input.minimumQuantity !== undefined) fields.push(`minimumQuantity = ${JSON.stringify(input.minimumQuantity)}`);
+  if (input.minOrderQuantity !== undefined) fields.push(`minOrderQuantity = ${JSON.stringify(input.minOrderQuantity)}`);
+  if (input.maxOrderQuantity !== undefined) fields.push(`maxOrderQuantity = ${JSON.stringify(input.maxOrderQuantity || null)}`);
+  if (input.unitCost !== undefined) fields.push(`unitCost = ${JSON.stringify(input.unitCost)}`);
+  if (input.active !== undefined) fields.push(`active = ${input.active ? "true" : "false"}`);
+  if (input.notes !== undefined) fields.push(`notes = ${JSON.stringify(input.notes || null)}`);
+  if (fields.length === 0) return { ok: true };
+  await db.execute(sql.raw(`
+    UPDATE distribution_products
+    SET ${fields.join(", ")}
+    WHERE id = ${input.id}
+  `));
+  await audit({ actorUserId, action: "distribution_product.update", entityType: "distribution_product", entityId: input.id, metadata: input });
+  return { ok: true };
+}
 
 export async function listSupplyOrders(opts: { storeId?: number; status?: string }) {
   await ensureRestaurantNetworkSchema();
@@ -227,9 +336,9 @@ export async function getSupplyOrderDetails(id: number) {
   `);
   if (!order) return null;
   const items = await executeRows(db, `
-    SELECT i.*, ing.name AS ingredientName, ing.category, ing.currentStock, ing.minimumStock
+    SELECT i.*, dp.name AS distributionProductName, dp.availableQuantity, dp.minimumQuantity
     FROM store_supply_order_items i
-    LEFT JOIN ingredients ing ON ing.id = i.ingredientId
+    LEFT JOIN distribution_products dp ON dp.id = i.distributionProductId
     WHERE i.supplyOrderId = ${id}
     ORDER BY i.id
   `);
@@ -241,15 +350,21 @@ export async function createSupplyOrder(input: z.infer<typeof createSupplyOrderS
   const db = await getDb();
   if (!db) throw new Error("Database unavailable");
 
-  const ingredientRows = await executeRows<{ id: number; name: string; unit: string; unitCost: string }>(db, `
-    SELECT id, name, unit, unitCost
-    FROM ingredients
-    WHERE id IN (${input.items.map((item) => item.ingredientId).join(",")})
+  const productRows = await executeRows<{ id: number; name: string; unit: string; unitCost: string; availableQuantity: string; minOrderQuantity: string; maxOrderQuantity: string | null }>(db, `
+    SELECT id, name, unit, unitCost, availableQuantity, minOrderQuantity, maxOrderQuantity
+    FROM distribution_products
+    WHERE active = true AND id IN (${input.items.map((item) => item.productId).join(",")})
   `);
-  const ingredientById = new Map(ingredientRows.map((row) => [Number(row.id), row]));
+  const productById = new Map(productRows.map((row) => [Number(row.id), row]));
   const estimatedCost = input.items.reduce((sum, item) => {
-    const ingredient = ingredientById.get(item.ingredientId);
-    return sum + Number(item.quantityRequested) * money(ingredient?.unitCost);
+    const product = productById.get(item.productId);
+    if (!product) throw new Error("Produto do CD indisponivel");
+    const requested = Number(item.quantityRequested);
+    const minOrder = Number(product.minOrderQuantity ?? 0);
+    const maxOrder = product.maxOrderQuantity == null ? null : Number(product.maxOrderQuantity);
+    if (requested < minOrder) throw new Error(`Quantidade minima para ${product.name}: ${minOrder} ${product.unit}`);
+    if (maxOrder !== null && requested > maxOrder) throw new Error(`Quantidade maxima para ${product.name}: ${maxOrder} ${product.unit}`);
+    return sum + requested * money(product.unitCost);
   }, 0);
   const status = input.submit ? "submitted" : "draft";
   const result = await db.execute(sql`
@@ -259,14 +374,14 @@ export async function createSupplyOrder(input: z.infer<typeof createSupplyOrderS
   const orderId = Number(((result as unknown as [{ insertId?: number }])[0]?.insertId) ?? 0);
 
   for (const item of input.items) {
-    const ingredient = ingredientById.get(item.ingredientId);
-    if (!ingredient) continue;
+    const product = productById.get(item.productId);
+    if (!product) continue;
     const approved = item.quantityApproved ?? item.quantityRequested;
     await db.execute(sql`
       INSERT INTO store_supply_order_items
-        (supplyOrderId, ingredientId, productName, unit, quantityRequested, quantityApproved, unitCost)
+        (supplyOrderId, distributionProductId, ingredientId, productName, unit, quantityRequested, quantityApproved, unitCost)
       VALUES
-        (${orderId}, ${item.ingredientId}, ${ingredient.name}, ${ingredient.unit}, ${item.quantityRequested}, ${approved}, ${money(ingredient.unitCost).toFixed(4)})
+        (${orderId}, ${item.productId}, ${item.productId}, ${product.name}, ${product.unit}, ${item.quantityRequested}, ${approved}, ${money(product.unitCost).toFixed(4)})
     `);
   }
   await audit({ actorUserId, storeId: input.storeId, action: "supply_order.create", entityType: "store_supply_order", entityId: orderId, metadata: { status } });
@@ -298,25 +413,58 @@ export async function updateSupplyOrderStatus(input: z.infer<typeof updateSupply
     WHERE id = ${input.id}
   `));
 
+  if (input.status === "shipped") {
+    for (const item of (details as any).items ?? []) {
+      const quantity = Number(item.quantityApproved ?? item.quantityRequested ?? 0);
+      const productId = Number(item.distributionProductId ?? item.ingredientId);
+      if (quantity <= 0 || productId <= 0) continue;
+      await db.execute(sql.raw(`
+        UPDATE distribution_products
+        SET availableQuantity = GREATEST(CAST(availableQuantity AS DECIMAL(12,3)) - ${quantity}, 0)
+        WHERE id = ${productId}
+      `));
+    }
+  }
+
   if (input.status === "received") {
     for (const item of (details as any).items ?? []) {
       const quantity = Number(item.quantityApproved ?? item.quantityRequested ?? 0);
       if (quantity <= 0) continue;
+      const storeId = Number((details as any).storeId);
+      const productName = String(item.productName ?? item.distributionProductName ?? "Produto CD");
+      const unit = String(item.unit ?? "unit");
+      const unitCost = money(item.unitCost).toFixed(4);
+      const existingIngredient = await executeRows<{ id: number; currentStock: string }>(db, `
+        SELECT id, currentStock
+        FROM ingredients
+        WHERE storeId = ${storeId}
+          AND name = ${JSON.stringify(productName)}
+          AND unit = ${JSON.stringify(unit)}
+        LIMIT 1
+      `);
+      let ingredientId = Number(existingIngredient[0]?.id ?? 0);
+      if (!ingredientId) {
+        const inserted = await db.execute(sql`
+          INSERT INTO ingredients (storeId, name, category, unit, currentStock, minimumStock, unitCost, supplier, notes, active)
+          VALUES (${storeId}, ${productName}, ${"CD"}, ${unit}, ${"0.000"}, ${"0.000"}, ${unitCost}, ${"Centro de Distribuição"}, ${`Criado automaticamente no recebimento do pedido ao CD #${input.id}`}, ${true})
+        `);
+        ingredientId = Number(((inserted as unknown as [{ insertId?: number }])[0]?.insertId) ?? 0);
+      }
       await db.execute(sql.raw(`
         UPDATE ingredients
-        SET currentStock = CAST(currentStock AS DECIMAL(12,3)) + ${quantity}
-        WHERE id = ${Number(item.ingredientId)}
+        SET currentStock = CAST(currentStock AS DECIMAL(12,3)) + ${quantity}, unitCost = ${JSON.stringify(unitCost)}
+        WHERE id = ${ingredientId}
       `));
       await db.execute(sql.raw(`
         INSERT INTO inventory_movements
           (ingredientId, storeId, movementType, quantityDelta, previousStock, nextStock, reason, performedByUserId)
-        SELECT id, ${Number((details as any).storeId)}, 'entry', '${quantity.toFixed(3)}',
+        SELECT id, ${storeId}, 'entry', '${quantity.toFixed(3)}',
           CAST(currentStock AS DECIMAL(12,3)) - ${quantity},
           currentStock,
           ${JSON.stringify(`Recebimento do pedido ao CD #${input.id}`)},
           ${actorUserId}
         FROM ingredients
-        WHERE id = ${Number(item.ingredientId)}
+        WHERE id = ${ingredientId}
       `));
     }
   }

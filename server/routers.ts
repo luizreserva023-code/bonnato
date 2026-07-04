@@ -191,6 +191,8 @@ import {
 import {
   createExpense,
   createExpenseSchema,
+  createDistributionProduct,
+  distributionProductSchema,
   createFinancialFee,
   createFinancialFeeSchema,
   createMonthlyClosingSchema,
@@ -198,9 +200,12 @@ import {
   createSupplyOrderSchema,
   getFinancialOverview,
   getSupplyOrderDetails,
+  listDistributionProducts,
   listAuditLogs,
   listMonthlyClosings,
   listSupplyOrders,
+  updateDistributionProduct,
+  updateDistributionProductSchema,
   updateSupplyOrderStatus,
   updateSupplyOrderStatusSchema,
   upsertMonthlyClosing,
@@ -3979,6 +3984,15 @@ export const appRouter = router({
   stores: storesRouter,
 
   restaurantNetwork: router({
+    distributionProducts: staffProcedure
+      .input(z.object({ activeOnly: z.boolean().optional() }).optional())
+      .query(({ input }) => listDistributionProducts({ activeOnly: input?.activeOnly ?? true })),
+    createDistributionProduct: adminProcedure
+      .input(distributionProductSchema)
+      .mutation(({ ctx, input }) => createDistributionProduct(input, ctx.user.id)),
+    updateDistributionProduct: adminProcedure
+      .input(updateDistributionProductSchema)
+      .mutation(({ ctx, input }) => updateDistributionProduct(input, ctx.user.id)),
     overview: staffProcedure
       .input(z.object({
         storeId: z.number().optional(),
