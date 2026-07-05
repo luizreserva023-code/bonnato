@@ -50,6 +50,7 @@ import {
   ImageIcon,
   RefreshCcw,
   FileText,
+  PlugZap,
   Truck,
 } from "lucide-react";
 import { useState, useEffect, useRef, useCallback, useMemo, createContext, useContext } from "react";
@@ -180,7 +181,7 @@ const NAV_ITEMS: NavItem[] = [
     ],
   },
   { id: "payments" as AdminTab, label: "Pagamentos", icon: <DollarSign className="w-[18px] h-[18px]" />, adminOnly: true },
-  { id: "marketplaces" as AdminTab, label: "Marketplaces", icon: <Truck className="w-[18px] h-[18px]" />, adminOnly: true },
+  { id: "marketplaces" as AdminTab, label: "Integrações", icon: <PlugZap className="w-[18px] h-[18px]" /> },
   { id: "settings" as AdminTab, label: "Configurações", icon: <Settings className="w-[18px] h-[18px]" /> },
 ];
 
@@ -588,7 +589,7 @@ export default function Admin() {
             {activeTab === "distribution" && <NetworkFinanceTab mode="distribution" />}
             {activeTab === "drivers" && <DriversTab />}
             {activeTab === "payments" && isAdmin && <PaymentsTab />}
-            {activeTab === "marketplaces" && isAdmin && <MarketplacesTab />}
+            {activeTab === "marketplaces" && <MarketplacesTab />}
             {activeTab === "settings" && <SettingsTab />}
             {activeTab === "stores" && isAdmin && <StoresTab />}
             {activeTab === "recovery" && <RecoveryTab />}
@@ -1024,16 +1025,38 @@ function DeliveryDashboardTab() {
   const { selectedStoreId } = useAdminStore();
   const { user } = useAuth();
   const [searchQuery, setSearchQuery] = useState("");
-  const [periodDays, setPeriodDays] = useState<7 | 14 | 30>(14);
+  const [periodPreset, setPeriodPreset] = useState<"today" | "yesterday" | "7d" | "30d" | "custom">("7d");
+  const [customStart, setCustomStart] = useState(() => new Date().toISOString().slice(0, 10));
+  const [customEnd, setCustomEnd] = useState(() => new Date().toISOString().slice(0, 10));
+  const [statusFilter, setStatusFilter] = useState<string | null>(null);
+  const [lastUpdated, setLastUpdated] = useState(() => new Date());
   const [timezoneOffset] = useState(() => new Date().getTimezoneOffset());
 
-  const endDate = useMemo(() => new Date(), [periodDays]);
-  const startDate = useMemo(() => {
-    const date = new Date();
-    date.setHours(0, 0, 0, 0);
-    date.setDate(date.getDate() - (periodDays - 1));
+  const endDate = useMemo(() => {
+    const date = periodPreset === "custom" ? new Date(`${customEnd}T23:59:59`) : new Date();
+    if (periodPreset === "yesterday") {
+      date.setDate(date.getDate() - 1);
+      date.setHours(23, 59, 59, 999);
+    } else {
+      date.setHours(23, 59, 59, 999);
+    }
     return date;
-  }, [periodDays]);
+  }, [periodPreset, customEnd]);
+  const startDate = useMemo(() => {
+    const date = periodPreset === "custom" ? new Date(`${customStart}T00:00:00`) : new Date();
+    date.setHours(0, 0, 0, 0);
+    if (periodPreset === "yesterday") date.setDate(date.getDate() - 1);
+    if (periodPreset === "7d") date.setDate(date.getDate() - 6);
+    if (periodPreset === "30d") date.setDate(date.getDate() - 29);
+    return date;
+  }, [periodPreset, customStart]);
+
+  const periodLabel =
+    periodPreset === "today" ? "Hoje" :
+    periodPreset === "yesterday" ? "Ontem" :
+    periodPreset === "7d" ? "Últimos 7 dias" :
+    periodPreset === "30d" ? "Últimos 30 dias" :
+    "Personalizado";
 
   const { data: liveOrders, isLoading: loadingLive } = trpc.orders.list.useQuery(
     { limit: 400, storeId: selectedStoreId },
@@ -1088,7 +1111,8 @@ function DeliveryDashboardTab() {
     app: "App",
     ifood: "iFood",
     whatsapp: "WhatsApp",
-    phone: "Telefone",
+    phone: "Balcão",
+    site: "Site",
   };
   const serviceLabels: Record<string, string> = {
     delivery: "Delivery",
@@ -1140,6 +1164,14 @@ function DeliveryDashboardTab() {
     preparing: activeOrders.filter((order) => order.status === "preparing").length,
     outForDelivery: activeOrders.filter((order) => order.status === "out_for_delivery").length,
   };
+  const statusRows = [
+    { key: "pending", label: "Novos", value: periodOrdersAll.filter((order) => order.status === "pending").length, color: "#f79009" },
+    { key: "confirmed", label: "Confirmados", value: periodOrdersAll.filter((order) => order.status === "confirmed").length, color: "#d92d20" },
+    { key: "preparing", label: "Em preparo", value: periodOrdersAll.filter((order) => order.status === "preparing").length, color: "#b42318" },
+    { key: "out_for_delivery", label: "Em entrega", value: periodOrdersAll.filter((order) => order.status === "out_for_delivery").length, color: "#7d0f14" },
+    { key: "delivered", label: "Concluídos", value: periodOrdersAll.filter((order) => order.status === "delivered").length, color: "#027a48" },
+    { key: "cancelled", label: "Cancelados", value: cancelledOrders.length, color: "#667085" },
+  ];
   const activeDrivers = drivers?.filter((driver) => driver.active).length ?? 0;
   const assignedDrivers = new Set(activeOrders.map((order) => order.driverId).filter(Boolean)).size;
   const loadPerDriver = activeDrivers > 0 ? activeOrders.length / activeDrivers : activeOrders.length;
@@ -1174,6 +1206,7 @@ function DeliveryDashboardTab() {
   const prevRevenue = Number(overview?.prevTotalRevenue ?? 0);
   const prevOrders = Number(overview?.prevTotalOrders ?? 0);
   const revenueDelta = percentChange(totalRevenue, prevRevenue);
+  const ordersDelta = percentChange(totalOrders, prevOrders);
   const cancelRate = periodOrdersAll.length > 0 ? (cancelledOrders.length / periodOrdersAll.length) * 100 : 0;
   const deliveryShare = completedPeriodOrders.length > 0 ? (deliveryOrders.length / completedPeriodOrders.length) * 100 : 0;
   const criticalRate = activeOrders.length > 0 ? (criticalOrders.length / activeOrders.length) * 100 : 0;
@@ -1184,6 +1217,19 @@ function DeliveryDashboardTab() {
     receita: Number(point.totalRevenue ?? 0),
   }));
   const dailyAverageRevenue = chartData.length > 0 ? chartData.reduce((sum, point) => sum + point.receita, 0) / chartData.length : 0;
+  const averagePrepMinutes = average(kitchenLeadTimes);
+  const averageDispatchMinutes = average(dispatchLeadTimes);
+  const averageDeliveryMinutes = average(endToEndLeadTimes);
+  const prepGoalMinutes = 30;
+  const deliveryGoalMinutes = 55;
+  const prepStatus =
+    averagePrepMinutes >= 40 ? { label: "Crítico", tone: "bg-[#fef3f2] text-[#b42318]" } :
+    averagePrepMinutes >= prepGoalMinutes ? { label: "Atenção", tone: "bg-[#fff7ed] text-[#c2410c]" } :
+    { label: "Dentro da meta", tone: "bg-[#ecfdf3] text-[#027a48]" };
+  const deliveryStatus =
+    averageDeliveryMinutes >= 70 ? { label: "Crítico", tone: "bg-[#fef3f2] text-[#b42318]" } :
+    averageDeliveryMinutes >= deliveryGoalMinutes ? { label: "Atenção", tone: "bg-[#fff7ed] text-[#c2410c]" } :
+    { label: "Dentro da meta", tone: "bg-[#ecfdf3] text-[#027a48]" };
 
   const hourlyVolume = Array.from({ length: 24 }, (_, hour) => {
     const bucketOrders = completedPeriodOrders.filter((order) => {
@@ -1219,18 +1265,42 @@ function DeliveryDashboardTab() {
       fill: chartPalette[index % chartPalette.length],
     }))
     .sort((a, b) => b.orders - a.orders);
+  const strongestChannel = sourceMix[0] ?? { key: "app", label: "App", orders: 0, revenue: 0, fill: chartPalette[0] };
+  const channelSummary = ["app", "ifood", "phone", "whatsapp", "site"].map((key, index) => {
+    const found = sourceMix.find((row) => row.key === key);
+    const ordersCount = found?.orders ?? 0;
+    const revenue = found?.revenue ?? 0;
+    const channelCancelCount = periodOrdersAll.filter((order) => (order.source ?? "app") === key && order.status === "cancelled").length;
+    const share = totalRevenue > 0 ? (revenue / totalRevenue) * 100 : 0;
+    return {
+      key,
+      label: sourceLabels[key] ?? key,
+      orders: ordersCount,
+      revenue,
+      avgTicket: ordersCount > 0 ? revenue / ordersCount : 0,
+      cancelCount: channelCancelCount,
+      share,
+      status: channelCancelCount >= 3 || share < 5 ? "atenção" : "bom",
+      fill: chartPalette[index % chartPalette.length],
+    };
+  });
 
   const paymentMix = Object.entries(
-    completedPeriodOrders.reduce<Record<string, number>>((acc, order) => {
+    completedPeriodOrders.reduce<Record<string, { revenue: number; orders: number }>>((acc, order) => {
       const key = order.paymentMethod;
-      acc[key] = (acc[key] ?? 0) + Number(order.total);
+      const current = acc[key] ?? { revenue: 0, orders: 0 };
+      current.revenue += Number(order.total);
+      current.orders += 1;
+      acc[key] = current;
       return acc;
     }, {})
   )
-    .map(([key, revenue]) => ({
+    .map(([key, row]) => ({
       key,
       label: paymentLabels[key] ?? key,
-      revenue,
+      revenue: row.revenue,
+      orders: row.orders,
+      avgTicket: row.orders > 0 ? row.revenue / row.orders : 0,
     }))
     .sort((a, b) => b.revenue - a.revenue);
 
@@ -1263,12 +1333,14 @@ function DeliveryDashboardTab() {
     .map((row) => ({
       ...row,
       avgMinutes: average(row.minutes),
+      status: average(row.minutes) >= 55 ? "crítico" : average(row.minutes) >= 40 ? "atenção" : "bom",
     }))
     .sort((a, b) => b.orders - a.orders)
     .slice(0, 6);
 
   const filteredRecentOrders = (recentOrders ?? []).filter((order) => {
     const normalizedQuery = searchQuery.trim().toLowerCase();
+    if (statusFilter && order.status !== statusFilter) return false;
     if (!normalizedQuery) return true;
     return (
       order.customerName.toLowerCase().includes(normalizedQuery) ||
@@ -1282,6 +1354,26 @@ function DeliveryDashboardTab() {
       : criticalRate >= 15 || cancelRate >= 4
         ? { label: "Operacao em atencao", tone: "bg-[#fff7ed] text-[#c2410c]" }
         : { label: "Operacao saudavel", tone: "bg-[#ecfdf3] text-[#027a48]" };
+  const peakHour = hourlyVolume.reduce((best, row) => row.pedidos > best.pedidos ? row : best, hourlyVolume[0] ?? { label: "--", pedidos: 0, receita: 0 });
+  const lowHour = hourlyVolume.filter((row) => row.pedidos > 0).reduce((best, row) => row.pedidos < best.pedidos ? row : best, hourlyVolume.find((row) => row.pedidos > 0) ?? { label: "--", pedidos: 0, receita: 0 });
+  const riskyOrders = criticalOrders.filter((order) => order.ageMinutes >= 25 && order.ageMinutes < 35);
+  const oldestQueueOrder = criticalOrders[0] ?? activeOrders
+    .map((order) => ({ ...order, ageMinutes: safeMinutesDiff(order.createdAt, new Date()) ?? 0 }))
+    .sort((a, b) => b.ageMinutes - a.ageMinutes)[0];
+  const recommendations = [
+    peakHour.pedidos > 0 ? `Reforce equipe perto de ${peakHour.label}; este é o maior pico do período.` : "Quando houver volume, o sistema indicará o melhor horário de reforço.",
+    criticalOrders.length > 0 ? `Acompanhe ${criticalOrders.length} pedido(s) acima de 35 minutos agora.` : "Fila sob controle: mantenha confirmação rápida para preservar SLA.",
+    neighborhoodRows.some((row) => row.status !== "bom") ? "Revise entregas para bairros com tempo médio acima do ideal." : "Bairros seguem saudáveis; mantenha raio e taxa atuais.",
+    topProducts?.[0] ? `Destaque ${topProducts[0].productName} no cardápio e em combos.` : "Assim que houver ranking, destaque o item campeão no cardápio.",
+    paymentMix[0]?.key === "pix" ? "PIX lidera pagamentos: mantenha essa opção destacada no checkout." : "Monitore o método de pagamento líder para reduzir fricção no checkout.",
+  ].slice(0, 5);
+  const healthRows = [
+    { label: "Velocidade de confirmação", value: queueNow.pending <= 2 ? "Saudável" : queueNow.pending <= 5 ? "Atenção" : "Crítico", tone: queueNow.pending <= 2 ? "bg-[#ecfdf3] text-[#027a48]" : queueNow.pending <= 5 ? "bg-[#fff7ed] text-[#c2410c]" : "bg-[#fef3f2] text-[#b42318]" },
+    { label: "Preparo dentro da meta", value: prepStatus.label, tone: prepStatus.tone },
+    { label: "Entrega dentro da meta", value: deliveryStatus.label, tone: deliveryStatus.tone },
+    { label: "Taxa de cancelamento", value: cancelRate >= 8 ? "Crítico" : cancelRate >= 4 ? "Atenção" : "Saudável", tone: cancelRate >= 8 ? "bg-[#fef3f2] text-[#b42318]" : cancelRate >= 4 ? "bg-[#fff7ed] text-[#c2410c]" : "bg-[#ecfdf3] text-[#027a48]" },
+    { label: "Disponibilidade dos canais", value: sourceMix.length > 0 ? "Saudável" : "Atenção", tone: sourceMix.length > 0 ? "bg-[#ecfdf3] text-[#027a48]" : "bg-[#fff7ed] text-[#c2410c]" },
+  ];
 
   const handleRefresh = () => {
     utils.orders.list.invalidate();
@@ -1289,6 +1381,7 @@ function DeliveryDashboardTab() {
     utils.analytics.salesTimeSeries.invalidate();
     utils.analytics.recentOrders.invalidate();
     utils.reports.topProducts.invalidate();
+    setLastUpdated(new Date());
   };
 
   return (
@@ -1328,13 +1421,19 @@ function DeliveryDashboardTab() {
 
           <div className="flex flex-col gap-3 lg:items-end">
             <div className="flex flex-wrap items-center gap-2">
-              {[7, 14, 30].map((days) => {
-                const active = periodDays === days;
+              {[
+                { value: "today", label: "Hoje" },
+                { value: "yesterday", label: "Ontem" },
+                { value: "7d", label: "7 dias" },
+                { value: "30d", label: "30 dias" },
+                { value: "custom", label: "Personalizado" },
+              ].map((period) => {
+                const active = periodPreset === period.value;
                 return (
                   <button
-                    key={days}
+                    key={period.value}
                     type="button"
-                    onClick={() => setPeriodDays(days as 7 | 14 | 30)}
+                    onClick={() => setPeriodPreset(period.value as typeof periodPreset)}
                     className="rounded-full px-3 py-1.5 text-xs font-bold transition-all"
                     style={{
                       background: active ? "#fff5f3" : "rgba(255,255,255,0.10)",
@@ -1342,7 +1441,7 @@ function DeliveryDashboardTab() {
                       border: active ? "1px solid rgba(255,255,255,0.35)" : "1px solid rgba(255,255,255,0.16)",
                     }}
                   >
-                    {days} dias
+                    {period.label}
                   </button>
                 );
               })}
@@ -1355,6 +1454,25 @@ function DeliveryDashboardTab() {
                 <RefreshCw className="w-4 h-4 text-white" />
               </button>
             </div>
+            {periodPreset === "custom" && (
+              <div className="flex flex-wrap items-center justify-end gap-2">
+                <input
+                  type="date"
+                  value={customStart}
+                  onChange={(event) => setCustomStart(event.target.value)}
+                  className="rounded-full border border-white/20 bg-white/10 px-3 py-1.5 text-xs text-white outline-none"
+                />
+                <input
+                  type="date"
+                  value={customEnd}
+                  onChange={(event) => setCustomEnd(event.target.value)}
+                  className="rounded-full border border-white/20 bg-white/10 px-3 py-1.5 text-xs text-white outline-none"
+                />
+              </div>
+            )}
+            <p className="text-xs text-white/55">
+              Período: {periodLabel} • Última atualização: {lastUpdated.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
+            </p>
 
             <div className="relative w-full lg:w-[280px]">
               <input
@@ -1371,6 +1489,64 @@ function DeliveryDashboardTab() {
             </div>
           </div>
         </div>
+      </div>
+
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
+        {[
+          {
+            label: "Pedidos hoje",
+            value: todayOrders,
+            helper: `${ordersDelta > 0 ? "+" : ""}${ordersDelta.toFixed(1)}% vs período anterior`,
+            badge: ordersDelta >= 0 ? "Crescimento" : "Queda",
+            tone: ordersDelta >= 0 ? "#027a48" : "#b42318",
+          },
+          {
+            label: "Receita",
+            value: formatCompactCurrency(totalRevenue),
+            helper: `Ticket médio ${formatCompactCurrency(avgTicket)}`,
+            badge: `${revenueDelta > 0 ? "+" : ""}${revenueDelta.toFixed(1)}%`,
+            tone: revenueDelta >= 0 ? "#027a48" : "#b42318",
+          },
+          {
+            label: "Tempo de preparo",
+            value: `${averagePrepMinutes.toFixed(0)} min`,
+            helper: `Meta ${prepGoalMinutes} min`,
+            badge: prepStatus.label,
+            tone: averagePrepMinutes > prepGoalMinutes ? "#c2410c" : "#027a48",
+          },
+          {
+            label: "Tempo de entrega",
+            value: `${averageDeliveryMinutes.toFixed(0)} min`,
+            helper: `Meta ${deliveryGoalMinutes} min`,
+            badge: deliveryStatus.label,
+            tone: averageDeliveryMinutes > deliveryGoalMinutes ? "#c2410c" : "#027a48",
+          },
+          {
+            label: "Cancelamentos",
+            value: cancelledOrders.length,
+            helper: `${cancelRate.toFixed(1)}% sobre pedidos`,
+            badge: cancelRate >= 4 ? "Atenção" : "Normal",
+            tone: cancelRate >= 4 ? "#b42318" : "#027a48",
+          },
+          {
+            label: "Canal mais forte",
+            value: strongestChannel.label,
+            helper: `${strongestChannel.orders} pedidos • ${formatCompactCurrency(strongestChannel.revenue)}`,
+            badge: "Líder",
+            tone: "#7d0f14",
+          },
+        ].map((item) => (
+          <div key={item.label} style={{ ...cardStyle, padding: 16 }}>
+            <div className="flex items-start justify-between gap-2">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-[#8a6f73]">{item.label}</p>
+              <span className="rounded-full px-2 py-0.5 text-[10px] font-bold" style={{ background: `${item.tone}14`, color: item.tone }}>
+                {item.badge}
+              </span>
+            </div>
+            <p className="mt-3 text-2xl font-black tracking-[-0.03em] text-[#2f090d]">{item.value}</p>
+            <p className="mt-2 text-xs text-[#7d6669]">{item.helper}</p>
+          </div>
+        ))}
       </div>
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
@@ -1474,7 +1650,7 @@ function DeliveryDashboardTab() {
               <h3 className="mt-2 text-xl font-black tracking-[-0.03em] text-[#2f090d]">Ritmo do delivery no periodo</h3>
               <p className="mt-1 text-sm text-[#7d6669]">Media diaria de {formatCompactCurrency(dailyAverageRevenue)} e visao conjunta de pedidos e faturamento.</p>
             </div>
-            <Badge className="rounded-full bg-[#fff1ef] text-[#7d0f14] border-0">{periodDays} dias</Badge>
+            <Badge className="rounded-full bg-[#fff1ef] text-[#7d0f14] border-0">{periodLabel}</Badge>
           </div>
 
           {loadingSeries ? (
@@ -1517,6 +1693,13 @@ function DeliveryDashboardTab() {
               </ResponsiveContainer>
             </div>
           )}
+          <div className="mt-4 grid gap-2 text-sm text-[#7d6669]">
+            <p><strong className="text-[#2f090d]">Pico:</strong> {peakHour.label} com {peakHour.pedidos} pedidos.</p>
+            <p><strong className="text-[#2f090d]">Menor volume:</strong> {lowHour.label}.</p>
+            <p className="rounded-2xl bg-[#fff6f4] p-3 text-[#7d0f14]">
+              Sugestão: reforce produção e entrega antes de {peakHour.label}; o maior volume costuma exigir pré-preparo e motoboy disponível.
+            </p>
+          </div>
         </div>
 
         <div style={cardStyle}>
@@ -1568,18 +1751,23 @@ function DeliveryDashboardTab() {
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
         <div style={cardStyle}>
           <p className="text-xs uppercase tracking-[0.14em] text-[#8a6f73]">Fila por etapa</p>
-          <h3 className="mt-2 text-xl font-black tracking-[-0.03em] text-[#2f090d]">Onde a operacao esta prendendo agora</h3>
+          <h3 className="mt-2 text-xl font-black tracking-[-0.03em] text-[#2f090d]">Status dos pedidos no período</h3>
+          {statusFilter && (
+            <button type="button" onClick={() => setStatusFilter(null)} className="mt-3 text-xs font-bold text-[#7d0f14]">
+              Limpar filtro: {STATUS_LABELS[statusFilter]?.label ?? statusFilter}
+            </button>
+          )}
           <div className="mt-5 space-y-3">
-            {[
-              { label: "Aguardando aceite", value: queueNow.pending, color: "#f79009" },
-              { label: "Confirmados", value: queueNow.confirmed, color: "#d92d20" },
-              { label: "Em preparo", value: queueNow.preparing, color: "#b42318" },
-              { label: "Em entrega", value: queueNow.outForDelivery, color: "#7d0f14" },
-            ].map((row) => {
-              const max = Math.max(activeOrders.length, 1);
+            {statusRows.map((row) => {
+              const max = Math.max(periodOrdersAll.length, 1);
               const width = `${(row.value / max) * 100}%`;
               return (
-                <div key={row.label}>
+                <button
+                  key={row.key}
+                  type="button"
+                  onClick={() => setStatusFilter(statusFilter === row.key ? null : row.key)}
+                  className="block w-full rounded-xl p-1 text-left transition hover:bg-[#fff6f4]"
+                >
                   <div className="mb-1.5 flex items-center justify-between gap-3">
                     <span className="text-sm font-medium text-[#3f1a1f]">{row.label}</span>
                     <span className="text-sm font-bold text-[#2f090d]">{row.value}</span>
@@ -1587,7 +1775,7 @@ function DeliveryDashboardTab() {
                   <div className="h-2.5 rounded-full bg-[#f5e9e8]">
                     <div className="h-full rounded-full" style={{ width, background: row.color }} />
                   </div>
-                </div>
+                </button>
               );
             })}
           </div>
@@ -1638,7 +1826,32 @@ function DeliveryDashboardTab() {
 
         <div style={cardStyle}>
           <p className="text-xs uppercase tracking-[0.14em] text-[#8a6f73]">Fila critica</p>
-          <h3 className="mt-2 text-xl font-black tracking-[-0.03em] text-[#2f090d]">Pedidos que podem explodir SLA</h3>
+          <h3 className="mt-2 text-xl font-black tracking-[-0.03em] text-[#2f090d]">SLA operacional agora</h3>
+          <div className="mt-4 grid grid-cols-2 gap-2 text-xs">
+            <div className="rounded-2xl bg-[#fffaf9] p-3">
+              <p className="font-bold text-[#2f090d]">{queueNow.pending}</p>
+              <p className="text-[#8a6f73]">Aguardando confirmação</p>
+            </div>
+            <div className="rounded-2xl bg-[#fffaf9] p-3">
+              <p className="font-bold text-[#2f090d]">{queueNow.preparing}</p>
+              <p className="text-[#8a6f73]">Em preparo</p>
+            </div>
+            <div className="rounded-2xl bg-[#fffaf9] p-3">
+              <p className="font-bold text-[#b42318]">{criticalOrders.length}</p>
+              <p className="text-[#8a6f73]">Atrasados</p>
+            </div>
+            <div className="rounded-2xl bg-[#fffaf9] p-3">
+              <p className="font-bold text-[#c2410c]">{riskyOrders.length}</p>
+              <p className="text-[#8a6f73]">Próximos do limite</p>
+            </div>
+          </div>
+          <div className="mt-3 rounded-2xl border border-[#f1e6e6] bg-[#fffaf9] p-3 text-sm text-[#7d6669]">
+            {oldestQueueOrder ? (
+              <span>Pedido mais antigo: <strong className="text-[#2f090d]">#{oldestQueueOrder.id}</strong> há {oldestQueueOrder.ageMinutes} min • meta de preparo {prepGoalMinutes} min.</span>
+            ) : (
+              <span>Sem fila ativa agora • meta de preparo {prepGoalMinutes} min.</span>
+            )}
+          </div>
           {loadingLive ? (
             <div className="mt-6 space-y-2">
               {Array.from({ length: 4 }).map((_, index) => <Skeleton key={index} className="h-14 w-full rounded-xl" />)}
@@ -1716,8 +1929,20 @@ function DeliveryDashboardTab() {
                     <span>{formatCompactCurrency(row.revenue)}</span>
                     <span>{row.avgMinutes ? `${row.avgMinutes.toFixed(0)} min medio` : "Sem SLA ainda"}</span>
                   </div>
+                  <span className={`mt-2 inline-flex rounded-full px-2 py-1 text-[10px] font-bold ${
+                    row.status === "crítico" ? "bg-[#fef3f2] text-[#b42318]" :
+                    row.status === "atenção" ? "bg-[#fff7ed] text-[#c2410c]" :
+                    "bg-[#ecfdf3] text-[#027a48]"
+                  }`}>
+                    {row.status}
+                  </span>
                 </div>
               ))}
+              {neighborhoodRows.some((row) => row.status !== "bom") && (
+                <p className="rounded-2xl bg-[#fff6f4] p-3 text-sm text-[#7d0f14]">
+                  Sugestão: bairros com tempo médio alto podem precisar de taxa, raio ou entregador dedicado.
+                </p>
+              )}
             </div>
           )}
         </div>
@@ -1738,6 +1963,9 @@ function DeliveryDashboardTab() {
                         <span className="font-medium text-[#3f1a1f]">{row.label}</span>
                         <span className="font-bold text-[#2f090d]">{share.toFixed(0)}%</span>
                       </div>
+                      <p className="mb-1 text-[11px] text-[#8a6f73]">
+                        {row.orders} pedidos • ticket médio {formatCompactCurrency(row.avgTicket)}
+                      </p>
                       <div className="h-2 rounded-full bg-[#f5e9e8]">
                         <div className="h-full rounded-full bg-[#7d0f14]" style={{ width: `${share}%` }} />
                       </div>
@@ -1767,7 +1995,77 @@ function DeliveryDashboardTab() {
                   ))}
                 </div>
               )}
+              </div>
             </div>
+            {paymentMix[0] && (
+              <p className="rounded-2xl bg-[#fff6f4] p-3 text-sm text-[#7d0f14]">
+                Sugestão: {paymentMix[0].label} representa a maior parte dos pagamentos. Mantenha essa opção clara no checkout.
+              </p>
+            )}
+          </div>
+      </div>
+
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-[0.9fr_0.9fr_1.2fr]">
+        <div style={cardStyle}>
+          <p className="text-xs uppercase tracking-[0.14em] text-[#8a6f73]">Ações recomendadas</p>
+          <h3 className="mt-2 text-xl font-black tracking-[-0.03em] text-[#2f090d]">Próximas decisões sugeridas</h3>
+          <div className="mt-5 space-y-2">
+            {recommendations.map((item, index) => (
+              <div key={`${item}-${index}`} className="flex gap-3 rounded-2xl border border-[#f1e6e6] bg-[#fffaf9] p-3 text-sm text-[#3f1a1f]">
+                <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-[#7d0f14] text-[10px] font-black text-white">
+                  {index + 1}
+                </span>
+                <span>{item}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div style={cardStyle}>
+          <p className="text-xs uppercase tracking-[0.14em] text-[#8a6f73]">Saúde da operação</p>
+          <h3 className="mt-2 text-xl font-black tracking-[-0.03em] text-[#2f090d]">{opsStatus.label}</h3>
+          <div className="mt-5 space-y-2">
+            {healthRows.map((row) => (
+              <div key={row.label} className="flex items-center justify-between gap-3 rounded-2xl border border-[#f1e6e6] bg-[#fffaf9] p-3">
+                <span className="text-sm font-medium text-[#3f1a1f]">{row.label}</span>
+                <span className={`rounded-full px-2.5 py-1 text-[10px] font-bold ${row.tone}`}>{row.value}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div style={cardStyle}>
+          <p className="text-xs uppercase tracking-[0.14em] text-[#8a6f73]">Resumo por canal</p>
+          <h3 className="mt-2 text-xl font-black tracking-[-0.03em] text-[#2f090d]">Receita, ticket e cancelamentos</h3>
+          <div className="mt-5 overflow-x-auto">
+            <table className="w-full min-w-[520px] text-sm">
+              <thead>
+                <tr className="text-left text-xs uppercase tracking-[0.12em] text-[#8a6f73]">
+                  <th className="pb-2">Canal</th>
+                  <th className="pb-2">Pedidos</th>
+                  <th className="pb-2">Receita</th>
+                  <th className="pb-2">Ticket</th>
+                  <th className="pb-2">Cancel.</th>
+                  <th className="pb-2">Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {channelSummary.map((row) => (
+                  <tr key={row.key} className="border-t border-[#f1e6e6]">
+                    <td className="py-2 font-semibold text-[#3f1a1f]">{row.label}</td>
+                    <td className="py-2 text-[#7d6669]">{row.orders}</td>
+                    <td className="py-2 text-[#7d6669]">{formatCompactCurrency(row.revenue)}</td>
+                    <td className="py-2 text-[#7d6669]">{formatCompactCurrency(row.avgTicket)}</td>
+                    <td className="py-2 text-[#7d6669]">{row.cancelCount}</td>
+                    <td className="py-2">
+                      <span className={`rounded-full px-2 py-1 text-[10px] font-bold ${row.status === "bom" ? "bg-[#ecfdf3] text-[#027a48]" : "bg-[#fff7ed] text-[#c2410c]"}`}>
+                        {row.status}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         </div>
       </div>

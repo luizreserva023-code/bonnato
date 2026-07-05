@@ -189,6 +189,11 @@ import {
   testMarketplaceConnection,
 } from "./marketplaces.ts";
 import {
+  getIfoodProvider,
+  listIfoodIntegrationLogs,
+  resolveIntegrationRestaurantId,
+} from "./ifoodIntegration.ts";
+import {
   createExpense,
   createExpenseSchema,
   createDistributionProduct,
@@ -1688,6 +1693,89 @@ export const appRouter = router({
       .mutation(async ({ input }) => {
         return pullMarketplaceOrders(input.providerId);
       }),
+  }),
+
+  // --- INTEGRATIONS ----------------------------------------------------------
+  integrations: router({
+    ifood: router({
+      status: staffProcedure
+        .input(z.object({ storeId: z.number().optional() }).optional())
+        .query(async ({ ctx, input }) => {
+          const scopedStoreId = await resolveStoreId(ctx.user, input?.storeId);
+          const restaurantId = await resolveIntegrationRestaurantId(scopedStoreId);
+          return getIfoodProvider().getStatus(restaurantId);
+        }),
+      connect: staffProcedure
+        .input(z.object({ storeId: z.number().optional() }).optional())
+        .mutation(async ({ ctx, input }) => {
+          const scopedStoreId = await resolveStoreId(ctx.user, input?.storeId);
+          const restaurantId = await resolveIntegrationRestaurantId(scopedStoreId);
+          return getIfoodProvider().connect(restaurantId);
+        }),
+      disconnect: staffProcedure
+        .input(z.object({ storeId: z.number().optional() }).optional())
+        .mutation(async ({ ctx, input }) => {
+          const scopedStoreId = await resolveStoreId(ctx.user, input?.storeId);
+          const restaurantId = await resolveIntegrationRestaurantId(scopedStoreId);
+          return getIfoodProvider().disconnect(restaurantId);
+        }),
+      orders: staffProcedure
+        .input(z.object({ storeId: z.number().optional() }).optional())
+        .query(async ({ ctx, input }) => {
+          const scopedStoreId = await resolveStoreId(ctx.user, input?.storeId);
+          const restaurantId = await resolveIntegrationRestaurantId(scopedStoreId);
+          return getIfoodProvider().getOrders(restaurantId);
+        }),
+      generateTestOrder: staffProcedure
+        .input(z.object({ storeId: z.number().optional() }).optional())
+        .mutation(async ({ ctx, input }) => {
+          const scopedStoreId = await resolveStoreId(ctx.user, input?.storeId);
+          const restaurantId = await resolveIntegrationRestaurantId(scopedStoreId);
+          return getIfoodProvider().generateTestOrder(restaurantId);
+        }),
+      logs: staffProcedure
+        .input(z.object({ storeId: z.number().optional() }).optional())
+        .query(async ({ ctx, input }) => {
+          const scopedStoreId = await resolveStoreId(ctx.user, input?.storeId);
+          const restaurantId = await resolveIntegrationRestaurantId(scopedStoreId);
+          return listIfoodIntegrationLogs(restaurantId);
+        }),
+      confirmOrder: staffProcedure
+        .input(z.object({ id: z.number(), storeId: z.number().optional() }))
+        .mutation(async ({ ctx, input }) => {
+          const scopedStoreId = await resolveStoreId(ctx.user, input.storeId);
+          const restaurantId = await resolveIntegrationRestaurantId(scopedStoreId);
+          return getIfoodProvider().confirmOrder(input.id, restaurantId);
+        }),
+      startPreparation: staffProcedure
+        .input(z.object({ id: z.number(), storeId: z.number().optional() }))
+        .mutation(async ({ ctx, input }) => {
+          const scopedStoreId = await resolveStoreId(ctx.user, input.storeId);
+          const restaurantId = await resolveIntegrationRestaurantId(scopedStoreId);
+          return getIfoodProvider().startPreparation(input.id, restaurantId);
+        }),
+      dispatch: staffProcedure
+        .input(z.object({ id: z.number(), storeId: z.number().optional() }))
+        .mutation(async ({ ctx, input }) => {
+          const scopedStoreId = await resolveStoreId(ctx.user, input.storeId);
+          const restaurantId = await resolveIntegrationRestaurantId(scopedStoreId);
+          return getIfoodProvider().dispatchOrder(input.id, restaurantId);
+        }),
+      conclude: staffProcedure
+        .input(z.object({ id: z.number(), storeId: z.number().optional() }))
+        .mutation(async ({ ctx, input }) => {
+          const scopedStoreId = await resolveStoreId(ctx.user, input.storeId);
+          const restaurantId = await resolveIntegrationRestaurantId(scopedStoreId);
+          return getIfoodProvider().concludeOrder(input.id, restaurantId);
+        }),
+      cancel: staffProcedure
+        .input(z.object({ id: z.number(), storeId: z.number().optional() }))
+        .mutation(async ({ ctx, input }) => {
+          const scopedStoreId = await resolveStoreId(ctx.user, input.storeId);
+          const restaurantId = await resolveIntegrationRestaurantId(scopedStoreId);
+          return getIfoodProvider().cancelOrder(input.id, restaurantId);
+        }),
+    }),
   }),
 
   // --- IFOOD ------------------------------------------------------------------

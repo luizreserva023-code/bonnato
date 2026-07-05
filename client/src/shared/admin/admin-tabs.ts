@@ -12,6 +12,7 @@ export const ADMIN_TABS = [
   "upsells",
   "users",
   "drivers",
+  "marketplaces",
   "settings",
   "stores",
   "recovery",

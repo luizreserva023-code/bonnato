@@ -3,8 +3,16 @@ import { appRouter } from "./routers.ts";
 import type { TrpcContext } from "./_core/context.ts";
 
 // ─── Mock DB ──────────────────────────────────────────────────────────────────
+const mockDb = vi.hoisted(() => ({
+  update: vi.fn(() => ({
+    set: vi.fn(() => ({
+      where: vi.fn().mockResolvedValue({ rowsAffected: 0 }),
+    })),
+  })),
+}));
+
 vi.mock("./db", () => ({
-  getDb: vi.fn(),
+  getDb: vi.fn().mockResolvedValue(mockDb),
   upsertUser: vi.fn(),
   getUserByOpenId: vi.fn(),
   getCategories: vi.fn().mockResolvedValue([
@@ -46,6 +54,12 @@ vi.mock("./db", () => ({
   createOrder: vi.fn().mockResolvedValue(42),
   updateOrderStatus: vi.fn().mockResolvedValue(undefined),
   updateOrderPaymentStatus: vi.fn().mockResolvedValue(undefined),
+  pickStoreForDeliveryAddress: vi.fn().mockResolvedValue({
+    storeId: 1,
+    store: null,
+    distanceKm: null,
+    matchedBy: "fallback",
+  }),
   getAllCoupons: vi.fn().mockResolvedValue([
     { id: 1, code: "BONATTO10", discountType: "percentage", discountValue: "10.00", minOrderValue: "30.00", maxUses: 100, usedCount: 5, active: true, expiresAt: null, createdAt: new Date() },
   ]),
@@ -70,6 +84,25 @@ vi.mock("./db", () => ({
     deliveryFee: "0.00",
     deliveryCepPrefixes: JSON.stringify(["35670"]),
     pixKey: "test@test.com",
+    paymentConfig: JSON.stringify({
+      orders: {
+        onlineEnabled: true,
+        cardEnabled: true,
+        pixEnabled: true,
+        cashEnabled: true,
+        pixMode: "manual_key",
+        savedCardsEnabled: true,
+      },
+      club: {
+        enabled: true,
+        checkoutMode: "manual_pix",
+      },
+      pix: {
+        merchantName: "Bonatto Pizza",
+        merchantCity: "MATEUS LEME",
+        instructions: "",
+      },
+    }),
     whatsappNumber: "5537999999999",
     merchantName: "Bonatto Pizza",
   }),

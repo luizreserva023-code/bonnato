@@ -217,6 +217,54 @@ export const orders = mysqlTable("orders", {
   userStatusIdx: index("orders_user_status_idx").on(t.userId, t.status),
 }));
 
+export const ifoodIntegrations = mysqlTable("ifood_integrations", {
+  id: int("id").autoincrement().primaryKey(),
+  restaurantId: int("restaurant_id").notNull(),
+  merchantId: varchar("merchant_id", { length: 120 }),
+  merchantName: varchar("merchant_name", { length: 220 }),
+  status: mysqlEnum("status", ["disconnected", "connecting", "connected", "error"]).default("disconnected").notNull(),
+  mode: mysqlEnum("mode", ["mock", "production"]).default("mock").notNull(),
+  lastConnectedAt: timestamp("last_connected_at"),
+  lastSyncAt: timestamp("last_sync_at"),
+  lastError: text("last_error"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().onUpdateNow().notNull(),
+}, (t) => ({
+  restaurantIdx: uniqueIndex("ifood_integrations_restaurant_uq").on(t.restaurantId),
+  statusIdx: index("ifood_integrations_status_idx").on(t.status),
+}));
+
+export const externalOrders = mysqlTable("external_orders", {
+  id: int("id").autoincrement().primaryKey(),
+  restaurantId: int("restaurant_id").notNull(),
+  channel: varchar("channel", { length: 40 }).notNull(),
+  externalOrderId: varchar("external_order_id", { length: 120 }).notNull(),
+  displayId: varchar("display_id", { length: 40 }).notNull(),
+  status: mysqlEnum("status", ["novo", "confirmado", "em_preparo", "saiu_para_entrega", "concluido", "cancelado"]).default("novo").notNull(),
+  customerName: varchar("customer_name", { length: 220 }).notNull(),
+  totalAmount: decimal("total_amount", { precision: 10, scale: 2 }).default("0.00").notNull(),
+  payload: text("payload"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().onUpdateNow().notNull(),
+}, (t) => ({
+  externalIdx: uniqueIndex("external_orders_channel_external_uq").on(t.channel, t.externalOrderId),
+  restaurantIdx: index("external_orders_restaurant_idx").on(t.restaurantId),
+  statusIdx: index("external_orders_status_idx").on(t.status),
+  createdAtIdx: index("external_orders_created_idx").on(t.createdAt),
+}));
+
+export const ifoodLogs = mysqlTable("ifood_logs", {
+  id: int("id").autoincrement().primaryKey(),
+  restaurantId: int("restaurant_id").notNull(),
+  action: varchar("action", { length: 120 }).notNull(),
+  message: text("message").notNull(),
+  payload: text("payload"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (t) => ({
+  restaurantIdx: index("ifood_logs_restaurant_idx").on(t.restaurantId),
+  createdAtIdx: index("ifood_logs_created_idx").on(t.createdAt),
+}));
+
 // --- LOYALTY TRANSACTIONS ---------------------------------------------------
 export const loyaltyTransactions = mysqlTable("loyalty_transactions", {
   id: int("id").autoincrement().primaryKey(),

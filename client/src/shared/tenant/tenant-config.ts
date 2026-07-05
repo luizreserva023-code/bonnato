@@ -76,6 +76,7 @@ const BONATTO_FEATURES: TenantFeatureFlags = {
     upsells: true,
     users: true,
     drivers: true,
+    marketplaces: true,
     settings: true,
     stores: true,
     recovery: true,
