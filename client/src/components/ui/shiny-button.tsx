@@ -1,4 +1,5 @@
 import type React from "react";
+import { createPortal } from "react-dom";
 import { cn } from "@/lib/utils";
 
 interface ShinyButtonProps {
@@ -10,7 +11,7 @@ interface ShinyButtonProps {
 export function ShinyButton({ children, onClick, className = "" }: ShinyButtonProps) {
   return (
     <>
-      <style>{`
+      {typeof document !== "undefined" && createPortal(<style>{`
         @property --gradient-angle {
           syntax: "<angle>";
           initial-value: 0deg;
@@ -191,7 +192,7 @@ export function ShinyButton({ children, onClick, className = "" }: ShinyButtonPr
             scale: 1.2;
           }
         }
-      `}</style>
+      `}</style>, document.head)}
 
       <button className={cn("shiny-cta", className)} onClick={onClick}>
         <span>{children}</span>

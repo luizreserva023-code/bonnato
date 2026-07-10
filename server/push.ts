@@ -91,7 +91,7 @@ export async function sendPushToUser(userId: number, payload: PushPayload): Prom
   const badge = payload.badge ?? "/icon-192.png";
 
   await Promise.allSettled(
-    subs.map(async (sub: PushSubRow) => {
+    subs.map(async (sub) => {
       try {
         await webpush.sendNotification(
           { endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } },
@@ -188,7 +188,7 @@ export async function sendPushToAllUsers(
   let failed = 0;
 
   await Promise.allSettled(
-    subs.map(async (sub: PushSubRow) => {
+    subs.map(async (sub) => {
       try {
         await webpush.sendNotification(
           { endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } },

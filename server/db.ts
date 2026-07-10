@@ -1,4 +1,4 @@
-import { and, desc, eq, gte, gt, inArray, isNull, like, lte, not, or, sql } from "drizzle-orm";
+import { and, desc, eq, gte, gt, inArray, isNull, like, lte, not, or, sql, type SQL } from "drizzle-orm";
 import { getTodayStartUtc, getTodayEndUtc, getBrasilTzOffset } from "../shared/timezone.ts";
 import { drizzle } from "drizzle-orm/mysql2";
 import { createPool, type Pool } from "mysql2/promise";
@@ -96,8 +96,11 @@ import {
   couponRedemptions,
 } from "../drizzle/schema.ts";
 import { ENV } from "./_core/env.ts";
+import { shouldRunRuntimeSchemaMigrations } from "./runtimeSchema.ts";
 
-let _db: any = null;
+type DatabaseClient = ReturnType<typeof drizzle>;
+
+let _db: DatabaseClient | null = null;
 let _pool: Pool | null = null;
 let _schemaReady: Promise<void> | null = null;
 const _memoCache = new Map<string, { expiresAt: number; value: unknown }>();
@@ -178,9 +181,9 @@ function buildMysqlPoolFromParts() {
     queueLimit: 0,
     ssl: { rejectUnauthorized: false },
   });
-  pool.on("error", (error) => {
+  (pool as unknown as { on(event: "error", listener: (error: NodeJS.ErrnoException & { fatal?: boolean }) => void): void }).on("error", (error) => {
     console.error("[Database] Pool error:", error);
-    if ((error as NodeJS.ErrnoException).fatal) {
+    if (error.fatal) {
       _db = null;
       _pool = null;
       _schemaReady = null;
@@ -206,7 +209,7 @@ function isRetryableDbError(error: unknown) {
   return code === "ECONNRESET" || code === "PROTOCOL_CONNECTION_LOST" || code === "ETIMEDOUT";
 }
 
-async function withDbRetry<T>(operation: (db: any) => Promise<T>): Promise<T> {
+async function withDbRetry<T>(operation: (db: DatabaseClient) => Promise<T>): Promise<T> {
   let db = await getDb();
   if (!db) throw new Error("DB not available");
   try {
@@ -262,19 +265,19 @@ async function geocodeAddress(address: string): Promise<Coordinates | null> {
   return { lat, lng };
 }
 
-async function hasColumn(db: any, tableName: string, columnName: string): Promise<boolean> {
+async function hasColumn(db: DatabaseClient, tableName: string, columnName: string): Promise<boolean> {
   const result = await db.execute(sql.raw(`SHOW COLUMNS FROM \`${tableName}\` LIKE '${columnName}'`));
   const rows = (result as unknown as [Array<unknown>])[0] ?? [];
   return rows.length > 0;
 }
 
-async function hasIndex(db: any, tableName: string, indexName: string): Promise<boolean> {
+async function hasIndex(db: DatabaseClient, tableName: string, indexName: string): Promise<boolean> {
   const result = await db.execute(sql.raw(`SHOW INDEX FROM \`${tableName}\` WHERE Key_name = '${indexName}'`));
   const rows = (result as unknown as [Array<unknown>])[0] ?? [];
   return rows.length > 0;
 }
 
-async function ensureRuntimeSchema(db: any): Promise<void> {
+export async function ensureRuntimeSchema(db: DatabaseClient): Promise<void> {
   if (_schemaReady) {
     return _schemaReady;
   }
@@ -757,7 +760,7 @@ export async function getDb() {
       resetDbState();
     }
   }
-  if (_db) {
+  if (_db && shouldRunRuntimeSchemaMigrations()) {
     try {
       await ensureRuntimeSchema(_db);
     } catch (error) {
@@ -928,10 +931,13 @@ export async function deleteCategory(id: number) {
 export async function getProducts(opts?: { categoryId?: number; activeOnly?: boolean; storeId?: number }) {
   const db = await getDb();
   if (!db) return [];
-  const conditions: ReturnType<typeof eq>[] = [];
+  const conditions: SQL[] = [];
   if (opts?.activeOnly !== false) conditions.push(eq(products.active, true));
   if (opts?.categoryId) conditions.push(eq(products.categoryId, opts.categoryId));
-  if (opts?.storeId) conditions.push(eq(products.storeId, opts.storeId));
+  if (opts?.storeId) {
+    const storeCondition = or(isNull(products.storeId), eq(products.storeId, opts.storeId));
+    if (storeCondition) conditions.push(storeCondition);
+  }
   return db
     .select()
     .from(products)
@@ -1232,6 +1238,13 @@ export async function getStaffMembers(opts?: { storeId?: number; role?: StaffMem
   });
 }
 
+export async function getStaffMemberById(id: number) {
+  return withDbRetry(async (db) => {
+    const rows = await db.select().from(staffMembers).where(eq(staffMembers.id, id)).limit(1);
+    return rows[0];
+  });
+}
+
 export async function createStaffMember(data: InsertStaffMember) {
   return withDbRetry(async (db) => {
     const result = await db.insert(staffMembers).values(data);
@@ -1293,6 +1306,13 @@ export async function getDiningTables(opts?: { storeId?: number; activeOnly?: bo
       .from(diningTables)
       .where(conditions.length ? and(...conditions) : undefined)
       .orderBy(diningTables.name);
+  });
+}
+
+export async function getDiningTableById(id: number) {
+  return withDbRetry(async (db) => {
+    const rows = await db.select().from(diningTables).where(eq(diningTables.id, id)).limit(1);
+    return rows[0];
   });
 }
 
@@ -1479,6 +1499,20 @@ export async function getTableSessions(opts?: { storeId?: number; status?: Table
   });
 }
 
+export async function getTableSessionById(id: number) {
+  return withDbRetry(async (db) => {
+    const rows = await db.select().from(tableSessions).where(eq(tableSessions.id, id)).limit(1);
+    return rows[0];
+  });
+}
+
+export async function getTableSessionItemById(id: number) {
+  return withDbRetry(async (db) => {
+    const rows = await db.select().from(tableSessionItems).where(eq(tableSessionItems.id, id)).limit(1);
+    return rows[0];
+  });
+}
+
 export async function openTableSession(data: InsertTableSession) {
   return withDbRetry(async (db) => {
     const existingOpenSession = await db
@@ -1622,7 +1656,7 @@ export async function removeTableSessionItem(id: number) {
   });
 }
 
-async function consumeInventoryForTableSessionItemInternal(db: any, itemId: number) {
+async function consumeInventoryForTableSessionItemInternal(db: DatabaseClient, itemId: number) {
   const rows = await db.execute(sql`
     SELECT
       tsi.\`id\`,
@@ -1988,15 +2022,17 @@ export async function createOrder(
   orderData: InsertOrder,
   items: Omit<InsertOrderItem, 'orderId'>[]
 ): Promise<number> {
-  return withDbRetry(async (db) => {
-    const result = await db.insert(orders).values(orderData);
-    const resultHeader = Array.isArray(result) ? result[0] : result;
-    const orderId = (resultHeader as unknown as { insertId: number }).insertId;
-    if (!orderId) throw new Error("Failed to get order ID after insert");
-    const itemsWithOrderId = items.map((item) => ({ ...item, orderId }));
-    await db.insert(orderItems).values(itemsWithOrderId);
-    return orderId;
-  });
+  return withDbRetry((db) =>
+    db.transaction(async (tx) => {
+      const result = await tx.insert(orders).values(orderData);
+      const resultHeader = Array.isArray(result) ? result[0] : result;
+      const orderId = (resultHeader as unknown as { insertId: number }).insertId;
+      if (!orderId) throw new Error("Failed to get order ID after insert");
+      const itemsWithOrderId = items.map((item) => ({ ...item, orderId }));
+      await tx.insert(orderItems).values(itemsWithOrderId);
+      return orderId;
+    })
+  );
 }
 
 export async function getOrderById(id: number) {

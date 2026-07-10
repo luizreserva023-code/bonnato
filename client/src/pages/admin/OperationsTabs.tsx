@@ -117,7 +117,7 @@ export function InventoryTab() {
   });
   const { data: lowStockData } = trpc.inventory.lowStock.useQuery({ storeId: selectedStoreId });
   const { data: movementsData } = trpc.inventory.movements.useQuery({ storeId: selectedStoreId, limit: 15 });
-  const { data: productsData } = trpc.products.listAll.useQuery();
+  const { data: productsData } = trpc.products.listAll.useQuery({ storeId: selectedStoreId });
   const { data: recipeData } = trpc.inventory.recipe.useQuery(
     { productId: selectedProductId ?? 0 },
     { enabled: !!selectedProductId }
@@ -595,7 +595,7 @@ export function DiningRoomTab() {
   const [closingDrafts, setClosingDrafts] = useState<Record<number, { discountAmount: string; tipAmount: string }>>({});
   const { data: tablesData } = trpc.diningRoom.tables.useQuery({ storeId: selectedStoreId, activeOnly: true });
   const { data: sessionsData } = trpc.diningRoom.sessions.useQuery({ storeId: selectedStoreId });
-  const { data: productsData } = trpc.products.listAll.useQuery();
+  const { data: productsData } = trpc.products.listAll.useQuery({ storeId: selectedStoreId });
   const tables = (tablesData ?? []) as DiningTableRecord[];
   const sessions = (sessionsData ?? []) as DiningSessionRecord[];
   const products = (productsData ?? []) as ProductListItem[];

@@ -1342,6 +1342,16 @@ var init_schema = __esm({
   }
 });
 
+// server/runtimeSchema.ts
+function shouldRunRuntimeSchemaMigrations() {
+  return process.env.NODE_ENV !== "production" || process.env.RUNTIME_SCHEMA_MIGRATIONS === "true";
+}
+var init_runtimeSchema = __esm({
+  "server/runtimeSchema.ts"() {
+    "use strict";
+  }
+});
+
 // server/db.ts
 var db_exports = {};
 __export(db_exports, {
@@ -1409,6 +1419,7 @@ __export(db_exports, {
   dismissClientAlert: () => dismissClientAlert,
   drawRaffleWinner: () => drawRaffleWinner,
   driverConfirmDelivery: () => driverConfirmDelivery,
+  ensureRuntimeSchema: () => ensureRuntimeSchema,
   ensureStaffAccessToken: () => ensureStaffAccessToken,
   enterRaffle: () => enterRaffle,
   getAbandonedCartsByUser: () => getAbandonedCartsByUser,
@@ -1443,6 +1454,7 @@ __export(db_exports, {
   getDailyRevenue: () => getDailyRevenue,
   getDb: () => getDb,
   getDeliveryZoneByNeighborhood: () => getDeliveryZoneByNeighborhood,
+  getDiningTableById: () => getDiningTableById,
   getDiningTables: () => getDiningTables,
   getDriverActiveOrderDetails: () => getDriverActiveOrderDetails,
   getDriverAssignedOrders: () => getDriverAssignedOrders,
@@ -1482,8 +1494,11 @@ __export(db_exports, {
   getSalesReport: () => getSalesReport,
   getSalesTimeSeries: () => getSalesTimeSeries,
   getStaffMemberByAccessToken: () => getStaffMemberByAccessToken,
+  getStaffMemberById: () => getStaffMemberById,
   getStaffMembers: () => getStaffMembers,
   getStoreSetting: () => getStoreSetting,
+  getTableSessionById: () => getTableSessionById,
+  getTableSessionItemById: () => getTableSessionItemById,
   getTableSessions: () => getTableSessions,
   getTagsForCustomer: () => getTagsForCustomer,
   getTopCategories: () => getTopCategories,
@@ -2178,7 +2193,7 @@ async function getDb() {
       resetDbState();
     }
   }
-  if (_db) {
+  if (_db && shouldRunRuntimeSchemaMigrations()) {
     try {
       await ensureRuntimeSchema(_db);
     } catch (error) {
@@ -2315,7 +2330,10 @@ async function getProducts(opts) {
   const conditions = [];
   if (opts?.activeOnly !== false) conditions.push(eq(products.active, true));
   if (opts?.categoryId) conditions.push(eq(products.categoryId, opts.categoryId));
-  if (opts?.storeId) conditions.push(eq(products.storeId, opts.storeId));
+  if (opts?.storeId) {
+    const storeCondition = or(isNull(products.storeId), eq(products.storeId, opts.storeId));
+    if (storeCondition) conditions.push(storeCondition);
+  }
   return db.select().from(products).where(conditions.length ? and(...conditions) : void 0).orderBy(products.sortOrder, products.name);
 }
 async function getProductById(id) {
@@ -2531,6 +2549,12 @@ async function getStaffMembers(opts) {
     return db.select().from(staffMembers).where(conditions.length ? and(...conditions) : void 0).orderBy(staffMembers.role, staffMembers.name);
   });
 }
+async function getStaffMemberById(id) {
+  return withDbRetry(async (db) => {
+    const rows = await db.select().from(staffMembers).where(eq(staffMembers.id, id)).limit(1);
+    return rows[0];
+  });
+}
 async function createStaffMember(data) {
   return withDbRetry(async (db) => {
     const result = await db.insert(staffMembers).values(data);
@@ -2578,6 +2602,12 @@ async function getDiningTables(opts) {
     if (opts?.storeId) conditions.push(eq(diningTables.storeId, opts.storeId));
     if (opts?.activeOnly !== false) conditions.push(eq(diningTables.active, true));
     return db.select().from(diningTables).where(conditions.length ? and(...conditions) : void 0).orderBy(diningTables.name);
+  });
+}
+async function getDiningTableById(id) {
+  return withDbRetry(async (db) => {
+    const rows = await db.select().from(diningTables).where(eq(diningTables.id, id)).limit(1);
+    return rows[0];
   });
 }
 async function createDiningTable(data) {
@@ -2746,6 +2776,18 @@ async function getTableSessions(opts) {
         computedTotal: Math.max(0, computedSubtotal - Number(session.discountAmount ?? 0) + Number(session.tipAmount ?? 0)).toFixed(2)
       };
     });
+  });
+}
+async function getTableSessionById(id) {
+  return withDbRetry(async (db) => {
+    const rows = await db.select().from(tableSessions).where(eq(tableSessions.id, id)).limit(1);
+    return rows[0];
+  });
+}
+async function getTableSessionItemById(id) {
+  return withDbRetry(async (db) => {
+    const rows = await db.select().from(tableSessionItems).where(eq(tableSessionItems.id, id)).limit(1);
+    return rows[0];
   });
 }
 async function openTableSession(data) {
@@ -3120,15 +3162,17 @@ async function pickStoreForDeliveryAddress(input) {
   });
 }
 async function createOrder(orderData, items) {
-  return withDbRetry(async (db) => {
-    const result = await db.insert(orders).values(orderData);
-    const resultHeader = Array.isArray(result) ? result[0] : result;
-    const orderId = resultHeader.insertId;
-    if (!orderId) throw new Error("Failed to get order ID after insert");
-    const itemsWithOrderId = items.map((item) => ({ ...item, orderId }));
-    await db.insert(orderItems).values(itemsWithOrderId);
-    return orderId;
-  });
+  return withDbRetry(
+    (db) => db.transaction(async (tx) => {
+      const result = await tx.insert(orders).values(orderData);
+      const resultHeader = Array.isArray(result) ? result[0] : result;
+      const orderId = resultHeader.insertId;
+      if (!orderId) throw new Error("Failed to get order ID after insert");
+      const itemsWithOrderId = items.map((item) => ({ ...item, orderId }));
+      await tx.insert(orderItems).values(itemsWithOrderId);
+      return orderId;
+    })
+  );
 }
 async function getOrderById(id) {
   return withDbRetry(async (db) => {
@@ -4936,6 +4980,7 @@ var init_db = __esm({
     init_timezone();
     init_schema();
     init_env();
+    init_runtimeSchema();
     _db = null;
     _pool = null;
     _schemaReady = null;
@@ -5235,7 +5280,7 @@ async function getManus(relKey) {
 async function putVercelBlob(relKey, data, contentType) {
   const { put } = await import("@vercel/blob");
   const pathname = relKey.replace(/^\/+/, "");
-  const body = typeof data === "string" ? data : data instanceof Uint8Array ? data : new Uint8Array(data);
+  const body = typeof data === "string" ? data : Buffer.isBuffer(data) ? data : Buffer.from(data);
   const blob = await put(pathname, body, {
     access: "public",
     addRandomSuffix: true,
@@ -7544,12 +7589,6 @@ var normalizeSessionAppId = (appId) => isNonEmptyString2(appId) ? appId : ENV.se
 var OAuthService = class {
   constructor(client) {
     this.client = client;
-    console.log("[OAuth] Initialized with baseURL:", ENV.oAuthServerUrl);
-    if (!ENV.oAuthServerUrl) {
-      console.error(
-        "[OAuth] ERROR: OAUTH_SERVER_URL is not configured! Set OAUTH_SERVER_URL environment variable."
-      );
-    }
   }
   decodeState(state) {
     const decoded = atob(state);
@@ -7894,14 +7933,39 @@ async function sendDailyReport() {
 }
 
 // server/_core/systemRouter.ts
+init_db();
+import { sql as sql4 } from "drizzle-orm";
 var systemRouter = router({
   health: publicProcedure.input(
     z4.object({
       timestamp: z4.number().min(0, "timestamp cannot be negative")
     })
-  ).query(() => ({
-    ok: true
-  })),
+  ).query(async () => {
+    const startedAt = Date.now();
+    let database = "down";
+    try {
+      const db = await getDb();
+      if (db) {
+        await db.execute(sql4`SELECT 1`);
+        database = "ok";
+      }
+    } catch {
+      database = "down";
+    }
+    return {
+      ok: database === "ok",
+      database,
+      latencyMs: Date.now() - startedAt,
+      services: {
+        push: Boolean(process.env.VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY),
+        googleOAuth: Boolean(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET),
+        email: Boolean(process.env.RESEND_API_KEY),
+        stripe: Boolean(process.env.STRIPE_SECRET_KEY),
+        asaas: Boolean(process.env.ASAAS_API_KEY),
+        ifood: Boolean(process.env.IFOOD_CLIENT_ID && process.env.IFOOD_CLIENT_SECRET)
+      }
+    };
+  }),
   notifyOwner: adminProcedure.input(
     z4.object({
       title: z4.string().min(1, "title is required"),
@@ -7944,6 +8008,19 @@ async function resolveStoreId(user, requestedStoreId) {
     return row.storeId;
   }
   throw new TRPCError5({ code: "FORBIDDEN", message: "Acesso negado" });
+}
+async function assertStoreEntityAccess(user, entityStoreId, requestedStoreId) {
+  const scopedStoreId = await resolveStoreId(user, requestedStoreId);
+  if (user.role === "admin") {
+    if (requestedStoreId !== void 0 && entityStoreId !== requestedStoreId) {
+      throw new TRPCError5({ code: "FORBIDDEN", message: "Registro fora da loja selecionada." });
+    }
+    return scopedStoreId;
+  }
+  if (entityStoreId == null || entityStoreId !== scopedStoreId) {
+    throw new TRPCError5({ code: "FORBIDDEN", message: "Registro fora da sua loja." });
+  }
+  return scopedStoreId;
 }
 
 // server/stripe.ts
@@ -8186,7 +8263,7 @@ async function createPaymentIntent(amountInReais, currency = "brl", metadata) {
 // server/ifood.ts
 init_schema();
 init_db();
-import { and as and7, eq as eq9, sql as sql4 } from "drizzle-orm";
+import { and as and7, eq as eq9, sql as sql5 } from "drizzle-orm";
 var IFOOD_BASE_URL = "https://merchant-api.ifood.com.br";
 var IFOOD_SOURCE = "ifood";
 var IFOOD_STATUS_MAP = {
@@ -8271,13 +8348,13 @@ function getConfiguredAggregationIds() {
 }
 async function hasColumn2(db, tableName, columnName) {
   const query = `SHOW COLUMNS FROM \`${tableName}\` LIKE '${columnName}'`;
-  const result = await db.execute(sql4.raw(query));
+  const result = await db.execute(sql5.raw(query));
   const rows = result[0];
   return rows.length > 0;
 }
 async function hasIndex2(db, tableName, indexName) {
   const query = `SHOW INDEX FROM \`${tableName}\` WHERE Key_name = '${indexName}'`;
-  const result = await db.execute(sql4.raw(query));
+  const result = await db.execute(sql5.raw(query));
   const rows = result[0];
   return rows.length > 0;
 }
@@ -8287,32 +8364,32 @@ async function ensureIfoodSyncSchema(db) {
   }
   ensureSchemaPromise = (async () => {
     if (!await hasColumn2(db, "categories", "externalSource")) {
-      await db.execute(sql4.raw("ALTER TABLE `categories` ADD `externalSource` varchar(32), ADD `externalMerchantId` varchar(128), ADD `externalId` varchar(128)"));
+      await db.execute(sql5.raw("ALTER TABLE `categories` ADD `externalSource` varchar(32), ADD `externalMerchantId` varchar(128), ADD `externalId` varchar(128)"));
     }
     if (!await hasIndex2(db, "categories", "categories_external_uq")) {
-      await db.execute(sql4.raw("CREATE UNIQUE INDEX `categories_external_uq` ON `categories` (`externalSource`,`externalMerchantId`,`externalId`)"));
+      await db.execute(sql5.raw("CREATE UNIQUE INDEX `categories_external_uq` ON `categories` (`externalSource`,`externalMerchantId`,`externalId`)"));
     }
     if (!await hasColumn2(db, "products", "externalSource")) {
       await db.execute(
-        sql4.raw(
+        sql5.raw(
           "ALTER TABLE `products` ADD `externalSource` varchar(32), ADD `externalMerchantId` varchar(128), ADD `externalId` varchar(128), ADD `externalCode` varchar(128)"
         )
       );
     }
     if (!await hasIndex2(db, "products", "products_external_uq")) {
-      await db.execute(sql4.raw("CREATE UNIQUE INDEX `products_external_uq` ON `products` (`externalSource`,`externalMerchantId`,`externalId`)"));
+      await db.execute(sql5.raw("CREATE UNIQUE INDEX `products_external_uq` ON `products` (`externalSource`,`externalMerchantId`,`externalId`)"));
     }
     if (!await hasColumn2(db, "coupons", "externalSource")) {
-      await db.execute(sql4.raw("ALTER TABLE `coupons` ADD `externalSource` varchar(32), ADD `externalMerchantId` varchar(128), ADD `externalId` varchar(128)"));
+      await db.execute(sql5.raw("ALTER TABLE `coupons` ADD `externalSource` varchar(32), ADD `externalMerchantId` varchar(128), ADD `externalId` varchar(128)"));
     }
     if (!await hasIndex2(db, "coupons", "coupons_external_uq")) {
-      await db.execute(sql4.raw("CREATE UNIQUE INDEX `coupons_external_uq` ON `coupons` (`externalSource`,`externalMerchantId`,`externalId`)"));
+      await db.execute(sql5.raw("CREATE UNIQUE INDEX `coupons_external_uq` ON `coupons` (`externalSource`,`externalMerchantId`,`externalId`)"));
     }
     if (!await hasColumn2(db, "promotions", "externalSource")) {
-      await db.execute(sql4.raw("ALTER TABLE `promotions` ADD `externalSource` varchar(32), ADD `externalMerchantId` varchar(128), ADD `externalId` varchar(128)"));
+      await db.execute(sql5.raw("ALTER TABLE `promotions` ADD `externalSource` varchar(32), ADD `externalMerchantId` varchar(128), ADD `externalId` varchar(128)"));
     }
     if (!await hasIndex2(db, "promotions", "promotions_external_uq")) {
-      await db.execute(sql4.raw("CREATE UNIQUE INDEX `promotions_external_uq` ON `promotions` (`externalSource`,`externalMerchantId`,`externalId`)"));
+      await db.execute(sql5.raw("CREATE UNIQUE INDEX `promotions_external_uq` ON `promotions` (`externalSource`,`externalMerchantId`,`externalId`)"));
     }
   })().catch((error) => {
     ensureSchemaPromise = null;
@@ -9012,8 +9089,9 @@ async function pullMarketplaceOrders(providerId) {
 
 // server/ifoodIntegration.ts
 init_db();
+init_runtimeSchema();
 import { TRPCError as TRPCError6 } from "@trpc/server";
-import { sql as sql5 } from "drizzle-orm";
+import { sql as sql6 } from "drizzle-orm";
 import crypto2 from "crypto";
 function asRows(result) {
   return result[0] ?? [];
@@ -9094,7 +9172,7 @@ async function requireDb() {
   return db;
 }
 async function getDefaultStoreId(db) {
-  const rows = asRows(await db.execute(sql5.raw(`
+  const rows = asRows(await db.execute(sql6.raw(`
     SELECT id
     FROM stores
     WHERE active = true
@@ -9108,8 +9186,9 @@ async function resolveIntegrationRestaurantId(requestedStoreId) {
   return requestedStoreId ?? await getDefaultStoreId(db);
 }
 async function ensureIfoodIntegrationSchema() {
+  if (!shouldRunRuntimeSchemaMigrations()) return;
   const db = await requireDb();
-  await db.execute(sql5.raw(`
+  await db.execute(sql6.raw(`
     CREATE TABLE IF NOT EXISTS ifood_integrations (
       id int NOT NULL AUTO_INCREMENT,
       restaurant_id int NOT NULL,
@@ -9127,7 +9206,7 @@ async function ensureIfoodIntegrationSchema() {
       KEY ifood_integrations_status_idx (status)
     )
   `));
-  const syncColumn = asRows(await db.execute(sql5`
+  const syncColumn = asRows(await db.execute(sql6`
     SELECT COUNT(*) AS count
     FROM INFORMATION_SCHEMA.COLUMNS
     WHERE TABLE_SCHEMA = DATABASE()
@@ -9135,9 +9214,9 @@ async function ensureIfoodIntegrationSchema() {
       AND COLUMN_NAME = 'last_sync_at'
   `));
   if (Number(syncColumn[0]?.count ?? 0) === 0) {
-    await db.execute(sql5.raw("ALTER TABLE ifood_integrations ADD COLUMN last_sync_at timestamp NULL AFTER last_connected_at"));
+    await db.execute(sql6.raw("ALTER TABLE ifood_integrations ADD COLUMN last_sync_at timestamp NULL AFTER last_connected_at"));
   }
-  await db.execute(sql5.raw(`
+  await db.execute(sql6.raw(`
     CREATE TABLE IF NOT EXISTS external_orders (
       id int NOT NULL AUTO_INCREMENT,
       restaurant_id int NOT NULL,
@@ -9157,7 +9236,7 @@ async function ensureIfoodIntegrationSchema() {
       KEY external_orders_created_idx (created_at)
     )
   `));
-  await db.execute(sql5.raw(`
+  await db.execute(sql6.raw(`
     CREATE TABLE IF NOT EXISTS ifood_logs (
       id int NOT NULL AUTO_INCREMENT,
       restaurant_id int NOT NULL,
@@ -9175,7 +9254,7 @@ var IfoodLogService = class {
   async list(restaurantId) {
     await ensureIfoodIntegrationSchema();
     const db = await requireDb();
-    const rows = asRows(await db.execute(sql5`
+    const rows = asRows(await db.execute(sql6`
       SELECT id, restaurant_id, action, message, payload, created_at
       FROM ifood_logs
       WHERE restaurant_id = ${restaurantId}
@@ -9186,7 +9265,7 @@ var IfoodLogService = class {
   }
   async create(restaurantId, action, message, payload) {
     const db = await requireDb();
-    await db.execute(sql5`
+    await db.execute(sql6`
       INSERT INTO ifood_logs (restaurant_id, action, message, payload)
       VALUES (${restaurantId}, ${action}, ${message}, ${JSON.stringify(payload ?? {})})
     `);
@@ -9199,7 +9278,7 @@ var IfoodIntegrationService = class {
   async getStatus(restaurantId) {
     await ensureIfoodIntegrationSchema();
     const db = await requireDb();
-    const rows = asRows(await db.execute(sql5`
+    const rows = asRows(await db.execute(sql6`
       SELECT *
       FROM ifood_integrations
       WHERE restaurant_id = ${restaurantId}
@@ -9210,7 +9289,7 @@ var IfoodIntegrationService = class {
   async connect(restaurantId) {
     await ensureIfoodIntegrationSchema();
     const db = await requireDb();
-    await db.execute(sql5`
+    await db.execute(sql6`
       INSERT INTO ifood_integrations
         (restaurant_id, merchant_id, merchant_name, status, mode, last_connected_at, last_sync_at, last_error)
       VALUES
@@ -9233,7 +9312,7 @@ var IfoodIntegrationService = class {
   async disconnect(restaurantId) {
     await ensureIfoodIntegrationSchema();
     const db = await requireDb();
-    await db.execute(sql5`
+    await db.execute(sql6`
       INSERT INTO ifood_integrations (restaurant_id, status, mode)
       VALUES (${restaurantId}, 'disconnected', 'mock')
       ON DUPLICATE KEY UPDATE status = 'disconnected'
@@ -9249,7 +9328,7 @@ var IfoodOrderService = class {
   async list(restaurantId) {
     await ensureIfoodIntegrationSchema();
     const db = await requireDb();
-    const rows = asRows(await db.execute(sql5`
+    const rows = asRows(await db.execute(sql6`
       SELECT *
       FROM external_orders
       WHERE restaurant_id = ${restaurantId}
@@ -9307,14 +9386,14 @@ var IfoodOrderService = class {
       notes: "Pedido de teste gerado pelo modo simulado Bonatto.",
       createdAt: (/* @__PURE__ */ new Date()).toISOString()
     };
-    await db.execute(sql5`
+    await db.execute(sql6`
       INSERT INTO external_orders
         (restaurant_id, channel, external_order_id, display_id, status, customer_name, total_amount, payload)
       VALUES
         (${restaurantId}, 'ifood', ${externalOrderId}, ${displayId}, 'novo', 'Cliente iFood Teste', '89.80', ${JSON.stringify(payload)})
     `);
-    await db.execute(sql5`UPDATE ifood_integrations SET last_sync_at = CURRENT_TIMESTAMP WHERE restaurant_id = ${restaurantId} LIMIT 1`);
-    const rows = asRows(await db.execute(sql5`SELECT LAST_INSERT_ID() AS id`));
+    await db.execute(sql6`UPDATE ifood_integrations SET last_sync_at = CURRENT_TIMESTAMP WHERE restaurant_id = ${restaurantId} LIMIT 1`);
+    const rows = asRows(await db.execute(sql6`SELECT LAST_INSERT_ID() AS id`));
     const order = await this.getById(Number(rows[0]?.id), restaurantId);
     await this.logs.create(restaurantId, "order.generated", `Pedido teste iFood #${displayId} gerado.`, {
       orderId: order.id,
@@ -9326,7 +9405,7 @@ var IfoodOrderService = class {
     await ensureIfoodIntegrationSchema();
     const db = await requireDb();
     const current = await this.getById(orderId, restaurantId);
-    await db.execute(sql5`
+    await db.execute(sql6`
       UPDATE external_orders
       SET status = ${status}
       WHERE id = ${orderId}
@@ -9334,7 +9413,7 @@ var IfoodOrderService = class {
         AND channel = 'ifood'
       LIMIT 1
     `);
-    await db.execute(sql5`UPDATE ifood_integrations SET last_sync_at = CURRENT_TIMESTAMP WHERE restaurant_id = ${restaurantId} LIMIT 1`);
+    await db.execute(sql6`UPDATE ifood_integrations SET last_sync_at = CURRENT_TIMESTAMP WHERE restaurant_id = ${restaurantId} LIMIT 1`);
     const order = await this.getById(orderId, restaurantId);
     await this.logs.create(restaurantId, `order.${status}`, this.statusLogMessage(order, current.status, status), {
       orderId,
@@ -9347,7 +9426,7 @@ var IfoodOrderService = class {
   async getById(orderId, restaurantId) {
     await ensureIfoodIntegrationSchema();
     const db = await requireDb();
-    const rows = asRows(await db.execute(sql5`
+    const rows = asRows(await db.execute(sql6`
       SELECT *
       FROM external_orders
       WHERE id = ${orderId}
@@ -9451,7 +9530,8 @@ async function listIfoodIntegrationLogs(restaurantId) {
 
 // server/restaurantNetwork.ts
 init_db();
-import { sql as sql6 } from "drizzle-orm";
+init_runtimeSchema();
+import { sql as sql7 } from "drizzle-orm";
 import { z as z6 } from "zod";
 function toSqlDate(date) {
   return date.toISOString().slice(0, 19).replace("T", " ");
@@ -9461,11 +9541,11 @@ function money(value) {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 async function executeRows(db, query) {
-  const result = await db.execute(sql6.raw(query));
+  const result = await db.execute(sql7.raw(query));
   return result[0] ?? [];
 }
 async function hasColumn3(db, tableName, columnName) {
-  const result = await db.execute(sql6`
+  const result = await db.execute(sql7`
     SELECT COUNT(*) AS count
     FROM INFORMATION_SCHEMA.COLUMNS
     WHERE TABLE_SCHEMA = DATABASE()
@@ -9476,9 +9556,10 @@ async function hasColumn3(db, tableName, columnName) {
   return Number(rows[0]?.count ?? 0) > 0;
 }
 async function ensureRestaurantNetworkSchema() {
+  if (!shouldRunRuntimeSchemaMigrations()) return;
   const db = await getDb();
   if (!db) throw new Error("Database unavailable");
-  await db.execute(sql6.raw(`
+  await db.execute(sql7.raw(`
     CREATE TABLE IF NOT EXISTS distribution_products (
       id int NOT NULL AUTO_INCREMENT,
       name varchar(180) NOT NULL,
@@ -9499,7 +9580,7 @@ async function ensureRestaurantNetworkSchema() {
       KEY distribution_products_name_idx (name)
     )
   `));
-  await db.execute(sql6.raw(`
+  await db.execute(sql7.raw(`
     CREATE TABLE IF NOT EXISTS distribution_stock (
       id int NOT NULL AUTO_INCREMENT,
       ingredientId int NOT NULL,
@@ -9512,7 +9593,7 @@ async function ensureRestaurantNetworkSchema() {
       KEY distribution_stock_low_idx (quantity, minimumStock)
     )
   `));
-  await db.execute(sql6.raw(`
+  await db.execute(sql7.raw(`
     CREATE TABLE IF NOT EXISTS store_supply_orders (
       id int NOT NULL AUTO_INCREMENT,
       storeId int NOT NULL,
@@ -9532,7 +9613,7 @@ async function ensureRestaurantNetworkSchema() {
       KEY store_supply_orders_created_idx (createdAt)
     )
   `));
-  await db.execute(sql6.raw(`
+  await db.execute(sql7.raw(`
     CREATE TABLE IF NOT EXISTS store_supply_order_items (
       id int NOT NULL AUTO_INCREMENT,
       supplyOrderId int NOT NULL,
@@ -9548,10 +9629,10 @@ async function ensureRestaurantNetworkSchema() {
     )
   `));
   if (!await hasColumn3(db, "store_supply_order_items", "distributionProductId")) {
-    await db.execute(sql6.raw("ALTER TABLE store_supply_order_items ADD COLUMN distributionProductId int NULL AFTER supplyOrderId"));
-    await db.execute(sql6.raw("ALTER TABLE store_supply_order_items ADD KEY supply_items_distribution_product_idx (distributionProductId)"));
+    await db.execute(sql7.raw("ALTER TABLE store_supply_order_items ADD COLUMN distributionProductId int NULL AFTER supplyOrderId"));
+    await db.execute(sql7.raw("ALTER TABLE store_supply_order_items ADD KEY supply_items_distribution_product_idx (distributionProductId)"));
   }
-  await db.execute(sql6.raw(`
+  await db.execute(sql7.raw(`
     CREATE TABLE IF NOT EXISTS network_expenses (
       id int NOT NULL AUTO_INCREMENT,
       storeId int,
@@ -9572,7 +9653,7 @@ async function ensureRestaurantNetworkSchema() {
       KEY network_expenses_status_idx (status)
     )
   `));
-  await db.execute(sql6.raw(`
+  await db.execute(sql7.raw(`
     CREATE TABLE IF NOT EXISTS network_financial_fees (
       id int NOT NULL AUTO_INCREMENT,
       storeId int,
@@ -9592,7 +9673,7 @@ async function ensureRestaurantNetworkSchema() {
       KEY network_fees_category_idx (category)
     )
   `));
-  await db.execute(sql6.raw(`
+  await db.execute(sql7.raw(`
     CREATE TABLE IF NOT EXISTS network_monthly_closings (
       id int NOT NULL AUTO_INCREMENT,
       storeId int,
@@ -9616,7 +9697,7 @@ async function ensureRestaurantNetworkSchema() {
       KEY network_closings_status_idx (status)
     )
   `));
-  await db.execute(sql6.raw(`
+  await db.execute(sql7.raw(`
     CREATE TABLE IF NOT EXISTS network_audit_logs (
       id int NOT NULL AUTO_INCREMENT,
       actorUserId int,
@@ -9638,7 +9719,7 @@ async function audit(input) {
   const db = await getDb();
   if (!db) return;
   await ensureRestaurantNetworkSchema();
-  await db.execute(sql6`
+  await db.execute(sql7`
     INSERT INTO network_audit_logs (actorUserId, storeId, action, entityType, entityId, metadata)
     VALUES (${input.actorUserId ?? null}, ${input.storeId ?? null}, ${input.action}, ${input.entityType}, ${input.entityId ?? null}, ${JSON.stringify(input.metadata ?? {})})
   `);
@@ -9686,7 +9767,7 @@ async function createDistributionProduct(input, actorUserId) {
   await ensureRestaurantNetworkSchema();
   const db = await getDb();
   if (!db) throw new Error("Database unavailable");
-  const result = await db.execute(sql6`
+  const result = await db.execute(sql7`
     INSERT INTO distribution_products
       (name, category, unit, availableQuantity, minimumQuantity, minOrderQuantity, maxOrderQuantity, unitCost, active, notes)
     VALUES
@@ -9701,20 +9782,20 @@ async function updateDistributionProduct(input, actorUserId) {
   const db = await getDb();
   if (!db) throw new Error("Database unavailable");
   const fields = [];
-  if (input.name !== void 0) fields.push(sql6`name = ${input.name}`);
-  if (input.category !== void 0) fields.push(sql6`category = ${input.category || null}`);
-  if (input.unit !== void 0) fields.push(sql6`unit = ${input.unit}`);
-  if (input.availableQuantity !== void 0) fields.push(sql6`availableQuantity = ${input.availableQuantity}`);
-  if (input.minimumQuantity !== void 0) fields.push(sql6`minimumQuantity = ${input.minimumQuantity}`);
-  if (input.minOrderQuantity !== void 0) fields.push(sql6`minOrderQuantity = ${input.minOrderQuantity}`);
-  if (input.maxOrderQuantity !== void 0) fields.push(sql6`maxOrderQuantity = ${input.maxOrderQuantity || null}`);
-  if (input.unitCost !== void 0) fields.push(sql6`unitCost = ${input.unitCost}`);
-  if (input.active !== void 0) fields.push(sql6`active = ${input.active}`);
-  if (input.notes !== void 0) fields.push(sql6`notes = ${input.notes || null}`);
+  if (input.name !== void 0) fields.push(sql7`name = ${input.name}`);
+  if (input.category !== void 0) fields.push(sql7`category = ${input.category || null}`);
+  if (input.unit !== void 0) fields.push(sql7`unit = ${input.unit}`);
+  if (input.availableQuantity !== void 0) fields.push(sql7`availableQuantity = ${input.availableQuantity}`);
+  if (input.minimumQuantity !== void 0) fields.push(sql7`minimumQuantity = ${input.minimumQuantity}`);
+  if (input.minOrderQuantity !== void 0) fields.push(sql7`minOrderQuantity = ${input.minOrderQuantity}`);
+  if (input.maxOrderQuantity !== void 0) fields.push(sql7`maxOrderQuantity = ${input.maxOrderQuantity || null}`);
+  if (input.unitCost !== void 0) fields.push(sql7`unitCost = ${input.unitCost}`);
+  if (input.active !== void 0) fields.push(sql7`active = ${input.active}`);
+  if (input.notes !== void 0) fields.push(sql7`notes = ${input.notes || null}`);
   if (fields.length === 0) return { ok: true };
-  await db.execute(sql6`
+  await db.execute(sql7`
     UPDATE distribution_products
-    SET ${sql6.join(fields, sql6`, `)}
+    SET ${sql7.join(fields, sql7`, `)}
     WHERE id = ${input.id}
   `);
   await audit({ actorUserId, action: "distribution_product.update", entityType: "distribution_product", entityId: input.id, metadata: input });
@@ -9783,7 +9864,7 @@ async function createSupplyOrder(input, actorUserId) {
     return sum + requested * money(product.unitCost);
   }, 0);
   const status = input.submit ? "submitted" : "draft";
-  const result = await db.execute(sql6`
+  const result = await db.execute(sql7`
     INSERT INTO store_supply_orders (storeId, requestedByUserId, status, estimatedCost, notes)
     VALUES (${input.storeId}, ${actorUserId}, ${status}, ${estimatedCost.toFixed(2)}, ${input.notes ?? null})
   `);
@@ -9792,7 +9873,7 @@ async function createSupplyOrder(input, actorUserId) {
     const product = productById.get(item.productId);
     if (!product) continue;
     const approved = item.quantityApproved ?? item.quantityRequested;
-    await db.execute(sql6`
+    await db.execute(sql7`
       INSERT INTO store_supply_order_items
         (supplyOrderId, distributionProductId, ingredientId, productName, unit, quantityRequested, quantityApproved, unitCost)
       VALUES
@@ -9814,25 +9895,25 @@ async function updateSupplyOrderStatus(input, actorUserId) {
   const details = await getSupplyOrderDetails(input.id);
   if (!details) throw new Error("Pedido ao CD nao encontrado");
   if (input.status === "shipped") {
-    await db.execute(sql6`
+    await db.execute(sql7`
       UPDATE store_supply_orders
       SET status = ${input.status}, reviewedByUserId = ${actorUserId}, notes = COALESCE(${input.notes ?? null}, notes), shippedAt = CURRENT_TIMESTAMP
       WHERE id = ${input.id}
     `);
   } else if (input.status === "received") {
-    await db.execute(sql6`
+    await db.execute(sql7`
       UPDATE store_supply_orders
       SET status = ${input.status}, reviewedByUserId = ${actorUserId}, notes = COALESCE(${input.notes ?? null}, notes), receivedAt = CURRENT_TIMESTAMP
       WHERE id = ${input.id}
     `);
   } else if (["approved", "rejected", "cancelled", "in_review"].includes(input.status)) {
-    await db.execute(sql6`
+    await db.execute(sql7`
       UPDATE store_supply_orders
       SET status = ${input.status}, reviewedByUserId = ${actorUserId}, notes = COALESCE(${input.notes ?? null}, notes), reviewedAt = CURRENT_TIMESTAMP
       WHERE id = ${input.id}
     `);
   } else {
-    await db.execute(sql6`
+    await db.execute(sql7`
       UPDATE store_supply_orders
       SET status = ${input.status}, reviewedByUserId = ${actorUserId}, notes = COALESCE(${input.notes ?? null}, notes)
       WHERE id = ${input.id}
@@ -9843,7 +9924,7 @@ async function updateSupplyOrderStatus(input, actorUserId) {
       const quantity = Number(item.quantityApproved ?? item.quantityRequested ?? 0);
       const productId = Number(item.distributionProductId ?? item.ingredientId);
       if (quantity <= 0 || productId <= 0) continue;
-      await db.execute(sql6.raw(`
+      await db.execute(sql7.raw(`
         UPDATE distribution_products
         SET availableQuantity = GREATEST(CAST(availableQuantity AS DECIMAL(12,3)) - ${quantity}, 0)
         WHERE id = ${productId}
@@ -9858,7 +9939,7 @@ async function updateSupplyOrderStatus(input, actorUserId) {
       const productName = String(item.productName ?? item.distributionProductName ?? "Produto CD");
       const unit = String(item.unit ?? "unit");
       const unitCost = money(item.unitCost).toFixed(4);
-      const existingIngredientResult = await db.execute(sql6`
+      const existingIngredientResult = await db.execute(sql7`
         SELECT id, currentStock
         FROM ingredients
         WHERE storeId = ${storeId}
@@ -9869,18 +9950,18 @@ async function updateSupplyOrderStatus(input, actorUserId) {
       const existingIngredient = existingIngredientResult[0] ?? [];
       let ingredientId = Number(existingIngredient[0]?.id ?? 0);
       if (!ingredientId) {
-        const inserted = await db.execute(sql6`
+        const inserted = await db.execute(sql7`
           INSERT INTO ingredients (storeId, name, category, unit, currentStock, minimumStock, unitCost, supplier, notes, active)
           VALUES (${storeId}, ${productName}, ${"CD"}, ${unit}, ${"0.000"}, ${"0.000"}, ${unitCost}, ${"Centro de Distribui\xE7\xE3o"}, ${`Criado automaticamente no recebimento do pedido ao CD #${input.id}`}, ${true})
         `);
         ingredientId = Number(inserted[0]?.insertId ?? 0);
       }
-      await db.execute(sql6`
+      await db.execute(sql7`
         UPDATE ingredients
         SET currentStock = CAST(currentStock AS DECIMAL(12,3)) + ${quantity}, unitCost = ${unitCost}
         WHERE id = ${ingredientId}
       `);
-      await db.execute(sql6`
+      await db.execute(sql7`
         INSERT INTO inventory_movements
           (ingredientId, storeId, movementType, quantityDelta, previousStock, nextStock, reason, performedByUserId)
         SELECT id, ${storeId}, 'entry', ${quantity.toFixed(3)},
@@ -9912,7 +9993,7 @@ async function createExpense(input, actorUserId, scopedStoreId) {
   const db = await getDb();
   if (!db) throw new Error("Database unavailable");
   const storeId = scopedStoreId ?? input.storeId ?? null;
-  const result = await db.execute(sql6`
+  const result = await db.execute(sql7`
     INSERT INTO network_expenses
       (storeId, category, description, amount, paymentMethod, status, expenseDate, receiptUrl, createdByUserId, notes)
     VALUES
@@ -9938,7 +10019,7 @@ async function createFinancialFee(input, actorUserId, scopedStoreId) {
   const db = await getDb();
   if (!db) throw new Error("Database unavailable");
   const storeId = scopedStoreId ?? input.storeId ?? null;
-  const result = await db.execute(sql6`
+  const result = await db.execute(sql7`
     INSERT INTO network_financial_fees
       (storeId, name, category, calculationType, rate, amount, periodStart, periodEnd, notes, createdByUserId)
     VALUES
@@ -10036,7 +10117,7 @@ async function upsertMonthlyClosing(input, actorUserId, scopedStoreId) {
   const overview = await getFinancialOverview({ storeId: storeId ?? void 0, startDate: start, endDate: end });
   const totals = overview.totals;
   const closedAt = input.status === "closed" ? "CURRENT_TIMESTAMP" : "NULL";
-  await db.execute(sql6.raw(`
+  await db.execute(sql7.raw(`
     INSERT INTO network_monthly_closings
       (storeId, year, month, status, revenueTotal, expenseTotal, feeTotal, supplyCostTotal, netResult, marginPercent, notes, closedByUserId, closedAt)
     VALUES
@@ -10372,7 +10453,7 @@ async function sendWelcomeEmail(to, name) {
 // server/orderLifecycle.ts
 init_schema();
 init_db();
-import { and as and8, eq as eq11, sql as sql7 } from "drizzle-orm";
+import { and as and8, eq as eq11, sql as sql8 } from "drizzle-orm";
 var STAGE_BY_STATUS = {
   pending: "created",
   confirmed: "confirmed",
@@ -10417,7 +10498,7 @@ async function computePredictionWindow(order) {
   const activeRows = await db.select({ id: orders.id }).from(orders).where(
     and8(
       order.storeId ? eq11(orders.storeId, order.storeId) : void 0,
-      sql7`${orders.status} IN ('pending', 'confirmed', 'preparing', 'out_for_delivery')`
+      sql8`${orders.status} IN ('pending', 'confirmed', 'preparing', 'out_for_delivery')`
     )
   );
   const queuePressure = Math.max(0, activeRows.length - 1);
@@ -10455,7 +10536,7 @@ async function computePredictionWindow(order) {
 async function syncCustomerMetricsForScope(userId, scopeStoreId) {
   const db = await getDb();
   if (!db) return;
-  const rows = await db.execute(sql7`
+  const rows = await db.execute(sql8`
     SELECT
       MIN(CASE WHEN status = 'delivered' THEN createdAt END) AS firstOrderAt,
       MAX(createdAt) AS lastOrderAt,
@@ -11095,8 +11176,11 @@ var appRouter = router({
   }),
   // --- PRODUCTS ---------------------------------------------------------------
   products: router({
-    list: publicProcedure.input(z7.object({ categoryId: z7.number().optional() }).optional()).query(({ input }) => getProducts({ categoryId: input?.categoryId, activeOnly: true })),
-    listAll: staffProcedure.query(() => getProducts({ activeOnly: false })),
+    list: publicProcedure.input(z7.object({ categoryId: z7.number().optional(), storeId: z7.number().optional() }).optional()).query(({ input }) => getProducts({ categoryId: input?.categoryId, storeId: input?.storeId, activeOnly: true })),
+    listAll: staffProcedure.input(z7.object({ storeId: z7.number().optional() }).optional()).query(async ({ input, ctx }) => {
+      const storeId = await resolveStoreId(ctx.user, input?.storeId);
+      return getProducts({ activeOnly: false, storeId });
+    }),
     byId: publicProcedure.input(z7.object({ id: z7.number() })).query(({ input }) => getProductById(input.id)),
     byIds: publicProcedure.input(z7.object({ ids: z7.array(z7.number()).max(100) })).query(({ input }) => getProductsByIds(Array.from(new Set(input.ids)))),
     create: staffProcedure.input(
@@ -11107,9 +11191,13 @@ var appRouter = router({
         price: z7.string().regex(/^\d+(\.\d{1,2})?$/, "Pre\xE7o inv\xE1lido"),
         imageUrl: z7.string().max(2048).optional(),
         featured: z7.boolean().optional(),
-        sortOrder: z7.number().int().optional()
+        sortOrder: z7.number().int().optional(),
+        storeId: z7.number().optional()
       })
-    ).mutation(({ input }) => createProduct({ ...input, active: true, featured: input.featured ?? false })),
+    ).mutation(async ({ input, ctx }) => {
+      const storeId = await resolveStoreId(ctx.user, input.storeId);
+      return createProduct({ ...input, storeId: storeId ?? null, active: true, featured: input.featured ?? false });
+    }),
     update: staffProcedure.input(
       z7.object({
         id: z7.number(),
@@ -11120,13 +11208,22 @@ var appRouter = router({
         imageUrl: z7.string().max(2048).optional(),
         featured: z7.boolean().optional(),
         active: z7.boolean().optional(),
-        sortOrder: z7.number().int().optional()
+        sortOrder: z7.number().int().optional(),
+        storeId: z7.number().optional()
       })
-    ).mutation(({ input }) => {
-      const { id, ...data } = input;
+    ).mutation(async ({ input, ctx }) => {
+      const product = await getProductById(input.id);
+      if (!product) throw new TRPCError7({ code: "NOT_FOUND", message: "Produto nao encontrado." });
+      await assertStoreEntityAccess(ctx.user, product.storeId, input.storeId);
+      const { id, storeId: _storeId, ...data } = input;
       return updateProduct(id, data);
     }),
-    delete: staffProcedure.input(z7.object({ id: z7.number() })).mutation(({ input }) => deleteProduct(input.id)),
+    delete: staffProcedure.input(z7.object({ id: z7.number(), storeId: z7.number().optional() })).mutation(async ({ input, ctx }) => {
+      const product = await getProductById(input.id);
+      if (!product) throw new TRPCError7({ code: "NOT_FOUND", message: "Produto nao encontrado." });
+      await assertStoreEntityAccess(ctx.user, product.storeId, input.storeId);
+      return deleteProduct(input.id);
+    }),
     uploadImage: staffProcedure.input(z7.object({
       base64: z7.string().max(43e5),
       // keep below Vercel request-size limits
@@ -11660,8 +11757,9 @@ ${itemsList}
       }
       const currentOrder = await getOrderById(input.id);
       if (!currentOrder) {
-        throw new TRPCError7({ code: "NOT_FOUND", message: "Pedido n\xC3\xA3o encontrado." });
+        throw new TRPCError7({ code: "NOT_FOUND", message: "Pedido n\xE3o encontrado." });
       }
+      await assertStoreEntityAccess(ctx.user, currentOrder.storeId);
       if (input.status === "preparing" && currentOrder.paymentMethod === "pix" && currentOrder.paymentStatus !== "paid") {
         throw new TRPCError7({
           code: "BAD_REQUEST",
@@ -11827,14 +11925,18 @@ ${itemsList}
         paymentStatus: z7.enum(["pending", "paid", "failed", "refunded"]),
         stripePaymentIntentId: z7.string().optional()
       })
-    ).mutation(
-      ({ input }) => updateOrderPaymentStatus(input.id, input.paymentStatus, input.stripePaymentIntentId)
-    ),
-    confirmPixReceived: staffProcedure.input(z7.object({ id: z7.number() })).mutation(async ({ input }) => {
+    ).mutation(async ({ input, ctx }) => {
       const order = await getOrderById(input.id);
-      if (!order) throw new TRPCError7({ code: "NOT_FOUND", message: "Pedido n\xC3\xA3o encontrado." });
+      if (!order) throw new TRPCError7({ code: "NOT_FOUND", message: "Pedido nao encontrado." });
+      await assertStoreEntityAccess(ctx.user, order.storeId);
+      return updateOrderPaymentStatus(input.id, input.paymentStatus, input.stripePaymentIntentId);
+    }),
+    confirmPixReceived: staffProcedure.input(z7.object({ id: z7.number() })).mutation(async ({ input, ctx }) => {
+      const order = await getOrderById(input.id);
+      if (!order) throw new TRPCError7({ code: "NOT_FOUND", message: "Pedido n\xE3o encontrado." });
+      await assertStoreEntityAccess(ctx.user, order.storeId);
       if (order.paymentMethod !== "pix") {
-        throw new TRPCError7({ code: "BAD_REQUEST", message: "Este pedido n\xC3\xA3o foi feito com PIX." });
+        throw new TRPCError7({ code: "BAD_REQUEST", message: "Este pedido n\xE3o foi feito com PIX." });
       }
       if (order.paymentStatus !== "paid") {
         await updateOrderPaymentStatus(input.id, "paid");
@@ -12460,16 +12562,25 @@ ${itemsList}
       email: z7.string().email().optional(),
       role: z7.enum(["waiter", "cashier", "attendant", "kitchen", "driver", "manager", "admin"]).optional(),
       active: z7.boolean().optional()
-    })).mutation(async ({ input }) => {
+    })).mutation(async ({ input, ctx }) => {
       const { id, ...data } = input;
+      const member = await getStaffMemberById(id);
+      if (!member) throw new TRPCError7({ code: "NOT_FOUND", message: "Membro nao encontrado." });
+      await assertStoreEntityAccess(ctx.user, member.storeId);
       await updateStaffMember(id, data);
       return { ok: true };
     }),
-    delete: staffProcedure.input(z7.object({ id: z7.number() })).mutation(async ({ input }) => {
+    delete: staffProcedure.input(z7.object({ id: z7.number() })).mutation(async ({ input, ctx }) => {
+      const member = await getStaffMemberById(input.id);
+      if (!member) throw new TRPCError7({ code: "NOT_FOUND", message: "Membro nao encontrado." });
+      await assertStoreEntityAccess(ctx.user, member.storeId);
       await deleteStaffMember(input.id);
       return { ok: true };
     }),
-    regenerateAccessToken: staffProcedure.input(z7.object({ id: z7.number() })).mutation(async ({ input }) => {
+    regenerateAccessToken: staffProcedure.input(z7.object({ id: z7.number() })).mutation(async ({ input, ctx }) => {
+      const member = await getStaffMemberById(input.id);
+      if (!member) throw new TRPCError7({ code: "NOT_FOUND", message: "Membro nao encontrado." });
+      await assertStoreEntityAccess(ctx.user, member.storeId);
       const accessToken = await regenerateStaffAccessToken(input.id);
       return { accessToken };
     })
@@ -12500,12 +12611,18 @@ ${itemsList}
       status: z7.enum(["free", "occupied", "reserved", "awaiting_closure"]).optional(),
       capacity: z7.number().int().min(1).max(50).optional(),
       active: z7.boolean().optional()
-    })).mutation(async ({ input }) => {
+    })).mutation(async ({ input, ctx }) => {
       const { id, ...data } = input;
+      const table = await getDiningTableById(id);
+      if (!table) throw new TRPCError7({ code: "NOT_FOUND", message: "Mesa nao encontrada." });
+      await assertStoreEntityAccess(ctx.user, table.storeId);
       await updateDiningTable(id, data);
       return { ok: true };
     }),
-    deleteTable: staffProcedure.input(z7.object({ id: z7.number() })).mutation(async ({ input }) => {
+    deleteTable: staffProcedure.input(z7.object({ id: z7.number() })).mutation(async ({ input, ctx }) => {
+      const table = await getDiningTableById(input.id);
+      if (!table) throw new TRPCError7({ code: "NOT_FOUND", message: "Mesa nao encontrada." });
+      await assertStoreEntityAccess(ctx.user, table.storeId);
       await deleteDiningTable(input.id);
       return { ok: true };
     }),
@@ -12526,6 +12643,9 @@ ${itemsList}
       notes: z7.string().max(5e3).optional()
     })).mutation(async ({ input, ctx }) => {
       const storeId = await resolveStoreId(ctx.user, input.storeId);
+      const table = await getDiningTableById(input.tableId);
+      if (!table) throw new TRPCError7({ code: "NOT_FOUND", message: "Mesa nao encontrada." });
+      await assertStoreEntityAccess(ctx.user, table.storeId, storeId);
       return openTableSession({
         tableId: input.tableId,
         storeId,
@@ -12549,8 +12669,11 @@ ${itemsList}
       subtotal: z7.string().regex(/^\d+(\.\d{1,2})?$/).optional(),
       discountAmount: z7.string().regex(/^\d+(\.\d{1,2})?$/).optional(),
       total: z7.string().regex(/^\d+(\.\d{1,2})?$/).optional()
-    })).mutation(async ({ input }) => {
+    })).mutation(async ({ input, ctx }) => {
       const { id, ...data } = input;
+      const session = await getTableSessionById(id);
+      if (!session) throw new TRPCError7({ code: "NOT_FOUND", message: "Comanda nao encontrada." });
+      await assertStoreEntityAccess(ctx.user, session.storeId);
       await updateTableSession(id, data);
       return { ok: true };
     }),
@@ -12562,7 +12685,10 @@ ${itemsList}
       total: z7.string().regex(/^\d+(\.\d{1,2})?$/).optional(),
       status: z7.enum(["awaiting_closure", "closed", "cancelled"]).optional(),
       closedByStaffId: z7.number().optional()
-    })).mutation(async ({ input }) => {
+    })).mutation(async ({ input, ctx }) => {
+      const session = await getTableSessionById(input.id);
+      if (!session) throw new TRPCError7({ code: "NOT_FOUND", message: "Comanda nao encontrada." });
+      await assertStoreEntityAccess(ctx.user, session.storeId);
       await closeTableSessionWithComputedTotals(input.id, {
         subtotal: input.subtotal,
         discountAmount: input.discountAmount,
@@ -12573,7 +12699,13 @@ ${itemsList}
       });
       return { ok: true };
     }),
-    attachOrder: staffProcedure.input(z7.object({ tableSessionId: z7.number(), orderId: z7.number() })).mutation(async ({ input }) => {
+    attachOrder: staffProcedure.input(z7.object({ tableSessionId: z7.number(), orderId: z7.number() })).mutation(async ({ input, ctx }) => {
+      const session = await getTableSessionById(input.tableSessionId);
+      const order = await getOrderById(input.orderId);
+      if (!session || !order) throw new TRPCError7({ code: "NOT_FOUND", message: "Comanda ou pedido nao encontrado." });
+      await assertStoreEntityAccess(ctx.user, session.storeId);
+      await assertStoreEntityAccess(ctx.user, order.storeId);
+      if (session.storeId !== order.storeId) throw new TRPCError7({ code: "BAD_REQUEST", message: "Comanda e pedido pertencem a lojas diferentes." });
       await attachOrderToTableSessionAndSync(input.tableSessionId, input.orderId);
       return { ok: true };
     }),
@@ -12583,7 +12715,14 @@ ${itemsList}
       quantity: z7.number().int().min(1).max(100),
       notes: z7.string().max(500).optional(),
       addedByStaffId: z7.number().optional()
-    })).mutation(async ({ input }) => {
+    })).mutation(async ({ input, ctx }) => {
+      const session = await getTableSessionById(input.tableSessionId);
+      const product = await getProductById(input.productId);
+      if (!session || !product) throw new TRPCError7({ code: "NOT_FOUND", message: "Comanda ou produto nao encontrado." });
+      await assertStoreEntityAccess(ctx.user, session.storeId);
+      if (product.storeId != null && product.storeId !== session.storeId) {
+        throw new TRPCError7({ code: "BAD_REQUEST", message: "Produto fora da loja da comanda." });
+      }
       const itemId = await addTableSessionItem({
         tableSessionId: input.tableSessionId,
         productId: input.productId,
@@ -12593,14 +12732,22 @@ ${itemsList}
       });
       return { ok: true, itemId };
     }),
-    removeItem: staffProcedure.input(z7.object({ id: z7.number() })).mutation(async ({ input }) => {
+    removeItem: staffProcedure.input(z7.object({ id: z7.number() })).mutation(async ({ input, ctx }) => {
+      const item = await getTableSessionItemById(input.id);
+      const session = item ? await getTableSessionById(item.tableSessionId) : void 0;
+      if (!item || !session) throw new TRPCError7({ code: "NOT_FOUND", message: "Item nao encontrado." });
+      await assertStoreEntityAccess(ctx.user, session.storeId);
       await removeTableSessionItem(input.id);
       return { ok: true };
     }),
     updateItemStatus: staffProcedure.input(z7.object({
       id: z7.number(),
       status: z7.enum(["pending", "preparing", "ready", "served", "cancelled"])
-    })).mutation(async ({ input }) => {
+    })).mutation(async ({ input, ctx }) => {
+      const item = await getTableSessionItemById(input.id);
+      const session = item ? await getTableSessionById(item.tableSessionId) : void 0;
+      if (!item || !session) throw new TRPCError7({ code: "NOT_FOUND", message: "Item nao encontrado." });
+      await assertStoreEntityAccess(ctx.user, session.storeId);
       await updateTableSessionItemStatus(input.id, input.status);
       return { ok: true };
     })
@@ -12705,10 +12852,30 @@ ${itemsList}
       const id = await createDriver({ name: input.name, phone: input.phone ?? null, accessToken: token, active: true, storeId: storeId ?? null });
       return { id, accessToken: token };
     }),
-    update: staffProcedure.input(z7.object({ id: z7.number(), name: z7.string().optional(), phone: z7.string().optional(), active: z7.boolean().optional() })).mutation(({ input }) => updateDriver(input.id, { name: input.name, phone: input.phone, active: input.active })),
-    delete: staffProcedure.input(z7.object({ id: z7.number() })).mutation(({ input }) => deleteDriver(input.id)),
-    assignToOrder: staffProcedure.input(z7.object({ orderId: z7.number(), driverId: z7.number().nullable() })).mutation(async ({ input }) => {
+    update: staffProcedure.input(z7.object({ id: z7.number(), name: z7.string().optional(), phone: z7.string().optional(), active: z7.boolean().optional() })).mutation(async ({ input, ctx }) => {
+      const driver = await getDriverById(input.id);
+      if (!driver) throw new TRPCError7({ code: "NOT_FOUND", message: "Motoboy nao encontrado." });
+      await assertStoreEntityAccess(ctx.user, driver.storeId);
+      return updateDriver(input.id, { name: input.name, phone: input.phone, active: input.active });
+    }),
+    delete: staffProcedure.input(z7.object({ id: z7.number() })).mutation(async ({ input, ctx }) => {
+      const driver = await getDriverById(input.id);
+      if (!driver) throw new TRPCError7({ code: "NOT_FOUND", message: "Motoboy nao encontrado." });
+      await assertStoreEntityAccess(ctx.user, driver.storeId);
+      return deleteDriver(input.id);
+    }),
+    assignToOrder: staffProcedure.input(z7.object({ orderId: z7.number(), driverId: z7.number().nullable() })).mutation(async ({ input, ctx }) => {
       const prevOrder = await getOrderById(input.orderId);
+      if (!prevOrder) throw new TRPCError7({ code: "NOT_FOUND", message: "Pedido nao encontrado." });
+      await assertStoreEntityAccess(ctx.user, prevOrder.storeId);
+      if (input.driverId) {
+        const nextDriver = await getDriverById(input.driverId);
+        if (!nextDriver) throw new TRPCError7({ code: "NOT_FOUND", message: "Motoboy nao encontrado." });
+        await assertStoreEntityAccess(ctx.user, nextDriver.storeId);
+        if (prevOrder.storeId !== nextDriver.storeId) {
+          throw new TRPCError7({ code: "BAD_REQUEST", message: "Pedido e motoboy pertencem a lojas diferentes." });
+        }
+      }
       await assignDriverToOrder(input.orderId, input.driverId);
       const order = await getOrderById(input.orderId);
       if (input.driverId) {
@@ -12882,6 +13049,10 @@ ${itemsList}
       if (!waiter || waiter.role !== "waiter") {
         throw new TRPCError7({ code: "UNAUTHORIZED", message: "Token invalido" });
       }
+      const table = await getDiningTableById(input.tableId);
+      if (!table || table.storeId == null || table.storeId !== waiter.storeId) {
+        throw new TRPCError7({ code: "FORBIDDEN", message: "Mesa fora da loja do garcom." });
+      }
       const id = await openTableSession({
         tableId: input.tableId,
         storeId: waiter.storeId ?? null,
@@ -12908,6 +13079,14 @@ ${itemsList}
       if (!waiter || waiter.role !== "waiter") {
         throw new TRPCError7({ code: "UNAUTHORIZED", message: "Token invalido" });
       }
+      const session = await getTableSessionById(input.tableSessionId);
+      const product = await getProductById(input.productId);
+      if (!session || session.storeId == null || session.storeId !== waiter.storeId) {
+        throw new TRPCError7({ code: "FORBIDDEN", message: "Comanda fora da loja do garcom." });
+      }
+      if (!product || product.storeId != null && product.storeId !== waiter.storeId) {
+        throw new TRPCError7({ code: "FORBIDDEN", message: "Produto fora da loja do garcom." });
+      }
       await updateTableSession(input.tableSessionId, { waiterStaffId: waiter.id });
       const itemId = await addTableSessionItem({
         tableSessionId: input.tableSessionId,
@@ -12927,6 +13106,10 @@ ${itemsList}
       const waiter = await getStaffMemberByAccessToken(input.token);
       if (!waiter || waiter.role !== "waiter") {
         throw new TRPCError7({ code: "UNAUTHORIZED", message: "Token invalido" });
+      }
+      const session = await getTableSessionById(input.id);
+      if (!session || session.storeId == null || session.storeId !== waiter.storeId) {
+        throw new TRPCError7({ code: "FORBIDDEN", message: "Comanda fora da loja do garcom." });
       }
       await updateTableSession(input.id, { waiterStaffId: waiter.id });
       await closeTableSessionWithComputedTotals(input.id, {
@@ -13179,7 +13362,7 @@ ${itemsList}
           tag: `admin-chat-${input.orderId}`
         });
       }
-      if (senderRole === "admin") {
+      if (senderRole === "admin" && order.userId) {
         await sendPushToUser(order.userId, {
           title: "Mensagem da Bonatto Pizza",
           body: pushPreview,
@@ -13276,7 +13459,7 @@ Telefone/WhatsApp: ${dbSettings.whatsappNumber ?? "(37) 99999-0000"}`
       const adminId = adminUser?.id ?? ctx.user.id;
       const reply = content.trim();
       await sendOrderMessage({ orderId: input.orderId, userId: adminId, senderRole: "admin", message: reply });
-      await sendPushToUser(order.userId, {
+      if (order.userId) await sendPushToUser(order.userId, {
         title: "Resposta da Bonatto Pizza",
         body: reply.length > 100 ? reply.slice(0, 97) + "..." : reply,
         url: `/rastrear/${input.orderId}`,
@@ -13882,13 +14065,13 @@ Telefone/WhatsApp: ${dbSettings.whatsappNumber ?? "(37) 99999-0000"}`
       const storeId = await resolveStoreId(ctx.user, input.storeId);
       const db = await getDb();
       if (!db) throw new TRPCError7({ code: "INTERNAL_SERVER_ERROR" });
-      const { sql: sql8 } = await import("drizzle-orm");
+      const { sql: sql9 } = await import("drizzle-orm");
       const likeQuery = `%${input.query}%`;
-      const storeClause = storeId ? sql8`AND o.storeId = ${storeId}` : sql8``;
-      const messageStoreClause = storeId ? sql8`AND ord.storeId = ${storeId}` : sql8``;
-      const tableStoreClause = storeId ? sql8`AND dt.storeId = ${storeId}` : sql8``;
+      const storeClause = storeId ? sql9`AND o.storeId = ${storeId}` : sql9``;
+      const messageStoreClause = storeId ? sql9`AND ord.storeId = ${storeId}` : sql9``;
+      const tableStoreClause = storeId ? sql9`AND dt.storeId = ${storeId}` : sql9``;
       const [ordersResult, customersResult, tablesResult, conversationsResult] = await Promise.all([
-        db.execute(sql8`
+        db.execute(sql9`
             SELECT o.id, o.customerName, o.customerPhone, o.status, o.total, o.createdAt
             FROM orders o
             WHERE (
@@ -13900,7 +14083,7 @@ Telefone/WhatsApp: ${dbSettings.whatsappNumber ?? "(37) 99999-0000"}`
             ORDER BY o.createdAt DESC
             LIMIT 8
           `),
-        db.execute(sql8`
+        db.execute(sql9`
             SELECT u.id, u.name, u.email, u.phone, MAX(o.createdAt) AS lastOrderAt
             FROM users u
             LEFT JOIN orders o ON o.userId = u.id
@@ -13910,12 +14093,12 @@ Telefone/WhatsApp: ${dbSettings.whatsappNumber ?? "(37) 99999-0000"}`
                 OR u.email LIKE ${likeQuery}
                 OR u.phone LIKE ${likeQuery}
               )
-              ${storeId ? sql8`AND EXISTS (SELECT 1 FROM orders ox WHERE ox.userId = u.id AND ox.storeId = ${storeId})` : sql8``}
+              ${storeId ? sql9`AND EXISTS (SELECT 1 FROM orders ox WHERE ox.userId = u.id AND ox.storeId = ${storeId})` : sql9``}
             GROUP BY u.id, u.name, u.email, u.phone
             ORDER BY lastOrderAt DESC
             LIMIT 8
           `),
-        db.execute(sql8`
+        db.execute(sql9`
             SELECT dt.id, dt.name, dt.status, ts.id AS sessionId, ts.customerName, ts.updatedAt
             FROM dining_tables dt
             LEFT JOIN table_sessions ts ON ts.tableId = dt.id AND ts.status IN ('open', 'awaiting_closure')
@@ -13927,7 +14110,7 @@ Telefone/WhatsApp: ${dbSettings.whatsappNumber ?? "(37) 99999-0000"}`
             ORDER BY ts.updatedAt DESC, dt.updatedAt DESC
             LIMIT 8
           `),
-        db.execute(sql8`
+        db.execute(sql9`
             SELECT ord.id AS orderId, ord.customerName, MAX(om.createdAt) AS lastMessageAt, MAX(om.message) AS lastMessage
             FROM order_messages om
             INNER JOIN orders ord ON ord.id = om.orderId
@@ -14039,12 +14222,12 @@ Telefone/WhatsApp: ${dbSettings.whatsappNumber ?? "(37) 99999-0000"}`
       period: z7.enum(["7d", "30d", "90d"]).default("30d")
     })).query(async ({ input }) => {
       const { getDb: getDb2 } = await Promise.resolve().then(() => (init_db(), db_exports));
-      const { sql: sql8 } = await import("drizzle-orm");
+      const { sql: sql9 } = await import("drizzle-orm");
       const db = await getDb2();
       if (!db) throw new TRPCError7({ code: "INTERNAL_SERVER_ERROR" });
       const days = input.period === "7d" ? 7 : input.period === "30d" ? 30 : 90;
       const since = new Date(Date.now() - days * 24 * 60 * 60 * 1e3);
-      const [cartStats] = await db.execute(sql8`
+      const [cartStats] = await db.execute(sql9`
           SELECT
             COUNT(*) AS total,
             SUM(CASE WHEN status = 'recovered' THEN 1 ELSE 0 END) AS recovered,
@@ -14054,7 +14237,7 @@ Telefone/WhatsApp: ${dbSettings.whatsappNumber ?? "(37) 99999-0000"}`
           FROM abandoned_carts
           WHERE createdAt >= ${since}
         `);
-      const [reactivationStats] = await db.execute(sql8`
+      const [reactivationStats] = await db.execute(sql9`
           SELECT
             COUNT(DISTINCT userId) AS totalInactive,
             SUM(CASE WHEN type = 'reactivation_15d' THEN 1 ELSE 0 END) AS sent15d,
@@ -14063,7 +14246,7 @@ Telefone/WhatsApp: ${dbSettings.whatsappNumber ?? "(37) 99999-0000"}`
           FROM automation_events
           WHERE createdAt >= ${since} AND type LIKE 'reactivation_%' AND channel = 'whatsapp'
         `);
-      const [conversionStats] = await db.execute(sql8`
+      const [conversionStats] = await db.execute(sql9`
           SELECT
             COUNT(*) AS totalConversions,
             ROUND(SUM(o.total), 2) AS conversionRevenue
@@ -14071,7 +14254,7 @@ Telefone/WhatsApp: ${dbSettings.whatsappNumber ?? "(37) 99999-0000"}`
           JOIN orders o ON o.id = ae.orderId
           WHERE ae.createdAt >= ${since} AND ae.type = 'conversion'
         `);
-      const [stepStats] = await db.execute(sql8`
+      const [stepStats] = await db.execute(sql9`
           SELECT
             step,
             COUNT(*) AS sent,

@@ -75,7 +75,7 @@ async function putVercelBlob(
 ): Promise<StorageResult> {
   const { put } = await import("@vercel/blob");
   const pathname = relKey.replace(/^\/+/, "");
-  const body = typeof data === "string" ? data : data instanceof Uint8Array ? data : new Uint8Array(data);
+  const body = typeof data === "string" ? data : Buffer.isBuffer(data) ? data : Buffer.from(data);
   const blob = await put(pathname, body, {
     access: "public",
     addRandomSuffix: true,

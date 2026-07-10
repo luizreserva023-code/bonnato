@@ -2,6 +2,7 @@ import { sql } from "drizzle-orm";
 import { z } from "zod";
 
 import { getDb } from "./db.ts";
+import { shouldRunRuntimeSchemaMigrations } from "./runtimeSchema.ts";
 
 type Db = NonNullable<Awaited<ReturnType<typeof getDb>>>;
 
@@ -32,6 +33,7 @@ async function hasColumn(db: Db, tableName: string, columnName: string) {
 }
 
 export async function ensureRestaurantNetworkSchema() {
+  if (!shouldRunRuntimeSchemaMigrations()) return;
   const db = await getDb();
   if (!db) throw new Error("Database unavailable");
 

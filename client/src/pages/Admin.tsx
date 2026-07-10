@@ -2324,7 +2324,7 @@ function OrderDetailModal({ order, onClose, drivers }: { order: any; onClose: ()
 
           {pixNeedsReceipt && (
             <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
-              <p className="font-bold">PIX aguardando confirmaÃ§Ã£o</p>
+              <p className="font-bold">PIX aguardando confirmação</p>
               <p className="mt-1 text-xs text-amber-800">Marque como recebido antes de enviar o pedido para preparo.</p>
               <Button
                 type="button"
@@ -2520,8 +2520,9 @@ function OrdersTab({ onOpenOrder }: { onOpenOrder?: () => void }) {
 // ─── MENU TAB ─────────────────────────────────────────────────────────────────
 function MenuTab() {
   const utils = trpc.useUtils();
+  const { selectedStoreId } = useAdminStore();
   const { data: categories } = trpc.categories.listAll.useQuery();
-  const { data: products, isLoading } = trpc.products.listAll.useQuery();
+  const { data: products, isLoading } = trpc.products.listAll.useQuery({ storeId: selectedStoreId });
   const [selectedCatId, setSelectedCatId] = useState<number | null>(null);
   const [editingProduct, setEditingProduct] = useState<any | null>(null);
   const [showForm, setShowForm] = useState(false);
@@ -2817,6 +2818,7 @@ function MenuTab() {
         imageUrl: form.imageUrl || undefined,
         featured: form.featured,
         categoryId: parseInt(form.categoryId),
+        storeId: selectedStoreId,
       });
     } else {
       createProduct.mutate({
@@ -2826,6 +2828,7 @@ function MenuTab() {
         price: form.price,
         imageUrl: form.imageUrl || undefined,
         featured: form.featured,
+        storeId: selectedStoreId,
       });
     }
   };
@@ -3189,7 +3192,7 @@ function MenuTab() {
                             </td>
                             <td className="p-3 text-center">
                               <button
-                                onClick={() => updateProduct.mutate({ id: product.id, active: !product.active })}
+                                onClick={() => updateProduct.mutate({ id: product.id, active: !product.active, storeId: selectedStoreId })}
                                 className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium transition-all ${
                                   product.active ? "bg-[#f0fdf4] text-[#166534] hover:bg-[#dcfce7]" : "bg-[#fce8e8] text-[#450709] hover:bg-[#f9d0d0]"
                                 }`}
@@ -3209,7 +3212,7 @@ function MenuTab() {
                                   className="text-destructive hover:text-destructive"
                                   onClick={() => {
                                     if (confirm("Remover este produto?")) {
-                                      deleteProduct.mutate({ id: product.id });
+                                      deleteProduct.mutate({ id: product.id, storeId: selectedStoreId });
                                     }
                                   }}
                                 >
@@ -6262,21 +6265,60 @@ function DriversTab() {
         </div>
       )}
       {/* Live map showing all active drivers */}
-      <ActiveDriversMap />
+      <LeafletActiveDriversMap />
     </AdminPage>
   );
 }
 
 // ─── ACTIVE DRIVERS MAP ───────────────────────────────────────────────────────
 
+function LeafletActiveDriversMap() {
+  const { data: locations } = trpc.drivers.allLocations.useQuery(undefined, { refetchInterval: 5000 });
+  const markers = (locations ?? []).map((location) => ({
+    id: location.driverId,
+    position: { lat: Number(location.lat), lng: Number(location.lng) },
+    title: location.driverName,
+    label: location.driverName,
+    variant: "driver" as const,
+  }));
+
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <div className="flex items-center justify-between">
+          <CardTitle className="text-base flex items-center gap-2">
+            <MapPin className="w-4 h-4 text-[#7d0f14]" />
+            Motoboys em rota
+          </CardTitle>
+          <span className="text-xs text-muted-foreground">Atualiza a cada 5s</span>
+        </div>
+      </CardHeader>
+      <CardContent className="p-0 overflow-hidden rounded-b-xl relative">
+        <MapView
+          className="w-full h-[350px]"
+          initialCenter={{ lat: -19.9833, lng: -44.0667 }}
+          initialZoom={13}
+          markers={markers}
+          fitToMarkers
+        />
+        {markers.length === 0 && (
+          <div className="absolute inset-0 z-[450] flex items-center justify-center bg-muted/60">
+            <p className="text-muted-foreground text-sm">Nenhum motoboy com localizacao ativa.</p>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 function ActiveDriversMap() {
-  const markersRef = useRef<Record<number, google.maps.Marker>>({});
-  const mapRef = useRef<google.maps.Map | null>(null);
+  const markersRef = useRef<Record<number, any>>({});
+  const mapRef = useRef<any>(null);
   const { data: locations } = trpc.drivers.allLocations.useQuery(undefined, {
     refetchInterval: 5000,
   });
 
-  const handleMapReady = useCallback((map: google.maps.Map) => {
+  const handleMapReady = useCallback((map: any) => {
     mapRef.current = map;
   }, []);
 
@@ -6294,11 +6336,11 @@ function ActiveDriversMap() {
 
     // Add or update markers
     locations.forEach((loc) => {
-      const pos = new google.maps.LatLng(parseFloat(loc.lat), parseFloat(loc.lng));
+      const pos = new (window as any).google.maps.LatLng(parseFloat(loc.lat), parseFloat(loc.lng));
       if (markersRef.current[loc.driverId]) {
         markersRef.current[loc.driverId].setPosition(pos);
       } else {
-        markersRef.current[loc.driverId] = new google.maps.Marker({
+        markersRef.current[loc.driverId] = new (window as any).google.maps.Marker({
           position: pos,
           map: mapRef.current!,
           title: loc.driverName,
@@ -6306,8 +6348,8 @@ function ActiveDriversMap() {
             url: "data:image/svg+xml;charset=UTF-8," + encodeURIComponent(
               `<svg xmlns="http://www.w3.org/2000/svg" width="36" height="36" viewBox="0 0 36 36"><circle cx="18" cy="18" r="16" fill="#ef4444" stroke="white" stroke-width="2"/><text x="18" y="24" text-anchor="middle" font-size="16" fill="white">🏍️</text></svg>`
             ),
-            scaledSize: new google.maps.Size(36, 36),
-            anchor: new google.maps.Point(18, 18),
+            scaledSize: new (window as any).google.maps.Size(36, 36),
+            anchor: new (window as any).google.maps.Point(18, 18),
           },
           label: { text: loc.driverName, color: "#1e293b", fontSize: "11px", fontWeight: "bold" },
         });
@@ -6315,8 +6357,8 @@ function ActiveDriversMap() {
     });
 
     if (locations.length > 0 && mapRef.current) {
-      const bounds = new google.maps.LatLngBounds();
-      locations.forEach((loc) => bounds.extend(new google.maps.LatLng(parseFloat(loc.lat), parseFloat(loc.lng))));
+      const bounds = new (window as any).google.maps.LatLngBounds();
+      locations.forEach((loc) => bounds.extend(new (window as any).google.maps.LatLng(parseFloat(loc.lat), parseFloat(loc.lng))));
       mapRef.current.fitBounds(bounds);
     }
   }, [locations]);
@@ -6337,7 +6379,6 @@ function ActiveDriversMap() {
       </CardHeader>
       <CardContent className="p-0 overflow-hidden rounded-b-xl relative">
         <MapView
-          onMapReady={handleMapReady}
           className="w-full h-[350px]"
           initialCenter={{ lat: -19.9833, lng: -44.0667 }}
           initialZoom={13}

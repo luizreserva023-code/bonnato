@@ -131,13 +131,17 @@ import {
   adjustIngredientStock,
   setProductRecipe,
   getStaffMembers,
+  getStaffMemberById,
   ensureStaffAccessToken,
   regenerateStaffAccessToken,
   getStaffMemberByAccessToken,
   deleteIngredient,
   deleteStaffMember,
   getDiningTables,
+  getDiningTableById,
   getTableSessions,
+  getTableSessionById,
+  getTableSessionItemById,
   openTableSession,
   closeTableSession,
   deleteDiningTable,
@@ -163,7 +167,7 @@ import { sdk } from "./_core/sdk.ts";
 import { getSessionCookieOptions } from "./_core/cookies.ts";
 import { systemRouter } from "./_core/systemRouter.ts";
 import { protectedProcedure, publicProcedure, router, staffProcedure } from "./_core/trpc.ts";
-import { resolveStoreId } from "./storeUtils.ts";
+import { assertStoreEntityAccess, resolveStoreId } from "./storeUtils.ts";
 import { notifyOwnerAdapter } from "./adapters/pushNotifications.ts";
 // Alias para compatibilidade retroativa — passa pelo adapter
 const notifyOwner = (payload: { title: string; content: string }) =>
@@ -804,10 +808,15 @@ export const appRouter = router({
   // --- PRODUCTS ---------------------------------------------------------------
   products: router({
     list: publicProcedure
-      .input(z.object({ categoryId: z.number().optional() }).optional())
-      .query(({ input }) => getProducts({ categoryId: input?.categoryId, activeOnly: true })),
+      .input(z.object({ categoryId: z.number().optional(), storeId: z.number().optional() }).optional())
+      .query(({ input }) => getProducts({ categoryId: input?.categoryId, storeId: input?.storeId, activeOnly: true })),
 
-    listAll: staffProcedure.query(() => getProducts({ activeOnly: false })),
+    listAll: staffProcedure
+      .input(z.object({ storeId: z.number().optional() }).optional())
+      .query(async ({ input, ctx }) => {
+        const storeId = await resolveStoreId(ctx.user, input?.storeId);
+        return getProducts({ activeOnly: false, storeId });
+      }),
 
     byId: publicProcedure
       .input(z.object({ id: z.number() }))
@@ -827,9 +836,13 @@ export const appRouter = router({
           imageUrl: z.string().max(2048).optional(),
           featured: z.boolean().optional(),
           sortOrder: z.number().int().optional(),
+          storeId: z.number().optional(),
         })
       )
-      .mutation(({ input }) => createProduct({ ...input, active: true, featured: input.featured ?? false })),
+      .mutation(async ({ input, ctx }) => {
+        const storeId = await resolveStoreId(ctx.user, input.storeId);
+        return createProduct({ ...input, storeId: storeId ?? null, active: true, featured: input.featured ?? false });
+      }),
 
     update: staffProcedure
       .input(
@@ -843,16 +856,25 @@ export const appRouter = router({
           featured: z.boolean().optional(),
           active: z.boolean().optional(),
           sortOrder: z.number().int().optional(),
+          storeId: z.number().optional(),
         })
       )
-      .mutation(({ input }) => {
-        const { id, ...data } = input;
+      .mutation(async ({ input, ctx }) => {
+        const product = await getProductById(input.id);
+        if (!product) throw new TRPCError({ code: "NOT_FOUND", message: "Produto nao encontrado." });
+        await assertStoreEntityAccess(ctx.user, product.storeId, input.storeId);
+        const { id, storeId: _storeId, ...data } = input;
         return updateProduct(id, data);
       }),
 
     delete: staffProcedure
-      .input(z.object({ id: z.number() }))
-      .mutation(({ input }) => deleteProduct(input.id)),
+      .input(z.object({ id: z.number(), storeId: z.number().optional() }))
+      .mutation(async ({ input, ctx }) => {
+        const product = await getProductById(input.id);
+        if (!product) throw new TRPCError({ code: "NOT_FOUND", message: "Produto nao encontrado." });
+        await assertStoreEntityAccess(ctx.user, product.storeId, input.storeId);
+        return deleteProduct(input.id);
+      }),
 
     uploadImage: staffProcedure
       .input(z.object({
@@ -1445,8 +1467,9 @@ export const appRouter = router({
         }
         const currentOrder = await getOrderById(input.id);
         if (!currentOrder) {
-          throw new TRPCError({ code: "NOT_FOUND", message: "Pedido nÃ£o encontrado." });
+          throw new TRPCError({ code: "NOT_FOUND", message: "Pedido não encontrado." });
         }
+        await assertStoreEntityAccess(ctx.user, currentOrder.storeId);
         if (
           input.status === "preparing" &&
           currentOrder.paymentMethod === "pix" &&
@@ -1630,17 +1653,21 @@ export const appRouter = router({
           stripePaymentIntentId: z.string().optional(),
         })
       )
-      .mutation(({ input }) =>
-        updateOrderPaymentStatus(input.id, input.paymentStatus, input.stripePaymentIntentId)
-      ),
+      .mutation(async ({ input, ctx }) => {
+        const order = await getOrderById(input.id);
+        if (!order) throw new TRPCError({ code: "NOT_FOUND", message: "Pedido nao encontrado." });
+        await assertStoreEntityAccess(ctx.user, order.storeId);
+        return updateOrderPaymentStatus(input.id, input.paymentStatus, input.stripePaymentIntentId);
+      }),
 
     confirmPixReceived: staffProcedure
       .input(z.object({ id: z.number() }))
-      .mutation(async ({ input }) => {
+      .mutation(async ({ input, ctx }) => {
         const order = await getOrderById(input.id);
-        if (!order) throw new TRPCError({ code: "NOT_FOUND", message: "Pedido nÃ£o encontrado." });
+        if (!order) throw new TRPCError({ code: "NOT_FOUND", message: "Pedido não encontrado." });
+        await assertStoreEntityAccess(ctx.user, order.storeId);
         if (order.paymentMethod !== "pix") {
-          throw new TRPCError({ code: "BAD_REQUEST", message: "Este pedido nÃ£o foi feito com PIX." });
+          throw new TRPCError({ code: "BAD_REQUEST", message: "Este pedido não foi feito com PIX." });
         }
         if (order.paymentStatus !== "paid") {
           await updateOrderPaymentStatus(input.id, "paid");
@@ -2406,20 +2433,29 @@ export const appRouter = router({
         role: z.enum(["waiter", "cashier", "attendant", "kitchen", "driver", "manager", "admin"]).optional(),
         active: z.boolean().optional(),
       }))
-      .mutation(async ({ input }) => {
+      .mutation(async ({ input, ctx }) => {
         const { id, ...data } = input;
+        const member = await getStaffMemberById(id);
+        if (!member) throw new TRPCError({ code: "NOT_FOUND", message: "Membro nao encontrado." });
+        await assertStoreEntityAccess(ctx.user, member.storeId);
         await updateStaffMember(id, data);
         return { ok: true };
       }),
     delete: staffProcedure
       .input(z.object({ id: z.number() }))
-      .mutation(async ({ input }) => {
+      .mutation(async ({ input, ctx }) => {
+        const member = await getStaffMemberById(input.id);
+        if (!member) throw new TRPCError({ code: "NOT_FOUND", message: "Membro nao encontrado." });
+        await assertStoreEntityAccess(ctx.user, member.storeId);
         await deleteStaffMember(input.id);
         return { ok: true };
       }),
     regenerateAccessToken: staffProcedure
       .input(z.object({ id: z.number() }))
-      .mutation(async ({ input }) => {
+      .mutation(async ({ input, ctx }) => {
+        const member = await getStaffMemberById(input.id);
+        if (!member) throw new TRPCError({ code: "NOT_FOUND", message: "Membro nao encontrado." });
+        await assertStoreEntityAccess(ctx.user, member.storeId);
         const accessToken = await regenerateStaffAccessToken(input.id);
         return { accessToken };
       }),
@@ -2457,14 +2493,20 @@ export const appRouter = router({
         capacity: z.number().int().min(1).max(50).optional(),
         active: z.boolean().optional(),
       }))
-      .mutation(async ({ input }) => {
+      .mutation(async ({ input, ctx }) => {
         const { id, ...data } = input;
+        const table = await getDiningTableById(id);
+        if (!table) throw new TRPCError({ code: "NOT_FOUND", message: "Mesa nao encontrada." });
+        await assertStoreEntityAccess(ctx.user, table.storeId);
         await updateDiningTable(id, data);
         return { ok: true };
       }),
     deleteTable: staffProcedure
       .input(z.object({ id: z.number() }))
-      .mutation(async ({ input }) => {
+      .mutation(async ({ input, ctx }) => {
+        const table = await getDiningTableById(input.id);
+        if (!table) throw new TRPCError({ code: "NOT_FOUND", message: "Mesa nao encontrada." });
+        await assertStoreEntityAccess(ctx.user, table.storeId);
         await deleteDiningTable(input.id);
         return { ok: true };
       }),
@@ -2489,6 +2531,9 @@ export const appRouter = router({
       }))
       .mutation(async ({ input, ctx }) => {
         const storeId = await resolveStoreId(ctx.user, input.storeId);
+        const table = await getDiningTableById(input.tableId);
+        if (!table) throw new TRPCError({ code: "NOT_FOUND", message: "Mesa nao encontrada." });
+        await assertStoreEntityAccess(ctx.user, table.storeId, storeId);
         return openTableSession({
           tableId: input.tableId,
           storeId,
@@ -2514,8 +2559,11 @@ export const appRouter = router({
         discountAmount: z.string().regex(/^\d+(\.\d{1,2})?$/).optional(),
         total: z.string().regex(/^\d+(\.\d{1,2})?$/).optional(),
       }))
-      .mutation(async ({ input }) => {
+      .mutation(async ({ input, ctx }) => {
         const { id, ...data } = input;
+        const session = await getTableSessionById(id);
+        if (!session) throw new TRPCError({ code: "NOT_FOUND", message: "Comanda nao encontrada." });
+        await assertStoreEntityAccess(ctx.user, session.storeId);
         await updateTableSession(id, data);
         return { ok: true };
       }),
@@ -2529,7 +2577,10 @@ export const appRouter = router({
         status: z.enum(["awaiting_closure", "closed", "cancelled"]).optional(),
         closedByStaffId: z.number().optional(),
       }))
-      .mutation(async ({ input }) => {
+      .mutation(async ({ input, ctx }) => {
+        const session = await getTableSessionById(input.id);
+        if (!session) throw new TRPCError({ code: "NOT_FOUND", message: "Comanda nao encontrada." });
+        await assertStoreEntityAccess(ctx.user, session.storeId);
         await closeTableSessionWithComputedTotals(input.id, {
           subtotal: input.subtotal,
           discountAmount: input.discountAmount,
@@ -2542,7 +2593,13 @@ export const appRouter = router({
       }),
     attachOrder: staffProcedure
       .input(z.object({ tableSessionId: z.number(), orderId: z.number() }))
-      .mutation(async ({ input }) => {
+      .mutation(async ({ input, ctx }) => {
+        const session = await getTableSessionById(input.tableSessionId);
+        const order = await getOrderById(input.orderId);
+        if (!session || !order) throw new TRPCError({ code: "NOT_FOUND", message: "Comanda ou pedido nao encontrado." });
+        await assertStoreEntityAccess(ctx.user, session.storeId);
+        await assertStoreEntityAccess(ctx.user, order.storeId);
+        if (session.storeId !== order.storeId) throw new TRPCError({ code: "BAD_REQUEST", message: "Comanda e pedido pertencem a lojas diferentes." });
         await attachOrderToTableSessionAndSync(input.tableSessionId, input.orderId);
         return { ok: true };
       }),
@@ -2554,7 +2611,14 @@ export const appRouter = router({
         notes: z.string().max(500).optional(),
         addedByStaffId: z.number().optional(),
       }))
-      .mutation(async ({ input }) => {
+      .mutation(async ({ input, ctx }) => {
+        const session = await getTableSessionById(input.tableSessionId);
+        const product = await getProductById(input.productId);
+        if (!session || !product) throw new TRPCError({ code: "NOT_FOUND", message: "Comanda ou produto nao encontrado." });
+        await assertStoreEntityAccess(ctx.user, session.storeId);
+        if (product.storeId != null && product.storeId !== session.storeId) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "Produto fora da loja da comanda." });
+        }
         const itemId = await addTableSessionItem({
           tableSessionId: input.tableSessionId,
           productId: input.productId,
@@ -2566,7 +2630,11 @@ export const appRouter = router({
       }),
     removeItem: staffProcedure
       .input(z.object({ id: z.number() }))
-      .mutation(async ({ input }) => {
+      .mutation(async ({ input, ctx }) => {
+        const item = await getTableSessionItemById(input.id);
+        const session = item ? await getTableSessionById(item.tableSessionId) : undefined;
+        if (!item || !session) throw new TRPCError({ code: "NOT_FOUND", message: "Item nao encontrado." });
+        await assertStoreEntityAccess(ctx.user, session.storeId);
         await removeTableSessionItem(input.id);
         return { ok: true };
       }),
@@ -2575,7 +2643,11 @@ export const appRouter = router({
         id: z.number(),
         status: z.enum(["pending", "preparing", "ready", "served", "cancelled"]),
       }))
-      .mutation(async ({ input }) => {
+      .mutation(async ({ input, ctx }) => {
+        const item = await getTableSessionItemById(input.id);
+        const session = item ? await getTableSessionById(item.tableSessionId) : undefined;
+        if (!item || !session) throw new TRPCError({ code: "NOT_FOUND", message: "Item nao encontrado." });
+        await assertStoreEntityAccess(ctx.user, session.storeId);
         await updateTableSessionItemStatus(input.id, input.status);
         return { ok: true };
       }),
@@ -2711,15 +2783,35 @@ export const appRouter = router({
       }),
     update: staffProcedure
       .input(z.object({ id: z.number(), name: z.string().optional(), phone: z.string().optional(), active: z.boolean().optional() }))
-      .mutation(({ input }) => updateDriver(input.id, { name: input.name, phone: input.phone, active: input.active })),
+      .mutation(async ({ input, ctx }) => {
+        const driver = await getDriverById(input.id);
+        if (!driver) throw new TRPCError({ code: "NOT_FOUND", message: "Motoboy nao encontrado." });
+        await assertStoreEntityAccess(ctx.user, driver.storeId);
+        return updateDriver(input.id, { name: input.name, phone: input.phone, active: input.active });
+      }),
     delete: staffProcedure
       .input(z.object({ id: z.number() }))
-      .mutation(({ input }) => deleteDriver(input.id)),
+      .mutation(async ({ input, ctx }) => {
+        const driver = await getDriverById(input.id);
+        if (!driver) throw new TRPCError({ code: "NOT_FOUND", message: "Motoboy nao encontrado." });
+        await assertStoreEntityAccess(ctx.user, driver.storeId);
+        return deleteDriver(input.id);
+      }),
     assignToOrder: staffProcedure
       .input(z.object({ orderId: z.number(), driverId: z.number().nullable() }))
-      .mutation(async ({ input }) => {
+      .mutation(async ({ input, ctx }) => {
         // Capturar motoboy anterior antes de atualizar
         const prevOrder = await getOrderById(input.orderId);
+        if (!prevOrder) throw new TRPCError({ code: "NOT_FOUND", message: "Pedido nao encontrado." });
+        await assertStoreEntityAccess(ctx.user, prevOrder.storeId);
+        if (input.driverId) {
+          const nextDriver = await getDriverById(input.driverId);
+          if (!nextDriver) throw new TRPCError({ code: "NOT_FOUND", message: "Motoboy nao encontrado." });
+          await assertStoreEntityAccess(ctx.user, nextDriver.storeId);
+          if (prevOrder.storeId !== nextDriver.storeId) {
+            throw new TRPCError({ code: "BAD_REQUEST", message: "Pedido e motoboy pertencem a lojas diferentes." });
+          }
+        }
         await assignDriverToOrder(input.orderId, input.driverId);
         const order = await getOrderById(input.orderId);
         // Notificar novo motoboy atribuído
@@ -2944,6 +3036,10 @@ export const appRouter = router({
         if (!waiter || waiter.role !== "waiter") {
           throw new TRPCError({ code: "UNAUTHORIZED", message: "Token invalido" });
         }
+        const table = await getDiningTableById(input.tableId);
+        if (!table || table.storeId == null || table.storeId !== waiter.storeId) {
+          throw new TRPCError({ code: "FORBIDDEN", message: "Mesa fora da loja do garcom." });
+        }
         const id = await openTableSession({
           tableId: input.tableId,
           storeId: waiter.storeId ?? null,
@@ -2972,6 +3068,14 @@ export const appRouter = router({
         if (!waiter || waiter.role !== "waiter") {
           throw new TRPCError({ code: "UNAUTHORIZED", message: "Token invalido" });
         }
+        const session = await getTableSessionById(input.tableSessionId);
+        const product = await getProductById(input.productId);
+        if (!session || session.storeId == null || session.storeId !== waiter.storeId) {
+          throw new TRPCError({ code: "FORBIDDEN", message: "Comanda fora da loja do garcom." });
+        }
+        if (!product || (product.storeId != null && product.storeId !== waiter.storeId)) {
+          throw new TRPCError({ code: "FORBIDDEN", message: "Produto fora da loja do garcom." });
+        }
         await updateTableSession(input.tableSessionId, { waiterStaffId: waiter.id });
         const itemId = await addTableSessionItem({
           tableSessionId: input.tableSessionId,
@@ -2993,6 +3097,10 @@ export const appRouter = router({
         const waiter = await getStaffMemberByAccessToken(input.token);
         if (!waiter || waiter.role !== "waiter") {
           throw new TRPCError({ code: "UNAUTHORIZED", message: "Token invalido" });
+        }
+        const session = await getTableSessionById(input.id);
+        if (!session || session.storeId == null || session.storeId !== waiter.storeId) {
+          throw new TRPCError({ code: "FORBIDDEN", message: "Comanda fora da loja do garcom." });
         }
         await updateTableSession(input.id, { waiterStaffId: waiter.id });
         await closeTableSessionWithComputedTotals(input.id, {
@@ -3300,7 +3408,7 @@ export const appRouter = router({
             tag: `admin-chat-${input.orderId}`,
           });
         }
-        if (senderRole === 'admin') {
+        if (senderRole === 'admin' && order.userId) {
           await sendPushToUser(order.userId, {
             title: "Mensagem da Bonatto Pizza",
             body: pushPreview,
@@ -3397,7 +3505,7 @@ export const appRouter = router({
         const adminId = adminUser?.id ?? ctx.user.id;
         const reply = content.trim();
         await sendOrderMessage({ orderId: input.orderId, userId: adminId, senderRole: 'admin', message: reply });
-        await sendPushToUser(order.userId, {
+        if (order.userId) await sendPushToUser(order.userId, {
           title: "Resposta da Bonatto Pizza",
           body: reply.length > 100 ? reply.slice(0, 97) + "..." : reply,
           url: `/rastrear/${input.orderId}`,

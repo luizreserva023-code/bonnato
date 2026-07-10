@@ -16,6 +16,7 @@ import { ProductDetailModal, type ProductDetailProduct } from "@/components/Prod
 import { getPizzaFlavorConfig } from "@/lib/pizza-flavor-config";
 import { isStoreOpenWithHours, nextOpenTimeWithHours, type DaySchedule } from "@/lib/storeUtils";
 import { useStore } from "@/contexts/StoreContext";
+import type { Product } from "../../../drizzle/schema";
 import { BRAND_ASSETS } from "@/lib/brand";
 import { getCategoryIcon } from "@/lib/category-visuals";
 
@@ -414,15 +415,8 @@ function ProductCard({
 }
 
 // ─── Peça Novamente (horizontal scroll) ──────────────────────────────────────
-type AnyProduct = {
-  id: number;
-  name: string;
-  price: string;
-  description: string | null;
-  featured: boolean;
-  categoryId: number;
+type AnyProduct = Product & {
   originalPrice?: string | null;
-  imageUrl?: string | null;
   [key: string]: unknown;
 };
 
@@ -560,7 +554,7 @@ export default function Cardapio() {
   const [menuDrawerOpen, setMenuDrawerOpen] = useState(false);
   const [bottomBarVisible, setBottomBarVisible] = useState(true);
   const lastScrollY = useRef(0);
-  const { requireStore, stores } = useStore();
+  const { requireStore, selectedStore, stores } = useStore();
 
   // Ao entrar no cardápio com múltiplas lojas, abrir o modal de seleção se necessário
   useEffect(() => {
@@ -588,7 +582,7 @@ export default function Cardapio() {
 
   const { data: categories, isLoading: catsLoading } = trpc.categories.list.useQuery();
   const { data: products, isLoading: prodsLoading } = trpc.products.list.useQuery(
-    selectedCategoryId !== null ? { categoryId: selectedCategoryId } : {}
+    { categoryId: selectedCategoryId ?? undefined, storeId: selectedStore?.id }
   );
   const { data: storeSettings } = trpc.storeSettings.get.useQuery();
   const { addItem, setIsOpen, items, updateQuantity } = useCart();

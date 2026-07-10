@@ -30,7 +30,11 @@ const queryClient = new QueryClient({
 
 const showFriendlyErrorToast = (error: unknown, source: "Query" | "Mutation") => {
   if (!shouldToastGlobalApiError(error, source)) return;
-  const message = error instanceof TRPCClientError ? error.message : "Algo deu errado. Tente novamente.";
+  const rawMessage = error instanceof TRPCClientError ? error.message : "";
+  const exposesInternalDetails = /failed query|insert into|select .* from|information_schema|params:/i.test(rawMessage);
+  const message = exposesInternalDetails
+    ? "Nao foi possivel concluir a operacao. Tente novamente em instantes."
+    : rawMessage || "Algo deu errado. Tente novamente.";
   toast.error(message);
 };
 

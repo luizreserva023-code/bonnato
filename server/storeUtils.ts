@@ -40,3 +40,24 @@ export async function resolveStoreId(
 
   throw new TRPCError({ code: "FORBIDDEN", message: "Acesso negado" });
 }
+
+export async function assertStoreEntityAccess(
+  user: { id: number; role: string },
+  entityStoreId: number | null | undefined,
+  requestedStoreId?: number,
+): Promise<number | undefined> {
+  const scopedStoreId = await resolveStoreId(user, requestedStoreId);
+
+  if (user.role === "admin") {
+    if (requestedStoreId !== undefined && entityStoreId !== requestedStoreId) {
+      throw new TRPCError({ code: "FORBIDDEN", message: "Registro fora da loja selecionada." });
+    }
+    return scopedStoreId;
+  }
+
+  if (entityStoreId == null || entityStoreId !== scopedStoreId) {
+    throw new TRPCError({ code: "FORBIDDEN", message: "Registro fora da sua loja." });
+  }
+
+  return scopedStoreId;
+}

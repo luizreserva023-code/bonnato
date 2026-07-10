@@ -11,7 +11,7 @@ import type { AppRouter } from "../../../../../server/routers";
 type RouterOutputs = inferRouterOutputs<AppRouter>;
 type RecoveryCart = RouterOutputs["recovery"]["abandonedCarts"][number] & {
   currentStep?: number;
-  couponCode?: string;
+  couponCode?: string | null;
 };
 
 export function RecoveryTab() {

@@ -253,7 +253,7 @@ async function recordProductivityEvent(order: Order, nextStatus: OrderStatus, no
       orderId: order.id,
       storeId: order.storeId ?? null,
       eventType: event.eventType,
-      actorType: "system",
+      actorType: "system" as const,
       valueSeconds: event.valueSeconds,
       metadata: JSON.stringify({ status: nextStatus }),
     }))

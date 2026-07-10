@@ -3,6 +3,7 @@ import { sql } from "drizzle-orm";
 import crypto from "crypto";
 
 import { getDb } from "./db.ts";
+import { shouldRunRuntimeSchemaMigrations } from "./runtimeSchema.ts";
 
 type Db = NonNullable<Awaited<ReturnType<typeof getDb>>>;
 
@@ -169,6 +170,7 @@ export async function resolveIntegrationRestaurantId(requestedStoreId?: number):
 }
 
 export async function ensureIfoodIntegrationSchema() {
+  if (!shouldRunRuntimeSchemaMigrations()) return;
   const db = await requireDb();
 
   await db.execute(sql.raw(`

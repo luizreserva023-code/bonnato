@@ -1,5 +1,6 @@
 import { Button } from "@/components/ui/button";
 import { trpc } from "@/lib/trpc";
+import { useStore } from "@/contexts/StoreContext";
 import {
   Clock,
   MapPin,
@@ -199,7 +200,8 @@ function BlurRevealItem({
 }
 
 export default function Home() {
-  const { data: featuredProducts } = trpc.products.list.useQuery({ categoryId: undefined });
+  const { selectedStore } = useStore();
+  const { data: featuredProducts } = trpc.products.list.useQuery({ categoryId: undefined, storeId: selectedStore?.id });
   const { data: carouselImages } = trpc.carousel.list.useQuery();
   const { addItem } = useCart();
   const [activeTestimonial, setActiveTestimonial] = useState(0);
