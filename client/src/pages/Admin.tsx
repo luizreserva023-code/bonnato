@@ -52,9 +52,23 @@ import {
   FileText,
   PlugZap,
   Truck,
+  GripVertical,
 } from "lucide-react";
 import { useState, useEffect, useRef, useCallback, useMemo, createContext, useContext } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import {
+  DndContext,
+  DragOverlay,
+  KeyboardSensor,
+  MouseSensor,
+  TouchSensor,
+  useDraggable,
+  useDroppable,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+  type DragStartEvent,
+} from "@dnd-kit/core";
 
 import { MapView } from "@/components/Map";
 import { Link } from "wouter";
@@ -2191,8 +2205,8 @@ function ElapsedTime({ createdAt }: { createdAt: string | number | Date }) {
     return () => clearInterval(t);
   }, [createdAt]);
   const isUrgent = elapsed >= 30;
-  if (elapsed < 60) return <span className={`text-xs font-semibold ${isUrgent ? "text-[#6E0D12]" : "text-muted-foreground"}`}>⏱ há {elapsed}min</span>;
-  return <span className="text-xs font-semibold text-muted-foreground">⏱ há {Math.floor(elapsed/60)}h{elapsed%60 > 0 ? ` ${elapsed%60}min` : ""}</span>;
+  if (elapsed < 60) return <span className={`text-xs font-semibold ${isUrgent ? "text-[#6E0D12]" : "text-muted-foreground"}`}><Clock className="mr-1 inline h-3 w-3" />há {elapsed}min</span>;
+  return <span className="text-xs font-semibold text-muted-foreground"><Clock className="mr-1 inline h-3 w-3" />há {Math.floor(elapsed/60)}h{elapsed%60 > 0 ? ` ${elapsed%60}min` : ""}</span>;
 }
 
 // ─── KANBAN COLUMNS ──────────────────────────────────────────────────────────
@@ -2204,26 +2218,46 @@ const KANBAN_COLS_LIGHT = [
   { status: "delivered",        label: "Entregue",     bg: "bg-[#f0fdf4]",  border: "border-[#86efac]",  text: "text-[#166534]",  dot: "bg-[#22c55e]",  hideable: false },
   { status: "cancelled",        label: "Cancelado",    bg: "bg-[#f9fafb]",  border: "border-[#d1d5db]",  text: "text-[#6b7280]",  dot: "bg-[#9ca3af]",  hideable: true  },
 ];
-const KANBAN_COLS_DARK = [
-  { status: "pending",          label: "Aguardando",   bg: "bg-[#2a1a08]",  border: "border-[#5a3a10]",  text: "text-[#f5c89a]",  dot: "bg-[#f5a623]",  hideable: false },
-  { status: "confirmed",        label: "Confirmado",   bg: "bg-[#2a0808]",  border: "border-[#5a1a1e]",  text: "text-[#f9a8a8]",  dot: "bg-[#f87171]",  hideable: false },
-  { status: "preparing",        label: "Preparando",   bg: "bg-[#3a0c0c]",  border: "border-[#6a2020]",  text: "text-[#fca5a5]",  dot: "bg-[#ef4444]",  hideable: false },
-  { status: "out_for_delivery", label: "Na Entrega",   bg: "bg-[#2a0808]",  border: "border-[#920000]",  text: "text-[#fca5a5]",  dot: "bg-[#dc2626]",  hideable: false },
-  { status: "delivered",        label: "Entregue",     bg: "bg-[#052e16]",  border: "border-[#166534]",  text: "text-[#86efac]",  dot: "bg-[#22c55e]",  hideable: false },
-  { status: "cancelled",        label: "Cancelado",    bg: "bg-[#1a1a1a]",  border: "border-[#3a3a3a]",  text: "text-[#9ca3af]",  dot: "bg-[#6b7280]",  hideable: true  },
-];
+type OrderStatus = "pending" | "confirmed" | "preparing" | "out_for_delivery" | "delivered" | "cancelled";
 
-function KanbanCard({ order, onOpen }: { order: any; onOpen: (o: any) => void }) {
+const KANBAN_TRANSITIONS: Record<OrderStatus, OrderStatus[]> = {
+  pending: ["confirmed", "preparing", "cancelled"],
+  confirmed: ["preparing", "out_for_delivery", "cancelled"],
+  preparing: ["out_for_delivery", "cancelled"],
+  out_for_delivery: ["delivered", "cancelled"],
+  delivered: [],
+  cancelled: [],
+};
+
+function KanbanCard({ order, onOpen, overlay = false }: { order: any; onOpen: (o: any) => void; overlay?: boolean }) {
+  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
+    id: overlay ? `overlay-${order.id}` : `order-${order.id}`,
+    data: { order },
+    disabled: overlay,
+  });
+  const style = transform && !overlay
+    ? { transform: `translate3d(${transform.x}px, ${transform.y}px, 0)` }
+    : undefined;
+
   return (
     <button
+      ref={setNodeRef}
       type="button"
       onClick={() => onOpen(order)}
-      className="w-full text-left rounded-xl border shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all p-3 space-y-2 bg-white border-border"
+      style={style}
+      {...attributes}
+      {...listeners}
+      aria-label={`Pedido ${order.id}, ${order.customerName}. Segure e arraste para alterar a etapa.`}
+      className={`group relative w-full touch-manipulation select-none space-y-2 overflow-hidden rounded-2xl border border-[#ead9d5] bg-white p-3.5 text-left shadow-[0_7px_22px_rgba(55,12,15,0.07)] transition-[transform,box-shadow,opacity,border-color] duration-200 ease-[cubic-bezier(.23,1,.32,1)] motion-reduce:transition-none active:scale-[0.985] ${
+        overlay ? "rotate-2 scale-[1.02] border-[#8d171d] shadow-[0_24px_60px_rgba(55,12,15,0.24)]" : "hover:-translate-y-0.5 hover:border-[#c99a96] hover:shadow-[0_12px_30px_rgba(55,12,15,0.12)]"
+      } ${isDragging ? "z-10 opacity-25" : "opacity-100"}`}
     >
+      <span className="absolute inset-y-0 left-0 w-1 bg-gradient-to-b from-[#6e0d12] to-[#bd2e34]" />
       <div className="flex items-center justify-between">
-        <span className="font-black text-sm text-foreground">#{order.id}</span>
+        <span className="font-black tracking-tight text-[#42090c]">#{order.id}</span>
         <div className="flex items-center gap-1">
           <ElapsedTime createdAt={order.createdAt} />
+          <GripVertical className="h-4 w-4 text-[#bda9a6] transition-colors group-hover:text-[#6e0d12]" aria-hidden="true" />
         </div>
       </div>
       <div className="flex items-center gap-1.5">
@@ -2237,9 +2271,62 @@ function KanbanCard({ order, onOpen }: { order: any; onOpen: (o: any) => void })
         <span className="font-black text-sm text-primary">R$ {parseFloat(order.total).toFixed(2).replace(".",",")}</span>
       </div>
       {order.notes && (
-        <p className="text-xs text-[#5a0a0f] bg-[#fdf5f5] rounded px-2 py-1 truncate">⚠️ {order.notes}</p>
+        <p className="truncate rounded-lg bg-[#fff3ef] px-2 py-1.5 text-xs text-[#6e0d12]">Observação: {order.notes}</p>
       )}
     </button>
+  );
+}
+
+function KanbanColumn({ col, orders, activeOrder, onOpen, visibleLimit, onShowMore }: { col: (typeof KANBAN_COLS_LIGHT)[number]; orders: any[]; activeOrder: any | null; onOpen: (order: any) => void; visibleLimit: number; onShowMore: () => void }) {
+  const { setNodeRef, isOver } = useDroppable({ id: `column-${col.status}` });
+  const canReceive = activeOrder
+    ? KANBAN_TRANSITIONS[activeOrder.status as OrderStatus]?.includes(col.status as OrderStatus)
+    : false;
+  const visibleOrders = orders.slice(0, visibleLimit);
+
+  return (
+    <section
+      ref={setNodeRef}
+      aria-label={`${col.label}, ${orders.length} pedidos`}
+      className={`flex min-h-[440px] w-[286px] shrink-0 flex-col overflow-hidden rounded-[20px] border bg-[#f8f2ef] transition-[border-color,box-shadow,transform,background-color] duration-200 ease-[cubic-bezier(.23,1,.32,1)] motion-reduce:transition-none md:w-[304px] ${
+        isOver && canReceive
+          ? "-translate-y-1 border-[#8d171d] bg-[#fff8f4] shadow-[0_18px_55px_rgba(110,13,18,0.16)]"
+          : isOver
+            ? "border-red-300 bg-red-50/70"
+            : "border-[#ead9d5] shadow-[0_8px_30px_rgba(66,9,12,0.05)]"
+      }`}
+    >
+      <header className="sticky top-0 z-[1] flex items-center justify-between border-b border-[#ead9d5] bg-[#fffaf7]/95 px-4 py-3.5 backdrop-blur-md">
+        <div className="flex items-center gap-2.5">
+          <span className={`h-2.5 w-2.5 rounded-full shadow-[0_0_0_4px_rgba(110,13,18,0.06)] ${col.dot}`} />
+          <span className="text-[11px] font-black uppercase tracking-[0.14em] text-[#541015]">{col.label}</span>
+        </div>
+        <span className="min-w-7 rounded-full bg-[#6e0d12] px-2 py-1 text-center text-[11px] font-black text-white">{orders.length}</span>
+      </header>
+      <div className="flex flex-1 flex-col gap-2.5 p-2.5">
+        {orders.length === 0 ? (
+          <div className={`grid min-h-40 flex-1 place-items-center rounded-2xl border border-dashed px-5 text-center transition-colors ${isOver ? "border-[#8d171d]/40 bg-white/70" : "border-[#dbc5c0]"}`}>
+            <div>
+              <Package className="mx-auto mb-2 h-7 w-7 text-[#c7aaa5]" aria-hidden="true" />
+              <p className="text-xs font-semibold text-[#987d79]">Solte um pedido aqui</p>
+            </div>
+          </div>
+        ) : (
+          <>
+            {visibleOrders.map(order => <KanbanCard key={order.id} order={order} onOpen={onOpen} />)}
+            {orders.length > visibleOrders.length && (
+              <button
+                type="button"
+                onClick={onShowMore}
+                className="mt-1 rounded-xl border border-[#d9bbb6] bg-white px-3 py-2.5 text-xs font-bold text-[#6e0d12] transition-[transform,background-color] duration-150 hover:bg-[#fff6f2] active:scale-[0.98]"
+              >
+                Mostrar mais {Math.min(40, orders.length - visibleOrders.length)} pedidos
+              </button>
+            )}
+          </>
+        )}
+      </div>
+    </section>
   );
 }
 
@@ -2425,22 +2512,86 @@ function OrdersTab({ onOpenOrder }: { onOpenOrder?: () => void }) {
   const utils = trpc.useUtils();
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedOrder, setSelectedOrder] = useState<any | null>(null);
+  const [activeOrder, setActiveOrder] = useState<any | null>(null);
+  const [optimisticStatuses, setOptimisticStatuses] = useState<Record<number, OrderStatus>>({});
+  const [visibleLimits, setVisibleLimits] = useState<Record<OrderStatus, number>>({
+    pending: 40,
+    confirmed: 40,
+    preparing: 40,
+    out_for_delivery: 40,
+    delivered: 40,
+    cancelled: 40,
+  });
   const [showCancelled, setShowCancelled] = useState(false);
   const { selectedStoreId } = useAdminStore();
   const { data: allOrders, isLoading } = trpc.orders.list.useQuery(
-    { limit: 100, storeId: selectedStoreId },
+    { limit: 1000, storeId: selectedStoreId },
     { refetchInterval: 15000 }
   );
   const { data: drivers } = trpc.drivers.list.useQuery({ storeId: selectedStoreId });
+  const sensors = useSensors(
+    useSensor(MouseSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 220, tolerance: 8 } }),
+    useSensor(KeyboardSensor)
+  );
+  const moveOrder = trpc.orders.updateStatus.useMutation({
+    onSuccess: (_data, variables) => {
+      utils.orders.list.invalidate();
+      setOptimisticStatuses(current => {
+        const next = { ...current };
+        delete next[variables.id];
+        return next;
+      });
+      toast.success(`Pedido #${variables.id} movido para ${STATUS_LABELS[variables.status]?.label}.`);
+    },
+    onError: (error, variables) => {
+      setOptimisticStatuses(current => {
+        const next = { ...current };
+        delete next[variables.id];
+        return next;
+      });
+      toast.error(error.message);
+    },
+  });
 
   // Filter by search
-  const filteredOrders = allOrders?.filter(o => {
+  const filteredOrders = allOrders?.map(order => ({
+    ...order,
+    status: optimisticStatuses[order.id] ?? order.status,
+  })).filter(o => {
     const q = searchQuery.toLowerCase().trim();
     return !q || o.customerName?.toLowerCase().includes(q) || String(o.id).includes(q) || o.customerPhone?.includes(q);
   }) ?? [];
 
   // Group by status
   const byStatus = (status: string) => filteredOrders.filter(o => o.status === status);
+  const openOrder = (order: any) => {
+    setSelectedOrder(order);
+    onOpenOrder?.();
+  };
+  const handleDragStart = ({ active }: DragStartEvent) => {
+    setActiveOrder(active.data.current?.order ?? null);
+  };
+  const handleDragEnd = ({ active, over }: DragEndEvent) => {
+    const order = active.data.current?.order ?? activeOrder;
+    setActiveOrder(null);
+    if (!order || !over || moveOrder.isPending) return;
+
+    const targetStatus = String(over.id).replace("column-", "") as OrderStatus;
+    const sourceStatus = order.status as OrderStatus;
+    if (targetStatus === sourceStatus) return;
+    if (!KANBAN_TRANSITIONS[sourceStatus]?.includes(targetStatus)) {
+      toast.error("Esse pedido não pode ser movido diretamente para essa etapa.");
+      return;
+    }
+    if (targetStatus === "preparing" && order.paymentMethod === "pix" && order.paymentStatus !== "paid") {
+      toast.error("Confirme o recebimento do PIX antes de preparar o pedido.");
+      return;
+    }
+
+    setOptimisticStatuses(current => ({ ...current, [order.id]: targetStatus }));
+    moveOrder.mutate({ id: order.id, status: targetStatus });
+  };
 
   return (
     <AdminPage>
@@ -2470,6 +2621,10 @@ function OrdersTab({ onOpenOrder }: { onOpenOrder?: () => void }) {
           onChange={setSearchQuery}
           placeholder="Buscar por nome, telefone ou número do pedido..."
         />
+        <div className="hidden items-center gap-2 rounded-xl border border-[#ead9d5] bg-[#fffaf7] px-3 py-2 text-xs font-semibold text-[#6e0d12] md:flex">
+          <GripVertical className="h-4 w-4" aria-hidden="true" />
+          Segure e arraste os pedidos entre as etapas
+        </div>
       </div>
 
       {isLoading ? (
@@ -2479,31 +2634,33 @@ function OrdersTab({ onOpenOrder }: { onOpenOrder?: () => void }) {
           ))}
         </div>
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-3 items-start">
-          {KANBAN_COLS_LIGHT.filter(col => !col.hideable || showCancelled).map(col => {
-            const colOrders = byStatus(col.status);
-            return (
-              <div key={col.status} className={`rounded-xl border ${col.border} ${col.bg} flex flex-col min-h-[200px]`}>
-                <div className={`flex items-center justify-between px-3 py-2.5 border-b ${col.border}`}>
-                  <div className="flex items-center gap-2">
-                    <span className={`w-2 h-2 rounded-full ${col.dot}`} />
-                    <span className={`text-[11px] font-semibold uppercase tracking-wide ${col.text}`}>{col.label}</span>
-                  </div>
-                  <span className={`text-[11px] font-bold ${col.text} bg-white/70 rounded-full px-2 py-0.5`}>{colOrders.length}</span>
-                </div>
-                <div className="p-2 space-y-2 flex-1">
-                  {colOrders.length === 0 ? (
-                    <p className={`text-xs text-center py-6 ${col.text} opacity-50`}>Nenhum pedido</p>
-                  ) : (
-                    colOrders.map(order => (
-                      <KanbanCard key={order.id} order={order} onOpen={(o) => { setSelectedOrder(o); onOpenOrder?.(); }} />
-                    ))
-                  )}
-                </div>
+        <DndContext sensors={sensors} onDragStart={handleDragStart} onDragCancel={() => setActiveOrder(null)} onDragEnd={handleDragEnd}>
+          <div className="relative -mx-2 overflow-x-auto px-2 pb-5 [scrollbar-color:#c99a96_transparent]">
+            <div className="flex min-w-max items-start gap-3">
+              {KANBAN_COLS_LIGHT.filter(col => !col.hideable || showCancelled).map(col => (
+                <KanbanColumn
+                  key={col.status}
+                  col={col}
+                  orders={byStatus(col.status)}
+                  activeOrder={activeOrder}
+                  onOpen={openOrder}
+                  visibleLimit={visibleLimits[col.status as OrderStatus]}
+                  onShowMore={() => setVisibleLimits(current => ({
+                    ...current,
+                    [col.status]: current[col.status as OrderStatus] + 40,
+                  }))}
+                />
+              ))}
+            </div>
+          </div>
+          <DragOverlay dropAnimation={{ duration: 180, easing: "cubic-bezier(.23,1,.32,1)" }}>
+            {activeOrder ? (
+              <div className="w-[286px] md:w-[304px]">
+                <KanbanCard order={activeOrder} onOpen={() => undefined} overlay />
               </div>
-            );
-          })}
-        </div>
+            ) : null}
+          </DragOverlay>
+        </DndContext>
       )}
 
       {selectedOrder && (
