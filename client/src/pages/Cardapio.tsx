@@ -19,6 +19,8 @@ import { useStore } from "@/contexts/StoreContext";
 import type { Product } from "../../../drizzle/schema";
 import { BRAND_ASSETS } from "@/lib/brand";
 import { getCategoryIcon } from "@/lib/category-visuals";
+import { useTenantConfig } from "@/shared/tenant/use-tenant-config";
+import { savePendingCoupon } from "@/lib/checkout-intent";
 
 // ─── Assets ─────────────────────────────────────────────────────────────────
 const LOGO_URL = BRAND_ASSETS.heroLogo;
@@ -40,10 +42,14 @@ const PRODUCT_FALLBACK_IMG = BRAND_ASSETS.pizzaHero;
 // ─── Cardapio Menu Drawer ────────────────────────────────────────────────────
 function CardapioMenuDrawer({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { user, isAuthenticated, logout } = useAuth();
+  const { selectedStore, tenantConfig } = useStore();
   const [, navigate] = useLocation();
-  const { data: notifData } = trpc.notifications.unreadCount.useQuery(undefined, { enabled: isAuthenticated, refetchInterval: 60000 });
+  const { data: notifData } = trpc.notifications.unreadCount.useQuery(
+    { storeId: selectedStore?.id },
+    { enabled: isAuthenticated && Boolean(selectedStore?.id), refetchInterval: 60000 },
+  );
   const notifCount = (notifData as number) ?? 0;
-  const { data: orders } = trpc.orders.myOrders.useQuery(undefined as never, { enabled: isAuthenticated, refetchInterval: 30000 });
+  const { data: orders } = trpc.orders.myOrders.useQuery({ storeId: selectedStore?.id }, { enabled: isAuthenticated && Boolean(selectedStore?.id), refetchInterval: 30000 });
   const activeOrdersCount = (orders as any[])?.filter((o) => !["delivered", "cancelled"].includes(o.status)).length ?? 0;
   const navLinks = [
     { href: "/", label: "Início" },
@@ -62,7 +68,14 @@ function CardapioMenuDrawer({ open, onClose }: { open: boolean; onClose: () => v
     { tab: "pagamentos", icon: <Receipt className="w-6 h-6" />, label: "Pagamentos", badge: null, color: "text-indigo-600", bg: "bg-indigo-50" },
     { tab: "cartoes", icon: <CreditCard className="w-6 h-6" />, label: "Cartões", badge: null, color: "text-slate-600", bg: "bg-slate-100" },
     { tab: "perfil", icon: <User className="w-6 h-6" />, label: "Perfil", badge: null, color: "text-gray-600", bg: "bg-gray-100" },
-  ];
+  ].filter((card) => {
+    if (card.tab === "fidelidade") return tenantConfig.features.loyalty;
+    if (card.tab === "clube") return tenantConfig.features.club;
+    if (card.tab === "cupons") return tenantConfig.features.adminTabs.coupons;
+    if (card.tab === "promocoes") return tenantConfig.features.adminTabs.promotions;
+    if (card.tab === "sorteios") return tenantConfig.features.adminTabs.raffles;
+    return true;
+  });
   function goToTab(tab: string) {
     onClose();
     navigate("/minha-conta");
@@ -159,34 +172,43 @@ function RestaurantHeader({
   onMenuOpen: () => void;
 }) {
   const { itemCount, setIsOpen: openCart } = useCart();
+  const tenant = useTenantConfig();
+  const { selectedStore } = useStore();
   const { isAuthenticated } = useAuth();
-  const { data: orders } = trpc.orders.myOrders.useQuery(undefined as never, { enabled: isAuthenticated, refetchInterval: 30000 });
+  const { data: orders } = trpc.orders.myOrders.useQuery({ storeId: selectedStore?.id }, { enabled: isAuthenticated && Boolean(selectedStore?.id), refetchInterval: 30000 });
   const activeOrdersCount = (orders as any[])?.filter((o) => !["delivered", "cancelled"].includes(o.status)).length ?? 0;
-  const { data: notifData } = trpc.notifications.unreadCount.useQuery(undefined, { enabled: isAuthenticated, refetchInterval: 60000 });
+  const { data: notifData } = trpc.notifications.unreadCount.useQuery(
+    { storeId: selectedStore?.id },
+    { enabled: isAuthenticated && Boolean(selectedStore?.id), refetchInterval: 60000 },
+  );
   const notifCount = (notifData as number) ?? 0;
   const minOrder = storeSettings?.minOrderValue ? parseFloat(storeSettings.minOrderValue) : 0;
   const deliveryFee = storeSettings?.deliveryFee ? parseFloat(storeSettings.deliveryFee) : 0;
+  const isBonatto = tenant.brand.key === "bonatto" || tenant.storeSlug === "bonatto";
+  const bannerUrl = tenant.pages.menu.heroImage || (isBonatto ? BANNER_URL : "");
+  const headerLogo = tenant.brand.logos.wordmark || tenant.brand.logos.icon || (isBonatto ? PALMITO_URL : "");
+  const restaurantLogo = isBonatto ? BRAND_ASSETS.icon : tenant.brand.logos.icon;
 
   return (
     <div className="relative">
       {/* Banner */}
-      <div className="relative h-44 sm:h-56 overflow-hidden bg-gray-900">
-        <img
-          src={BANNER_URL}
-          alt="Bonatto Pizza"
-          className="w-full h-full object-cover object-center"
+      <div className="relative h-36 overflow-hidden sm:h-56" style={{ backgroundColor: "var(--tenant-header, #DA1923)" }}>
+        {bannerUrl ? <img
+          src={bannerUrl}
+          alt={tenant.brand.name}
+          className="h-full w-full object-cover object-center"
           loading="eager"
-        />
+        /> : null}
         {/* Overlay suave para dar profundidade */}
         <div className="absolute inset-0 bg-black/20" />
         {/* Tipografia centralizada */}
         <div className="absolute inset-0 flex items-center justify-center">
-          <img
-            src={PALMITO_URL}
-            alt="Palmito"
-            className="w-[70%] max-w-xs sm:max-w-sm object-contain drop-shadow-lg"
+          {headerLogo ? <img
+            src={headerLogo}
+            alt={tenant.brand.name}
+            className="max-h-28 w-[70%] max-w-xs object-contain drop-shadow-lg sm:max-w-sm"
             loading="eager"
-          />
+          /> : <span className="px-6 text-center text-3xl font-black text-white">{tenant.brand.name}</span>}
         </div>
         {/* Top bar: visível apenas no desktop (md+) */}
         <div className="hidden md:flex absolute top-3 left-3 right-3 items-center justify-between">
@@ -223,26 +245,26 @@ function RestaurantHeader({
       </div>
 
       {/* Info Card */}
-      <div className="bg-background rounded-t-2xl -mt-5 relative z-10 shadow-sm">
+      <div className="relative z-10 -mt-4 rounded-t-[22px] bg-background shadow-sm sm:-mt-5 sm:rounded-t-2xl">
         {/* Logo + Name row */}
-        <div className="flex items-start gap-3 px-4 pt-4 pb-3">
-          <div className="w-16 h-16 rounded-full overflow-hidden border-2 border-background shadow-lg shrink-0 -mt-10 bg-white">
-            <img src={LOGO_URL} alt="Bonatto" className="w-full h-full object-cover" />
+        <div className="relative flex items-start gap-3 px-3 pb-3 pt-3 sm:px-4 sm:pt-4">
+          <div className="-mt-8 grid h-[58px] w-[58px] shrink-0 place-items-center overflow-hidden rounded-full border-[3px] border-background bg-white p-1 shadow-lg sm:-mt-10 sm:h-16 sm:w-16">
+            {restaurantLogo ? <img src={restaurantLogo} alt={tenant.brand.name} className="h-full w-full object-contain" /> : <span className="grid h-full place-items-center text-xl font-black" style={{ color: tenant.brand.colors.primary }}>{tenant.brand.shortName.slice(0, 1)}</span>}
           </div>
-          <div className="flex-1 min-w-0 pt-1">
-            <h1 className="font-black text-lg text-foreground leading-tight">BONATTO PIZZA</h1>
-            <div className="flex items-center gap-1 text-muted-foreground text-xs mt-0.5">
+          <div className="min-w-0 flex-1 pr-14 pt-0.5 sm:pr-16 sm:pt-1">
+            <h1 className="break-words text-[15px] font-black leading-tight text-foreground sm:text-lg">{tenant.brand.name}</h1>
+            <div className="mt-1 flex flex-wrap items-start gap-x-1 gap-y-1 text-[11px] leading-snug text-muted-foreground sm:text-xs">
               <MapPin className="w-3 h-3 shrink-0" />
-              <span>Pizzas artesanais</span>
+              <span className="min-w-[130px] flex-1">{tenant.pages.menu.description}</span>
               {minOrder > 0 && (
                 <>
-                  <span className="mx-1">•</span>
-                  <span>Mín. {fmt(minOrder)}</span>
+                  <span className="hidden sm:inline">·</span>
+                  <span className="whitespace-nowrap rounded-full bg-[#f6efec] px-2 py-0.5 font-semibold">Pedido mínimo: {fmt(minOrder)}</span>
                 </>
               )}
             </div>
           </div>
-          <div className={`shrink-0 mt-1 px-2 py-0.5 rounded-full text-xs font-bold ${isOpen ? "bg-green-100 text-green-700" : "bg-[#fce8e8] text-[#5a0a0f]"}`}>
+          <div className={`absolute right-3 top-3 shrink-0 rounded-full px-2 py-1 text-[10px] font-bold sm:right-4 sm:top-4 sm:text-xs ${isOpen ? "bg-green-100 text-green-700" : "bg-[#fce8e8] text-[#5a0a0f]"}`}>
             {isOpen ? "Aberto" : "Fechado"}
           </div>
         </div>
@@ -262,8 +284,8 @@ function RestaurantHeader({
         <div className="border-t border-border mx-4" />
         <div className="flex items-center gap-2 px-4 py-3">
           <Clock className="w-4 h-4 text-muted-foreground shrink-0" />
-          <span className="text-sm font-medium text-foreground">Padrão • 40-60 min</span>
-          <span className="mx-1 text-muted-foreground">•</span>
+          <span className="text-sm font-medium text-foreground">Padrão · 40-60 min</span>
+          <span className="mx-1 text-muted-foreground">·</span>
           {deliveryFee === 0 ? (
             <span className="text-sm font-bold text-green-600">Grátis</span>
           ) : (
@@ -321,7 +343,7 @@ function CategoryNav({
 
 // ─── Product Card (iFood style) ───────────────────────────────────────────────
 function ProductCard({
-  product, cartQty, imgUrl, onDetail, isFavorite, onToggleFavorite, onAdd, onUpdateQty, badge, allowQuickAdd = true, addLabel = "Adicionar",
+  product, cartQty, imgUrl, onDetail, isFavorite, onToggleFavorite, onAdd, onUpdateQty, badge, allowQuickAdd = true, addLabel = "Adicionar", layout = "visual",
 }: {
   product: { id: number; name: string; description: string | null; price: string; featured: boolean; originalPrice?: string | null };
   cartQty: number; imgUrl: string; onDetail: () => void;
@@ -329,12 +351,15 @@ function ProductCard({
   onAdd: () => void; onUpdateQty: (q: number) => void;
   allowQuickAdd?: boolean;
   addLabel?: string;
+  layout?: "editorial" | "compact" | "visual";
   badge?: "Mais pedido" | "Destaque" | "Novo" | "Promoção";
 }) {
   const price = parseFloat(product.price);
   const origPrice = product.originalPrice ? parseFloat(product.originalPrice) : null;
   const hasDiscount = origPrice !== null && origPrice > price;
   const inCart = cartQty > 0;
+  const isList = layout !== "visual";
+  const isCompact = layout === "compact";
 
   const badgeColor: Record<string, string> = {
     "Mais pedido": "bg-orange-500 text-white",
@@ -344,9 +369,9 @@ function ProductCard({
   };
 
   return (
-    <div className="group bg-card rounded-2xl border border-border hover:border-primary/40 hover:shadow-lg transition-all duration-200 overflow-hidden flex flex-col">
+    <div className={`group overflow-hidden border border-border bg-card transition-all duration-200 hover:border-primary/40 hover:shadow-lg ${isList ? `flex flex-row ${isCompact ? "min-h-[108px] rounded-xl" : "min-h-[146px] rounded-2xl"}` : "flex flex-col rounded-2xl"}`}>
       {/* Image */}
-      <div className="relative w-full aspect-[4/3] cursor-pointer overflow-hidden bg-muted" onClick={onDetail}>
+      <div className={`relative shrink-0 cursor-pointer overflow-hidden bg-muted ${isList ? (isCompact ? "w-[104px]" : "w-[38%] max-w-[180px]") : "aspect-[4/3] w-full"}`} onClick={onDetail}>
         <img src={imgUrl} alt={product.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" loading="lazy" />
         {/* Badge */}
         {badge && (
@@ -371,16 +396,16 @@ function ProductCard({
       </div>
 
       {/* Content */}
-      <div className="flex flex-col flex-1 p-3 gap-2">
+      <div className={`flex min-w-0 flex-1 flex-col gap-2 ${isCompact ? "p-2.5" : "p-3"}`}>
         <div className="flex-1">
           <h3
-            className="font-bold text-sm text-foreground leading-tight line-clamp-2 cursor-pointer hover:text-primary transition-colors"
+            className={`${isList && !isCompact ? "text-base" : "text-sm"} cursor-pointer font-bold leading-tight text-foreground line-clamp-2 transition-colors hover:text-primary`}
             onClick={onDetail}
           >
             {product.name}
           </h3>
           {product.description && (
-            <p className="text-muted-foreground text-xs mt-1 line-clamp-2">{product.description}</p>
+            <p className={`mt-1 text-xs text-muted-foreground ${isCompact ? "line-clamp-1" : "line-clamp-2"}`}>{product.description}</p>
           )}
         </div>
         <div className="flex items-end justify-between gap-2 mt-auto">
@@ -580,18 +605,18 @@ export default function Cardapio() {
     return () => window.removeEventListener("scroll", handleScroll);
   }, []);
 
-  const { data: categories, isLoading: catsLoading } = trpc.categories.list.useQuery();
+  const { data: categories, isLoading: catsLoading } = trpc.categories.list.useQuery({ storeId: selectedStore?.id });
   const { data: products, isLoading: prodsLoading } = trpc.products.list.useQuery(
     { categoryId: selectedCategoryId ?? undefined, storeId: selectedStore?.id }
   );
-  const { data: storeSettings } = trpc.storeSettings.get.useQuery();
+  const { data: storeSettings } = trpc.storeSettings.get.useQuery({ storeId: selectedStore?.id });
   const { addItem, setIsOpen, items, updateQuantity } = useCart();
   const { isAuthenticated } = useAuth();
   const { data: favoritesData } = trpc.favorites.list.useQuery(undefined, { enabled: isAuthenticated });
   const favoriteIds = new Set((favoritesData ?? []).map((f: { productId: number }) => f.productId));
   const toggleFavMutation = trpc.favorites.toggle.useMutation({ onSuccess: () => trpc.useUtils().favorites.list.invalidate() });
   // Últimos pedidos para "Peça novamente"
-  const { data: myOrders } = trpc.orders.myOrders.useQuery(undefined as never, { enabled: isAuthenticated });
+  const { data: myOrders } = trpc.orders.myOrders.useQuery({ storeId: selectedStore?.id }, { enabled: isAuthenticated && Boolean(selectedStore?.id) });
   // Horários dinâmicos do banco (com fallback para os padrão)
   const dbStoreHours = storeSettings?.storeHours
     ? (JSON.parse(storeSettings.storeHours as string) as Record<string, DaySchedule | null>)
@@ -601,6 +626,14 @@ export default function Cardapio() {
     [storeSettings?.pizzaFlavorConfig],
   );
   const isOpen = isStoreOpenWithHours(dbStoreHours);
+  const menuLayout = (["editorial", "compact", "visual"].includes(storeSettings?.menuLayout ?? "")
+    ? storeSettings?.menuLayout
+    : "editorial") as "editorial" | "compact" | "visual";
+  const productGridClass = menuLayout === "visual"
+    ? "grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4"
+    : menuLayout === "compact"
+      ? "grid grid-cols-1 gap-2 md:grid-cols-2"
+      : "grid grid-cols-1 gap-3 lg:grid-cols-2";
 
   const filteredProducts = useMemo(() => {
     if (!products) return [];
@@ -618,10 +651,32 @@ export default function Cardapio() {
 
   const [detailProduct, setDetailProduct] = useState<ProductDetailProduct | null>(null);
   const [detailImg, setDetailImg] = useState("");
+  const deepLinkHandled = useRef(false);
   const openDetail = (product: (typeof filteredProducts)[0], imgUrl: string, catSlug: string) => {
     setDetailProduct({ ...product, imageUrl: product.imageUrl?.trim() || null, categorySlug: catSlug, categoryId: product.categoryId });
     setDetailImg(imgUrl);
   };
+
+  useEffect(() => {
+    if (deepLinkHandled.current || !products || !categories) return;
+    const params = new URLSearchParams(window.location.search);
+    const coupon = params.get("coupon");
+    if (coupon) savePendingCoupon(coupon);
+
+    const productId = Number(params.get("product"));
+    if (Number.isInteger(productId) && productId > 0) {
+      const product = products.find((entry: AnyProduct) => entry.id === productId);
+      if (product) {
+        const category = categories.find((entry: MenuCategoryRecord) => entry.id === product.categoryId);
+        openDetail(product, product.imageUrl?.trim() || PRODUCT_FALLBACK_IMG, category?.slug ?? "pizzas");
+      }
+    } else {
+      const requestedSearch = params.get("search")?.trim();
+      if (requestedSearch) setSearch(requestedSearch);
+    }
+    deepLinkHandled.current = true;
+    window.history.replaceState({}, "", window.location.pathname);
+  }, [categories, products]);
 
   const isMultiFlavorProduct = useCallback((product: { categoryId: number }) => {
     if (!pizzaFlavorConfig.enabled || !categories) return false;
@@ -655,7 +710,7 @@ export default function Cardapio() {
   };
 
   const renderGrid = (prods: typeof filteredProducts) => (
-    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
+    <div className={productGridClass}>
       {prods.map((product: AnyProduct, idx: number) => {
         const cat = categories?.find((c: MenuCategoryRecord) => c.id === product.categoryId);
         const slug = cat?.slug ?? "pizzas";
@@ -675,6 +730,7 @@ export default function Cardapio() {
             badge={getProductBadge(product, idx)}
             allowQuickAdd={allowQuickAdd}
             addLabel={allowQuickAdd ? "Adicionar" : "Montar"}
+            layout={menuLayout}
           />
         );
       })}
@@ -752,7 +808,7 @@ export default function Cardapio() {
 
         {/* Products */}
         {prodsLoading ? (
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
+          <div className={productGridClass}>
             {Array.from({ length: 8 }).map((_, i) => (
               <div key={i} className="rounded-2xl border overflow-hidden">
                 <Skeleton className="aspect-[4/3] w-full" />
@@ -786,7 +842,7 @@ export default function Cardapio() {
                   <h2 className="text-lg font-black text-foreground" style={{ fontFamily: "'Poppins', sans-serif" }}>{cat.name}</h2>
                   <Badge variant="secondary" className="ml-auto text-xs">{catProducts.length} itens</Badge>
                 </div>
-                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
+                <div className={productGridClass}>
                   {catProducts.map((product: AnyProduct, idx: number) => {
                     const productImg = product.imageUrl?.trim() || PRODUCT_FALLBACK_IMG;
                     const allowQuickAdd = !isMultiFlavorProduct(product);
@@ -804,6 +860,7 @@ export default function Cardapio() {
                         badge={getProductBadge(product, idx)}
                         allowQuickAdd={allowQuickAdd}
                         addLabel={allowQuickAdd ? "Adicionar" : "Montar"}
+                        layout={menuLayout}
                       />
                     );
                   })}
@@ -868,7 +925,7 @@ export default function Cardapio() {
         <button
           onClick={() => setIsOpen(true)}
           className="hidden md:flex fixed bottom-6 left-1/2 -translate-x-1/2 z-50 items-center gap-3 px-5 py-3 rounded-full font-semibold text-sm active:scale-95 transition-transform shadow-2xl"
-          style={{ background: "linear-gradient(135deg, #c0392b 0%, #8b0000 100%)", boxShadow: "0 4px 32px rgba(192,57,43,0.55)", color: "#fff" }}
+          style={{ background: "#DA1923", boxShadow: "0 14px 38px rgba(151,17,23,0.28)", color: "#fff" }}
         >
           <div className="relative">
             <ShoppingCart className="w-5 h-5" />

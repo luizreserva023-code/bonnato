@@ -23,6 +23,10 @@ import { PWAInstallBanner } from "@/components/PWAInstallBanner";
 import { ClientAlertsBanner } from "@/components/ClientAlertsBanner";
 import { Link, useLocation } from "wouter";
 import { toast } from "sonner";
+import { useStore } from "@/contexts/StoreContext";
+import { BonattoSectionHero } from "@/components/consumer/BonattoSectionHero";
+import { SocialConnections } from "@/components/SocialConnections";
+import { RewardsCatalog } from "@/features/rewards/RewardsCatalog";
 
 const LOGO_URL = "/brand/bonatto-logo-driver.jpg";
 
@@ -47,6 +51,7 @@ const PAYMENT_LABELS: Record<string, string> = {
 const ACCOUNT_TABS = [
   { value: "pedidos", label: "Pedidos", icon: Package },
   { value: "fidelidade", label: "Pontos", icon: Trophy },
+  { value: "recompensas", label: "Recompensas", icon: Gift },
   { value: "enderecos", label: "Endereços", icon: MapPin },
   { value: "notificacoes", label: "Avisos", icon: Bell },
   { value: "cupons", label: "Cupons", icon: Tag },
@@ -269,7 +274,8 @@ function AbandonedCartsTab() {
 //  Orders Tab 
 function OrdersTab() {
   const [expandedId, setExpandedId] = useState<number | null>(null);
-  const { data: orders, isLoading } = trpc.orders.myOrders.useQuery(undefined, { refetchInterval: 30000 });
+  const { selectedStore } = useStore();
+  const { data: orders, isLoading } = trpc.orders.myOrders.useQuery({ storeId: selectedStore?.id }, { enabled: Boolean(selectedStore?.id), refetchInterval: 30000 });
   const [, navigate] = useLocation();
   const orderRefs = useRef<Record<number, HTMLDivElement | null>>({});
 
@@ -376,9 +382,12 @@ function OrdersTab() {
 
 //  Loyalty Tab 
 function LoyaltyTab() {
-  const { data: points, isLoading: loadingPoints } = trpc.loyalty.points.useQuery();
-  const { data: history, isLoading: loadingHistory } = trpc.loyalty.spendingHistory.useQuery();
-  const { data: txHistory, isLoading: loadingTxHistory } = trpc.loyalty.history.useQuery();
+  const { selectedStore } = useStore();
+  const storeInput = { storeId: selectedStore?.id };
+  const queryOptions = { enabled: Boolean(selectedStore?.id) };
+  const { data: points, isLoading: loadingPoints } = trpc.loyalty.points.useQuery(storeInput, queryOptions);
+  const { data: history, isLoading: loadingHistory } = trpc.loyalty.spendingHistory.useQuery(storeInput, queryOptions);
+  const { data: txHistory, isLoading: loadingTxHistory } = trpc.loyalty.history.useQuery(storeInput, queryOptions);
 
   const LEVELS = [
     { name: "Bronze", min: 0,   max: 100,  color: "text-amber-700",  bg: "bg-amber-100" },
@@ -670,12 +679,16 @@ function PushToggle() {
 }
 
 function NotificationsTab() {
-  const { data: notifications, isLoading, refetch } = trpc.notifications.list.useQuery();
+  const { selectedStore } = useStore();
+  const { data: notifications, isLoading, refetch } = trpc.notifications.list.useQuery(
+    { storeId: selectedStore?.id },
+    { enabled: Boolean(selectedStore?.id) },
+  );
   const markRead = trpc.notifications.markRead.useMutation({ onSuccess: () => refetch() });
 
   useEffect(() => {
-    if (notifications?.some(n => !n.read)) markRead.mutate();
-  }, [notifications?.length]);
+    if (notifications?.some(n => !n.read)) markRead.mutate({ storeId: selectedStore?.id });
+  }, [notifications?.length, selectedStore?.id]);
 
   const TYPE_ICONS: Record<string, React.ReactNode> = {
     order:  <Package className="w-4 h-4 text-blue-500" />,
@@ -788,6 +801,7 @@ function ProfileTab() {
   const selectedAvatarPreset = avatarPresets.find((preset) => preset.src === avatarSrc) ?? null;
 
   return (
+    <div className="space-y-4">
     <Card>
       <CardHeader>
         <CardTitle className="flex items-center gap-2"><User className="w-5 h-5 text-primary" />Meu Perfil</CardTitle>
@@ -908,13 +922,16 @@ function ProfileTab() {
         </Button>
       </CardContent>
     </Card>
+    <SocialConnections />
+    </div>
   );
 }
 
 //  Coupons Tab 
 function CouponsTab() {
-  const { data: coupons, isLoading } = trpc.profile.myCoupons.useQuery();
-  const { data: allCoupons } = trpc.coupons.listActive.useQuery();
+  const { selectedStore } = useStore();
+  const { data: coupons, isLoading } = trpc.profile.myCoupons.useQuery({ storeId: selectedStore?.id });
+  const { data: allCoupons } = trpc.coupons.listActive.useQuery({ storeId: selectedStore?.id });
   const publicCoupons = allCoupons?.filter((c) => !c.userId && c.active) ?? [];
 
   if (isLoading) return <div className="space-y-3">{Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-20 w-full" />)}</div>;
@@ -980,7 +997,8 @@ function CouponsTab() {
 
 //  Promotions Tab 
 function PromotionsTab() {
-  const { data: promotions, isLoading } = trpc.promotions.active.useQuery();
+  const { selectedStore } = useStore();
+  const { data: promotions, isLoading } = trpc.promotions.active.useQuery({ storeId: selectedStore?.id });
   if (isLoading) return <div className="grid gap-4">{Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-40 w-full rounded-xl" />)}</div>;
   if (!promotions?.length) return (
     <div className="text-center py-16 text-muted-foreground">
@@ -1013,7 +1031,8 @@ function PromotionsTab() {
 
 //  Raffles Tab 
 function RafflesTab() {
-  const { data: raffles, isLoading, refetch } = trpc.raffles.active.useQuery();
+  const { selectedStore } = useStore();
+  const { data: raffles, isLoading, refetch } = trpc.raffles.active.useQuery({ storeId: selectedStore?.id });
   const enterRaffle = trpc.raffles.enter.useMutation({
     onSuccess: (ok) => { if (ok) { toast.success("Você entrou no sorteio! Boa sorte!"); refetch(); } else toast.info("Você já está participando deste sorteio."); },
     onError: (e) => toast.error(e.message),
@@ -1029,7 +1048,7 @@ function RafflesTab() {
   return (
     <div className="grid gap-4">
       {raffles.map((raffle) => (
-        <Card key={raffle.id} className="overflow-hidden border-2 border-yellow-200 bg-gradient-to-br from-yellow-50 to-orange-50">
+        <Card key={raffle.id} className="overflow-hidden border-2 border-[#eadbd2] bg-[#fffaf6]">
           {raffle.imageUrl && <img src={raffle.imageUrl} alt={raffle.title} className="w-full h-40 object-cover" />}
           <CardContent className="p-5">
             <div className="flex items-start justify-between gap-3 mb-3">
@@ -1044,7 +1063,7 @@ function RafflesTab() {
               <p className="font-bold text-lg text-primary flex items-center gap-2"><Gift className="w-5 h-5" />{raffle.prize}</p>
             </div>
             {raffle.endsAt && <p className="text-xs text-muted-foreground mb-3 flex items-center gap-1"><Clock className="w-3.5 h-3.5" />Encerra em {new Date(raffle.endsAt).toLocaleDateString("pt-BR")}</p>}
-            <Button className="w-full" onClick={() => enterRaffle.mutate({ raffleId: raffle.id })} disabled={enterRaffle.isPending}>
+            <Button className="w-full" onClick={() => enterRaffle.mutate({ raffleId: raffle.id, storeId: selectedStore?.id })} disabled={enterRaffle.isPending}>
               <Ticket className="w-4 h-4 mr-2" />{enterRaffle.isPending ? "Participando..." : "Participar do Sorteio"}
             </Button>
           </CardContent>
@@ -1134,8 +1153,15 @@ function PaymentsTab() {
 // Club Member Tab
 function ClubMemberTab() {
   const { isAuthenticated } = useAuth();
-  const { data: clubPlan, isLoading } = trpc.club.getMyPlan.useQuery(undefined, { enabled: isAuthenticated });
-  const { data: clubConfig } = trpc.club.getPublicConfig.useQuery();
+  const { selectedStore } = useStore();
+  const { data: clubPlan, isLoading } = trpc.club.getMyPlan.useQuery(
+    { storeId: selectedStore?.id ?? 0 },
+    { enabled: isAuthenticated && Boolean(selectedStore?.id) },
+  );
+  const { data: clubConfig } = trpc.club.getPublicConfig.useQuery(
+    { storeId: selectedStore?.id ?? 0 },
+    { enabled: Boolean(selectedStore?.id) },
+  );
   const cancelSub = trpc.club.cancelSubscription.useMutation({
     onSuccess: () => toast.success("Assinatura cancelada. Você ainda terá acesso até o fim do período."),
     onError: (e) => toast.error(e.message),
@@ -1163,7 +1189,7 @@ function ClubMemberTab() {
   if (!clubPlan || (!isActive && !isPending)) {
     return (
       <div className="max-w-xl mx-auto">
-        <div className="relative rounded-3xl overflow-hidden bg-gradient-to-br from-[#2d0305] via-zinc-900 to-zinc-950 border border-[#3a0608]/50 shadow-2xl p-8 text-center">
+        <div className="relative rounded-3xl overflow-hidden bg-[#191412] border border-[#3a2b27] shadow-2xl p-8 text-center">
           <Crown className="w-12 h-12 text-[#7d0f14] mx-auto mb-4" />
           <h2 className="text-2xl font-black text-white mb-2">
             {clubConfig?.profileGuestTitle ?? "Você ainda não é membro"}
@@ -1221,8 +1247,8 @@ function ClubMemberTab() {
       {/* Header do plano */}
       <div className={`rounded-3xl p-6 text-white ${
         isBonattao
-          ? "bg-gradient-to-br from-[#5a0a0f] via-[#450709] to-zinc-900"
-          : "bg-gradient-to-br from-blue-700 via-blue-800 to-zinc-900"
+          ? "bg-[#971117]"
+          : "bg-[#27201d]"
       }`}>
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-3">
@@ -1321,7 +1347,7 @@ function ClubMemberTab() {
           className="flex-1 text-[#6E0D12] border-[#f9d0d0] hover:bg-[#fdf2f2]"
           onClick={() => {
             if (confirm("Tem certeza que deseja cancelar sua assinatura?")) {
-              cancelSub.mutate();
+              if (selectedStore?.id) cancelSub.mutate({ storeId: selectedStore.id });
             }
           }}
           disabled={cancelSub.isPending}
@@ -1337,15 +1363,30 @@ function ClubMemberTab() {
 //  Main Component 
 export default function MinhaConta() {
   const { isAuthenticated, loading, user } = useAuth();
-  const { data: unreadCount } = trpc.notifications.unreadCount.useQuery(undefined, { enabled: isAuthenticated, refetchInterval: 60000 });
-  const { data: unreadAlerts } = trpc.clientAlerts.unreadCount.useQuery(undefined, { enabled: isAuthenticated, refetchInterval: 60000 });
+  const { tenantConfig } = useStore();
+  const { selectedStore } = useStore();
+  const { data: unreadCount } = trpc.notifications.unreadCount.useQuery(
+    { storeId: selectedStore?.id },
+    { enabled: isAuthenticated && Boolean(selectedStore?.id), refetchInterval: 60000 },
+  );
+  const { data: unreadAlerts } = trpc.clientAlerts.unreadCount.useQuery(
+    { storeId: selectedStore?.id ?? 0 },
+    { enabled: isAuthenticated && Boolean(selectedStore?.id), refetchInterval: 60000 },
+  );
   const totalAvisosBadge = (unreadCount ?? 0) + (unreadAlerts ?? 0);
-  const { data: points } = trpc.loyalty.points.useQuery(undefined, { enabled: isAuthenticated });
-  const { data: orders } = trpc.orders.myOrders.useQuery(undefined, { enabled: isAuthenticated, refetchInterval: 30000 });
+  const { data: points } = trpc.loyalty.points.useQuery(
+    { storeId: selectedStore?.id },
+    { enabled: isAuthenticated && tenantConfig.features.loyalty && Boolean(selectedStore?.id) },
+  );
+  const { data: orders } = trpc.orders.myOrders.useQuery({ storeId: selectedStore?.id }, { enabled: isAuthenticated && Boolean(selectedStore?.id), refetchInterval: 30000 });
 
   const activeOrdersCount = orders?.filter(o => !["delivered","cancelled"].includes(o.status)).length ?? 0;
   const ordersCount = orders?.length ?? 0;
-  const [activeTab, setActiveTab] = useState<AccountTabValue>("pedidos");
+  const [activeTab, setActiveTab] = useState<AccountTabValue>(() => {
+    const requested = new URLSearchParams(window.location.search).get("tab");
+    return ACCOUNT_TABS.some((tab) => tab.value === requested) ? requested as AccountTabValue : "pedidos";
+  });
+  const initialRewardId = Number(new URLSearchParams(window.location.search).get("reward")) || undefined;
 
   const summaryCards = [
     {
@@ -1353,29 +1394,29 @@ export default function MinhaConta() {
       value: activeOrdersCount,
       helper: activeOrdersCount > 0 ? "Acompanhando em tempo real" : "Nenhum pedido em andamento",
       icon: Package,
-      className: "bg-[linear-gradient(145deg,#6E0D12,#9b1520)] text-white",
-      iconWrapClassName: "bg-white/15 text-white",
-      mutedClassName: "text-white/70",
+      className: "border border-[#eadbd5] bg-white text-[#261817]",
+      iconWrapClassName: "bg-[#f8e8e6] text-[#b51620]",
+      mutedClassName: "text-[#887672]",
     },
     {
       label: "Avisos pendentes",
       value: totalAvisosBadge,
       helper: totalAvisosBadge > 0 ? "Atualizações esperando por você" : "Tudo em dia no momento",
       icon: BellRing,
-      className: "border border-[#ecd8d1] bg-[#fffaf8] text-[#210608]",
-      iconWrapClassName: "bg-[#fff1ef] text-[#7d0f14]",
+      className: "border border-[#eadbd5] bg-white text-[#261817]",
+      iconWrapClassName: "bg-[#f8e8e6] text-[#b51620]",
       mutedClassName: "text-[#7b676b]",
     },
     {
-      label: "Pontos Bonatto",
+      label: `Pontos ${tenantConfig.brand.shortName}`,
       value: points ?? 0,
       helper: points ? "Prontos para desconto e benefícios" : "Faça pedidos para começar a acumular",
       icon: Trophy,
-      className: "border border-[#f1e2b8] bg-[linear-gradient(145deg,#fff6d8,#fff1bf)] text-[#3a2400]",
-      iconWrapClassName: "bg-white/70 text-[#8a5a00]",
-      mutedClassName: "text-[#816b39]",
+      className: "border border-[#eadbd5] bg-white text-[#261817]",
+      iconWrapClassName: "bg-[#f8e8e6] text-[#b51620]",
+      mutedClassName: "text-[#887672]",
     },
-  ] as const;
+  ].filter((card) => tenantConfig.features.loyalty || card.icon !== Trophy);
 
   const getTabBadge = (value: AccountTabValue) => {
     if (value === "pedidos" && activeOrdersCount > 0) return activeOrdersCount;
@@ -1393,6 +1434,16 @@ export default function MinhaConta() {
     return () => window.removeEventListener("minhaconta:tab", handleTabEvent);
   }, []);
 
+  useEffect(() => {
+    const unavailable =
+      ((activeTab === "fidelidade" || activeTab === "recompensas") && !tenantConfig.features.loyalty) ||
+      (activeTab === "clube" && !tenantConfig.features.club) ||
+      (activeTab === "promocoes" && !tenantConfig.features.adminTabs.promotions) ||
+      (activeTab === "sorteios" && !tenantConfig.features.adminTabs.raffles) ||
+      (activeTab === "cupons" && !tenantConfig.features.adminTabs.coupons);
+    if (unavailable) setActiveTab("pedidos");
+  }, [activeTab, tenantConfig.features]);
+
   if (loading) return (
     <div className="flex min-h-[100dvh] items-center justify-center bg-[#f6efec]">
       <Loader2 className="h-8 w-8 animate-spin text-primary" />
@@ -1407,15 +1458,15 @@ export default function MinhaConta() {
           <div className="space-y-6">
             <div className="inline-flex items-center gap-2 rounded-full border border-[#f0d6d0] bg-[#fff6f2] px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-[#7d0f14]">
               <User className="h-3.5 w-3.5" />
-              Minha conta Bonatto
+              Minha conta {tenantConfig.brand.shortName}
             </div>
             <div className="space-y-3">
-              <img src={LOGO_URL} alt="Bonatto Pizza" className="h-20 w-20 rounded-[24px] object-cover shadow-lg shadow-[#7d0f14]/10" />
+              {tenantConfig.brand.logos.icon ? <img src={tenantConfig.brand.logos.icon} alt={tenantConfig.brand.name} className="h-20 w-20 rounded-[24px] object-contain shadow-lg" /> : <div className="flex h-20 w-20 items-center justify-center rounded-[24px] text-xl font-black text-white shadow-lg" style={{ backgroundColor: tenantConfig.brand.colors.primary }}>{tenantConfig.brand.shortName.slice(0, 2).toUpperCase()}</div>}
               <h2 className="max-w-[14ch] text-3xl font-black leading-[0.95] text-[#210608]" style={{ fontFamily: "'Poppins', sans-serif" }}>
                 {"Fa\u00e7a login para acompanhar seus pedidos e benef\u00edcios."}
               </h2>
               <p className="max-w-[52ch] text-sm leading-relaxed text-[#6d5a5d]">
-                {"Entre na sua \u00e1rea para rever pedidos, salvar endere\u00e7os, acompanhar pagamentos e usar os benef\u00edcios do Clube Bonatto."}
+                {`Entre na sua área para rever pedidos, salvar endereços e acompanhar pagamentos na ${tenantConfig.brand.name}.`}
               </p>
             </div>
             <div className="flex flex-col gap-3 sm:flex-row">
@@ -1452,10 +1503,34 @@ export default function MinhaConta() {
   );
 
   return (
-    <div className="min-h-[100dvh] bg-[#f6efec] py-8 sm:py-10">
-      <div className="container max-w-6xl space-y-6">
+    <div className="min-h-[100dvh] overflow-x-clip bg-[#f6efec] py-4 sm:py-10">
+      <div className="container max-w-6xl space-y-4 px-3 sm:space-y-6 sm:px-6">
                 {/* Header */}
-        <div className="grid gap-4 rounded-[30px] border border-[#ead7d1] bg-white/90 p-5 shadow-[0_24px_80px_rgba(83,23,23,0.10)] backdrop-blur lg:grid-cols-[1.2fr_0.8fr]">
+        <div className="space-y-4">
+          <BonattoSectionHero
+            eyebrow="Seu pedaço da Bonatto"
+            title={<>Olá, {user?.name?.split(" ")[0] ?? "Cliente"}!</>}
+            description={`Pedidos, cupons, pontos e benefícios reunidos sem economizar sabor.`}
+            aside={<div className="relative z-[1] grid h-full w-full place-items-center p-5"><div className="flex h-24 w-24 items-center justify-center overflow-hidden rounded-full bg-[#fff8ee] text-3xl font-black text-[#da1923] shadow-[0_12px_0_rgba(129,16,23,0.16)]">{(user as any)?.avatarUrl ? <img src={(user as any).avatarUrl} alt="Avatar" className="h-full w-full object-cover" /> : (user?.name ?? "U")[0].toUpperCase()}</div></div>}
+          />
+          <div className="grid gap-2 sm:grid-cols-3 sm:gap-3">
+            {summaryCards.map((card) => (
+              <div key={card.label} className={`rounded-[18px] px-4 py-3 shadow-[0_4px_14px_rgba(57,27,24,0.04)] ${card.className}`}>
+                <div className="flex items-center gap-3">
+                  <div className={`inline-flex shrink-0 rounded-full p-2 ${card.iconWrapClassName}`}><card.icon className="h-3.5 w-3.5" /></div>
+                  <div className="min-w-0 flex-1">
+                    <p className={`text-[10px] font-semibold uppercase tracking-[0.12em] ${card.mutedClassName}`}>{card.label}</p>
+                    <div className="mt-0.5 flex items-baseline gap-2">
+                      <p className="text-xl font-black leading-none">{card.value}</p>
+                      <p className={`truncate text-[11px] ${card.mutedClassName}`}>{card.helper}</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+        {false && <div className="grid gap-4 rounded-[30px] border border-[#ead7d1] bg-white/90 p-5 lg:grid-cols-[1.2fr_0.8fr]">
           <div className="flex items-center gap-4">
             <div className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-[24px] bg-primary text-xl font-black text-white shadow-lg shadow-[#6E0D12]/20">
               {(user as any)?.avatarUrl
@@ -1469,7 +1544,7 @@ export default function MinhaConta() {
                 {"Ol\u00e1, "}{user?.name?.split(" ")[0] ?? "Cliente"}!
               </h1>
               <p className="mt-2 max-w-[58ch] text-sm leading-relaxed text-[#6d5a5d] sm:text-base">
-                {"Seu espa\u00e7o para acompanhar pedidos, revisar pagamentos, salvar endere\u00e7os e aproveitar tudo que a Bonatto preparou para voc\u00ea."}
+                {`Seu espaço para acompanhar pedidos, revisar pagamentos e aproveitar o que a ${tenantConfig.brand.name} preparou para você.`}
               </p>
             </div>
           </div>
@@ -1485,11 +1560,11 @@ export default function MinhaConta() {
               </div>
             ))}
           </div>
-        </div>
+        </div>}
 
         <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as AccountTabValue)} className="space-y-4">
           {/* Desktop: TabsList horizontal */}
-          <div className="rounded-[28px] border border-[#ead7d1] bg-white/90 p-3 shadow-[0_18px_50px_rgba(83,23,23,0.08)] backdrop-blur">
+          <div className="hidden rounded-[28px] border border-[#ead7d1] bg-white/90 p-3 shadow-[0_18px_50px_rgba(83,23,23,0.08)] backdrop-blur sm:block">
           <TabsList className="hidden sm:grid w-full grid-cols-4 md:grid-cols-6 xl:grid-cols-12 h-auto gap-2 bg-transparent p-0">
             <TabsTrigger value="pedidos" className="relative flex flex-col gap-1 py-2 text-xs">
               <Package className="w-4 h-4" /><span>Pedidos</span>
@@ -1497,7 +1572,8 @@ export default function MinhaConta() {
                 <span className="absolute -top-1 -right-1 w-4 h-4 bg-primary text-white text-[9px] font-bold rounded-full flex items-center justify-center">{activeOrdersCount}</span>
               )}
             </TabsTrigger>
-            <TabsTrigger value="fidelidade" className="flex flex-col gap-1 py-2 text-xs"><Trophy className="w-4 h-4" /><span>Pontos</span></TabsTrigger>
+            {tenantConfig.features.loyalty && <TabsTrigger value="fidelidade" className="flex flex-col gap-1 py-2 text-xs"><Trophy className="w-4 h-4" /><span>Pontos</span></TabsTrigger>}
+            {tenantConfig.features.loyalty && <TabsTrigger value="recompensas" className="flex flex-col gap-1 py-2 text-xs"><Gift className="w-4 h-4" /><span>Recompensas</span></TabsTrigger>}
             <TabsTrigger value="enderecos" className="flex flex-col gap-1 py-2 text-xs"><MapPin className="w-4 h-4" /><span>Endereços</span></TabsTrigger>
             <TabsTrigger value="notificacoes" className="relative flex flex-col gap-1 py-2 text-xs">
               {totalAvisosBadge > 0 ? <BellRing className="w-4 h-4 text-primary" /> : <Bell className="w-4 h-4" />}
@@ -1506,11 +1582,11 @@ export default function MinhaConta() {
                 <span className="absolute -top-1 -right-1 w-4 h-4 bg-[#7d0f14] text-white text-[9px] font-bold rounded-full flex items-center justify-center">{totalAvisosBadge}</span>
               )}
             </TabsTrigger>
-            <TabsTrigger value="cupons" className="flex flex-col gap-1 py-2 text-xs"><Tag className="w-4 h-4" /><span>Cupons</span></TabsTrigger>
-            <TabsTrigger value="promocoes" className="flex flex-col gap-1 py-2 text-xs"><Gift className="w-4 h-4" /><span>Promoções</span></TabsTrigger>
-            <TabsTrigger value="sorteios" className="flex flex-col gap-1 py-2 text-xs"><Ticket className="w-4 h-4" /><span>Sorteios</span></TabsTrigger>
+            {tenantConfig.features.adminTabs.coupons && <TabsTrigger value="cupons" className="flex flex-col gap-1 py-2 text-xs"><Tag className="w-4 h-4" /><span>Cupons</span></TabsTrigger>}
+            {tenantConfig.features.adminTabs.promotions && <TabsTrigger value="promocoes" className="flex flex-col gap-1 py-2 text-xs"><Gift className="w-4 h-4" /><span>Promoções</span></TabsTrigger>}
+            {tenantConfig.features.adminTabs.raffles && <TabsTrigger value="sorteios" className="flex flex-col gap-1 py-2 text-xs"><Ticket className="w-4 h-4" /><span>Sorteios</span></TabsTrigger>}
             <TabsTrigger value="perfil" className="flex flex-col gap-1 py-2 text-xs"><User className="w-4 h-4" /><span>Perfil</span></TabsTrigger>
-            <TabsTrigger value="clube" className="flex flex-col gap-1 py-2 text-xs"><Crown className="w-4 h-4 text-[#7d0f14]" /><span className="text-[#6E0D12] font-semibold">Clube</span></TabsTrigger>
+            {tenantConfig.features.club && <TabsTrigger value="clube" className="flex flex-col gap-1 py-2 text-xs"><Crown className="w-4 h-4 text-[#7d0f14]" /><span className="text-[#6E0D12] font-semibold">Clube</span></TabsTrigger>}
             <TabsTrigger value="pagamentos" className="flex flex-col gap-1 py-2 text-xs"><Receipt className="w-4 h-4" /><span>Pagamentos</span></TabsTrigger>
             <TabsTrigger value="cartoes" className="flex flex-col gap-1 py-2 text-xs"><CreditCard className="w-4 h-4" /><span>Cartões</span></TabsTrigger>
             <TabsTrigger value="carrinhos" className="relative flex flex-col gap-1 py-2 text-xs"><ShoppingCart className="w-4 h-4" /><span>Salvos</span></TabsTrigger>
@@ -1519,16 +1595,17 @@ export default function MinhaConta() {
 
 
 
-          <div className="rounded-[28px] border border-[#ead7d1] bg-white/90 p-3 shadow-[0_18px_50px_rgba(83,23,23,0.08)] backdrop-blur sm:p-4">
+          <div className="min-w-0 overflow-hidden rounded-[20px] border border-[#ead7d1] bg-white/90 p-2 shadow-[0_18px_50px_rgba(83,23,23,0.08)] backdrop-blur sm:rounded-[28px] sm:p-4">
             <TabsContent value="pedidos" className="mt-0"><OrdersTab /></TabsContent>
-          <TabsContent value="fidelidade" className="mt-0"><LoyaltyTab /></TabsContent>
+          {tenantConfig.features.loyalty && <TabsContent value="fidelidade" className="mt-0"><LoyaltyTab /></TabsContent>}
+          {tenantConfig.features.loyalty && selectedStore?.id && <TabsContent value="recompensas" className="mt-0"><RewardsCatalog storeId={selectedStore.id} initialRewardId={initialRewardId} /></TabsContent>}
           <TabsContent value="enderecos" className="mt-0"><AddressesTab /></TabsContent>
           <TabsContent value="notificacoes" className="mt-0"><NotificationsTab /></TabsContent>
-          <TabsContent value="cupons" className="mt-0"><CouponsTab /></TabsContent>
-          <TabsContent value="promocoes" className="mt-0"><PromotionsTab /></TabsContent>
-          <TabsContent value="sorteios" className="mt-0"><RafflesTab /></TabsContent>
+          {tenantConfig.features.adminTabs.coupons && <TabsContent value="cupons" className="mt-0"><CouponsTab /></TabsContent>}
+          {tenantConfig.features.adminTabs.promotions && <TabsContent value="promocoes" className="mt-0"><PromotionsTab /></TabsContent>}
+          {tenantConfig.features.adminTabs.raffles && <TabsContent value="sorteios" className="mt-0"><RafflesTab /></TabsContent>}
           <TabsContent value="perfil" className="mt-0"><ProfileTab /></TabsContent>
-          <TabsContent value="clube" className="mt-0"><ClubMemberTab /></TabsContent>
+          {tenantConfig.features.club && <TabsContent value="clube" className="mt-0"><ClubMemberTab /></TabsContent>}
           <TabsContent value="pagamentos" className="mt-0"><PaymentsTab /></TabsContent>
           <TabsContent value="cartoes" className="mt-0"><SavedCards /></TabsContent>
           <TabsContent value="carrinhos" className="mt-0"><AbandonedCartsTab /></TabsContent>
@@ -1536,15 +1613,17 @@ export default function MinhaConta() {
         </Tabs>
 
         {/* Espa?o para n?o sobrepor o rodap? fixo no mobile */}
-        <div className="h-24 sm:hidden" />
+        <div className="h-[calc(5rem+env(safe-area-inset-bottom))] sm:hidden" />
       </div>
 
       {/* Barra de rodap? fixa no mobile */}
-      <div className="sm:hidden fixed bottom-0 left-0 right-0 z-50 border-t border-[#ead7d1] bg-white/92 shadow-[0_-2px_20px_rgba(0,0,0,0.06)] backdrop-blur">
-        <div className="grid grid-cols-5 h-16">
+      <div className="fixed inset-x-0 bottom-0 z-50 border-t border-[#ead7d1] bg-white/95 pb-[env(safe-area-inset-bottom)] shadow-[0_-2px_20px_rgba(0,0,0,0.06)] backdrop-blur sm:hidden">
+        <div className="grid h-16 grid-cols-5">
           {[
             { value: "pedidos", icon: <Package className="w-5 h-5" />, label: "Pedidos", badge: activeOrdersCount > 0 ? activeOrdersCount : null },
-            { value: "fidelidade", icon: <Trophy className="w-5 h-5" />, label: "Pontos", badge: null },
+            tenantConfig.features.loyalty
+              ? { value: "fidelidade", icon: <Trophy className="w-5 h-5" />, label: "Pontos", badge: null }
+              : { value: "enderecos", icon: <MapPin className="w-5 h-5" />, label: "Endereços", badge: null },
             { href: "/cardapio", icon: <ShoppingBag className="w-6 h-6" />, label: "Cardápio", badge: null, isLink: true },
             { value: "notificacoes", icon: totalAvisosBadge > 0 ? <BellRing className="w-5 h-5" /> : <Bell className="w-5 h-5" />, label: "Avisos", badge: totalAvisosBadge > 0 ? totalAvisosBadge : null },
             { value: "perfil", icon: <User className="w-5 h-5" />, label: "Perfil", badge: null },

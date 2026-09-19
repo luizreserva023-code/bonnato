@@ -16,6 +16,7 @@ export const ADMIN_TABS = [
   "settings",
   "stores",
   "recovery",
+  "platform",
 ] as const;
 
 export type AdminTabId = (typeof ADMIN_TABS)[number];

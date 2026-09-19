@@ -7,7 +7,6 @@ import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { useTenantConfig } from "@/shared/tenant/use-tenant-config";
 import type { inferRouterOutputs } from "@trpc/server";
-import { motion } from "framer-motion";
 import {
   Bell,
   BellRing,
@@ -44,23 +43,28 @@ export function Navbar() {
   const { user, isAuthenticated, logout } = useAuth();
   const [location, navigate] = useLocation();
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const { selectedStore, setShowCityModal } = useStore();
+  const { selectedStore, setShowCityModal, isTenantLocked } = useStore();
   const tenant = useTenantConfig(selectedStore?.slug);
 
-  const { data: notifData } = trpc.notifications.unreadCount.useQuery(undefined, {
-    enabled: isAuthenticated,
+  const { data: notifData } = trpc.notifications.unreadCount.useQuery({ storeId: selectedStore?.id }, {
+    enabled: isAuthenticated && Boolean(selectedStore?.id),
     refetchInterval: 60000,
   });
   const notifCount = notifData ?? 0;
 
-  const { data: alertsUnread } = trpc.clientAlerts.unreadCount.useQuery(undefined, {
-    enabled: isAuthenticated,
+  const { data: alertsUnread } = trpc.clientAlerts.unreadCount.useQuery({ storeId: selectedStore?.id ?? 0 }, {
+    enabled: isAuthenticated && Boolean(selectedStore?.id),
     refetchInterval: 60000,
   });
   const alertsCount = alertsUnread ?? 0;
 
-  const { data: orders } = trpc.orders.myOrders.useQuery(undefined, {
-    enabled: isAuthenticated,
+  const { data: loyaltyPoints = 0 } = trpc.loyalty.points.useQuery(
+    { storeId: selectedStore?.id },
+    { enabled: isAuthenticated && Boolean(selectedStore?.id), staleTime: 30_000 },
+  );
+
+  const { data: orders } = trpc.orders.myOrders.useQuery({ storeId: selectedStore?.id }, {
+    enabled: isAuthenticated && Boolean(selectedStore?.id),
     refetchInterval: 30000,
   });
   const customerOrders: CustomerOrderRecord[] = orders ?? [];
@@ -71,9 +75,9 @@ export function Navbar() {
     { href: "/cardapio", label: "Cardápio", icon: ShoppingBag },
     { href: "/clube", label: "Clube", icon: Crown },
     { href: "/minha-conta", label: "Minha Conta", icon: User },
-  ];
+  ].filter((link) => link.href !== "/clube" || tenant.pages.club.enabled);
 
-  const { data: storeSettings } = trpc.storeSettings.get.useQuery();
+  const { data: storeSettings } = trpc.storeSettings.get.useQuery({ storeId: selectedStore?.id });
   const dbStoreHours = storeSettings?.storeHours
     ? (JSON.parse(storeSettings.storeHours as string) as Record<string, DaySchedule | null>)
     : undefined;
@@ -81,6 +85,8 @@ export function Navbar() {
   const totalAlerts = notifCount + alertsCount + activeOrdersCount;
   const brandName = tenant.brand.name;
   const brandTagline = tenant.brand.tagline;
+  const firstName = user?.name?.trim().split(/\s+/)[0] || "visitante";
+  const isHome = location === "/";
   const locationLabel = selectedStore ? `Entrega em ${selectedStore.city}` : tenant.brand.deliveryLabel;
   const navIcon = tenant.brand.logos.icon || NAVBAR_PALMITO_URL;
   const navWordmark = tenant.brand.logos.wordmark || LOGO_TIPOGRAFICA_URL;
@@ -109,43 +115,44 @@ export function Navbar() {
 
   return (
     <>
-      <motion.div
-        className="fixed left-1/2 z-50 w-[94%] max-w-[820px] -translate-x-1/2"
-        style={{ top: "14px" }}
-        initial={{ y: -28, opacity: 0 }}
-        animate={{ y: 0, opacity: 1 }}
-        transition={{ duration: 0.65, ease: [0.22, 1, 0.36, 1] }}
+      <div
+        className="fixed left-1/2 z-50 w-[calc(100%-16px)] max-w-[900px] -translate-x-1/2 animate-in fade-in slide-in-from-top-2 duration-300"
+        style={{ top: "8px" }}
       >
         <nav
-          className="relative overflow-hidden rounded-[26px] border border-white/12 bg-[linear-gradient(135deg,rgba(38,5,8,0.92),rgba(110,13,18,0.88)_48%,rgba(53,7,10,0.96))] shadow-[0_18px_60px_rgba(20,0,3,0.34)] backdrop-blur-2xl"
+          className="relative overflow-hidden rounded-[20px] border border-black/5 shadow-[0_6px_18px_rgba(38,8,10,0.14)]"
+          style={{ backgroundColor: "var(--tenant-header, #DA1923)" }}
         >
-          <motion.div
-            className="absolute -left-10 top-[-42px] h-32 w-32 rounded-full bg-[#ff9f9f]/15 blur-3xl"
-            animate={{ x: [0, 36, 0], y: [0, 16, 0] }}
-            transition={{ duration: 9, repeat: Number.POSITIVE_INFINITY, ease: "easeInOut" }}
-          />
-          <motion.div
-            className="absolute right-[-30px] top-2 h-24 w-24 rounded-full bg-white/10 blur-2xl"
-            animate={{ x: [0, -18, 0], y: [0, 12, 0] }}
-            transition={{ duration: 8, repeat: Number.POSITIVE_INFINITY, ease: "easeInOut" }}
-          />
+          <div className={`relative flex items-center justify-between px-3 sm:h-16 sm:px-4 ${isHome ? "h-24" : "h-16"}`}>
+            {isHome && (
+              <div className="min-w-0 sm:hidden" aria-label={`Olá, ${firstName}. O que vamos pedir hoje?`}>
+                <div className="flex min-w-0 items-baseline gap-3">
+                  <p className="truncate text-[1.65rem] font-black uppercase leading-none text-white">Oi, {firstName}</p>
+                  {isAuthenticated && (
+                    <Link href="/minha-conta?tab=fidelidade" className="shrink-0 text-xs font-black uppercase tracking-[0.08em] text-white/80">
+                      {Number(loyaltyPoints).toLocaleString("pt-BR")} pts
+                    </Link>
+                  )}
+                </div>
+                <p className="mt-2 truncate text-xs font-semibold text-white/72">O que vamos pedir hoje?</p>
+              </div>
+            )}
 
-          <div className="relative flex h-[72px] items-center justify-between px-3 sm:px-4">
-            <Link href="/" className="flex min-w-0 items-center gap-2.5">
-              <motion.div whileHover={{ rotate: -6, scale: 1.04 }} transition={{ type: "spring", stiffness: 260, damping: 16 }}>
+            <Link href="/" className={`${isHome ? "hidden sm:flex" : "flex"} min-w-0 items-center gap-2.5`}>
+              <div className="transition-transform duration-200 hover:-rotate-6 hover:scale-[1.04]">
                 <img
                   src={navIcon}
                   alt={brandName}
-                  className="h-12 w-auto object-contain sm:h-14"
-                  style={{ maxWidth: "56px" }}
+                  className="h-10 w-auto object-contain sm:h-11"
+                  style={{ maxWidth: "48px" }}
                 />
-              </motion.div>
+              </div>
               <div className="min-w-0">
                 <img
                   src={navWordmark}
                   alt={brandName}
-                  className="h-8 w-auto object-contain sm:h-10"
-                  style={{ maxWidth: "172px" }}
+                  className="h-7 w-auto object-contain sm:h-8"
+                  style={{ maxWidth: "150px" }}
                 />
                 <div className="hidden items-center gap-2 text-[11px] font-medium text-white/65 sm:flex">
                   <span className="inline-flex items-center gap-1 rounded-full border border-white/10 bg-white/8 px-2 py-1">
@@ -156,56 +163,50 @@ export function Navbar() {
               </div>
             </Link>
 
-            <div className="hidden items-center gap-2 md:flex">
-              <motion.button
+            {!isTenantLocked && <div className="hidden items-center gap-2 md:flex">
+              <button
                 type="button"
                 onClick={() => setShowCityModal(true)}
-                className="inline-flex items-center gap-2 rounded-full border border-white/12 bg-white/8 px-3 py-2 text-xs font-semibold text-white/80 transition hover:bg-white/14"
-                whileHover={{ y: -1, scale: 1.01 }}
-                whileTap={{ scale: 0.98 }}
+                className="inline-flex items-center gap-2 rounded-full border border-white/12 bg-white/8 px-3 py-2 text-xs font-semibold text-white/80 transition hover:-translate-y-px hover:scale-[1.01] hover:bg-white/14 active:scale-[.98]"
               >
                 <MapPin className="h-3.5 w-3.5" />
                 {locationLabel}
-              </motion.button>
-            </div>
+              </button>
+            </div>}
 
             <div className="flex items-center gap-2">
-              <motion.button
+              <button
                 type="button"
                 onClick={() => setIsOpen(true)}
-                className="relative rounded-2xl border border-white/10 bg-white/10 p-2.5 text-white transition hover:bg-white/16"
+                className={`relative border border-white/15 bg-white/10 text-white transition hover:-translate-y-0.5 hover:scale-[1.03] hover:bg-white/18 active:scale-[.96] ${isHome ? "rounded-2xl p-3.5 sm:rounded-xl sm:p-2.5" : "rounded-xl p-2.5"}`}
                 aria-label="Carrinho"
-                whileHover={{ y: -1.5, scale: 1.03 }}
-                whileTap={{ scale: 0.96 }}
               >
-                <ShoppingCart className="h-5 w-5" />
+                <ShoppingCart className={isHome ? "size-6 sm:size-5" : "size-5"} />
                 {itemCount > 0 && (
-                  <span className="absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full bg-white text-[10px] font-black text-[#6E0D12]">
+                  <span className="absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full bg-white text-[10px] font-black text-[var(--tenant-primary,#6E0D12)]">
                     {itemCount > 9 ? "9+" : itemCount}
                   </span>
                 )}
-              </motion.button>
+              </button>
 
-              <motion.button
+              <button
                 type="button"
                 onClick={() => setDrawerOpen(true)}
-                className="relative inline-flex items-center gap-2 rounded-2xl border border-white/12 bg-white/12 px-3 py-2.5 text-sm font-semibold text-white transition hover:bg-white/16"
+                className={`relative inline-flex items-center gap-2 border border-white/15 bg-white/10 text-sm font-semibold text-white transition hover:-translate-y-0.5 hover:scale-[1.02] hover:bg-white/18 active:scale-[.97] ${isHome ? "rounded-2xl px-4 py-3.5 sm:rounded-xl sm:px-3 sm:py-2.5" : "rounded-xl px-3 py-2.5"}`}
                 aria-label="Abrir menu"
-                whileHover={{ y: -1.5, scale: 1.02 }}
-                whileTap={{ scale: 0.97 }}
               >
-                <Menu className="h-4.5 w-4.5" />
+                <Menu className={isHome ? "size-6 sm:size-[18px]" : "size-[18px]"} />
                 <span className="hidden sm:inline">Menu</span>
                 {totalAlerts > 0 && (
                   <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-[#ffd7a8] px-1.5 text-[10px] font-black text-[#431007]">
                     {totalAlerts > 9 ? "9+" : totalAlerts}
                   </span>
                 )}
-              </motion.button>
+              </button>
             </div>
           </div>
         </nav>
-      </motion.div>
+      </div>
 
       <Sheet open={drawerOpen} onOpenChange={setDrawerOpen}>
         <SheetContent

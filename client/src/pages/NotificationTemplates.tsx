@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { trpc } from "@/lib/trpc";
+import { useAdminStore } from "@/contexts/AdminStoreContext";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -144,6 +145,7 @@ function TemplateFormDialog({
   editTemplate?: Template | null;
 }) {
   const utils = trpc.useUtils();
+  const { selectedStoreId } = useAdminStore();
   const [event, setEvent] = useState(editTemplate?.event ?? "order_confirmed");
   const [channel, setChannel] = useState(editTemplate?.channel ?? "both");
   const [title, setTitle] = useState(editTemplate?.title ?? "");
@@ -188,6 +190,7 @@ function TemplateFormDialog({
     if (isEdit && editTemplate) {
       updateMutation.mutate({
         id: editTemplate.id,
+        storeId: selectedStoreId,
         title,
         body,
         channel: channel as "push" | "whatsapp" | "both",
@@ -195,6 +198,7 @@ function TemplateFormDialog({
       });
     } else {
       createMutation.mutate({
+        storeId: selectedStoreId,
         event: event as "order_confirmed" | "order_preparing" | "order_out_for_delivery" | "order_delivered" | "order_cancelled" | "cart_abandoned_step1" | "cart_abandoned_step2" | "cart_abandoned_step3" | "reactivation_15" | "reactivation_30" | "reactivation_60" | "custom",
         channel: channel as "push" | "whatsapp" | "both",
         title,
@@ -324,6 +328,7 @@ function SendCustomDialog({
   open: boolean;
   onClose: () => void;
 }) {
+  const { selectedStoreId } = useAdminStore();
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
   const [redirectShortcut, setRedirectShortcut] = useState("/");
@@ -360,10 +365,13 @@ function SendCustomDialog({
     }
     if (!confirm(`Enviar notificação para ${segment ? SEGMENT_OPTIONS.find(s => s.value === segment)?.label : "todos os clientes"}?`)) return;
     sendMutation.mutate({
+      storeId: selectedStoreId,
       title: title.trim(),
       body: body.trim(),
       redirectUrl: finalRedirectUrl || "/",
-      tag: segment === "all" ? undefined : segment || undefined,
+      tag: segment === "all" || !segment
+        ? undefined
+        : segment as "novo" | "recorrente" | "indeciso" | "inativo_15" | "inativo_30" | "inativo_60",
     });
   };
 
@@ -495,6 +503,7 @@ function TemplateCard({
   onEdit: (t: Template) => void;
 }) {
   const utils = trpc.useUtils();
+  const { selectedStoreId } = useAdminStore();
 
   const toggleMutation = trpc.notificationTemplates.update.useMutation({
     onSuccess: () => utils.notificationTemplates.list.invalidate(),
@@ -550,7 +559,7 @@ function TemplateCard({
         </div>
         <div className="flex items-center gap-1 flex-shrink-0">
           <button
-            onClick={() => toggleMutation.mutate({ id: template.id, isActive: !template.isActive })}
+            onClick={() => toggleMutation.mutate({ id: template.id, storeId: selectedStoreId, isActive: !template.isActive })}
             className="text-gray-400 hover:text-gray-700 transition-colors p-1"
             title={template.isActive ? "Desativar" : "Ativar"}
           >
@@ -569,7 +578,7 @@ function TemplateCard({
           <button
             onClick={() => {
               if (confirm("Remover este template?")) {
-                deleteMutation.mutate({ id: template.id });
+                deleteMutation.mutate({ id: template.id, storeId: selectedStoreId });
               }
             }}
             className="text-gray-400 hover:text-[#7d0f14] transition-colors p-1"
@@ -607,6 +616,7 @@ const STATUS_CONFIG: Record<string, { label: string; color: string; icon: React.
 
 function ScheduleFormDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   const utils = trpc.useUtils();
+  const { selectedStoreId } = useAdminStore();
   const [title, setTitle] = useState("");
   const [message, setMessage] = useState("");
   const [channel, setChannel] = useState("push");
@@ -618,7 +628,10 @@ function ScheduleFormDialog({ open, onClose }: { open: boolean; onClose: () => v
   const [neighborhoodSearch, setNeighborhoodSearch] = useState("");
 
   // Fetch delivery zones for neighborhood selection
-  const { data: deliveryZones } = trpc.deliveryZones.list.useQuery();
+  const { data: deliveryZones } = trpc.deliveryZones.list.useQuery(
+    { storeId: selectedStoreId },
+    { enabled: selectedStoreId !== undefined },
+  );
   const activeZones = (deliveryZones ?? []).filter((z: any) => z.isActive);
   const filteredZones = neighborhoodSearch.trim()
     ? activeZones.filter((z: any) => z.neighborhood.toLowerCase().includes(neighborhoodSearch.toLowerCase()))
@@ -647,6 +660,7 @@ function ScheduleFormDialog({ open, onClose }: { open: boolean; onClose: () => v
     const scheduledAt = new Date(`${scheduledDate}T${scheduledTime}:00`);
     if (scheduledAt <= new Date()) { toast.error("A data/hora deve ser no futuro"); return; }
     createMutation.mutate({
+      storeId: selectedStoreId,
       title, message,
       channel: channel as "push" | "whatsapp" | "both",
       targetAudience: audience as "all" | "active" | "inactive" | "club",
@@ -787,8 +801,12 @@ function ScheduleFormDialog({ open, onClose }: { open: boolean; onClose: () => v
 
 function ScheduledNotificationsSection() {
   const utils = trpc.useUtils();
+  const { selectedStoreId } = useAdminStore();
   const [scheduleOpen, setScheduleOpen] = useState(false);
-  const { data: scheduled, isLoading } = trpc.notifications.scheduleList.useQuery();
+  const { data: scheduled, isLoading } = trpc.notifications.scheduleList.useQuery(
+    { storeId: selectedStoreId },
+    { enabled: selectedStoreId !== undefined },
+  );
 
   const cancelMutation = trpc.notifications.scheduleCancel.useMutation({
     onSuccess: () => { toast.success("Agendamento cancelado"); utils.notifications.scheduleList.invalidate(); },
@@ -877,11 +895,11 @@ function ScheduledNotificationsSection() {
                   </div>
                   <div className="flex items-center gap-1 flex-shrink-0">
                     {s.status === 'pending' && (
-                      <button onClick={() => { if (confirm('Cancelar este agendamento?')) cancelMutation.mutate({ id: s.id }); }} className="text-muted-foreground hover:text-primary transition-colors p-1" title="Cancelar">
+                      <button onClick={() => { if (confirm('Cancelar este agendamento?')) cancelMutation.mutate({ id: s.id, storeId: selectedStoreId }); }} className="text-muted-foreground hover:text-primary transition-colors p-1" title="Cancelar">
                         <XCircle className="w-4 h-4" />
                       </button>
                     )}
-                    <button onClick={() => { if (confirm('Remover este agendamento?')) deleteMutation.mutate({ id: s.id }); }} className="text-gray-400 hover:text-[#7d0f14] transition-colors p-1" title="Remover">
+                    <button onClick={() => { if (confirm('Remover este agendamento?')) deleteMutation.mutate({ id: s.id, storeId: selectedStoreId }); }} className="text-gray-400 hover:text-[#7d0f14] transition-colors p-1" title="Remover">
                       <Trash2 className="w-4 h-4" />
                     </button>
                   </div>
@@ -901,12 +919,16 @@ function ScheduledNotificationsSection() {
 
 export default function NotificationTemplates() {
   const { user, loading: authLoading } = useAuth();
+  const { selectedStoreId } = useAdminStore();
   const [, setLocation] = useLocation();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [sendCustomOpen, setSendCustomOpen] = useState(false);
   const [editTemplate, setEditTemplate] = useState<Template | null>(null);
 
-  const { data: templates, isLoading } = trpc.notificationTemplates.list.useQuery();
+  const { data: templates, isLoading } = trpc.notificationTemplates.list.useQuery(
+    { storeId: selectedStoreId },
+    { enabled: selectedStoreId !== undefined },
+  );
   const utils = trpc.useUtils();
 
   const seedMutation = trpc.notificationTemplates.seed.useMutation({
@@ -955,7 +977,7 @@ export default function NotificationTemplates() {
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => seedMutation.mutate()}
+                onClick={() => seedMutation.mutate({ storeId: selectedStoreId })}
                 disabled={seedMutation.isPending}
               >
                 <Shuffle className={`w-4 h-4 mr-1 ${seedMutation.isPending ? "animate-spin" : ""}`} />

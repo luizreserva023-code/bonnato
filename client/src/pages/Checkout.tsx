@@ -27,13 +27,16 @@ import {
   Wallet,
   LogIn,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation } from "wouter";
 import { isStoreOpenWithHours, isCepInDeliveryZone, nextOpenTimeWithHours, type DaySchedule } from "@/lib/storeUtils";
 import { StoreClosedBanner } from "@/components/StoreClosedBanner";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
+import { BonattoSectionHero } from "@/components/consumer/BonattoSectionHero";
 import { TrendingDown, Zap, ShoppingCart as CartIcon, X as XIcon } from "lucide-react";
+import { useStore } from "@/contexts/StoreContext";
+import { clearPendingCoupon, getPendingCoupon } from "@/lib/checkout-intent";
 
 type PaymentMethod = "credit_card" | "debit_card" | "pix" | "cash";
 type DeliveryMode = "delivery" | "pickup";
@@ -53,6 +56,7 @@ type Step = 0 | 1 | 2;
 export default function Checkout() {
   const { items, subtotal, clearCart, replaceCart } = useCart();
   const { user, isAuthenticated, loading: authLoading } = useAuth();
+  const { selectedStore, tenantConfig } = useStore();
   const [, navigate] = useLocation();
 
   const [step, setStep] = useState<Step>(0);
@@ -73,6 +77,7 @@ export default function Checkout() {
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("pix");
   const [couponCode, setCouponCode] = useState("");
   const [couponDiscount, setCouponDiscount] = useState(0);
+  const [couponFreeDelivery, setCouponFreeDelivery] = useState(false);
   const [couponApplied, setCouponApplied] = useState(false);
   const [pointsToRedeem, setPointsToRedeem] = useState("");
   const [pointsDiscount, setPointsDiscount] = useState(0);
@@ -124,24 +129,43 @@ export default function Checkout() {
   const [selectedSavedCardId, setSelectedSavedCardId] = useState<string | null>(null);
   const [useSavedCard, setUseSavedCard] = useState(false);
   const validateCoupon = trpc.coupons.validate.useMutation();
+  const pendingCouponHandled = useRef(false);
+  const checkoutStepRef = useRef<HTMLDivElement>(null);
+  const previousStepRef = useRef<Step>(step);
   // loyalty.redeem foi substituído — o débito agora acontece dentro do createOrder via pointsToRedeem
-  const loyaltyPointsQuery = trpc.loyalty.points.useQuery(undefined, { enabled: isAuthenticated });
+  const loyaltyPointsQuery = trpc.loyalty.points.useQuery(
+    { storeId: selectedStore?.id },
+    { enabled: isAuthenticated && tenantConfig.features.loyalty && Boolean(selectedStore?.id) },
+  );
   const registerAbandonedCart = trpc.automations.registerAbandonedCart.useMutation();
   const profileQuery = trpc.profile.me.useQuery(undefined, { enabled: isAuthenticated });
   const zonesSearchQuery = trpc.deliveryZones.search.useQuery(
-    { query: neighborhoodSearch },
-    { enabled: neighborhoodSearch.length >= 2 }
+    { query: neighborhoodSearch, storeId: selectedStore?.id },
+    { enabled: neighborhoodSearch.length >= 2 && Boolean(selectedStore?.id) }
   );
   const cartProductIds = useMemo(() => items.map((i) => i.productId), [items]);
   const upsellQuery = trpc.upsells.forCart.useQuery(
-    { productIds: cartProductIds, cartTotal: subtotal },
-    { enabled: isAuthenticated && items.length > 0 }
+    { productIds: cartProductIds, cartTotal: subtotal, storeId: selectedStore?.id },
+    { enabled: isAuthenticated && items.length > 0 && Boolean(selectedStore?.id) }
   );
-  const productsQuery = trpc.products.list.useQuery(undefined, { enabled: isAuthenticated });
-  const myClubPlan = trpc.club.getMyPlan.useQuery(undefined, { enabled: isAuthenticated });
-  const clubConfigQuery = trpc.club.getPublicConfig.useQuery();
-  const paymentSettingsQuery = trpc.paymentSettings.getPublic.useQuery();
-  const storeSettingsQuery = trpc.storeSettings.get.useQuery();
+  const productsQuery = trpc.products.list.useQuery({ storeId: selectedStore?.id }, { enabled: isAuthenticated && Boolean(selectedStore?.id) });
+  const myClubPlan = trpc.club.getMyPlan.useQuery(
+    { storeId: selectedStore?.id ?? 0 },
+    { enabled: isAuthenticated && tenantConfig.features.club && Boolean(selectedStore?.id) },
+  );
+  const clubConfigQuery = trpc.club.getPublicConfig.useQuery(
+    { storeId: selectedStore?.id ?? 0 },
+    { enabled: tenantConfig.features.club && Boolean(selectedStore?.id) },
+  );
+  const paymentSettingsQuery = trpc.paymentSettings.getPublic.useQuery(
+    { storeId: selectedStore?.id },
+    {
+      enabled: Boolean(selectedStore?.id),
+      retry: 2,
+      refetchOnMount: "always",
+    },
+  );
+  const storeSettingsQuery = trpc.storeSettings.get.useQuery({ storeId: selectedStore?.id });
   const minOrderValue = storeSettingsQuery.data?.minOrderValue ? parseFloat(storeSettingsQuery.data.minOrderValue) : 0;
   const dbStoreHours = storeSettingsQuery.data?.storeHours
     ? (JSON.parse(storeSettingsQuery.data.storeHours as string) as Record<string, DaySchedule | null>)
@@ -149,24 +173,26 @@ export default function Checkout() {
   const clubPlan = myClubPlan.data;
   const clubConfig = clubConfigQuery.data;
   const paymentSettings = paymentSettingsQuery.data;
+  const isPaymentSettingsLoading = !selectedStore?.id || (paymentSettingsQuery.isPending && !paymentSettings);
   const paymentOptions = useMemo(() => {
     const options: Array<{ value: PaymentMethod; label: string; icon: React.ReactNode; desc: string }> = [];
-    if (paymentSettings?.config.orders.pixEnabled) {
+    if (!paymentSettings) return options;
+    if (tenantConfig.providers.payments.pix && paymentSettings?.config.orders.pixEnabled) {
       const desc =
         paymentSettings.config.orders.pixMode === "dynamic_asaas"
           ? "QR Code e aprovação automática"
           : "Copia e cola com chave da loja";
       options.push({ value: "pix", label: "PIX", icon: <QrCode className="w-5 h-5" />, desc });
     }
-    if (paymentSettings?.config.orders.cardEnabled) {
+    if (tenantConfig.providers.payments.card && paymentSettings?.config.orders.cardEnabled) {
       options.push({ value: "credit_card", label: "Cartão de Crédito", icon: <CreditCard className="w-5 h-5" />, desc: "Pagamento online seguro" });
       options.push({ value: "debit_card", label: "Cartão de Débito", icon: <CreditCard className="w-5 h-5" />, desc: "Pagamento online seguro" });
     }
-    if (paymentSettings?.config.orders.cashEnabled ?? true) {
+    if (tenantConfig.providers.payments.cash && paymentSettings.config.orders.cashEnabled) {
       options.push({ value: "cash", label: "Dinheiro", icon: <Wallet className="w-5 h-5" />, desc: "Pagamento na entrega" });
     }
     return options;
-  }, [paymentSettings]);
+  }, [paymentSettings, tenantConfig.providers.payments]);
   const clubPlanDetails = clubPlan?.planDetails;
   const isClubActive = clubPlan?.status === "active";
   const clubDiscountPct = isClubActive ? Number(clubPlanDetails?.discountPercent ?? 0) : 0;
@@ -222,6 +248,22 @@ export default function Checkout() {
     }
   }, [paymentMethod, paymentOptions]);
 
+  useEffect(() => {
+    if (previousStepRef.current === step) return;
+    previousStepRef.current = step;
+
+    const frame = window.requestAnimationFrame(() => {
+      const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      checkoutStepRef.current?.scrollIntoView({
+        behavior: reduceMotion ? "auto" : "smooth",
+        block: "start",
+      });
+      checkoutStepRef.current?.focus({ preventScroll: true });
+    });
+
+    return () => window.cancelAnimationFrame(frame);
+  }, [step]);
+
   const handleCepBlur = async () => {
     const cep = form.deliveryCep.replace(/\D/g, "");
     if (cep.length !== 8) return;
@@ -249,7 +291,7 @@ export default function Checkout() {
   const rawDeliveryFeeAmount = deliveryMode === "delivery" && deliveryZone
     ? parseFloat(deliveryZone.deliveryFee)
     : 0;
-  const deliveryFeeAmount = clubFreeDelivery ? 0 : rawDeliveryFeeAmount;
+  const deliveryFeeAmount = clubFreeDelivery || couponFreeDelivery ? 0 : rawDeliveryFeeAmount;
   const clubDiscountAmount = clubDiscountPct > 0 ? ((subtotal - couponDiscount) * clubDiscountPct) / 100 : 0;
   const total = Math.max(0, subtotal - couponDiscount - pointsDiscount - clubDiscountAmount + deliveryFeeAmount);
   const pointsBalance = loyaltyPointsQuery.data ?? 0;
@@ -275,18 +317,61 @@ export default function Checkout() {
   const handleApplyCoupon = async () => {
     if (!couponCode.trim()) return;
     try {
-      const result = await validateCoupon.mutateAsync({ code: couponCode, orderTotal: subtotal });
+      const result = await validateCoupon.mutateAsync({
+        code: couponCode,
+        orderTotal: subtotal,
+        storeId: selectedStore?.id,
+        items: items.map((item) => ({
+          productId: item.productId,
+          productPrice: item.productPrice,
+          quantity: item.quantity,
+        })),
+      });
       setCouponDiscount(result.discount);
+      setCouponFreeDelivery(Boolean(result.rewardBenefit?.freeDelivery));
       setCouponApplied(true);
-      toast.success(`Cupom aplicado! Desconto de R$ ${result.discount.toFixed(2).replace(".", ",")}`);
+      toast.success(result.rewardBenefit?.freeDelivery
+        ? "Cupom aplicado! A entrega será grátis."
+        : `Cupom aplicado! Desconto de R$ ${result.discount.toFixed(2).replace(".", ",")}`);
     } catch (err: any) {
       toast.error(err.message ?? "Cupom inválido");
     }
   };
 
+  useEffect(() => {
+    if (pendingCouponHandled.current || subtotal <= 0 || !selectedStore?.id) return;
+    const pendingCode = getPendingCoupon();
+    if (!pendingCode) return;
+    pendingCouponHandled.current = true;
+    setCouponCode(pendingCode);
+
+    void validateCoupon.mutateAsync({
+      code: pendingCode,
+      orderTotal: subtotal,
+      storeId: selectedStore.id,
+      items: items.map((item) => ({
+        productId: item.productId,
+        productPrice: item.productPrice,
+        quantity: item.quantity,
+      })),
+    })
+      .then((result) => {
+        setCouponDiscount(result.discount);
+        setCouponFreeDelivery(Boolean(result.rewardBenefit?.freeDelivery));
+        setCouponApplied(true);
+        clearPendingCoupon();
+        toast.success(`Cupom ${pendingCode} aplicado automaticamente.`);
+      })
+      .catch((error: unknown) => {
+        const message = error instanceof Error ? error.message : "Cupom indisponível para este pedido";
+        toast.warning(message);
+      });
+  }, [items, selectedStore?.id, subtotal]);
+
   const doCreateOrder = async () => {
     try {
       const result = await createOrder.mutateAsync({
+        storeId: selectedStore?.id,
         ...form,
         deliveryCep: form.deliveryCep ? form.deliveryCep.replace(/\D/g, "").replace(/(\d{5})(\d{3})/, "$1-$2") || undefined : undefined,
         deliveryAddress: deliveryMode === "delivery"
@@ -300,8 +385,9 @@ export default function Checkout() {
           productId: item.productId,
           productName: item.productName,
           productPrice: item.productPrice,
-          quantity: item.quantity,
+          quantity: Math.min(99, Math.max(1, Math.floor(item.quantity))),
           notes: item.notes,
+          configuration: item.catalogSelection,
         })),
       });
       setOrderId(result.orderId);
@@ -348,6 +434,7 @@ export default function Checkout() {
   const submitOrder = async () => {
     try {
       const result = await createOrder.mutateAsync({
+        storeId: selectedStore?.id,
         ...form,
         deliveryCep: form.deliveryCep ? form.deliveryCep.replace(/\D/g, "").replace(/(\d{5})(\d{3})/, "$1-$2") || undefined : undefined,
         deliveryAddress: deliveryMode === "delivery"
@@ -361,8 +448,9 @@ export default function Checkout() {
           productId: item.productId,
           productName: item.productName,
           productPrice: item.productPrice,
-          quantity: item.quantity,
+          quantity: Math.min(99, Math.max(1, Math.floor(item.quantity))),
           notes: item.notes,
+          configuration: item.catalogSelection,
         })),
       });
 
@@ -452,20 +540,29 @@ export default function Checkout() {
 
   const handleNext = () => {
     if (step === 0 && !validateStep0()) return;
+    if (step === 1 && isPaymentSettingsLoading) {
+      toast.info("Aguarde enquanto carregamos as formas de pagamento.");
+      return;
+    }
+    if (step === 1 && paymentSettingsQuery.isError) {
+      toast.error("Não foi possível carregar as formas de pagamento. Tente novamente.");
+      return;
+    }
     if (step === 1 && paymentOptions.length === 0) {
       toast.error("Nenhum método de pagamento está disponível no momento.");
       return;
     }
     const nextStep = Math.min(step + 1, 2) as Step;
     // Quando o cliente chega no step de pagamento (step 1), registrar carrinho abandonado
-    if (nextStep === 1 && isAuthenticated && items.length > 0) {
+    if (nextStep === 1 && isAuthenticated && items.length > 0 && selectedStore?.id && tenantConfig.features.automations) {
       registerAbandonedCart.mutate({
+        storeId: selectedStore.id,
         customerName: form.customerName,
         customerPhone: form.customerPhone || undefined,
         items: items.map(i => ({
           productId: i.productId,
           productName: i.productName,
-          quantity: i.quantity,
+          quantity: Math.min(99, Math.max(1, Math.floor(i.quantity))),
           productPrice: i.productPrice,
         })),
         total: String(total.toFixed(2)),
@@ -534,8 +631,13 @@ export default function Checkout() {
       {!isStoreOpenWithHours(dbStoreHours) && <StoreClosedBanner storeHours={dbStoreHours} />}
       <div className="py-8">
       <div className="container max-w-3xl">
+        <BonattoSectionHero eyebrow="Último passo para o sabor" title="Fechar pedido" description="Confira entrega, pagamento e benefícios. O resto deixa com a cozinha." />
         {/* Header */}
-        <div className="flex items-center gap-3 mb-6">
+        <div
+          ref={checkoutStepRef}
+          tabIndex={-1}
+          className="flex items-center gap-3 mb-6 mt-10 scroll-mt-24 outline-none"
+        >
           {step > 0 ? (
             <button onClick={handleBack} className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors">
               <ChevronLeft className="w-4 h-4" />Voltar
@@ -547,7 +649,7 @@ export default function Checkout() {
               </button>
             </Link>
           )}
-          <h1 className="text-2xl font-black">Finalizar Pedido</h1>
+          <h2 className="text-2xl font-black uppercase">Revise os detalhes</h2>
         </div>
 
         {/* Progress bar */}
@@ -725,23 +827,46 @@ export default function Checkout() {
                 <Card>
                   <CardContent className="pt-5 space-y-4">
                     <p className="text-sm font-semibold flex items-center gap-2"><CreditCard className="w-4 h-4 text-primary" />Forma de Pagamento</p>
-                    <div className="grid grid-cols-2 gap-3">
-                      {paymentOptions.map((opt) => (
-                        <button
-                          key={opt.value}
-                          type="button"
-                          onClick={() => setPaymentMethod(opt.value as PaymentMethod)}
-                          className={`p-4 rounded-xl border-2 text-left transition-all ${
-                            paymentMethod === opt.value ? "border-primary bg-primary/5" : "border-border hover:border-primary/30"
-                          }`}
-                        >
-                          <div className={`mb-1 ${paymentMethod === opt.value ? "text-primary" : "text-muted-foreground"}`}>{opt.icon}</div>
-                          <p className="font-semibold text-sm">{opt.label}</p>
-                          <p className="text-xs text-muted-foreground">{opt.desc}</p>
-                        </button>
-                      ))}
+                    <div
+                      className="grid grid-cols-1 sm:grid-cols-2 gap-3"
+                      aria-live="polite"
+                      aria-busy={isPaymentSettingsLoading}
+                    >
+                      {isPaymentSettingsLoading
+                        ? Array.from({ length: 2 }).map((_, index) => (
+                            <div key={index} className="h-[106px] animate-pulse rounded-xl border-2 border-border bg-muted/50" />
+                          ))
+                        : paymentOptions.map((opt) => (
+                            <button
+                              key={opt.value}
+                              type="button"
+                              onClick={() => setPaymentMethod(opt.value as PaymentMethod)}
+                              aria-pressed={paymentMethod === opt.value}
+                              className={`p-4 rounded-xl border-2 text-left transition-all ${
+                                paymentMethod === opt.value ? "border-primary bg-primary/5" : "border-border hover:border-primary/30"
+                              }`}
+                            >
+                              <div className={`mb-1 ${paymentMethod === opt.value ? "text-primary" : "text-muted-foreground"}`}>{opt.icon}</div>
+                              <p className="font-semibold text-sm">{opt.label}</p>
+                              <p className="text-xs text-muted-foreground">{opt.desc}</p>
+                            </button>
+                          ))}
                     </div>
-                    {paymentOptions.length === 0 && (
+                    {paymentSettingsQuery.isError && !isPaymentSettingsLoading && (
+                      <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-3 text-sm text-amber-900">
+                        <p>Não foi possível carregar as formas de pagamento.</p>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="mt-2 bg-white"
+                          onClick={() => void paymentSettingsQuery.refetch()}
+                        >
+                          Tentar novamente
+                        </Button>
+                      </div>
+                    )}
+                    {!isPaymentSettingsLoading && !paymentSettingsQuery.isError && paymentOptions.length === 0 && (
                       <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
                         Nenhum método de pagamento está disponível agora. Tente novamente em instantes ou fale com a loja.
                       </div>
@@ -833,6 +958,9 @@ export default function Checkout() {
                     </div>
                     {couponDiscount > 0 && (
                       <p className="text-sm text-green-600 font-medium">Desconto de R$ {couponDiscount.toFixed(2).replace(".", ",")} aplicado!</p>
+                    )}
+                    {couponFreeDelivery && (
+                      <p className="text-sm font-medium text-green-600">Entrega grátis aplicada por esta recompensa.</p>
                     )}
                   </CardContent>
                 </Card>
@@ -950,8 +1078,16 @@ export default function Checkout() {
 
             {/* Navigation buttons */}
             {step < 2 && (
-              <Button className="w-full h-12 text-base font-bold gap-2" onClick={handleNext}>
-                Continuar <ChevronRight className="w-4 h-4" />
+              <Button
+                className="w-full h-12 text-base font-bold gap-2"
+                onClick={handleNext}
+                disabled={step === 1 && (isPaymentSettingsLoading || paymentSettingsQuery.isError || paymentOptions.length === 0)}
+              >
+                {step === 1 && isPaymentSettingsLoading ? (
+                  <><Loader2 className="w-4 h-4 animate-spin" />Carregando pagamentos...</>
+                ) : (
+                  <>Continuar <ChevronRight className="w-4 h-4" /></>
+                )}
               </Button>
             )}
           </div>
@@ -1255,7 +1391,7 @@ function SuccessScreen({ orderId, paymentMethod, deliveryMode, total, items: ord
     <div className="min-h-screen bg-[#fafafa]">
 
       {/* Hero banner — dark red gradient */}
-      <div className="relative bg-gradient-to-b from-[#6E0D12] to-[#4a0a0d] pt-14 pb-24 px-6 text-center overflow-hidden">
+      <div className="relative bg-[#191412] pt-14 pb-24 px-6 text-center overflow-hidden">
         {/* Subtle radial glow */}
         <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_50%_0%,rgba(255,255,255,0.07),transparent_60%)]" />
 

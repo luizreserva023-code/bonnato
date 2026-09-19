@@ -174,7 +174,8 @@ export default defineConfig(({ command }) => ({
         manualChunks(id) {
           if (!id.includes("node_modules")) return;
           if (id.includes("@tanstack") || id.includes("@trpc") || id.includes("superjson")) return "vendor-data";
-          if (id.includes("recharts") || id.includes("@xyflow")) return "vendor-dashboard";
+          if (id.includes("recharts")) return "vendor-charts";
+          if (id.includes("@xyflow")) return "vendor-flow";
           if (id.includes("framer-motion") || id.includes("embla-carousel-react")) return "vendor-motion";
         },
       },

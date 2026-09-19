@@ -260,8 +260,8 @@ function normalizeConfig(input: unknown): ClubConfig {
   };
 }
 
-export async function getClubConfig(): Promise<ClubConfig> {
-  const stored = await getStoreSetting(CLUB_CONFIG_KEY);
+export async function getClubConfig(storeId?: number): Promise<ClubConfig> {
+  const stored = await getStoreSetting(CLUB_CONFIG_KEY, storeId);
   if (!stored) return DEFAULT_CLUB_CONFIG;
 
   try {
@@ -271,13 +271,13 @@ export async function getClubConfig(): Promise<ClubConfig> {
   }
 }
 
-export async function saveClubConfig(config: ClubConfig): Promise<void> {
+export async function saveClubConfig(config: ClubConfig, storeId?: number): Promise<void> {
   const normalized = normalizeConfig(config);
-  await setStoreSetting(CLUB_CONFIG_KEY, JSON.stringify(normalized));
+  await setStoreSetting(CLUB_CONFIG_KEY, JSON.stringify(normalized), storeId);
 }
 
-export async function getClubPlanConfig(planId: string | null | undefined): Promise<ClubPlanConfig | null> {
+export async function getClubPlanConfig(planId: string | null | undefined, storeId?: number): Promise<ClubPlanConfig | null> {
   if (planId !== "bonattao" && planId !== "basico") return null;
-  const config = await getClubConfig();
+  const config = await getClubConfig(storeId);
   return config.plans.find((plan) => plan.id === planId) ?? null;
 }

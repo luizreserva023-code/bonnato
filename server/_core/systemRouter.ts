@@ -4,8 +4,14 @@ import { adminProcedure, publicProcedure, router } from "./trpc.ts";
 import { sendDailyReport } from "../dailyReport.ts";
 import { sql } from "drizzle-orm";
 import { getDb } from "../db.ts";
+import { getSocialProviderConfiguration } from "./oauth.ts";
 
 export const systemRouter = router({
+  socialAuthConfig: publicProcedure.query(() => ({
+    providers: getSocialProviderConfiguration(),
+    instagramProfessionalOnly: true,
+  })),
+
   health: publicProcedure
     .input(
       z.object({

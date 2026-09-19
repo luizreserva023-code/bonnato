@@ -118,3 +118,5 @@ client/public/__manus__/version.json
 .vercel.bak-deploy*/
 .env*
 vercel.production.env
+
+.env*

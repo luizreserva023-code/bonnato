@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
+import { DEFAULT_TENANT_CONFIG, type TenantRuntimeConfig } from "@/shared/tenant/tenant-config";
 
 const ADMIN_STORE_STORAGE_KEY = "bonatto_admin_selected_store";
 
@@ -12,6 +13,7 @@ interface AdminStoreContextValue {
   isManager: boolean;
   stores: Array<{ id: number; name: string; slug: string; city: string }>;
   isLoading: boolean;
+  tenantConfig: TenantRuntimeConfig;
 }
 
 const AdminStoreContext = createContext<AdminStoreContextValue>({
@@ -22,6 +24,7 @@ const AdminStoreContext = createContext<AdminStoreContextValue>({
   isManager: false,
   stores: [],
   isLoading: false,
+  tenantConfig: DEFAULT_TENANT_CONFIG,
 });
 
 export function AdminStoreProvider({ children }: { children: ReactNode }) {
@@ -40,52 +43,60 @@ export function AdminStoreProvider({ children }: { children: ReactNode }) {
     enabled: isAdmin,
   });
 
-  const { data: myStore, isLoading: loadingMyStore } = trpc.stores.myStore.useQuery(undefined, {
+  const { data: myStores, isLoading: loadingMyStores } = trpc.stores.myStores.useQuery(undefined, {
     enabled: isManager,
   });
 
   useEffect(() => {
-    if (isManager && myStore) {
-      setSelectedStoreId(myStore.id);
+    if (!isManager || !myStores?.length) return;
+    const canAccessSelected = myStores.some((store) => store.id === selectedStoreId);
+    if (!canAccessSelected) {
+      setSelectedStoreId(myStores[0].id);
     }
-  }, [isManager, myStore]);
+  }, [isManager, myStores, selectedStoreId]);
 
   useEffect(() => {
-    if (typeof window === "undefined" || isManager) return;
+    if (typeof window === "undefined") return;
     if (selectedStoreId == null) {
       window.localStorage.removeItem(ADMIN_STORE_STORAGE_KEY);
       return;
     }
     window.localStorage.setItem(ADMIN_STORE_STORAGE_KEY, String(selectedStoreId));
-  }, [isManager, selectedStoreId]);
+  }, [selectedStoreId]);
 
   useEffect(() => {
-    if (isManager || !allStores?.length || selectedStoreId == null) return;
+    if (isManager || !allStores?.length) return;
+    if (selectedStoreId == null) {
+      setSelectedStoreId(allStores[0].id);
+      return;
+    }
     const exists = allStores.some((store: { id: number }) => store.id === selectedStoreId);
     if (!exists) {
       setSelectedStoreId(undefined);
     }
   }, [allStores, isManager, selectedStoreId]);
 
-  const stores = allStores ?? [];
+  const stores = isManager ? (myStores ?? []) : (allStores ?? []);
   const selectedStore = stores.find((store: { id: number }) => store.id === selectedStoreId);
-  const selectedStoreName = isManager
-    ? (myStore?.name ?? "Minha Loja")
-    : selectedStoreId
-      ? (selectedStore?.name ?? "Loja")
-      : "Todas as lojas";
-  const selectedStoreSlug = isManager ? myStore?.slug ?? undefined : selectedStore?.slug;
+  const selectedStoreName = selectedStoreId ? (selectedStore?.name ?? "Loja") : "Todas as lojas";
+  const selectedStoreSlug = selectedStore?.slug;
+  const { data: selectedTenant, isLoading: loadingTenant } = trpc.stores.whiteLabelConfig.useQuery(
+    { storeId: selectedStoreId ?? 0 },
+    { enabled: Boolean(selectedStoreId) && (isAdmin || isManager), staleTime: 5 * 60 * 1000 },
+  );
+  const tenantConfig = selectedTenant ?? DEFAULT_TENANT_CONFIG;
 
   return (
     <AdminStoreContext.Provider
       value={{
         selectedStoreId,
-        setSelectedStoreId: isManager ? () => undefined : setSelectedStoreId,
+        setSelectedStoreId,
         selectedStoreName,
         selectedStoreSlug,
         isManager,
         stores,
-        isLoading: loadingStores || loadingMyStore,
+        isLoading: loadingStores || loadingMyStores || loadingTenant,
+        tenantConfig,
       }}
     >
       {children}

@@ -1,14 +1,44 @@
 // Service Worker - Bonatto Pizza Web Push
-// Versao 4.0 - push com notificacao nativa + ponte para som customizado em abas abertas
+// Versao 5.0 - push + cache progressivo apenas de assets versionados
 
 const DEFAULT_PUSH_SOUND_URL = "/manus-storage/notification-motoboy_31cd6501.mp3";
+const ASSET_CACHE = "bonatto-assets-v5";
 
 self.addEventListener("install", () => {
   self.skipWaiting();
 });
 
 self.addEventListener("activate", (event) => {
-  event.waitUntil(self.clients.claim());
+  event.waitUntil(
+    Promise.all([
+      self.clients.claim(),
+      caches.keys().then((keys) =>
+        Promise.all(keys.filter((key) => key.startsWith("bonatto-assets-") && key !== ASSET_CACHE).map((key) => caches.delete(key)))
+      ),
+    ])
+  );
+});
+
+self.addEventListener("fetch", (event) => {
+  const request = event.request;
+  if (request.method !== "GET") return;
+
+  const url = new URL(request.url);
+  if (url.origin !== self.location.origin || url.pathname.startsWith("/api/")) return;
+
+  const isVersionedAsset = url.pathname.startsWith("/assets/");
+  if (!isVersionedAsset) return;
+
+  event.respondWith(
+    caches.open(ASSET_CACHE).then(async (cache) => {
+      const cached = await cache.match(request);
+      if (cached) return cached;
+
+      const response = await fetch(request);
+      if (response.ok) cache.put(request, response.clone());
+      return response;
+    })
+  );
 });
 
 function buildPushMetadata(tag) {

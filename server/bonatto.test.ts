@@ -109,6 +109,20 @@ vi.mock("./db", () => ({
   getStoreSetting: vi.fn().mockResolvedValue(null),
   setStoreSetting: vi.fn().mockResolvedValue(undefined),
   getUserById: vi.fn().mockResolvedValue({ id: 1, openId: "user-1", name: "Test User", email: "test@test.com", role: "user", clubStatus: null, clubPlan: null, clubActivatedAt: null, clubExpiresAt: null, clubFreeItemUsed: false, loyaltyPoints: 0, createdAt: new Date(), updatedAt: new Date() }),
+  getTenantScope: vi.fn().mockResolvedValue({ tenantKey: "bonatto", storeId: 1 }),
+  getTenantCustomerAccount: vi.fn().mockResolvedValue({
+    id: 1,
+    tenantKey: "bonatto",
+    userId: 1,
+    loyaltyPoints: 0,
+    clubPlan: null,
+    clubStatus: null,
+    clubActivatedAt: null,
+    clubExpiresAt: null,
+    clubFreeItemUsed: false,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  }),
   getAllUsers: vi.fn().mockResolvedValue([]),
   updateUserProfile: vi.fn().mockResolvedValue(undefined),
   getCouponsByUser: vi.fn().mockResolvedValue([]),
@@ -253,6 +267,7 @@ describe("products", () => {
     const caller = appRouter.createCaller(createAdminContext());
     // createProduct returns void (no id returned from mutation)
     await expect(caller.products.create({
+      storeId: 1,
       categoryId: 1,
       name: "Nova Pizza",
       description: "Descrição",

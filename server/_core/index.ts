@@ -9,17 +9,18 @@ async function startServer() {
   const app = express();
   const server = createServer(app);
 
-  await configureApp(app, {
-    frontendMode: process.env.NODE_ENV === "development" ? "vite" : "static",
-    server,
-  });
-
   const preferredPort = parseInt(process.env.PORT || "3000", 10);
   const port = await findAvailablePort(preferredPort);
+  process.env.PORT = String(port);
 
   if (port !== preferredPort) {
     console.log(`Port ${preferredPort} is busy, using port ${port} instead`);
   }
+
+  await configureApp(app, {
+    frontendMode: process.env.NODE_ENV === "development" ? "vite" : "static",
+    server,
+  });
 
   server.listen(port, () => {
     console.log(`Server running on http://localhost:${port}/`);

@@ -3,6 +3,7 @@ import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { X, Bell, ChevronRight } from "lucide-react";
 import { useLocation } from "wouter";
+import { useStore } from "@/contexts/StoreContext";
 
 interface AlertCardProps {
   alert: {
@@ -20,6 +21,7 @@ interface AlertCardProps {
 
 function AlertCard({ alert, onDismiss }: AlertCardProps) {
   const [, setLocation] = useLocation();
+  const { selectedStore } = useStore();
   const utils = trpc.useUtils();
 
   const dismissMutation = trpc.clientAlerts.dismiss.useMutation({
@@ -31,13 +33,13 @@ function AlertCard({ alert, onDismiss }: AlertCardProps) {
 
   const handleDismiss = (e: React.MouseEvent) => {
     e.stopPropagation();
-    dismissMutation.mutate({ alertId: alert.id });
+    if (selectedStore?.id) dismissMutation.mutate({ alertId: alert.id, storeId: selectedStore.id });
     onDismiss(alert.id);
   };
 
   const handleClick = () => {
     if (!alert.read) {
-      dismissMutation.mutate({ alertId: alert.id });
+      if (selectedStore?.id) dismissMutation.mutate({ alertId: alert.id, storeId: selectedStore.id });
     }
     if (alert.url) {
       setLocation(alert.url);
@@ -130,11 +132,12 @@ interface ClientAlertsBannerProps {
 
 export function ClientAlertsBanner({ maxVisible = 3, className = "" }: ClientAlertsBannerProps) {
   const { user } = useAuth();
+  const { selectedStore } = useStore();
   const [dismissed, setDismissed] = useState<Set<number>>(new Set());
   const [expanded, setExpanded] = useState(false);
 
-  const { data: alerts = [] } = trpc.clientAlerts.list.useQuery(undefined, {
-    enabled: !!user,
+  const { data: alerts = [] } = trpc.clientAlerts.list.useQuery({ storeId: selectedStore?.id ?? 0 }, {
+    enabled: Boolean(user && selectedStore?.id),
     refetchInterval: 60_000, // atualiza a cada 1 min
   });
 

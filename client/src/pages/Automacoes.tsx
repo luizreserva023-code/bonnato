@@ -245,7 +245,11 @@ const PALETTE: { type: StepType; label: string; icon: React.ReactNode; group: st
 
 //  TagSelect 
 function TagSelect({ value, onChange }: { value: string; onChange: (v: string) => void }) {
-  const { data: customTags } = trpc.crm.listCustomTags.useQuery();
+  const { selectedStoreId } = useAdminStore();
+  const { data: customTags } = trpc.crm.listCustomTags.useQuery(
+    { storeId: selectedStoreId },
+    { enabled: Boolean(selectedStoreId) },
+  );
   const tags = customTags ?? [];
   return (
     <Select value={value || undefined} onValueChange={onChange}>
@@ -277,6 +281,7 @@ function NodeEditor({ node, onSave, onDelete, onClose, journeyId }: {
   onClose: () => void;
   journeyId?: number;
 }) {
+  const { selectedStoreId } = useAdminStore();
   const d = node.data as unknown as JourneyStep;
   const [form, setForm] = useState<Partial<JourneyStep & { webhookUrl?: string; secret?: string }>>({ ...d });
   const set = (k: string, v: unknown) => setForm((f) => ({ ...f, [k]: v }));
@@ -430,7 +435,7 @@ function NodeEditor({ node, onSave, onDelete, onClose, journeyId }: {
                 </div>
                 <p className="text-[11px] text-[#6E0D12]/70">Envie um POST para esta URL para disparar a jornada externamente.</p>
                 <Button size="sm" variant="outline" className="border-[#c0606a] text-[#6E0D12] hover:bg-[#fce8e8] w-full text-xs"
-                  onClick={() => journeyId && generateToken.mutate({ id: journeyId })}
+                  onClick={() => journeyId && generateToken.mutate({ id: journeyId, storeId: selectedStoreId })}
                   disabled={generateToken.isPending || !journeyId}>
                   <RefreshCw className={`w-3 h-3 mr-1 ${generateToken.isPending ? "animate-spin" : ""}`} /> Regenerar URL
                 </Button>
@@ -439,7 +444,7 @@ function NodeEditor({ node, onSave, onDelete, onClose, journeyId }: {
               <div className="space-y-2">
                 <p className="text-[11px] text-[#6E0D12]/70">Gere uma URL única para receber chamadas externas (Zapier, Make, etc).</p>
                 <Button size="sm" className="bg-[#6E0D12] hover:bg-[#5a0a0f] text-white w-full text-xs"
-                  onClick={() => journeyId && generateToken.mutate({ id: journeyId })}
+                  onClick={() => journeyId && generateToken.mutate({ id: journeyId, storeId: selectedStoreId })}
                   disabled={generateToken.isPending || !journeyId}>
                   {generateToken.isPending ? <RefreshCw className="w-3 h-3 mr-1 animate-spin" /> : <Webhook className="w-3 h-3 mr-1" />}
                   Gerar URL do Webhook
@@ -631,7 +636,8 @@ function NodeEditor({ node, onSave, onDelete, onClose, journeyId }: {
 
 //  Execution Log Dialog 
 function ExecutionLogDialog({ execId, onClose }: { execId: number; onClose: () => void }) {
-  const { data, isLoading } = trpc.automations.getExecutionLogs.useQuery({ executionId: execId });
+  const { selectedStoreId } = useAdminStore();
+  const { data, isLoading } = trpc.automations.getExecutionLogs.useQuery({ executionId: execId, storeId: selectedStoreId });
   const logs: ExecutionLogRecord[] = data?.logs ?? [];
   return (
     <Dialog open onOpenChange={onClose}>
@@ -688,9 +694,10 @@ function ExecutionLogDialog({ execId, onClose }: { execId: number; onClose: () =
 
 //  Executions Panel 
 function ExecutionsPanel({ journeyId, journeyName }: { journeyId: number; journeyName: string }) {
+  const { selectedStoreId } = useAdminStore();
   const [expanded, setExpanded] = useState(false);
   const [viewLogId, setViewLogId] = useState<number | null>(null);
-  const { data: executions, refetch } = trpc.automations.listExecutions.useQuery({ journeyId });
+  const { data: executions, refetch } = trpc.automations.listExecutions.useQuery({ journeyId, storeId: selectedStoreId });
   const cancelMutation = trpc.automations.cancelExecution.useMutation({
     onSuccess: () => { refetch(); toast.success("Execução cancelada"); },
     onError: (err) => toast.error(`Erro: ${err.message}`),
@@ -757,7 +764,7 @@ function ExecutionsPanel({ journeyId, journeyName }: { journeyId: number; journe
                   </Button>
                   {exec.status === "running" && (
                     <Button size="sm" variant="ghost" className="h-6 w-6 p-0 text-gray-500 hover:text-[#c0606a]"
-                      onClick={() => cancelMutation.mutate({ id: exec.id })}
+                      onClick={() => cancelMutation.mutate({ id: exec.id, storeId: selectedStoreId })}
                       disabled={cancelMutation.isPending} title="Cancelar">
                       <X className="w-3 h-3" />
                     </Button>
@@ -773,7 +780,8 @@ function ExecutionsPanel({ journeyId, journeyName }: { journeyId: number; journe
   );
 }//  A/B Stats Panel 
 function AbStatsPanel({ journeyId }: { journeyId: number }) {
-  const { data: stats } = trpc.automations.getAbStats.useQuery({ journeyId });
+  const { selectedStoreId } = useAdminStore();
+  const { data: stats } = trpc.automations.getAbStats.useQuery({ journeyId, storeId: selectedStoreId });
   if (!stats || (stats.groupA === 0 && stats.groupB === 0)) return null;
   const total = stats.groupA + stats.groupB;
   const pctA = total > 0 ? Math.round((stats.groupA / total) * 100) : 50;
@@ -870,6 +878,7 @@ function FlowEditor({ journey, onBack }: {
   journey: { id: number; name: string; trigger: string; steps: JourneyStep[]; status: string };
   onBack: () => void;
 }) {
+  const { selectedStoreId } = useAdminStore();
   const trigger = journey.trigger as TriggerType;
   const [nodes, setNodes, onNodesChange] = useNodesState(stepsToNodes(journey.steps, trigger));
   const [edges, setEdges, onEdgesChange] = useEdgesState(stepsToEdges(journey.steps));
@@ -964,12 +973,12 @@ function FlowEditor({ journey, onBack }: {
 
   const handleSave = () => {
     const steps = nodesToSteps(nodes);
-    updateMutation.mutate({ id: journey.id, steps });
+    updateMutation.mutate({ id: journey.id, steps, storeId: selectedStoreId });
   };
 
   const handleToggle = () => {
     const newStatus = localStatus === "active" ? "paused" : "active";
-    toggleMutation.mutate({ id: journey.id, status: newStatus });
+    toggleMutation.mutate({ id: journey.id, status: newStatus, storeId: selectedStoreId });
   };
 
   const stepCount = nodes.filter(n => n.id !== "trigger").length;
@@ -1154,7 +1163,7 @@ function FlowEditor({ journey, onBack }: {
               Cancelar
             </Button>
             <Button
-              onClick={() => testTriggerMutation.mutate({ journeyId: journey.id, trigger: journey.trigger as TriggerType, phone: testPhone.trim() || undefined })}
+              onClick={() => testTriggerMutation.mutate({ journeyId: journey.id, trigger: journey.trigger as TriggerType, phone: testPhone.trim() || undefined, storeId: selectedStoreId })}
               disabled={testTriggerMutation.isPending}
               className="bg-[#6E0D12] hover:bg-[#5a0a0f] text-white font-bold"
             >
@@ -1189,9 +1198,18 @@ function AutomacoesContent() {
   const [newDaysInactive, setNewDaysInactive] = useState(20);
   const [showMetrics, setShowMetrics] = useState(false);
 
-  const { data: journeys, isLoading } = trpc.automations.listJourneys.useQuery();
-  const { data: executions } = trpc.automations.listExecutions.useQuery({ journeyId: undefined, storeId: selectedStoreId });
-  const { data: globalMetrics } = trpc.automations.getGlobalMetrics.useQuery({ storeId: selectedStoreId });
+  const { data: journeys, isLoading } = trpc.automations.listJourneys.useQuery(
+    { storeId: selectedStoreId },
+    { enabled: Boolean(selectedStoreId) },
+  );
+  const { data: executions } = trpc.automations.listExecutions.useQuery(
+    { journeyId: undefined, storeId: selectedStoreId },
+    { enabled: Boolean(selectedStoreId) },
+  );
+  const { data: globalMetrics } = trpc.automations.getGlobalMetrics.useQuery(
+    { storeId: selectedStoreId },
+    { enabled: Boolean(selectedStoreId) },
+  );
   const topJourneys: GlobalJourneyMetric[] = globalMetrics?.topJourneys ?? [];
 
   const createMutation = trpc.automations.createJourney.useMutation({
@@ -1264,20 +1282,19 @@ function AutomacoesContent() {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            {isManager ? (
+            {isManager && stores.length <= 1 ? (
               <div className="hidden md:flex items-center rounded-xl border border-[#fca5a5] bg-[#fdf2f2] px-3 py-2 text-xs font-semibold text-[#6E0D12]">
                 Loja: {selectedStoreName}
               </div>
             ) : (
               <Select
-                value={selectedStoreId ? String(selectedStoreId) : "all"}
-                onValueChange={(value) => setSelectedStoreId(value === "all" ? undefined : Number(value))}
+                value={selectedStoreId ? String(selectedStoreId) : undefined}
+                onValueChange={(value) => setSelectedStoreId(Number(value))}
               >
                 <SelectTrigger className="w-[220px] bg-white">
-                  <SelectValue placeholder="Todas as lojas" />
+                  <SelectValue placeholder="Selecione uma loja" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">Todas as lojas</SelectItem>
                   {stores.map((store) => (
                     <SelectItem key={store.id} value={String(store.id)}>
                       {store.name}
@@ -1477,20 +1494,20 @@ function AutomacoesContent() {
                           className="border-[#f9d0d0] text-[#6E0D12] hover:bg-[#fdf2f2] hover:border-[#c0606a] font-semibold">
                           <Edit className="w-3.5 h-3.5 mr-1" /> Editar
                         </Button>
-                        <Button size="sm" variant="outline" onClick={() => duplicateMutation.mutate({ id: j.id })}
+                        <Button size="sm" variant="outline" onClick={() => duplicateMutation.mutate({ id: j.id, storeId: selectedStoreId })}
                           disabled={duplicateMutation.isPending} title="Duplicar"
                           className="border-[#f9d0d0] text-[#6E0D12] hover:bg-[#fdf2f2] hover:border-[#c0606a] w-8 h-8 p-0">
                           {duplicateMutation.isPending ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Copy className="w-3.5 h-3.5" />}
                         </Button>
                         <Button size="sm" variant="outline"
-                          onClick={() => toggleMutation.mutate({ id: j.id, status: j.status === "active" ? "paused" : "active" })}
+                          onClick={() => toggleMutation.mutate({ id: j.id, status: j.status === "active" ? "paused" : "active", storeId: selectedStoreId })}
                           disabled={toggleMutation.isPending}
                           className="border-[#f9d0d0] text-[#6E0D12] hover:bg-[#fdf2f2] hover:border-[#c0606a] w-8 h-8 p-0"
                           title={j.status === "active" ? "Pausar" : "Ativar"}>
                           {j.status === "active" ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5" />}
                         </Button>
                         <Button size="sm" variant="outline"
-                          onClick={() => { if (confirm(`Remover "${j.name}"?`)) deleteMutation.mutate({ id: j.id }); }}
+                          onClick={() => { if (confirm(`Remover "${j.name}"?`)) deleteMutation.mutate({ id: j.id, storeId: selectedStoreId }); }}
                           disabled={deleteMutation.isPending}
                           className="border-[#f9d0d0] text-[#6E0D12] hover:bg-[#fdf2f2] hover:border-[#c0606a] w-8 h-8 p-0" title="Excluir">
                           <Trash2 className="w-3.5 h-3.5" />
@@ -1524,7 +1541,7 @@ function AutomacoesContent() {
                 className="mt-1.5 border-[#f9d0d0] focus:border-[#6E0D12]"
                 onKeyDown={(e) => {
                   if (e.key === "Enter" && newName.trim())
-                    createMutation.mutate({ name: newName.trim(), description: newDescription || undefined, trigger: newTrigger, steps: [] });
+                    createMutation.mutate({ name: newName.trim(), description: newDescription || undefined, trigger: newTrigger, steps: [], storeId: selectedStoreId });
                 }}
               />
             </div>
@@ -1576,7 +1593,7 @@ function AutomacoesContent() {
             </Button>
             <Button
               disabled={!newName.trim() || createMutation.isPending}
-              onClick={() => createMutation.mutate({ name: newName.trim(), description: newDescription || undefined, trigger: newTrigger, steps: [], daysInactive: newTrigger === "tag_inativo_custom" ? newDaysInactive : undefined })}
+              onClick={() => createMutation.mutate({ name: newName.trim(), description: newDescription || undefined, trigger: newTrigger, steps: [], daysInactive: newTrigger === "tag_inativo_custom" ? newDaysInactive : undefined, storeId: selectedStoreId })}
               className="bg-[#6E0D12] hover:bg-[#5a0a0f] text-white font-bold"
             >
               {createMutation.isPending ? <RefreshCw className="w-4 h-4 animate-spin mr-1" /> : <Plus className="w-4 h-4 mr-1" />}

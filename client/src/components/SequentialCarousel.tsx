@@ -1,258 +1,92 @@
-import { useEffect, useState, useRef, useMemo, startTransition } from "react";
+import { useEffect, useState } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 
 interface CarouselItem {
   id: number;
   imageUrl: string;
   name: string;
+  productId?: number;
 }
 
 interface SequentialCarouselProps {
   items: CarouselItem[];
+  autoAdvance?: boolean;
+  autoAdvanceInterval?: number;
+  onCardClick?: (item: CarouselItem) => void;
   cardWidth?: number;
   cardHeight?: number;
   cardGap?: number;
   animationDuration?: number;
   sequenceDelay?: number;
-  autoAdvance?: boolean;
-  autoAdvanceInterval?: number;
-  onCardClick?: (item: CarouselItem) => void;
 }
 
 export function SequentialCarousel({
   items,
-  cardWidth = 260,
-  cardHeight = 320,
-  cardGap = 220,
-  animationDuration = 550,
-  sequenceDelay = 60,
   autoAdvance = true,
-  autoAdvanceInterval = 3000,
+  autoAdvanceInterval = 4200,
   onCardClick,
 }: SequentialCarouselProps) {
-  const originalCards = useMemo(
-    () => items.map((item, i) => ({ id: i, item })),
-    [items]
-  );
-
-  const cards = useMemo(() => {
-    if (originalCards.length === 0) return [];
-    const repeatCount = 40;
-    const repeated: typeof originalCards = [];
-    for (let i = 0; i < repeatCount; i++) {
-      repeated.push(...originalCards);
-    }
-    return repeated;
-  }, [originalCards]);
-
-  const startIndex = useMemo(() => {
-    if (originalCards.length === 0) return 0;
-    return Math.floor(cards.length / 2);
-  }, [cards.length, originalCards.length]);
-
-  const [currentIndex, setCurrentIndex] = useState(startIndex);
-  const [isAnimating, setIsAnimating] = useState(false);
-  const [cardStates, setCardStates] = useState<Map<number, { position: number; delay: number }>>(new Map());
-  const mountedRef = useRef(true);
-  const autoRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const [wideImages, setWideImages] = useState<Record<number, boolean>>({});
 
   useEffect(() => {
-    mountedRef.current = true;
-    return () => { mountedRef.current = false; };
-  }, []);
-
-  const fadeStartIndex = 2;
-  const threshold = 12;
-
-  const getCardStyle = (position: number, delay: number, animate: boolean): React.CSSProperties => {
-    const absPosition = Math.abs(position);
-    let cumulativeTranslateX = 0;
-    if (position !== 0) {
-      const direction = position > 0 ? 1 : -1;
-      for (let i = 1; i <= absPosition; i++) {
-        const gapMultiplier = Math.max(0.3, 1 - (i - 1) * 0.15);
-        cumulativeTranslateX += cardGap * gapMultiplier * direction;
-      }
-    }
-    const scale = position === 0 ? 1 : Math.max(0.65, 1 - absPosition * 0.12);
-    const opacity = absPosition <= fadeStartIndex ? Math.max(0, 1 - (absPosition - 1) * 0.3) : 0;
-    const zIndex = 20 - absPosition;
-    const easing = "cubic-bezier(0.34, 1.56, 0.64, 1)";
-
-    return {
-      position: "absolute",
-      width: cardWidth,
-      height: cardHeight,
-      borderRadius: 20,
-      boxShadow: position === 0
-        ? "0 32px 64px -12px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.08)"
-        : "0 16px 40px -8px rgba(0,0,0,0.4)",
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "center",
-      transform: `translateX(${cumulativeTranslateX}px) scale(${scale})`,
-      opacity,
-      zIndex,
-      transition: animate
-        ? `all ${animationDuration}ms ${easing} ${delay}ms`
-        : "none",
-      cursor: position === 0 ? "pointer" : "default",
-      overflow: "hidden",
-    };
-  };
-
-  const calculateCardStates = (newIndex: number, animate: boolean, prevIndex: number) => {
-    const newStates = new Map<number, { position: number; delay: number }>();
-    cards.forEach((_, index) => {
-      const position = index - newIndex;
-      const absPosition = Math.abs(position);
-      if (absPosition > threshold + 5) return;
-      let delay = 0;
-      if (animate) {
-        const direction = newIndex > prevIndex ? 1 : -1;
-        if (direction > 0) {
-          if (position < 0) delay = Math.max(0, (threshold - Math.abs(position)) * sequenceDelay);
-          else if (position > 0) delay = (threshold + position) * sequenceDelay;
-          else delay = threshold * sequenceDelay;
-        } else {
-          if (position > 0) delay = Math.max(0, (threshold - position) * sequenceDelay);
-          else if (position < 0) delay = (threshold + Math.abs(position)) * sequenceDelay;
-          else delay = threshold * sequenceDelay;
-        }
-      }
-      newStates.set(index, { position, delay });
-    });
-    return newStates;
-  };
+    if (currentIndex < items.length) return;
+    setCurrentIndex(0);
+  }, [currentIndex, items.length]);
 
   useEffect(() => {
-    const initialStates = calculateCardStates(startIndex, false, startIndex);
-    startTransition(() => {
-      setCurrentIndex(startIndex);
-      setCardStates(initialStates);
-    });
-  }, [startIndex]);
-
-  const totalAnimationTime = threshold * sequenceDelay + animationDuration + 200;
-
-  const advance = () => {
-    if (isAnimating) return;
-    startTransition(() => setIsAnimating(true));
-    const newIndex = currentIndex + 1;
-    const newStates = calculateCardStates(newIndex, true, currentIndex);
-    startTransition(() => {
-      setCurrentIndex(newIndex);
-      setCardStates(newStates);
-    });
-    setTimeout(() => {
-      if (!mountedRef.current) return;
-      startTransition(() => setIsAnimating(false));
-      if (newIndex >= startIndex + originalCards.length * 5) {
-        const resetIndex = newIndex - originalCards.length * 5;
-        const resetStates = calculateCardStates(resetIndex, false, resetIndex);
-        startTransition(() => {
-          setCurrentIndex(resetIndex);
-          setCardStates(resetStates);
-        });
-      }
-    }, totalAnimationTime);
-  };
-
-  const goBack = () => {
-    if (isAnimating) return;
-    startTransition(() => setIsAnimating(true));
-    const newIndex = currentIndex - 1;
-    const newStates = calculateCardStates(newIndex, true, currentIndex);
-    startTransition(() => {
-      setCurrentIndex(newIndex);
-      setCardStates(newStates);
-    });
-    setTimeout(() => {
-      if (!mountedRef.current) return;
-      startTransition(() => setIsAnimating(false));
-      if (newIndex <= startIndex - originalCards.length * 5) {
-        const resetIndex = newIndex + originalCards.length * 5;
-        const resetStates = calculateCardStates(resetIndex, false, resetIndex);
-        startTransition(() => {
-          setCurrentIndex(resetIndex);
-          setCardStates(resetStates);
-        });
-      }
-    }, totalAnimationTime);
-  };
-
-  // Auto advance
-  useEffect(() => {
-    if (!autoAdvance || items.length === 0) return;
-    autoRef.current = setInterval(() => {
-      advance();
+    if (!autoAdvance || items.length < 2) return;
+    const timer = window.setInterval(() => {
+      setCurrentIndex((index) => (index + 1) % items.length);
     }, autoAdvanceInterval);
-    return () => { if (autoRef.current) clearInterval(autoRef.current); };
-  }, [autoAdvance, autoAdvanceInterval, currentIndex, isAnimating, items.length]);
+    return () => window.clearInterval(timer);
+  }, [autoAdvance, autoAdvanceInterval, items.length]);
 
-  if (items.length === 0) return null;
-
-  const currentItem = cards[currentIndex]?.item;
+  if (!items.length) return null;
+  const currentItem = items[currentIndex] ?? items[0];
+  const preserveFullImage = wideImages[currentItem.id] === true;
+  const navigate = (direction: number) => setCurrentIndex((index) => (index + direction + items.length) % items.length);
 
   return (
-    <div className="relative w-full flex flex-col items-center" style={{ height: cardHeight + 80 }}>
-      {/* Cards container */}
-      <div
-        className="relative w-full flex items-center justify-center"
-        style={{ height: cardHeight, overflow: "visible" }}
-      >
-        {cards.map((card, index) => {
-          const state = cardStates.get(index);
-          if (!state) return null;
-          const { position, delay } = state;
-          const absPosition = Math.abs(position);
-          if (absPosition > threshold) return null;
+    <div className="mx-auto w-full max-w-[940px] px-3 pb-5 sm:px-4">
+      <div className="relative overflow-hidden rounded-[16px] border border-black/[.06] bg-[#DA1923] shadow-[0_18px_38px_-30px_rgba(88,12,18,0.55)] sm:rounded-[20px]">
+        <button type="button" aria-label="Item anterior" onClick={() => navigate(-1)} className="absolute left-2.5 top-1/2 z-20 grid size-9 -translate-y-1/2 place-items-center rounded-full border border-white/35 bg-[#9f1119]/80 text-white transition-colors hover:bg-[#7f0d14] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white md:left-4 md:size-10">
+          <ChevronLeft className="size-5" />
+        </button>
 
-          return (
-            <div
-              key={`${card.id}-${index}`}
-              style={getCardStyle(position, delay, true)}
-              onClick={() => position === 0 && onCardClick && onCardClick(card.item)}
-            >
-              {card.item.imageUrl ? (
-                <img
-                  src={card.item.imageUrl}
-                  alt={card.item.name}
-                  className="w-full h-full object-cover"
-                  draggable={false}
-                />
-              ) : (
-                <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-[#8b0000] to-[#c0392b]">
-                  <span className="text-6xl">🍕</span>
-                </div>
-              )}
-              {/* Overlay gradient on center card */}
-              {position === 0 && (
-                <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent rounded-[20px] flex items-end p-4">
-                  <p className="text-white font-bold text-sm leading-tight line-clamp-2">{card.item.name}</p>
-                </div>
-              )}
+        <button type="button" className="group relative block h-[220px] w-full overflow-hidden text-left sm:h-[300px] lg:h-[350px]" onClick={() => onCardClick?.(currentItem)}>
+          {currentItem.imageUrl ? (
+            <>
+              {preserveFullImage && <img aria-hidden="true" src={currentItem.imageUrl} alt="" className="absolute inset-0 h-full w-full scale-110 object-cover opacity-35 blur-2xl" />}
+              <img
+                key={currentItem.id}
+                src={currentItem.imageUrl}
+                alt={currentItem.name || "Destaque Bonatto"}
+                onLoad={(event) => {
+                  const image = event.currentTarget;
+                  const aspectRatio = image.naturalWidth / Math.max(1, image.naturalHeight);
+                  setWideImages((current) => current[currentItem.id] === (aspectRatio > 2.4) ? current : { ...current, [currentItem.id]: aspectRatio > 2.4 });
+                }}
+                className={`relative h-full w-full animate-[adminFadeIn_0.3s_ease-out] ${preserveFullImage ? "object-contain p-3 sm:p-5" : "object-cover"}`}
+              />
+            </>
+          ) : <div className="h-full w-full bg-[#DA1923]" />}
+          {currentItem.imageUrl && <span className="sr-only">Abrir {currentItem.name || "destaque"} no cardápio</span>}
+          {!currentItem.imageUrl && currentItem.name && (
+            <div className="absolute inset-x-0 bottom-0 z-10 px-14 pb-8 text-center text-white sm:px-20 sm:pb-10">
+              <p className="text-2xl leading-none sm:text-4xl lg:text-5xl">{currentItem.name}</p>
+              <span className="mt-3 inline-flex rounded-full bg-[#DA1923] px-5 py-2.5 text-xs font-black uppercase tracking-[0.04em] text-white transition-transform group-hover:-translate-y-0.5 sm:px-6 sm:text-sm">Ver no cardápio</span>
             </div>
-          );
-        })}
-      </div>
+          )}
+        </button>
 
-      {/* Navigation buttons */}
-      <div className="flex items-center gap-6 mt-4">
-        <button
-          onClick={goBack}
-          disabled={isAnimating}
-          className="w-10 h-10 rounded-full bg-white/90 shadow-lg flex items-center justify-center hover:bg-white hover:scale-110 transition-all disabled:opacity-50"
-        >
-          <ChevronLeft className="w-5 h-5 text-gray-700" />
+        <button type="button" aria-label="Próximo item" onClick={() => navigate(1)} className="absolute right-2.5 top-1/2 z-20 grid size-9 -translate-y-1/2 place-items-center rounded-full border border-white/35 bg-[#9f1119]/80 text-white transition-colors hover:bg-[#7f0d14] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white md:right-4 md:size-10">
+          <ChevronRight className="size-5" />
         </button>
-        <button
-          onClick={advance}
-          disabled={isAnimating}
-          className="w-10 h-10 rounded-full bg-white/90 shadow-lg flex items-center justify-center hover:bg-white hover:scale-110 transition-all disabled:opacity-50"
-        >
-          <ChevronRight className="w-5 h-5 text-gray-700" />
-        </button>
+
+        <div className="absolute bottom-3 left-1/2 z-20 flex -translate-x-1/2 gap-1.5 sm:bottom-4" aria-label="Selecionar item do slider">
+          {items.slice(0, 8).map((item, index) => <button key={item.id} type="button" aria-label={`Mostrar ${item.name}`} onClick={() => setCurrentIndex(index)} className={`h-1.5 rounded-full transition-all ${index === currentIndex ? "w-6 bg-white" : "w-1.5 bg-white/45 hover:bg-white/70"}`} />)}
+        </div>
       </div>
     </div>
   );

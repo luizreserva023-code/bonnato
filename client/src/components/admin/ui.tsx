@@ -96,7 +96,7 @@ export function AdminPageHeader({ title, subtitle, eyebrow, actions, className }
 
 // ── Page wrapper ───────────────────────────────────────────────────────────
 export function AdminPage({ children, className }: { children: React.ReactNode; className?: string }) {
-  return <div className={cn("admin-page", className)}>{children}</div>;
+  return <div className={cn("admin-page min-w-0 max-w-full", className)}>{children}</div>;
 }
 
 // ── Surface (card com header opcional) ────────────────────────────────────

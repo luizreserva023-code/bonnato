@@ -3,6 +3,7 @@ import { type Server } from "http";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
 import rateLimit from "express-rate-limit";
 import helmet from "helmet";
+import path from "node:path";
 
 import { notifyOwnerAdapter } from "../adapters/pushNotifications.ts";
 import { verifyAsaasWebhook } from "../asaas.ts";
@@ -219,6 +220,21 @@ export async function configureApp(app: Express, options: ConfigureAppOptions = 
   app.use(express.json({ limit: "2mb" }));
   app.use(express.urlencoded({ limit: "2mb", extended: true }));
 
+  const hasRemoteStorage = Boolean(
+    process.env.BLOB_READ_WRITE_TOKEN?.trim() ||
+    (process.env.BUILT_IN_FORGE_API_URL?.trim() && process.env.BUILT_IN_FORGE_API_KEY?.trim()) ||
+    process.env.STORAGE_PROVIDER?.match(/^(?:s3|r2|minio|manus|vercel[_-]blob)$/i)
+  );
+  const isVercelRuntime = process.env.VERCEL === "1" || Boolean(process.env.VERCEL_ENV);
+
+  if ((!hasRemoteStorage && !isVercelRuntime) || process.env.STORAGE_PROVIDER === "local") {
+    app.use("/uploads", express.static(path.resolve(process.cwd(), ".local-uploads"), {
+      fallthrough: false,
+      immutable: true,
+      maxAge: "1h",
+    }));
+  }
+
   app.use("/api/bootstrap/access", bootstrapLimiter);
   app.use("/api/oauth", oauthLimiter);
   app.use("/api", globalLimiter);
@@ -237,6 +253,9 @@ export async function configureApp(app: Express, options: ConfigureAppOptions = 
     "payments.checkoutWithSavedCard",
     "club.subscribe",
     "asaas.createPix",
+    "auth.syncSocialAccount",
+    "auth.disconnectSocialAccount",
+    "auth.deleteAccount",
   ]);
   const uploadProcedures = new Set([
     "avatar.upload",

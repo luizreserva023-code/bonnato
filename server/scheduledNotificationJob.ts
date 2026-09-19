@@ -13,18 +13,27 @@ import { sendWhatsApp } from "./whatsapp.ts";
  */
 async function getUserIdsBySegment(
   segment: string,
+  storeId: number,
   neighborhoodFilter?: string[] | null
-): Promise<number[] | undefined> {
+): Promise<number[]> {
   const db = await getDb();
-  if (!db) return undefined;
+  if (!db) return [];
 
   const { users, orders } = await import("../drizzle/schema.ts");
-  const { eq, gte, or, like } = await import("drizzle-orm");
+  const { and, eq, gte, inArray, isNotNull, or, like } = await import("drizzle-orm");
+  const storeRows = await db
+    .selectDistinct({ userId: orders.userId })
+    .from(orders)
+    .where(and(eq(orders.storeId, storeId), isNotNull(orders.userId)));
+  const storeUserIds = storeRows
+    .map((row: { userId: number | null }) => row.userId)
+    .filter((userId): userId is number => userId !== null);
+  if (storeUserIds.length === 0) return [];
 
   // Helper: filter a list of user IDs to only those who ordered from given neighborhoods
-  async function applyNeighborhoodFilter(ids: number[] | null): Promise<number[] | undefined> {
+  async function applyNeighborhoodFilter(ids: number[]): Promise<number[]> {
     if (!neighborhoodFilter || neighborhoodFilter.length === 0) {
-      return ids === null ? undefined : ids; // null means "all"
+      return ids;
     }
     const neighborhoodConditions = neighborhoodFilter.map((n) =>
       like(orders.deliveryAddress, `%${n}%`)
@@ -32,7 +41,7 @@ async function getUserIdsBySegment(
     const rows = await db!
       .selectDistinct({ userId: orders.userId })
       .from(orders)
-      .where(or(...neighborhoodConditions));
+      .where(and(eq(orders.storeId, storeId), or(...neighborhoodConditions)));
     const neighborhoodUserIds = rows
       .map((r: { userId: number | null }) => r.userId)
       .filter(Boolean) as number[];
@@ -41,14 +50,14 @@ async function getUserIdsBySegment(
   }
 
   if (segment === "all") {
-    return applyNeighborhoodFilter(null);
+    return applyNeighborhoodFilter(storeUserIds);
   }
 
   if (segment === "club") {
     const rows = await db
       .select({ id: users.id })
       .from(users)
-      .where(eq(users.clubStatus as any, "active"));
+      .where(and(inArray(users.id, storeUserIds), eq(users.clubStatus, "active")));
     const ids = rows.map((r: { id: number }) => r.id);
     return applyNeighborhoodFilter(ids);
   }
@@ -59,7 +68,7 @@ async function getUserIdsBySegment(
     const rows = await db
       .select({ userId: orders.userId })
       .from(orders)
-      .where(gte(orders.createdAt, since))
+      .where(and(eq(orders.storeId, storeId), gte(orders.createdAt, since)))
       .groupBy(orders.userId);
     const ids = rows.map((r: { userId: number | null }) => r.userId).filter(Boolean) as number[];
     return applyNeighborhoodFilter(ids);
@@ -71,16 +80,14 @@ async function getUserIdsBySegment(
     const activeRows = await db
       .select({ userId: orders.userId })
       .from(orders)
-      .where(gte(orders.createdAt, since))
+      .where(and(eq(orders.storeId, storeId), gte(orders.createdAt, since)))
       .groupBy(orders.userId);
     const activeIds = activeRows.map((r: { userId: number | null }) => r.userId).filter(Boolean) as number[];
-    const allRows = await db.select({ id: users.id }).from(users);
-    const allIds = allRows.map((r: { id: number }) => r.id);
-    const inactiveIds = allIds.filter((id) => !activeIds.includes(id));
+    const inactiveIds = storeUserIds.filter((id) => !activeIds.includes(id));
     return applyNeighborhoodFilter(inactiveIds);
   }
 
-  return undefined;
+  return [];
 }
 
 /**
@@ -88,13 +95,16 @@ async function getUserIdsBySegment(
  */
 async function getPhonesBySegment(
   segment: string,
+  storeId: number,
   neighborhoodFilter?: string[] | null
 ): Promise<string[]> {
   const db = await getDb();
   if (!db) return [];
 
   const { users, orders } = await import("../drizzle/schema.ts");
-  const { gte, isNotNull, or, like } = await import("drizzle-orm");
+  const { and, eq, gte, inArray, isNotNull, or, like } = await import("drizzle-orm");
+  const storeUserIds = await getUserIdsBySegment("all", storeId);
+  if (storeUserIds.length === 0) return [];
 
   // Helper: filter phone rows by neighborhood
   async function applyNeighborhoodFilterToPhones(
@@ -109,7 +119,7 @@ async function getPhonesBySegment(
     const rows = await db!
       .selectDistinct({ userId: orders.userId })
       .from(orders)
-      .where(or(...neighborhoodConditions));
+      .where(and(eq(orders.storeId, storeId), or(...neighborhoodConditions)));
     const neighborhoodUserIds = new Set(
       rows.map((r: { userId: number | null }) => r.userId).filter(Boolean) as number[]
     );
@@ -123,7 +133,15 @@ async function getPhonesBySegment(
     const rows = await db
       .select({ phone: users.phone, userId: users.id })
       .from(users)
-      .where(isNotNull(users.phone));
+      .where(and(isNotNull(users.phone), inArray(users.id, storeUserIds)));
+    return applyNeighborhoodFilterToPhones(rows as { phone: string | null; userId: number }[]);
+  }
+
+  if (segment === "club") {
+    const rows = await db
+      .select({ phone: users.phone, userId: users.id })
+      .from(users)
+      .where(and(isNotNull(users.phone), inArray(users.id, storeUserIds), eq(users.clubStatus, "active")));
     return applyNeighborhoodFilterToPhones(rows as { phone: string | null; userId: number }[]);
   }
 
@@ -133,11 +151,11 @@ async function getPhonesBySegment(
     const allRows = await db
       .select({ phone: users.phone, userId: users.id })
       .from(users)
-      .where(isNotNull(users.phone));
+      .where(and(isNotNull(users.phone), inArray(users.id, storeUserIds)));
     const activeRows = await db
       .select({ userId: orders.userId })
       .from(orders)
-      .where(gte(orders.createdAt, since))
+      .where(and(eq(orders.storeId, storeId), gte(orders.createdAt, since)))
       .groupBy(orders.userId);
     const activeIds = new Set(
       activeRows.map((r: { userId: number | null }) => r.userId).filter(Boolean) as number[]
@@ -148,11 +166,21 @@ async function getPhonesBySegment(
     return applyNeighborhoodFilterToPhones(activePhones);
   }
 
+  if (segment === "inactive") {
+    const inactiveIds = await getUserIdsBySegment("inactive", storeId);
+    if (inactiveIds.length === 0) return [];
+    const rows = await db
+      .select({ phone: users.phone, userId: users.id })
+      .from(users)
+      .where(and(isNotNull(users.phone), inArray(users.id, inactiveIds)));
+    return applyNeighborhoodFilterToPhones(rows as { phone: string | null; userId: number }[]);
+  }
+
   // For inactive and club, fall back to all phones with neighborhood filter
   const rows = await db
     .select({ phone: users.phone, userId: users.id })
     .from(users)
-    .where(isNotNull(users.phone));
+    .where(and(isNotNull(users.phone), inArray(users.id, storeUserIds)));
   return applyNeighborhoodFilterToPhones(rows as { phone: string | null; userId: number }[]);
 }
 
@@ -175,7 +203,7 @@ export async function processScheduledNotifications(): Promise<void> {
 
       // Send push notifications
       if (notification.channel === "push" || notification.channel === "both") {
-        const userIds = await getUserIdsBySegment(notification.targetAudience, neighborhoodFilter);
+        const userIds = await getUserIdsBySegment(notification.targetAudience, notification.storeId, neighborhoodFilter);
         const result = await sendPushToAllUsers(
           {
             title: notification.title,
@@ -190,7 +218,7 @@ export async function processScheduledNotifications(): Promise<void> {
 
       // Send WhatsApp notifications
       if (notification.channel === "whatsapp" || notification.channel === "both") {
-        const phones = await getPhonesBySegment(notification.targetAudience, neighborhoodFilter);
+        const phones = await getPhonesBySegment(notification.targetAudience, notification.storeId, neighborhoodFilter);
         for (const phone of phones) {
           try {
             await sendWhatsApp(phone, `*${notification.title}*\n\n${notification.message}`);
@@ -209,6 +237,7 @@ export async function processScheduledNotifications(): Promise<void> {
         const nextDate = new Date(notification.scheduledAt);
         nextDate.setDate(nextDate.getDate() + 1);
         await createScheduledNotification({
+          storeId: notification.storeId,
           title: notification.title,
           message: notification.message,
           channel: notification.channel,
@@ -224,6 +253,7 @@ export async function processScheduledNotifications(): Promise<void> {
         const nextDate = new Date(notification.scheduledAt);
         nextDate.setDate(nextDate.getDate() + 7);
         await createScheduledNotification({
+          storeId: notification.storeId,
           title: notification.title,
           message: notification.message,
           channel: notification.channel,

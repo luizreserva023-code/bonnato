@@ -19,6 +19,7 @@ if (isVapidConfigured) {
 }
 
 export interface PushPayload {
+  storeId?: number | null;
   title: string;
   body: string;
   icon?: string;
@@ -40,6 +41,7 @@ async function saveInAppNotification(userId: number, payload: PushPayload): Prom
   if (!db) return;
 
   await db.insert(clientNotifications).values({
+    storeId: payload.storeId ?? null,
     userId,
     title: payload.title,
     message: payload.body,
@@ -56,6 +58,7 @@ async function saveInAppNotificationsForUsers(userIds: number[], payload: PushPa
 
   await db.insert(clientNotifications).values(
     uniqueUserIds.map((userId) => ({
+      storeId: payload.storeId ?? null,
       userId,
       title: payload.title,
       message: payload.body,
@@ -166,6 +169,7 @@ export async function sendPushToAllUsers(
 ): Promise<{ sent: number; failed: number }> {
   const db = await getDb();
   if (!db) return { sent: 0, failed: 0 };
+  if (userIds && userIds.length === 0) return { sent: 0, failed: 0 };
 
   if (!isVapidConfigured) {
     const { users } = await import("../drizzle/schema.ts");

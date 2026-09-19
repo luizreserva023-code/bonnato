@@ -10,7 +10,6 @@ import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { useAuth } from "@/_core/hooks/useAuth";
-import { clampFlavorCount, getPizzaFlavorConfig } from "@/lib/pizza-flavor-config";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
 import {
@@ -54,7 +53,7 @@ import {
   Truck,
   GripVertical,
 } from "lucide-react";
-import { useState, useEffect, useRef, useCallback, useMemo, createContext, useContext } from "react";
+import { lazy, Suspense, useState, useEffect, useRef, useCallback, useMemo, createContext, useContext, type CSSProperties } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   DndContext,
@@ -80,6 +79,7 @@ import { Bell, BellOff } from "lucide-react";
 import { JoinedPagination } from "@/components/ui/joined-pagination";
 import { MarketplacesTab } from "./admin/MarketplacesTab";
 import { NetworkFinanceTab } from "./admin/NetworkFinanceTab";
+import GrowthCenter from "./GrowthCenter";
 import { StoresTab } from "./admin/StoresTab";
 import { Building2, Store, ChevronDown, ChevronLeft, ChevronRight } from "lucide-react";
 import { AdminStoreProvider, useAdminStore } from "@/contexts/AdminStoreContext";
@@ -104,6 +104,12 @@ import {
   AdminPill,
   AdminSectionLabel,
 } from "@/components/admin/ui";
+import type { WhiteLabelAdminTab } from "@shared/whiteLabel";
+import type { TenantRuntimeConfig } from "@/shared/tenant/tenant-config";
+import { DEFAULT_HOME_APP_CONFIG, type HomeAppConfig } from "@/components/home/HomeAppHub";
+import { ProductCatalogEditor } from "@/features/admin/catalog/ProductCatalogEditor";
+
+const RewardsAdminTab = lazy(() => import("@/features/admin/rewards/RewardsAdminTab"));
 
 const STATUS_LABELS: Record<string, { label: string; color: string; next?: string }> = {
   pending: { label: "Aguardando", color: "bg-[#fce8e8] text-[#6E0D12]", next: "confirmed" },
@@ -121,7 +127,40 @@ const PAYMENT_LABELS: Record<string, string> = {
   cash: "Dinheiro",
 };
 
-type AdminTab = "dashboard" | "orders" | "menu" | "club" | "coupons" | "reports" | "network" | "distribution" | "promotions" | "raffles" | "upsells" | "users" | "drivers" | "settings" | "payments" | "marketplaces" | "stores" | "recovery";
+type AdminTab = "dashboard" | "orders" | "menu" | "club" | "rewards" | "coupons" | "reports" | "network" | "distribution" | "promotions" | "raffles" | "upsells" | "users" | "drivers" | "settings" | "payments" | "marketplaces" | "stores" | "recovery" | "platform";
+
+const ADMIN_TAB_FEATURE: Partial<Record<AdminTab, WhiteLabelAdminTab>> = {
+  dashboard: "dashboard",
+  orders: "orders",
+  menu: "menu",
+  club: "club",
+  coupons: "coupons",
+  reports: "reports",
+  network: "network",
+  distribution: "distribution",
+  promotions: "promotions",
+  raffles: "raffles",
+  upsells: "upsells",
+  users: "users",
+  drivers: "drivers",
+  settings: "settings",
+  payments: "payments",
+  marketplaces: "marketplaces",
+  stores: "stores",
+  recovery: "recovery",
+  platform: "platform",
+};
+
+function isAdminTabAvailable(tab: AdminTab, tenant: TenantRuntimeConfig, isPlatformAdmin: boolean) {
+  if (tab === "stores") return isPlatformAdmin;
+  if (tab === "rewards") return tenant.features.loyalty && tenant.features.adminTabs.club;
+  const feature = ADMIN_TAB_FEATURE[tab];
+  if (!feature || tenant.features.adminTabs[feature] === false) return false;
+  if (tab === "club") return tenant.features.club;
+  if (tab === "drivers") return tenant.features.driverApp;
+  if (tab === "marketplaces") return tenant.features.marketplaces;
+  return tenant.features.adminTabs[feature] ?? false;
+}
 type ClubAdminPlanId = "bonattao" | "basico";
 type ClubAdminPlan = {
   id: ClubAdminPlanId;
@@ -168,6 +207,7 @@ const NAV_ITEMS: NavItem[] = [
   { id: "orders" as AdminTab, label: "Pedidos", icon: <ClipboardList className="w-[18px] h-[18px]" /> },
   { id: "menu" as AdminTab, label: "Cardápio", icon: <ChefHat className="w-[18px] h-[18px]" /> },
   { id: "club" as AdminTab, label: "Clube", icon: <Crown className="w-[18px] h-[18px]" /> },
+  { id: "rewards" as AdminTab, label: "Clube de Recompensas", icon: <Gift className="w-[18px] h-[18px]" /> },
   {
     id: "coupons" as AdminTab, label: "Marketing", icon: <Megaphone className="w-[18px] h-[18px]" />,
     children: [
@@ -185,6 +225,7 @@ const NAV_ITEMS: NavItem[] = [
     ],
   },
   { id: "reports" as AdminTab, label: "Relatórios", icon: <TrendingUp className="w-[18px] h-[18px]" /> },
+  { id: "platform" as AdminTab, label: "Central de Crescimento", icon: <Zap className="w-[18px] h-[18px]" /> },
   { id: "network" as AdminTab, label: "Rede & Financeiro", icon: <Building2 className="w-[18px] h-[18px]" /> },
   { id: "distribution" as AdminTab, label: "Centro de Distribuição", icon: <Package className="w-[18px] h-[18px]" /> },
   {
@@ -194,7 +235,7 @@ const NAV_ITEMS: NavItem[] = [
       { id: "stores" as AdminTab, label: "Lojas", icon: <Building2 className="w-4 h-4" />, adminOnly: true },
     ],
   },
-  { id: "payments" as AdminTab, label: "Pagamentos", icon: <DollarSign className="w-[18px] h-[18px]" />, adminOnly: true },
+  { id: "payments" as AdminTab, label: "Pagamentos", icon: <DollarSign className="w-[18px] h-[18px]" /> },
   { id: "marketplaces" as AdminTab, label: "Integrações", icon: <PlugZap className="w-[18px] h-[18px]" /> },
   { id: "settings" as AdminTab, label: "Configurações", icon: <Settings className="w-[18px] h-[18px]" /> },
 ];
@@ -248,6 +289,7 @@ function AdminSidebar({
   collapsed?: boolean;
   onToggleCollapse?: () => void;
 }) {
+  const { tenantConfig } = useAdminStore();
   // Sidebar sempre expandida — sem hover-expand
   const isHovered = true;
   const isCollapsed = false;
@@ -265,6 +307,14 @@ function AdminSidebar({
     { href: '/zonas-entrega', label: 'Zonas de Entrega', icon: <MapPin className="w-4 h-4" /> },
     { href: '/automacoes', label: 'Automações', icon: <Bot className="w-4 h-4" /> },
   ];
+  const visibleTools = TOOLS.filter((tool) => {
+    if (tool.href === "/vendas") return tenantConfig.features.salesDashboard;
+    if (tool.href === "/crm") return tenantConfig.features.crm;
+    if (tool.href === "/notificacoes") return tenantConfig.features.notifications;
+    if (tool.href === "/zonas-entrega") return tenantConfig.features.deliveryZones;
+    if (tool.href === "/automacoes") return tenantConfig.features.automations;
+    return false;
+  });
 
   // Submenus colapsáveis
   const [openSubmenu, setOpenSubmenu] = useState<string | null>(null);
@@ -293,9 +343,9 @@ function AdminSidebar({
       {/* ── Header: logo ── */}
       <div className="flex items-center px-3 pt-4 pb-3 overflow-hidden" style={{ borderBottom: `1px solid ${dividerColor}`, minHeight: 60 }}>
         <div className="flex items-center gap-2 min-w-0">
-          <img src={BONATTO_ICON_URL} alt="Bonatto" className="w-10 h-10 object-contain shrink-0 rounded-full" />
+          {tenantConfig.brand.logos.icon ? <img src={tenantConfig.brand.logos.icon} alt={tenantConfig.brand.name} className="w-10 h-10 object-contain shrink-0 rounded-full" /> : <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white/15 text-xs font-black text-white">{tenantConfig.brand.shortName.slice(0, 2).toUpperCase()}</div>}
           <div className="min-w-0 overflow-hidden flex items-center">
-            <img src={BONATTO_LOGO_URL} alt="Bonatto Pizza" className="h-8 w-auto object-contain" />
+            {tenantConfig.brand.logos.wordmark ? <img src={tenantConfig.brand.logos.wordmark} alt={tenantConfig.brand.name} className="h-8 w-auto object-contain" /> : <span className="truncate text-sm font-black text-white">{tenantConfig.brand.shortName}</span>}
           </div>
         </div>
       </div>
@@ -312,8 +362,10 @@ function AdminSidebar({
         <div className="space-y-0.5">
           {NAV_ITEMS.map((item) => {
             if (item.adminOnly && !isAdmin) return null;
-            const hasChildren = item.children && item.children.length > 0;
-            const childIds = item.children?.map(c => c.id) ?? [];
+            const visibleChildren = item.children?.filter((child) => (!child.adminOnly || isAdmin) && isAdminTabAvailable(child.id, tenantConfig, isAdmin));
+            if (!isAdminTabAvailable(item.id, tenantConfig, isAdmin) && (!visibleChildren || visibleChildren.length === 0)) return null;
+            const hasChildren = visibleChildren && visibleChildren.length > 0;
+            const childIds = visibleChildren?.map(c => c.id) ?? [];
             const isParentActive = hasChildren && childIds.includes(activeTab);
             const isDirectActive = !hasChildren && activeTab === item.id;
             const isActive = isDirectActive || isParentActive;
@@ -326,7 +378,7 @@ function AdminSidebar({
                   onClick={() => {
                     if (hasChildren) {
                       setOpenSubmenu(isOpen ? null : item.label);
-                      if (!isParentActive && item.children) handleNav(item.children[0].id);
+                      if (!isParentActive && visibleChildren) handleNav(visibleChildren[0].id);
                     } else {
                       handleNav(item.id);
                     }
@@ -354,7 +406,7 @@ function AdminSidebar({
                 {/* Submenu children */}
                 {hasChildren && isOpen && !isCollapsed && (
                   <div className="ml-5 mt-0.5 space-y-0.5 border-l pl-3" style={{ borderColor: 'rgba(255,255,255,0.14)' }}>
-                    {item.children!.filter(c => !c.adminOnly || isAdmin).map((child) => {
+                    {visibleChildren!.map((child) => {
                       const isChildActive = activeTab === child.id;
                       const childBadge = child.id === 'orders' && pendingCount > 0 ? pendingCount : null;
                       return (
@@ -389,7 +441,7 @@ function AdminSidebar({
           <div className="mt-4 pt-3" style={{ borderTop: `1px solid ${dividerColor}` }}>
             <p className="text-[10px] font-semibold uppercase tracking-wider px-3 mb-2" style={{ color: 'rgba(255,255,255,0.50)' }}>Ferramentas</p>
             <div className="space-y-0.5">
-              {TOOLS.map((link) => (
+              {visibleTools.map((link) => (
                 <Link key={link.href} href={link.href} onClick={onClose}
                   className="flex items-center gap-2.5 px-3 py-2 rounded-lg text-[12px] font-medium w-full transition-all"
                   style={{ color: 'rgba(255,255,255,0.70)', background: 'transparent' }}
@@ -460,8 +512,9 @@ function AdminSidebar({
     </div>
   );
 }
-export default function Admin() {
+function AdminContent() {
   const { user, isAuthenticated, loading } = useAuth();
+  const { tenantConfig, selectedStoreId, isLoading: storeContextLoading } = useAdminStore();
   const [activeTab, setActiveTabState] = useState<AdminTab>(() => {
     try {
       const tab = new URLSearchParams(window.location.search).get("tab") as AdminTab | null;
@@ -482,15 +535,23 @@ export default function Admin() {
 
   // Polling de pedidos para detectar novos (apenas quando autenticado como admin)
   const { data: allOrdersForAlert } = trpc.orders.list.useQuery(
-    { limit: 100 },
-    { refetchInterval: 15000, enabled: !loading && isAuthenticated && user?.role === "admin" }
+    { limit: 100, storeId: selectedStoreId },
+    { refetchInterval: 15000, enabled: !loading && isAuthenticated && Boolean(selectedStoreId) }
   );
   const alertOrderIds = allOrdersForAlert?.map(o => o.id);
-  const { stopAlert } = useNewOrderAlert(alertOrderIds, !loading && isAuthenticated && user?.role === "admin");
+  const { stopAlert } = useNewOrderAlert(alertOrderIds, !loading && isAuthenticated && (user?.role === "admin" || user?.role === "manager"));
   const { isSubscribed, isLoading: pushLoading, isSupported: pushSupported, subscribe: subscribePush, unsubscribe: unsubscribePush } = usePushNotifications();
   const pendingCount = allOrdersForAlert?.filter(o => o.status === "pending").length ?? 0;
 
   const isAdmin = user?.role === "admin";
+  const fallbackTab = (["dashboard", "orders", "menu", "settings"] as AdminTab[])
+    .find((tab) => isAdminTabAvailable(tab, tenantConfig, Boolean(isAdmin))) ?? "dashboard";
+  const accessContextLoading = loading || storeContextLoading;
+  const resolvedActiveTab = accessContextLoading || isAdminTabAvailable(activeTab, tenantConfig, Boolean(isAdmin)) ? activeTab : fallbackTab;
+
+  useEffect(() => {
+    if (!accessContextLoading && activeTab !== resolvedActiveTab) setActiveTab(resolvedActiveTab);
+  }, [accessContextLoading, activeTab, resolvedActiveTab, setActiveTab]);
 
   // Estado de collapse da sidebar (persistido no localStorage)
   const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(() => {
@@ -507,7 +568,7 @@ export default function Admin() {
   // Dark mode removed — always light
 
   const sidebarProps = {
-    activeTab,
+    activeTab: resolvedActiveTab,
     setActiveTab,
     pendingCount,
     stopAlert,
@@ -522,9 +583,21 @@ export default function Admin() {
   };
 
   // Label da aba ativa para o header mobile
-  const activeLabel = NAV_ITEMS.flatMap(item => item.children ? [item, ...item.children] : [item]).find(i => i.id === activeTab)?.label ?? "Admin";
+  const activeLabel = NAV_ITEMS.flatMap(item => item.children ? [item, ...item.children] : [item]).find(i => i.id === resolvedActiveTab)?.label ?? tenantConfig.brand.adminTitle;
+  const tenantAdminStyle = {
+    background: "var(--admin-bg)",
+    color: "var(--admin-text)",
+    "--admin-sidebar-bg": `linear-gradient(180deg, ${tenantConfig.brand.colors.primary} 0%, ${tenantConfig.brand.colors.primaryDark} 100%)`,
+    "--admin-active-text": tenantConfig.brand.colors.primary,
+    "--admin-badge-text": tenantConfig.brand.colors.primary,
+    "--admin-chart-bar-max": tenantConfig.brand.colors.primary,
+    "--admin-icon-color": tenantConfig.brand.colors.primary,
+    "--admin-mobile-header-bg": "var(--tenant-header, #DA1923)",
+    "--admin-mobile-header-border": "rgba(255, 255, 255, 0.18)",
+    "--admin-mobile-header-text": "#ffffff",
+  } as CSSProperties;
 
-  if (loading) {
+  if (accessContextLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <Loader2 className="w-8 h-8 animate-spin text-primary" />
@@ -544,12 +617,9 @@ export default function Admin() {
   }
 
   return (
-    <AdminStoreProvider>
+    <>
     {/* Grid background wrapper */}
-    <div data-admin-theme="light" className="min-h-screen flex" style={{
-      background: 'var(--admin-bg)',
-      color: 'var(--admin-text)',
-    }}>
+    <div data-admin-theme="light" className="min-h-screen flex" style={tenantAdminStyle}>
       {/* ── Desktop Sidebar fixa expandida (lg+) ── */}
       <aside
         className="hidden lg:flex shrink-0 sticky top-0 h-screen flex-col"
@@ -570,11 +640,11 @@ export default function Admin() {
       <div className="flex-1 flex flex-col min-w-0">
         {/* Mobile topbar */}
         <header className="lg:hidden sticky top-0 z-30 flex items-center gap-3 px-4 py-3" style={{ background: 'var(--admin-mobile-header-bg)', borderBottom: `1px solid var(--admin-mobile-header-border)`, boxShadow: '0 2px 8px rgba(0,0,0,0.08)' }}>
-          <button onClick={() => setMobileSidebarOpen(true)} className="p-1.5 rounded-lg transition-colors" style={{ color: 'var(--admin-text)' }}>
+          <button onClick={() => setMobileSidebarOpen(true)} className="p-1.5 rounded-lg transition-colors" style={{ color: 'var(--admin-mobile-header-text)' }}>
             <Menu className="w-5 h-5" />
           </button>
           <div className="flex items-center gap-2 flex-1">
-            <img src={BONATTO_ICON_URL} alt="Bonatto" className="w-7 h-7 object-contain rounded-full" />
+            {tenantConfig.brand.logos.icon ? <img src={tenantConfig.brand.logos.icon} alt={tenantConfig.brand.name} className="w-7 h-7 object-contain rounded-full" /> : <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-[#6E0D12] text-[9px] font-black text-white">{tenantConfig.brand.shortName.slice(0, 2).toUpperCase()}</div>}
             <span className="font-semibold text-sm" style={{ fontFamily: "'Inter', sans-serif", color: 'var(--admin-mobile-header-text)' }}>{activeLabel}</span>
           </div>
           <AdminStoreSelectorMobile />
@@ -587,38 +657,47 @@ export default function Admin() {
         </header>
 
         {/* Page content */}
-        <main className="flex-1 p-4 lg:p-8" style={{ background: 'var(--admin-bg)' }}>
-          <div key={activeTab} style={{ animation: 'adminFadeIn 0.18s ease-out' }}>
-            {activeTab === "dashboard" && <DeliveryDashboardTab />}
-            {activeTab === "orders" && <OrdersTab onOpenOrder={stopAlert} />}
-            {activeTab === "menu" && <MenuTab />}
-            {activeTab === "club" && <ClubTab />}
-            {activeTab === "coupons" && <CouponsTab />}
-            {activeTab === "promotions" && <PromotionsTab />}
-            {activeTab === "raffles" && <RafflesTab />}
-            {activeTab === "upsells" && <UpsellsTab />}
-            {activeTab === "users" && <UsersTab />}
-            {activeTab === "reports" && <ReportsTab />}
-            {activeTab === "network" && <NetworkFinanceTab />}
-            {activeTab === "distribution" && <NetworkFinanceTab mode="distribution" />}
-            {activeTab === "drivers" && <DriversTab />}
-            {activeTab === "payments" && isAdmin && <PaymentsTab />}
-            {activeTab === "marketplaces" && <MarketplacesTab />}
-            {activeTab === "settings" && <SettingsTab />}
-            {activeTab === "stores" && isAdmin && <StoresTab />}
-            {activeTab === "recovery" && <RecoveryTab />}
+        <main className="min-w-0 max-w-full flex-1 overflow-x-hidden p-4 lg:p-8" style={{ background: 'var(--admin-bg)' }}>
+          <div className="min-w-0 max-w-full" key={resolvedActiveTab} style={{ animation: 'adminFadeIn 0.18s ease-out' }}>
+            {resolvedActiveTab === "dashboard" && <DeliveryDashboardTab />}
+            {resolvedActiveTab === "orders" && <OrdersTab onOpenOrder={stopAlert} />}
+            {resolvedActiveTab === "menu" && <MenuTab />}
+            {resolvedActiveTab === "club" && <ClubTab />}
+            {resolvedActiveTab === "rewards" && (
+              <Suspense fallback={<div className="grid min-h-64 place-items-center"><Loader2 className="size-7 animate-spin text-primary" /></div>}>
+                <RewardsAdminTab />
+              </Suspense>
+            )}
+            {resolvedActiveTab === "coupons" && <CouponsTab />}
+            {resolvedActiveTab === "promotions" && <PromotionsTab />}
+            {resolvedActiveTab === "raffles" && <RafflesTab />}
+            {resolvedActiveTab === "upsells" && <UpsellsTab />}
+            {resolvedActiveTab === "users" && <UsersTab />}
+            {resolvedActiveTab === "reports" && <ReportsTab />}
+            {resolvedActiveTab === "network" && <NetworkFinanceTab />}
+            {resolvedActiveTab === "distribution" && <NetworkFinanceTab mode="distribution" />}
+            {resolvedActiveTab === "drivers" && <DriversTab />}
+            {resolvedActiveTab === "payments" && <PaymentsTab />}
+            {resolvedActiveTab === "marketplaces" && <MarketplacesTab />}
+            {resolvedActiveTab === "settings" && <SettingsTab />}
+            {resolvedActiveTab === "stores" && isAdmin && <StoresTab />}
+            {resolvedActiveTab === "recovery" && <RecoveryTab />}
+            {resolvedActiveTab === "platform" && <GrowthCenter />}
           </div>
         </main>
       </div>
     </div>
-    </AdminStoreProvider>
+    </>
   );
+}
+
+export default function Admin() {
+  return <AdminStoreProvider><AdminContent /></AdminStoreProvider>;
 }
 
 // ─── Store Selector (Admin only) ─────────────────────────────────────────────
 function AdminStoreSelectorSidebar() {
-  const { selectedStoreId, setSelectedStoreId, selectedStoreName, isManager, stores } = useAdminStore();
-  if (isManager) return null;
+  const { selectedStoreId, setSelectedStoreId, selectedStoreName, stores } = useAdminStore();
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -629,9 +708,6 @@ function AdminStoreSelectorSidebar() {
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="min-w-[200px]">
-        <DropdownMenuItem onClick={() => setSelectedStoreId(undefined)} className={!selectedStoreId ? "font-bold text-primary" : ""}>
-          Todas as lojas
-        </DropdownMenuItem>
         {stores.map((s) => (
           <DropdownMenuItem key={s.id} onClick={() => setSelectedStoreId(s.id)} className={selectedStoreId === s.id ? "font-bold text-primary" : ""}>
             {s.name}
@@ -645,7 +721,7 @@ function AdminStoreSelectorSidebar() {
 // Versão escura do seletor de loja para a sidebar bordô
 function AdminStoreSelectorSidebarDark() {
   const { selectedStoreId, setSelectedStoreId, selectedStoreName, isManager, stores } = useAdminStore();
-  if (isManager) {
+  if (isManager && stores.length <= 1) {
     return (
       <div className="flex items-center gap-2 px-2 py-1.5 rounded-lg" style={{ background: 'rgba(255,255,255,0.12)' }}>
         <Store className="w-3.5 h-3.5 shrink-0" style={{ color: 'rgba(255,255,255,0.70)' }} />
@@ -666,9 +742,6 @@ function AdminStoreSelectorSidebarDark() {
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="min-w-[200px]">
-        <DropdownMenuItem onClick={() => setSelectedStoreId(undefined)} className={!selectedStoreId ? "font-bold text-primary" : ""}>
-          Todas as lojas
-        </DropdownMenuItem>
         {stores.map((s) => (
           <DropdownMenuItem key={s.id} onClick={() => setSelectedStoreId(s.id)} className={selectedStoreId === s.id ? "font-bold text-primary" : ""}>
             {s.name}
@@ -680,8 +753,7 @@ function AdminStoreSelectorSidebarDark() {
 }
 
 function AdminStoreSelectorMobile() {
-  const { selectedStoreId, setSelectedStoreId, selectedStoreName, isManager, stores } = useAdminStore();
-  if (isManager) return null;
+  const { selectedStoreId, setSelectedStoreId, selectedStoreName, stores } = useAdminStore();
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -692,9 +764,6 @@ function AdminStoreSelectorMobile() {
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="min-w-[180px]">
-        <DropdownMenuItem onClick={() => setSelectedStoreId(undefined)} className={!selectedStoreId ? "font-bold text-primary" : ""}>
-          Todas as lojas
-        </DropdownMenuItem>
         {stores.map((s) => (
           <DropdownMenuItem key={s.id} onClick={() => setSelectedStoreId(s.id)} className={selectedStoreId === s.id ? "font-bold text-primary" : ""}>
             {s.name}
@@ -2678,45 +2747,29 @@ function OrdersTab({ onOpenOrder }: { onOpenOrder?: () => void }) {
 function MenuTab() {
   const utils = trpc.useUtils();
   const { selectedStoreId } = useAdminStore();
-  const { data: categories } = trpc.categories.listAll.useQuery();
-  const { data: products, isLoading } = trpc.products.listAll.useQuery({ storeId: selectedStoreId });
+  const { data: categories } = trpc.categories.listAll.useQuery(
+    { storeId: selectedStoreId },
+    { enabled: selectedStoreId !== undefined },
+  );
+  const { data: products, isLoading } = trpc.products.listAll.useQuery(
+    { storeId: selectedStoreId },
+    { enabled: selectedStoreId !== undefined },
+  );
   const [selectedCatId, setSelectedCatId] = useState<number | null>(null);
   const [editingProduct, setEditingProduct] = useState<any | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [activeMenuTab, setActiveMenuTab] = useState<"products" | "categories" | "slides" | "carousel">("products");
-  const [form, setForm] = useState({
-    categoryId: "",
-    name: "",
-    description: "",
-    price: "",
-    imageUrl: "",
-    featured: false,
-  });
   // Category form
   const [showCatForm, setShowCatForm] = useState(false);
   const [editingCat, setEditingCat] = useState<any | null>(null);
   const [catForm, setCatForm] = useState({ name: "", slug: "", description: "", sortOrder: "", icon: "", imageUrl: "" });
   const [magnificCategoryImages, setMagnificCategoryImages] = useState<MagnificCategoryImageAsset[]>([]);
   const [magnificIcons, setMagnificIcons] = useState<MagnificIconAsset[]>([]);
-  const { data: storeSettings } = trpc.storeSettings.get.useQuery();
-  const [pizzaMultiFlavorEnabled, setPizzaMultiFlavorEnabled] = useState(false);
-  const [pizzaFlavorLimits, setPizzaFlavorLimits] = useState({
-    small: 1,
-    medium: 2,
-    large: 2,
-    family: 3,
-  });
-
-  const createProduct = trpc.products.create.useMutation({
-    onSuccess: () => {
-      utils.products.listAll.invalidate();
-      utils.products.list.invalidate();
-      setShowForm(false);
-      setForm({ categoryId: "", name: "", description: "", price: "", imageUrl: "", featured: false });
-      toast.success("Produto criado!");
-    },
-    onError: (err) => toast.error(err.message),
-  });
+  const { data: storeSettings } = trpc.storeSettings.get.useQuery(
+    { storeId: selectedStoreId },
+    { enabled: selectedStoreId !== undefined },
+  );
+  const [menuLayout, setMenuLayout] = useState<"editorial" | "compact" | "visual">("editorial");
 
   const updateProduct = trpc.products.update.useMutation({
     onSuccess: () => {
@@ -2847,31 +2900,18 @@ function MenuTab() {
 
   // Paginação de produtos
   useEffect(() => {
-    const config = getPizzaFlavorConfig(storeSettings?.pizzaFlavorConfig);
-    setPizzaMultiFlavorEnabled(config.enabled);
-    setPizzaFlavorLimits(config.maxFlavorsBySize);
-  }, [storeSettings?.pizzaFlavorConfig]);
+    if (["editorial", "compact", "visual"].includes(storeSettings?.menuLayout ?? "")) {
+      setMenuLayout(storeSettings?.menuLayout as "editorial" | "compact" | "visual");
+    }
+  }, [storeSettings?.menuLayout]);
 
-  const savePizzaFlavorConfig = trpc.storeSettings.savePizzaFlavorConfig.useMutation({
-    onSuccess: () => {
-      utils.storeSettings.get.invalidate();
-      toast.success("Configuracao de pizza por sabores salva!");
+  const saveMenuLayout = trpc.storeSettings.saveMenuLayout.useMutation({
+    onSuccess: async () => {
+      await utils.storeSettings.get.invalidate();
+      toast.success("Layout do cardápio atualizado!");
     },
-    onError: (err) => toast.error(err.message),
+    onError: (error) => toast.error(error.message),
   });
-
-  const handleSavePizzaFlavorConfig = () => {
-    savePizzaFlavorConfig.mutate({
-      enabled: pizzaMultiFlavorEnabled,
-      pricingMode: "highest",
-      maxFlavorsBySize: {
-        small: clampFlavorCount(pizzaFlavorLimits.small),
-        medium: clampFlavorCount(pizzaFlavorLimits.medium),
-        large: clampFlavorCount(pizzaFlavorLimits.large),
-        family: clampFlavorCount(pizzaFlavorLimits.family),
-      },
-    });
-  };
 
   const PRODUCTS_PER_PAGE = 10;
   const [productPage, setProductPage] = useState(1);
@@ -2882,7 +2922,10 @@ function MenuTab() {
   );
 
   // Slides
-  const { data: slides } = trpc.menuSlides.listAll.useQuery();
+  const { data: slides } = trpc.menuSlides.listAll.useQuery(
+    { storeId: selectedStoreId },
+    { enabled: selectedStoreId !== undefined },
+  );
   const [showSlideForm, setShowSlideForm] = useState(false);
   const [editingSlide, setEditingSlide] = useState<any | null>(null);
   const [slideForm, setSlideForm] = useState({ title: "", subtitle: "", imageUrl: "", videoUrl: "", badgeText: "", ctaText: "", ctaLink: "", sortOrder: "" });
@@ -2900,27 +2943,7 @@ function MenuTab() {
     const reader = new FileReader();
     reader.onload = (ev) => {
       const base64 = (ev.target?.result as string).split(",")[1];
-      uploadSlideImage.mutate({ base64, mimeType: file.type as "image/jpeg" | "image/png" | "image/webp" | "image/gif", fileName: file.name });
-    };
-    reader.readAsDataURL(file);
-  };
-
-  // Product image upload
-  const [productImageUploading, setProductImageUploading] = useState(false);
-  const productImageInputRef = useRef<HTMLInputElement>(null);
-  const uploadProductImage = trpc.products.uploadImage.useMutation({
-    onSuccess: (data) => { setForm((f) => ({ ...f, imageUrl: data.url })); toast.success("Imagem enviada!"); },
-    onError: (e) => toast.error(e.message),
-    onSettled: () => setProductImageUploading(false),
-  });
-  const handleProductImageFile = (file: File) => {
-    if (!file) return;
-    if (file.size > 5 * 1024 * 1024) { toast.error("Imagem muito grande. Máximo 5MB."); return; }
-    setProductImageUploading(true);
-    const reader = new FileReader();
-    reader.onload = (ev) => {
-      const base64 = (ev.target?.result as string).split(",")[1];
-      uploadProductImage.mutate({ base64, mimeType: file.type as "image/jpeg" | "image/png" | "image/webp" | "image/gif", fileName: file.name });
+      uploadSlideImage.mutate({ storeId: selectedStoreId, base64, mimeType: file.type as "image/jpeg" | "image/png" | "image/webp" | "image/gif", fileName: file.name });
     };
     reader.readAsDataURL(file);
   };
@@ -2954,40 +2977,14 @@ function MenuTab() {
       ctaLink: slideForm.ctaLink || null,
       sortOrder: slideForm.sortOrder ? parseInt(slideForm.sortOrder) : undefined,
     };
-    if (editingSlide) updateSlide.mutate({ id: editingSlide.id, ...data });
-    else createSlide.mutate(data);
+    if (editingSlide) updateSlide.mutate({ id: editingSlide.id, storeId: selectedStoreId, ...data });
+    else createSlide.mutate({ ...data, storeId: selectedStoreId });
   };
 
   const startEditSlide = (slide: any) => {
     setEditingSlide(slide);
     setSlideForm({ title: slide.title, subtitle: slide.subtitle ?? "", imageUrl: slide.imageUrl ?? "", videoUrl: slide.videoUrl ?? "", badgeText: slide.badgeText ?? "", ctaText: slide.ctaText ?? "", ctaLink: slide.ctaLink ?? "", sortOrder: String(slide.sortOrder ?? "") });
     setShowSlideForm(true);
-  };
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (editingProduct) {
-      updateProduct.mutate({
-        id: editingProduct.id,
-        name: form.name,
-        description: form.description,
-        price: form.price,
-        imageUrl: form.imageUrl || undefined,
-        featured: form.featured,
-        categoryId: parseInt(form.categoryId),
-        storeId: selectedStoreId,
-      });
-    } else {
-      createProduct.mutate({
-        categoryId: parseInt(form.categoryId),
-        name: form.name,
-        description: form.description,
-        price: form.price,
-        imageUrl: form.imageUrl || undefined,
-        featured: form.featured,
-        storeId: selectedStoreId,
-      });
-    }
   };
 
   const handleCatSubmit = (e: React.FormEvent) => {
@@ -3001,6 +2998,7 @@ function MenuTab() {
         imageUrl: catForm.imageUrl || undefined,
         description: catForm.description || undefined,
         sortOrder: catForm.sortOrder ? parseInt(catForm.sortOrder) : undefined,
+        storeId: selectedStoreId,
       });
     } else {
       createCategoryMut.mutate({
@@ -3010,20 +3008,13 @@ function MenuTab() {
         imageUrl: catForm.imageUrl || undefined,
         description: catForm.description || undefined,
         sortOrder: catForm.sortOrder ? parseInt(catForm.sortOrder) : undefined,
+        storeId: selectedStoreId,
       });
     }
   };
 
   const startEdit = (product: any) => {
     setEditingProduct(product);
-    setForm({
-      categoryId: String(product.categoryId),
-      name: product.name,
-      description: product.description ?? "",
-      price: product.price,
-      imageUrl: product.imageUrl ?? "",
-      featured: product.featured,
-    });
     setShowForm(true);
   };
 
@@ -3047,6 +3038,17 @@ function MenuTab() {
     { id: "carousel" as const, label: "Carrossel Hero", count: null as number | null },
   ];
 
+  if (selectedStoreId === undefined) {
+    return (
+      <AdminPage>
+        <AdminTopbar title="Cardápio" subtitle="Selecione uma loja para editar o catálogo sem misturar dados entre unidades." />
+        <AdminSurface>
+          <AdminEmptyState icon={<Store className="h-8 w-8" />} title="Selecione uma loja" description="Use o seletor de unidade no menu do painel para gerenciar produtos, categorias e banners desta loja." />
+        </AdminSurface>
+      </AdminPage>
+    );
+  }
+
   return (
     <AdminPage>
       <AdminTopbar
@@ -3055,7 +3057,7 @@ function MenuTab() {
         actions={
           <>
             {activeMenuTab === "products" && (
-              <Button onClick={() => { setEditingProduct(null); setForm({ categoryId: "", name: "", description: "", price: "", imageUrl: "", featured: false }); setShowForm(true); setShowCatForm(false); }} className="gap-1.5 h-9 text-xs">
+              <Button onClick={() => { setEditingProduct(null); setShowForm(true); setShowCatForm(false); }} className="gap-1.5 h-9 text-xs">
                 <PlusCircle className="w-4 h-4" />
                 Novo produto
               </Button>
@@ -3097,190 +3099,49 @@ function MenuTab() {
 
       {activeMenuTab === "products" && (
         <>
-          <Card className="border-primary/20 bg-gradient-to-br from-white to-[#fff7f7]">
+          <Card className="mb-5 border-primary/20">
             <CardHeader className="pb-3">
-              <CardTitle className="text-base">Pizza com mais de um sabor</CardTitle>
-              <p className="text-sm text-muted-foreground">
-                Ative o modo multi-sabor no cardapio e defina quantos sabores cada tamanho pode aceitar.
-              </p>
+              <CardTitle className="text-base">Estilo do cardápio</CardTitle>
+              <p className="text-sm text-muted-foreground">Escolha a experiência de navegação desta loja. Produtos e regras permanecem os mesmos.</p>
             </CardHeader>
-            <CardContent className="space-y-5">
-              <div className="flex flex-col gap-3 rounded-2xl border border-border/70 bg-background/80 p-4 sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                  <p className="text-sm font-semibold text-foreground">Liberar montagem por sabores</p>
-                  <p className="text-xs text-muted-foreground">
-                    Quando ativo, a pizza passa a abrir no modal com selecao configuravel de sabores.
-                  </p>
-                </div>
-                <Switch
-                  checked={pizzaMultiFlavorEnabled}
-                  onCheckedChange={setPizzaMultiFlavorEnabled}
-                  aria-label="Ativar pizza com mais de um sabor"
-                />
-              </div>
-
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                {[
-                  { key: "small", label: "Pequena" },
-                  { key: "medium", label: "Media" },
-                  { key: "large", label: "Grande" },
-                  { key: "family", label: "Familia" },
-                ].map((size) => (
-                  <div key={size.key} className="space-y-1.5 rounded-2xl border border-border/70 bg-background/80 p-4">
-                    <Label htmlFor={`pizza-flavors-${size.key}`}>{size.label}</Label>
-                    <Input
-                      id={`pizza-flavors-${size.key}`}
-                      type="number"
-                      min={1}
-                      max={4}
-                      value={pizzaFlavorLimits[size.key as keyof typeof pizzaFlavorLimits]}
-                      onChange={(event) =>
-                        setPizzaFlavorLimits((current) => ({
-                          ...current,
-                          [size.key]: clampFlavorCount(event.target.value),
-                        }))
-                      }
-                    />
-                    <p className="text-xs text-muted-foreground">Quantidade maxima de sabores para este tamanho.</p>
-                  </div>
+            <CardContent className="space-y-4">
+              <div className="grid gap-3 md:grid-cols-3">
+                {([
+                  { id: "editorial", name: "Lista editorial", description: "Imagem generosa, leitura rápida e botão de compra destacado." },
+                  { id: "compact", name: "Lista compacta", description: "Mais produtos visíveis e navegação eficiente para cardápios grandes." },
+                  { id: "visual", name: "Vitrine visual", description: "Grade de imagens para marcas que vendem primeiro pelo visual." },
+                ] as const).map((option) => (
+                  <button key={option.id} type="button" onClick={() => setMenuLayout(option.id)} className={`rounded-2xl border-2 p-3 text-left transition-all ${menuLayout === option.id ? "border-primary bg-primary/5 shadow-sm" : "border-border bg-background hover:border-primary/40"}`}>
+                    <div className={`mb-3 grid gap-1 rounded-xl bg-[#f6efec] p-2 ${option.id === "visual" ? "grid-cols-2" : "grid-cols-1"}`}>
+                      {[0, 1].map((item) => <div key={item} className={`overflow-hidden rounded-lg border bg-white ${option.id === "visual" ? "h-20" : option.id === "compact" ? "h-10" : "h-14"}`}><div className={`h-full bg-[#d9a07a] ${option.id === "visual" ? "w-full" : option.id === "compact" ? "w-12" : "w-16"}`} /></div>)}
+                    </div>
+                    <p className="font-semibold text-foreground">{option.name}</p>
+                    <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{option.description}</p>
+                  </button>
                 ))}
               </div>
-
-              <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-dashed border-primary/30 bg-primary/5 p-4">
-                <div>
-                  <p className="text-sm font-semibold text-foreground">Regra de preco</p>
-                  <p className="text-xs text-muted-foreground">
-                    O sistema usa automaticamente o sabor mais caro entre os escolhidos.
-                  </p>
-                </div>
-                <Button
-                  onClick={handleSavePizzaFlavorConfig}
-                  disabled={savePizzaFlavorConfig.isPending}
-                  className="gap-2"
-                >
-                  {savePizzaFlavorConfig.isPending && <Loader2 className="w-4 h-4 animate-spin" />}
-                  Salvar configuracao
+              <div className="flex justify-end">
+                <Button onClick={() => saveMenuLayout.mutate({ storeId: selectedStoreId, layout: menuLayout })} disabled={saveMenuLayout.isPending}>
+                  {saveMenuLayout.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                  Aplicar layout
                 </Button>
               </div>
             </CardContent>
           </Card>
-
           {/* Product Form */}
           {showForm && (
-            <Card className="border-primary/30">
-              <CardHeader>
-                <CardTitle className="text-base">{editingProduct ? "Editar Produto" : "Novo Produto"}</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <form onSubmit={handleSubmit} className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div className="space-y-1.5">
-                    <label className="text-sm font-medium">Categoria *</label>
-                    <Select value={form.categoryId} onValueChange={(v) => setForm({ ...form, categoryId: v })}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Selecionar categoria" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {categories?.map((c) => (
-                          <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="space-y-1.5">
-                    <label className="text-sm font-medium">Nome *</label>
-                    <input
-                      className="w-full h-9 px-3 border border-input rounded-md text-sm bg-background"
-                      value={form.name}
-                      onChange={(e) => setForm({ ...form, name: e.target.value })}
-                      required
-                      placeholder="Nome do produto"
-                    />
-                  </div>
-                  <div className="space-y-1.5 sm:col-span-2">
-                    <label className="text-sm font-medium">Descrição</label>
-                    <textarea
-                      className="w-full px-3 py-2 border border-input rounded-md text-sm bg-background resize-none"
-                      value={form.description}
-                      onChange={(e) => setForm({ ...form, description: e.target.value })}
-                      rows={2}
-                      placeholder="Descrição do produto"
-                    />
-                  </div>
-                  <div className="space-y-1.5">
-                    <label className="text-sm font-medium">Preço (R$) *</label>
-                    <input
-                      className="w-full h-9 px-3 border border-input rounded-md text-sm bg-background"
-                      value={form.price}
-                      onChange={(e) => setForm({ ...form, price: e.target.value })}
-                      required
-                      placeholder="Ex: 59.90"
-                      type="number"
-                      step="0.01"
-                    />
-                  </div>
-                  <div className="space-y-1.5">
-                    <label className="text-sm font-medium">Imagem do Produto <span className="text-xs text-muted-foreground font-normal">(JPG, PNG, WebP — máx. 5MB)</span></label>
-                    <div
-                      className={`relative border-2 border-dashed rounded-xl transition-colors cursor-pointer ${
-                        productImageUploading ? "border-primary/50 bg-primary/5" : "border-input hover:border-primary/50 hover:bg-muted/30"
-                      }`}
-                      onClick={() => !productImageUploading && productImageInputRef.current?.click()}
-                      onDragOver={(e) => e.preventDefault()}
-                      onDrop={(e) => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f) handleProductImageFile(f); }}
-                    >
-                      {form.imageUrl ? (
-                        <div className="relative">
-                          <img src={form.imageUrl} alt="Preview" className="w-full h-36 object-cover rounded-xl" />
-                          <div className="absolute inset-0 bg-black/40 rounded-xl flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity">
-                            <span className="text-white text-sm font-medium flex items-center gap-2"><Upload className="w-4 h-4" /> Trocar imagem</span>
-                          </div>
-                        </div>
-                      ) : (
-                        <div className="flex flex-col items-center justify-center py-6 gap-2 text-muted-foreground">
-                          {productImageUploading ? (
-                            <><Loader2 className="w-7 h-7 animate-spin text-primary" /><span className="text-sm">Enviando imagem...</span></>
-                          ) : (
-                            <><ImageIcon className="w-7 h-7" /><span className="text-sm font-medium">Clique ou arraste uma imagem aqui</span><span className="text-xs">JPG, PNG ou WebP</span></>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                    <input
-                      ref={productImageInputRef}
-                      type="file"
-                      accept="image/jpeg,image/png,image/webp"
-                      className="hidden"
-                      onChange={(e) => { const f = e.target.files?.[0]; if (f) handleProductImageFile(f); e.target.value = ""; }}
-                    />
-                    <details className="mt-1">
-                      <summary className="text-xs text-muted-foreground cursor-pointer hover:text-foreground">Ou cole uma URL de imagem</summary>
-                      <input className="mt-1.5 w-full h-9 px-3 border border-input rounded-md text-sm bg-background" value={form.imageUrl} onChange={(e) => setForm({ ...form, imageUrl: e.target.value })} placeholder="https://..." />
-                    </details>
-                  </div>
-                  <div className="flex items-center gap-2 sm:col-span-2">
-                    <input
-                      type="checkbox"
-                      id="featured"
-                      checked={form.featured}
-                      onChange={(e) => setForm({ ...form, featured: e.target.checked })}
-                      className="w-4 h-4"
-                    />
-                    <label htmlFor="featured" className="text-sm font-medium">Produto em destaque</label>
-                  </div>
-                  <div className="flex gap-2 sm:col-span-2">
-                    <Button type="submit" disabled={createProduct.isPending || updateProduct.isPending}>
-                      {(createProduct.isPending || updateProduct.isPending) ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
-                      {editingProduct ? "Salvar Alterações" : "Criar Produto"}
-                    </Button>
-                    <Button type="button" variant="outline" onClick={() => { setShowForm(false); setEditingProduct(null); }}>Cancelar</Button>
-                  </div>
-                </form>
-              </CardContent>
-            </Card>
+            <ProductCatalogEditor
+              key={editingProduct?.id ?? "new-product"}
+              storeId={selectedStoreId}
+              categories={categories ?? []}
+              product={editingProduct}
+              onClose={() => { setShowForm(false); setEditingProduct(null); }}
+              onSaved={() => { setShowForm(false); setEditingProduct(null); }}
+            />
           )}
 
           {/* Category Filter */}
-          <div className="flex gap-2 overflow-x-auto pb-2">
+          <div className="flex max-w-full gap-2 overflow-x-auto pb-2">
             <button
               onClick={() => setSelectedCatId(null)}
               className={`shrink-0 px-3 py-1.5 rounded-full text-sm font-medium transition-all ${
@@ -3308,9 +3169,9 @@ function MenuTab() {
               {Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-16 w-full" />)}
             </div>
           ) : (
-            <Card>
-              <CardContent className="p-0">
-                <div className="overflow-x-auto">
+            <Card className="min-w-0 max-w-full overflow-hidden">
+              <CardContent className="min-w-0 p-0">
+                <div className="max-w-full overflow-x-auto">
                   <table className="w-full text-sm">
                     <thead>
                   <tr className="admin-table-head">
@@ -3630,7 +3491,7 @@ function MenuTab() {
                           <td className="p-3 text-center text-muted-foreground">{cat.sortOrder ?? "-"}</td>
                           <td className="p-3 text-center">
                             <button
-                              onClick={() => updateCategoryMut.mutate({ id: cat.id, active: !cat.active })}
+                              onClick={() => updateCategoryMut.mutate({ id: cat.id, active: !cat.active, storeId: selectedStoreId })}
                               className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium transition-all ${
                                 cat.active ? "bg-[#f0fdf4] text-[#166534] hover:bg-[#dcfce7]" : "bg-[#fce8e8] text-[#450709] hover:bg-[#f9d0d0]"
                               }`}
@@ -3644,7 +3505,7 @@ function MenuTab() {
                               <Button
                                 size="sm" variant="ghost"
                                 className="text-destructive hover:text-destructive"
-                                onClick={() => { if (confirm("Remover esta categoria? Os produtos nao serao excluidos.")) deleteCategoryMut.mutate({ id: cat.id }); }}
+                                onClick={() => { if (confirm("Remover esta categoria? Os produtos nao serao excluidos.")) deleteCategoryMut.mutate({ id: cat.id, storeId: selectedStoreId }); }}
                               >
                                 Remover
                               </Button>
@@ -3786,7 +3647,7 @@ function MenuTab() {
                       </div>
                       <div className="flex items-center gap-1 flex-shrink-0">
                         <button
-                          onClick={() => updateSlide.mutate({ id: slide.id, isActive: !slide.isActive })}
+                          onClick={() => updateSlide.mutate({ id: slide.id, storeId: selectedStoreId, isActive: !slide.isActive })}
                           className={`px-2 py-1 rounded-full text-xs font-medium transition-all ${
                             slide.isActive ? "bg-[#f0fdf4] text-[#166534] hover:bg-[#dcfce7]" : "bg-[#fce8e8] text-[#450709] hover:bg-[#f9d0d0]"
                           }`}
@@ -3796,7 +3657,7 @@ function MenuTab() {
                         <Button size="sm" variant="ghost" onClick={() => startEditSlide(slide)}>Editar</Button>
                         <Button
                           size="sm" variant="ghost" className="text-destructive hover:text-destructive"
-                          onClick={() => { if (confirm("Remover este slide?")) deleteSlide.mutate({ id: slide.id }); }}
+                          onClick={() => { if (confirm("Remover este slide?")) deleteSlide.mutate({ id: slide.id, storeId: selectedStoreId }); }}
                         >
                           Remover
                         </Button>
@@ -3816,12 +3677,30 @@ function MenuTab() {
 // ─── CAROUSEL ADMIN SECTION ──────────────────────────────────────────────────
 function CarouselAdminSection() {
   const utils = trpc.useUtils();
-  const { data: images, isLoading } = trpc.carousel.listAll.useQuery();
+  const { selectedStoreId } = useAdminStore();
+  const { data: storeSettings } = trpc.storeSettings.getAdmin.useQuery(
+    { storeId: selectedStoreId },
+    { enabled: selectedStoreId !== undefined },
+  );
+  const { data: images, isLoading } = trpc.carousel.listAll.useQuery(
+    { storeId: selectedStoreId },
+    { enabled: selectedStoreId !== undefined },
+  );
   const [showForm, setShowForm] = useState(false);
   const [editingImage, setEditingImage] = useState<any | null>(null);
   const [form, setForm] = useState({ imageUrl: "", title: "", sortOrder: "0" });
   const [uploading, setUploading] = useState(false);
+  const [homeConfig, setHomeConfig] = useState<HomeAppConfig>(DEFAULT_HOME_APP_CONFIG);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (typeof storeSettings?.homeLayoutConfig !== "string") return;
+    try {
+      setHomeConfig({ ...DEFAULT_HOME_APP_CONFIG, ...JSON.parse(storeSettings.homeLayoutConfig) });
+    } catch {
+      setHomeConfig(DEFAULT_HOME_APP_CONFIG);
+    }
+  }, [storeSettings?.homeLayoutConfig]);
 
   const uploadImage = trpc.carousel.uploadImage.useMutation();
   const createImage = trpc.carousel.create.useMutation({
@@ -3836,20 +3715,38 @@ function CarouselAdminSection() {
     onSuccess: () => { utils.carousel.listAll.invalidate(); utils.carousel.list.invalidate(); toast.success("Removido!"); },
     onError: (err) => toast.error(err.message),
   });
+  const saveHomeConfig = trpc.storeSettings.saveHomeLayoutConfig.useMutation({
+    onSuccess: async () => {
+      await Promise.all([utils.storeSettings.get.invalidate(), utils.storeSettings.getAdmin.invalidate()]);
+      toast.success("Textos da Home atualizados!");
+    },
+    onError: (error) => toast.error(error.message),
+  });
 
   const handleFile = async (file: File) => {
-    if (file.size > 5 * 1024 * 1024) { toast.error("Imagem muito grande. Máximo 5MB."); return; }
+    if (file.size > 3 * 1024 * 1024) { toast.error("Imagem muito grande. Máximo de 3 MB."); return; }
+    if (!["image/jpeg", "image/png", "image/webp", "image/gif"].includes(file.type)) {
+      toast.error("Formato inválido. Use JPG, PNG, WebP ou GIF.");
+      return;
+    }
     setUploading(true);
-    try {
-      const reader = new FileReader();
-      reader.onload = async (e) => {
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+      try {
         const base64 = (e.target?.result as string).split(",")[1];
-        const { url } = await uploadImage.mutateAsync({ base64, mimeType: file.type as "image/jpeg" | "image/png" | "image/webp" | "image/gif", fileName: file.name });
+        const { url } = await uploadImage.mutateAsync({ storeId: selectedStoreId, base64, mimeType: file.type as "image/jpeg" | "image/png" | "image/webp" | "image/gif", fileName: file.name });
         setForm(f => ({ ...f, imageUrl: url }));
+      } catch {
+        // Mutation and global API handlers provide the user-facing error.
+      } finally {
         setUploading(false);
-      };
-      reader.readAsDataURL(file);
-    } catch { setUploading(false); toast.error("Erro no upload"); }
+      }
+    };
+    reader.onerror = () => {
+      setUploading(false);
+      toast.error("Não foi possível ler a imagem.");
+    };
+    reader.readAsDataURL(file);
   };
 
   const startEdit = (img: any) => {
@@ -3862,14 +3759,69 @@ function CarouselAdminSection() {
     e.preventDefault();
     const data = { imageUrl: form.imageUrl, title: form.title || null, sortOrder: parseInt(form.sortOrder) || 0 };
     if (editingImage) {
-      updateImage.mutate({ id: editingImage.id, ...data });
+      updateImage.mutate({ id: editingImage.id, storeId: selectedStoreId, ...data });
     } else {
-      createImage.mutate(data);
+      createImage.mutate({ ...data, storeId: selectedStoreId });
     }
   };
 
   return (
     <div className="space-y-4">
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Textos e atalhos da Home</CardTitle>
+          <p className="text-xs text-muted-foreground">Personalize o cabeçalho, o card de pedido e os rótulos exibidos para esta loja.</p>
+        </CardHeader>
+        <CardContent>
+          <form
+            className="space-y-4"
+            onSubmit={(event) => {
+              event.preventDefault();
+              saveHomeConfig.mutate({ ...homeConfig, storeId: selectedStoreId });
+            }}
+          >
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="space-y-1.5">
+                <Label htmlFor="home-greeting">Texto abaixo da saudação</Label>
+                <Input id="home-greeting" maxLength={100} value={homeConfig.greetingSubtitle} onChange={(event) => setHomeConfig((current) => ({ ...current, greetingSubtitle: event.target.value }))} />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="home-order-title">Título do card de pedido</Label>
+                <Input id="home-order-title" maxLength={80} value={homeConfig.orderTitle} onChange={(event) => setHomeConfig((current) => ({ ...current, orderTitle: event.target.value }))} />
+              </div>
+              <div className="space-y-1.5 md:col-span-2">
+                <Label htmlFor="home-order-description">Descrição do card</Label>
+                <Textarea id="home-order-description" maxLength={180} value={homeConfig.orderDescription} onChange={(event) => setHomeConfig((current) => ({ ...current, orderDescription: event.target.value }))} />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="home-order-button">Texto do botão principal</Label>
+                <Input id="home-order-button" maxLength={40} value={homeConfig.orderButtonLabel} onChange={(event) => setHomeConfig((current) => ({ ...current, orderButtonLabel: event.target.value }))} />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="home-quick-title">Título dos atalhos</Label>
+                <Input id="home-quick-title" maxLength={60} value={homeConfig.quickActionsTitle} onChange={(event) => setHomeConfig((current) => ({ ...current, quickActionsTitle: event.target.value }))} />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+              {([
+                ["offersLabel", "Ofertas"],
+                ["couponsLabel", "Cupons"],
+                ["clubLabel", "Clube"],
+                ["menuLabel", "Cardápio"],
+              ] as const).map(([key, label]) => (
+                <div key={key} className="space-y-1.5">
+                  <Label htmlFor={`home-${key}`}>{label}</Label>
+                  <Input id={`home-${key}`} maxLength={24} value={homeConfig[key]} onChange={(event) => setHomeConfig((current) => ({ ...current, [key]: event.target.value }))} />
+                </div>
+              ))}
+            </div>
+            <div className="flex justify-end">
+              <Button type="submit" disabled={saveHomeConfig.isPending}>{saveHomeConfig.isPending ? "Salvando..." : "Salvar textos da Home"}</Button>
+            </div>
+          </form>
+        </CardContent>
+      </Card>
+
       <div className="flex items-center justify-between">
         <div>
           <h3 className="font-semibold">Imagens do Carrossel Hero</h3>
@@ -3886,7 +3838,7 @@ function CarouselAdminSection() {
           <CardContent>
             <form onSubmit={handleSubmit} className="space-y-4">
               <div className="space-y-1.5">
-                <label className="text-sm font-medium">Imagem <span className="text-xs text-muted-foreground">(JPG, PNG, WebP — proporção 16:9, máx. 5MB)</span></label>
+                <label className="text-sm font-medium">Imagem <span className="text-xs text-muted-foreground">(JPG, PNG ou WebP — até 3 MB; faixas largas serão centralizadas)</span></label>
                 <div
                   className={`relative border-2 border-dashed rounded-xl transition-colors cursor-pointer ${
                     uploading ? "border-primary/50 bg-primary/5" : "border-input hover:border-primary/50 hover:bg-muted/30"
@@ -3961,7 +3913,7 @@ function CarouselAdminSection() {
                   </div>
                   <div className="flex items-center gap-1 flex-shrink-0">
                     <button
-                      onClick={() => updateImage.mutate({ id: img.id, active: !img.active })}
+                      onClick={() => updateImage.mutate({ id: img.id, storeId: selectedStoreId, active: !img.active })}
                       className={`px-2 py-1 rounded-full text-xs font-medium transition-all ${
                         img.active ? "bg-[#f0fdf4] text-[#166534] hover:bg-[#dcfce7]" : "bg-[#fce8e8] text-[#450709] hover:bg-[#f9d0d0]"
                       }`}
@@ -3970,7 +3922,7 @@ function CarouselAdminSection() {
                     </button>
                     <Button size="sm" variant="ghost" onClick={() => startEdit(img)}>Editar</Button>
                     <Button size="sm" variant="ghost" className="text-destructive hover:text-destructive"
-                      onClick={() => { if (confirm("Remover esta imagem do carrossel?")) deleteImage.mutate({ id: img.id }); }}
+                      onClick={() => { if (confirm("Remover esta imagem do carrossel?")) deleteImage.mutate({ id: img.id, storeId: selectedStoreId }); }}
                     >Remover</Button>
                   </div>
                 </div>
@@ -3986,7 +3938,11 @@ function CarouselAdminSection() {
 // ─── COUPONS TAB ──────────────────────────────────────────────────────────────
 function CouponsTab() {
   const utils = trpc.useUtils();
-  const { data: coupons, isLoading } = trpc.coupons.list.useQuery();
+  const { selectedStoreId } = useAdminStore();
+  const { data: coupons, isLoading } = trpc.coupons.list.useQuery(
+    { storeId: selectedStoreId },
+    { enabled: selectedStoreId !== undefined },
+  );
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({
     code: "",
@@ -3997,8 +3953,8 @@ function CouponsTab() {
   });
 
   const createCoupon = trpc.coupons.create.useMutation({
-    onSuccess: () => {
-      utils.coupons.list.invalidate();
+    onSuccess: async () => {
+      await Promise.all([utils.coupons.list.invalidate(), utils.coupons.listPublic.invalidate()]);
       setShowForm(false);
       setForm({ code: "", discountType: "percentage", discountValue: "", minOrderValue: "", maxUses: "" });
       toast.success("Cupom criado!");
@@ -4007,8 +3963,8 @@ function CouponsTab() {
   });
 
   const updateCoupon = trpc.coupons.update.useMutation({
-    onSuccess: () => {
-      utils.coupons.list.invalidate();
+    onSuccess: async () => {
+      await Promise.all([utils.coupons.list.invalidate(), utils.coupons.listPublic.invalidate()]);
       toast.success("Cupom atualizado!");
     },
     onError: (err) => toast.error(err.message),
@@ -4022,8 +3978,18 @@ function CouponsTab() {
       discountValue: form.discountValue,
       minOrderValue: form.minOrderValue || undefined,
       maxUses: form.maxUses ? parseInt(form.maxUses) : undefined,
+      storeId: selectedStoreId,
     });
   };
+
+  if (selectedStoreId === undefined) {
+    return (
+      <AdminPage>
+        <AdminTopbar title="Cupons" subtitle="Selecione a loja responsável pelos cupons." />
+        <AdminSurface><AdminEmptyState icon={<Store className="h-8 w-8" />} title="Selecione uma loja" description="Cada cupom pertence a uma única loja e não será compartilhado com as demais." /></AdminSurface>
+      </AdminPage>
+    );
+  }
 
   return (
     <AdminPage>
@@ -4154,7 +4120,7 @@ function CouponsTab() {
                         size="sm"
                         variant="ghost"
                         className="h-8 text-xs"
-                        onClick={() => updateCoupon.mutate({ id: coupon.id, active: !coupon.active })}
+                        onClick={() => updateCoupon.mutate({ id: coupon.id, active: !coupon.active, storeId: selectedStoreId })}
                       >
                         {coupon.active ? "Desativar" : "Ativar"}
                       </Button>
@@ -4844,22 +4810,30 @@ function ReportsTab() {
 // ─── PROMOTIONS TAB ───────────────────────────────────────────────────────────
 function PromotionsTab() {
   const utils = trpc.useUtils();
-  const { data: promotions, isLoading } = trpc.promotions.all.useQuery();
+  const { selectedStoreId } = useAdminStore();
+  const { data: promotions, isLoading } = trpc.promotions.all.useQuery(
+    { storeId: selectedStoreId },
+    { enabled: selectedStoreId !== undefined },
+  );
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ title: "", description: "", imageUrl: "", couponCode: "", endsAt: "" });
 
   const createPromotion = trpc.promotions.create.useMutation({
-    onSuccess: () => { utils.promotions.all.invalidate(); setShowForm(false); setForm({ title: "", description: "", imageUrl: "", couponCode: "", endsAt: "" }); toast.success("Promoção criada!"); },
+    onSuccess: async () => { await Promise.all([utils.promotions.all.invalidate(), utils.promotions.publicActive.invalidate(), utils.promotions.homeActive.invalidate()]); setShowForm(false); setForm({ title: "", description: "", imageUrl: "", couponCode: "", endsAt: "" }); toast.success("Promoção criada!"); },
     onError: (e) => toast.error(e.message),
   });
   const updatePromotion = trpc.promotions.update.useMutation({
-    onSuccess: () => { utils.promotions.all.invalidate(); toast.success("Promoção atualizada!"); },
+    onSuccess: async () => { await Promise.all([utils.promotions.all.invalidate(), utils.promotions.publicActive.invalidate(), utils.promotions.homeActive.invalidate()]); toast.success("Promoção atualizada!"); },
     onError: (e) => toast.error(e.message),
   });
   const deletePromotion = trpc.promotions.delete.useMutation({
-    onSuccess: () => { utils.promotions.all.invalidate(); toast.success("Promoção removida!"); },
+    onSuccess: async () => { await Promise.all([utils.promotions.all.invalidate(), utils.promotions.publicActive.invalidate(), utils.promotions.homeActive.invalidate()]); toast.success("Promoção removida!"); },
     onError: (e) => toast.error(e.message),
   });
+
+  if (selectedStoreId === undefined) {
+    return <AdminPage><AdminTopbar title="Promoções" subtitle="Selecione uma loja para gerenciar campanhas independentes." /><AdminSurface><AdminEmptyState icon={<Store className="h-8 w-8" />} title="Selecione uma loja" description="As promoções não são compartilhadas entre marcas." /></AdminSurface></AdminPage>;
+  }
 
   return (
     <AdminPage>
@@ -4877,7 +4851,7 @@ function PromotionsTab() {
         <Card>
           <CardHeader><CardTitle>Nova Promoção</CardTitle></CardHeader>
           <CardContent>
-            <form onSubmit={(e) => { e.preventDefault(); createPromotion.mutate({ title: form.title, description: form.description || undefined, imageUrl: form.imageUrl || undefined, couponCode: form.couponCode || undefined, active: true, endsAt: form.endsAt ? new Date(form.endsAt) : undefined }); }} className="space-y-4">
+            <form onSubmit={(e) => { e.preventDefault(); createPromotion.mutate({ storeId: selectedStoreId, title: form.title, description: form.description || undefined, imageUrl: form.imageUrl || undefined, couponCode: form.couponCode || undefined, active: true, endsAt: form.endsAt ? new Date(form.endsAt) : undefined }); }} className="space-y-4">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-1.5"><Label>Título *</Label><Input value={form.title} onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))} required /></div>
                 <div className="space-y-1.5"><Label>Cupom (opcional)</Label><Input value={form.couponCode} onChange={(e) => setForm((f) => ({ ...f, couponCode: e.target.value }))} placeholder="PROMO10" /></div>
@@ -4905,10 +4879,10 @@ function PromotionsTab() {
                   </div>
                 </div>
                 <div className="flex gap-2 shrink-0">
-                  <Button size="sm" variant="ghost" onClick={() => updatePromotion.mutate({ id: promo.id, data: { active: !promo.active } })}>
+                  <Button size="sm" variant="ghost" onClick={() => updatePromotion.mutate({ id: promo.id, storeId: selectedStoreId, data: { active: !promo.active } })}>
                     {promo.active ? "Desativar" : "Ativar"}
                   </Button>
-                  <Button size="sm" variant="ghost" className="text-destructive" onClick={() => { if (confirm("Remover promoção?")) deletePromotion.mutate({ id: promo.id }); }}>
+                  <Button size="sm" variant="ghost" className="text-destructive" onClick={() => { if (confirm("Remover promoção?")) deletePromotion.mutate({ id: promo.id, storeId: selectedStoreId }); }}>
                     Remover
                   </Button>
                 </div>
@@ -4929,11 +4903,15 @@ function PromotionsTab() {
 // ─── RAFFLES TAB ──────────────────────────────────────────────────────────────
 function RafflesTab() {
   const utils = trpc.useUtils();
-  const { data: raffles, isLoading } = trpc.raffles.all.useQuery();
+  const { selectedStoreId } = useAdminStore();
+  const { data: raffles, isLoading } = trpc.raffles.all.useQuery(
+    { storeId: selectedStoreId },
+    { enabled: selectedStoreId !== undefined },
+  );
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ title: "", description: "", prize: "", imageUrl: "", endsAt: "" });
   const [viewEntries, setViewEntries] = useState<number | null>(null);
-  const { data: entries } = trpc.raffles.entries.useQuery({ raffleId: viewEntries! }, { enabled: !!viewEntries });
+  const { data: entries } = trpc.raffles.entries.useQuery({ raffleId: viewEntries!, storeId: selectedStoreId }, { enabled: !!viewEntries && selectedStoreId !== undefined });
 
   const createRaffle = trpc.raffles.create.useMutation({
     onSuccess: () => { utils.raffles.all.invalidate(); setShowForm(false); setForm({ title: "", description: "", prize: "", imageUrl: "", endsAt: "" }); toast.success("Sorteio criado!"); },
@@ -4947,6 +4925,10 @@ function RafflesTab() {
     onSuccess: () => { utils.raffles.all.invalidate(); toast.success("Sorteio atualizado!"); },
     onError: (e) => toast.error(e.message),
   });
+
+  if (selectedStoreId === undefined) {
+    return <AdminPage><AdminTopbar title="Sorteios" subtitle="Selecione uma loja para gerenciar sorteios." /><AdminSurface><AdminEmptyState icon={<Store className="h-8 w-8" />} title="Selecione uma loja" description="Participantes e sorteios ficam isolados por marca." /></AdminSurface></AdminPage>;
+  }
 
   return (
     <AdminPage>
@@ -4964,7 +4946,7 @@ function RafflesTab() {
         <Card>
           <CardHeader><CardTitle>Novo Sorteio</CardTitle></CardHeader>
           <CardContent>
-            <form onSubmit={(e) => { e.preventDefault(); createRaffle.mutate({ title: form.title, description: form.description || undefined, prize: form.prize, imageUrl: form.imageUrl || undefined, endsAt: form.endsAt ? new Date(form.endsAt) : undefined }); }} className="space-y-4">
+            <form onSubmit={(e) => { e.preventDefault(); createRaffle.mutate({ storeId: selectedStoreId, title: form.title, description: form.description || undefined, prize: form.prize, imageUrl: form.imageUrl || undefined, endsAt: form.endsAt ? new Date(form.endsAt) : undefined }); }} className="space-y-4">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-1.5"><Label>Título *</Label><Input value={form.title} onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))} required /></div>
                 <div className="space-y-1.5"><Label>Prêmio *</Label><Input value={form.prize} onChange={(e) => setForm((f) => ({ ...f, prize: e.target.value }))} required placeholder="Ex: Pizza Família Grátis" /></div>
@@ -4999,10 +4981,10 @@ function RafflesTab() {
                   </Button>
                   {raffle.status === "active" && (
                     <>
-                      <Button size="sm" onClick={() => { if (confirm("Sortear vencedor agora?")) drawWinner.mutate({ raffleId: raffle.id }); }} disabled={drawWinner.isPending}>
+                      <Button size="sm" onClick={() => { if (confirm("Sortear vencedor agora?")) drawWinner.mutate({ raffleId: raffle.id, storeId: selectedStoreId }); }} disabled={drawWinner.isPending}>
                         🎲 Sortear Vencedor
                       </Button>
-                      <Button size="sm" variant="ghost" onClick={() => updateRaffle.mutate({ id: raffle.id, data: { status: "closed" } })}>
+                      <Button size="sm" variant="ghost" onClick={() => updateRaffle.mutate({ id: raffle.id, storeId: selectedStoreId, data: { status: "closed" } })}>
                         Encerrar
                       </Button>
                     </>
@@ -5035,8 +5017,15 @@ function RafflesTab() {
 // ─── UPSELLS TAB ──────────────────────────────────────────────────────────────
 function UpsellsTab() {
   const utils = trpc.useUtils();
-  const { data: upsells, isLoading } = trpc.upsells.all.useQuery();
-  const { data: products } = trpc.products.list.useQuery({});
+  const { selectedStoreId } = useAdminStore();
+  const { data: upsells, isLoading } = trpc.upsells.all.useQuery(
+    { storeId: selectedStoreId },
+    { enabled: selectedStoreId !== undefined },
+  );
+  const { data: products } = trpc.products.list.useQuery(
+    { storeId: selectedStoreId },
+    { enabled: selectedStoreId !== undefined },
+  );
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ suggestedProductId: "", triggerProductId: "", type: "upsell" as "upsell" | "downsell", title: "", description: "", discountPercent: "0", triggerMinTotal: "" });
 
@@ -5052,6 +5041,10 @@ function UpsellsTab() {
     onSuccess: () => { utils.upsells.all.invalidate(); toast.success("Up-sell removido!"); },
     onError: (e) => toast.error(e.message),
   });
+
+  if (selectedStoreId === undefined) {
+    return <AdminPage><AdminTopbar title="Ofertas adicionais" subtitle="Selecione uma loja para configurar as ofertas do checkout." /><AdminSurface><AdminEmptyState icon={<Store className="h-8 w-8" />} title="Selecione uma loja" description="Produtos sugeridos precisam pertencer à mesma loja do pedido." /></AdminSurface></AdminPage>;
+  }
 
   return (
     <AdminPage>
@@ -5073,6 +5066,7 @@ function UpsellsTab() {
               e.preventDefault();
               if (!form.suggestedProductId) { toast.error("Selecione um produto"); return; }
               createUpsell.mutate({
+                storeId: selectedStoreId,
                 suggestedProductId: parseInt(form.suggestedProductId),
                 triggerProductId: form.triggerProductId ? parseInt(form.triggerProductId) : undefined,
                 type: form.type,
@@ -5143,10 +5137,10 @@ function UpsellsTab() {
                     {u.description && <p className="text-xs text-muted-foreground italic">{u.description}</p>}
                   </div>
                   <div className="flex gap-2 shrink-0">
-                    <Button size="sm" variant="ghost" onClick={() => updateUpsell.mutate({ id: u.id, data: { active: !u.active } })}>
+                    <Button size="sm" variant="ghost" onClick={() => updateUpsell.mutate({ id: u.id, storeId: selectedStoreId, data: { active: !u.active } })}>
                       {u.active ? "Desativar" : "Ativar"}
                     </Button>
-                    <Button size="sm" variant="ghost" className="text-destructive" onClick={() => { if (confirm("Remover up-sell?")) deleteUpsell.mutate({ id: u.id }); }}>
+                    <Button size="sm" variant="ghost" className="text-destructive" onClick={() => { if (confirm("Remover up-sell?")) deleteUpsell.mutate({ id: u.id, storeId: selectedStoreId }); }}>
                       Remover
                     </Button>
                   </div>
@@ -5167,7 +5161,11 @@ function UpsellsTab() {
 
 // ─── USERS TAB ────────────────────────────────────────────────────────────────
 function CustomerJourneyHistoryModal({ userId, userName, onClose }: { userId: number; userName: string; onClose: () => void }) {
-  const { data: history, isLoading } = trpc.automations.getCustomerJourneyHistory.useQuery({ userId });
+  const { selectedStoreId } = useAdminStore();
+  const { data: history, isLoading } = trpc.automations.getCustomerJourneyHistory.useQuery(
+    { userId, storeId: selectedStoreId },
+    { enabled: Boolean(selectedStoreId) },
+  );
   const statusColors: Record<string, string> = {
     completed: "bg-[#f0fdf4] text-[#166534] border-[#bbf7d0]",
     running:   "bg-[#fef3c7] text-[#92400e] border-[#fde68a]",
@@ -5223,7 +5221,12 @@ function CustomerJourneyHistoryModal({ userId, userName, onClose }: { userId: nu
 
 function UsersTab() {
   const utils = trpc.useUtils();
-  const { data: userPage, isLoading } = trpc.adminUsers.list.useQuery();
+  const { selectedStoreId, tenantConfig } = useAdminStore();
+  const { user: authenticatedUser } = useAuth();
+  const { data: userPage, isLoading } = trpc.adminUsers.list.useQuery(
+    { storeId: selectedStoreId, pageSize: 100 },
+    { enabled: selectedStoreId !== undefined },
+  );
   const [sendCouponForm, setSendCouponForm] = useState<{ userId: number; userName: string } | null>(null);
   const [couponForm, setCouponForm] = useState({ code: "", discountType: "percentage" as "percentage" | "fixed", discountValue: "", minOrderValue: "" });
   const [journeyHistoryUser, setJourneyHistoryUser] = useState<{ userId: number; userName: string } | null>(null);
@@ -5233,6 +5236,10 @@ function UsersTab() {
     onSuccess: () => { utils.adminUsers.list.invalidate(); setSendCouponForm(null); setCouponForm({ code: "", discountType: "percentage", discountValue: "", minOrderValue: "" }); toast.success("Cupom enviado para o cliente!"); },
     onError: (e) => toast.error(e.message),
   });
+
+  if (selectedStoreId === undefined) {
+    return <AdminPage><AdminTopbar title="Clientes" subtitle="Selecione uma loja para consultar sua base de clientes." /><AdminSurface><AdminEmptyState icon={<Users className="h-8 w-8" />} title="Selecione uma loja" description="Cada loja enxerga somente clientes com pedidos naquela unidade." /></AdminSurface></AdminPage>;
+  }
 
   return (
     <AdminPage>
@@ -5247,7 +5254,7 @@ function UsersTab() {
           <CardContent>
             <form onSubmit={(e) => {
               e.preventDefault();
-              sendCoupon.mutate({ userId: sendCouponForm.userId, code: couponForm.code.toUpperCase(), discountType: couponForm.discountType, discountValue: couponForm.discountValue, minOrderValue: couponForm.minOrderValue || undefined });
+              sendCoupon.mutate({ storeId: selectedStoreId, userId: sendCouponForm.userId, code: couponForm.code.toUpperCase(), discountType: couponForm.discountType, discountValue: couponForm.discountValue, minOrderValue: couponForm.minOrderValue || undefined });
             }} className="space-y-3">
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1.5"><Label>Código *</Label><Input value={couponForm.code} onChange={(e) => setCouponForm((f) => ({ ...f, code: e.target.value }))} required placeholder="PROMO10" /></div>
@@ -5294,10 +5301,10 @@ function UsersTab() {
                           <Button size="sm" variant="outline" onClick={() => setSendCouponForm({ userId: u.id, userName: u.name ?? "Cliente" })}>
                             <Tag className="w-3.5 h-3.5 mr-1" />Cupom
                           </Button>
-                          <Button size="sm" variant="outline" onClick={() => setJourneyHistoryUser({ userId: u.id, userName: u.name ?? "Cliente" })} className="border-[#e8ebf0] text-[#8a92a0] hover:text-[#1a1d23]">
+                          {(authenticatedUser?.role === "admin" || tenantConfig.features.automations) && <Button size="sm" variant="outline" onClick={() => setJourneyHistoryUser({ userId: u.id, userName: u.name ?? "Cliente" })} className="border-[#e8ebf0] text-[#8a92a0] hover:text-[#1a1d23]">
                             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="mr-1"><path d="M12 2v10l4 2"/><circle cx="12" cy="12" r="10"/></svg>
                             Jornadas
-                          </Button>
+                          </Button>}
                         </div>
                       </td>
                     </tr>
@@ -5324,7 +5331,11 @@ function UsersTab() {
 
 function ClubTab() {
   const utils = trpc.useUtils();
-  const { data: config, isLoading } = trpc.club.getAdminConfig.useQuery();
+  const { selectedStoreId } = useAdminStore();
+  const { data: config, isLoading } = trpc.club.getAdminConfig.useQuery(
+    { storeId: selectedStoreId },
+    { enabled: Boolean(selectedStoreId) },
+  );
   const [form, setForm] = useState<ClubAdminConfig | null>(null);
 
   useEffect(() => {
@@ -5374,6 +5385,7 @@ function ClubTab() {
   const handleSave = () => {
     if (!form) return;
     saveConfig.mutate({
+      storeId: selectedStoreId,
       ...form,
       highlightItems: form.highlightItems.length ? form.highlightItems : ["Benefício exclusivo"],
       plans: form.plans.map((plan) => ({
@@ -5683,7 +5695,11 @@ const DEFAULT_HOURS: Record<string, DaySchedule> = {
 
 function SettingsTab() {
   const utils = trpc.useUtils();
-  const { data: settings, isLoading } = trpc.storeSettings.getAdmin.useQuery();
+  const { selectedStoreId } = useAdminStore();
+  const { data: settings, isLoading } = trpc.storeSettings.getAdmin.useQuery(
+    { storeId: selectedStoreId },
+    { enabled: selectedStoreId !== undefined },
+  );
 
   const [hours, setHours] = useState<Record<string, DaySchedule>>(DEFAULT_HOURS);
   const [cepInput, setCepInput] = useState("");
@@ -5733,12 +5749,22 @@ function SettingsTab() {
       .filter((s) => s.length === 5);
 
     save.mutate({
+      storeId: selectedStoreId,
       storeHours: hours,
       deliveryCepPrefixes: prefixes,
       whatsappNumber: whatsapp || undefined,
       deliveryFee: deliveryFee || undefined,
       minOrderValue: minOrder || undefined,
     });
+  }
+
+  if (selectedStoreId === undefined) {
+    return (
+      <AdminPage>
+        <AdminTopbar title="Configurações da loja" subtitle="Selecione uma unidade para editar horários, entrega e contato." />
+        <AdminSurface><AdminEmptyState icon={<Store className="h-8 w-8" />} title="Selecione uma loja" description="Estas configurações são independentes por unidade." /></AdminSurface>
+      </AdminPage>
+    );
   }
 
   if (isLoading) return <Skeleton className="h-64 w-full" />;
@@ -5899,7 +5925,11 @@ function SettingsTab() {
 
 function PaymentsTab() {
   const utils = trpc.useUtils();
-  const { data, isLoading } = trpc.paymentSettings.getAdmin.useQuery();
+  const { selectedStoreId } = useAdminStore();
+  const { data, isLoading } = trpc.paymentSettings.getAdmin.useQuery(
+    { storeId: selectedStoreId },
+    { enabled: selectedStoreId !== undefined },
+  );
   const [pixKey, setPixKey] = useState("");
   const [config, setConfig] = useState<{
     orders: {
@@ -6199,7 +6229,7 @@ function PaymentsTab() {
 
       <div className="flex justify-end">
         <Button
-          onClick={() => save.mutate({ config, pixKey })}
+          onClick={() => save.mutate({ storeId: selectedStoreId, config, pixKey })}
           disabled={save.isPending}
           size="lg"
           className="min-w-52"
@@ -6430,7 +6460,11 @@ function DriversTab() {
 // ─── ACTIVE DRIVERS MAP ───────────────────────────────────────────────────────
 
 function LeafletActiveDriversMap() {
-  const { data: locations } = trpc.drivers.allLocations.useQuery(undefined, { refetchInterval: 5000 });
+  const { selectedStoreId } = useAdminStore();
+  const { data: locations } = trpc.drivers.allLocations.useQuery(
+    { storeId: selectedStoreId },
+    { refetchInterval: 5000, enabled: selectedStoreId !== undefined },
+  );
   const markers = (locations ?? []).map((location) => ({
     id: location.driverId,
     position: { lat: Number(location.lat), lng: Number(location.lng) },
@@ -6471,8 +6505,10 @@ function LeafletActiveDriversMap() {
 function ActiveDriversMap() {
   const markersRef = useRef<Record<number, any>>({});
   const mapRef = useRef<any>(null);
-  const { data: locations } = trpc.drivers.allLocations.useQuery(undefined, {
+  const { selectedStoreId } = useAdminStore();
+  const { data: locations } = trpc.drivers.allLocations.useQuery({ storeId: selectedStoreId }, {
     refetchInterval: 5000,
+    enabled: selectedStoreId !== undefined,
   });
 
   const handleMapReady = useCallback((map: any) => {

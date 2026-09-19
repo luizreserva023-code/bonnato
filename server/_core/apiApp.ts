@@ -228,6 +228,9 @@ export async function configureApiApp(app: Express): Promise<Express> {
     "payments.checkoutWithSavedCard",
     "club.subscribe",
     "asaas.createPix",
+    "auth.syncSocialAccount",
+    "auth.disconnectSocialAccount",
+    "auth.deleteAccount",
   ]);
   const uploadProcedures = new Set([
     "avatar.upload",

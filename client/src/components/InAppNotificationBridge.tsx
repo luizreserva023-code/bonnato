@@ -3,6 +3,7 @@ import { toast } from "sonner";
 
 import { useAuth } from "@/_core/hooks/useAuth";
 import { trpc } from "@/lib/trpc";
+import { useStore } from "@/contexts/StoreContext";
 
 type AppNotice = {
   id: string;
@@ -80,17 +81,18 @@ function showLocalNotice(notice: AppNotice) {
 
 export function InAppNotificationBridge() {
   const { isAuthenticated } = useAuth();
+  const { selectedStore } = useStore();
   const initializedRef = useRef(false);
   const seenRef = useRef<Set<string>>(new Set());
 
-  const notificationsQuery = trpc.notifications.list.useQuery(undefined, {
-    enabled: isAuthenticated,
+  const notificationsQuery = trpc.notifications.list.useQuery({ storeId: selectedStore?.id }, {
+    enabled: isAuthenticated && Boolean(selectedStore?.id),
     refetchInterval: 8_000,
     refetchIntervalInBackground: true,
   });
 
-  const alertsQuery = trpc.clientAlerts.list.useQuery(undefined, {
-    enabled: isAuthenticated,
+  const alertsQuery = trpc.clientAlerts.list.useQuery({ storeId: selectedStore?.id ?? 0 }, {
+    enabled: isAuthenticated && Boolean(selectedStore?.id),
     refetchInterval: 15_000,
     refetchIntervalInBackground: true,
   });

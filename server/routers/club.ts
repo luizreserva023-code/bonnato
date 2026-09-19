@@ -4,8 +4,8 @@ import { z } from "zod";
 
 import { fireJourneyTrigger } from "../automation.ts";
 import { getDb } from "../db.ts";
-import { protectedProcedure, publicProcedure, router } from "../_core/trpc.ts";
-import { clubPayments, users } from "../../drizzle/schema.ts";
+import { protectedProcedure, publicProcedure, router, staffProcedure } from "../_core/trpc.ts";
+import { clubPayments, tenantCustomerAccounts, users } from "../../drizzle/schema.ts";
 import { sendWhatsApp } from "../whatsapp.ts";
 import {
   getClubConfig,
@@ -16,13 +16,9 @@ import {
 } from "../lib/club-config.ts";
 import { getPaymentSettingsAdmin } from "../lib/payment-config.ts";
 import { generatePixCode, generatePixQrCodeUrl } from "../lib/pix.ts";
-
-const adminProcedure = protectedProcedure.use(({ ctx, next }) => {
-  if (ctx.user.role !== "admin") {
-    throw new TRPCError({ code: "FORBIDDEN", message: "Acesso restrito a administradores" });
-  }
-  return next({ ctx });
-});
+import { getWhiteLabelRuntimeByStoreId } from "../whiteLabel.ts";
+import { getTenantCustomerAccount, getTenantScope } from "../db.ts";
+import { assertStoreEntityAccess, resolveRequiredStoreId } from "../storeUtils.ts";
 
 const clubPlanSchema = z.object({
   id: z.enum(["bonattao", "basico"]),
@@ -62,63 +58,95 @@ function ensureClubPlanIds(config: ClubConfig): ClubPlanId[] {
   return config.plans.map((plan) => plan.id) as ClubPlanId[];
 }
 
+async function assertClubStore(storeId: number) {
+  const tenant = await getWhiteLabelRuntimeByStoreId(storeId);
+  if (!tenant || tenant.status !== "active" || !tenant.features.club) {
+    throw new TRPCError({ code: "PRECONDITION_FAILED", message: "O clube nao esta disponivel nesta loja." });
+  }
+  return tenant;
+}
+
+type ClubAccountUpdate = Partial<Pick<
+  typeof tenantCustomerAccounts.$inferInsert,
+  "clubPlan" | "clubStatus" | "clubStartDate" | "clubNextBillingDate" | "clubFreePizzaUsed" | "clubFreePizzaResetAt"
+>>;
+
+async function updateClubAccount(userId: number, storeId: number, data: ClubAccountUpdate) {
+  const db = await getDb();
+  if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+  const account = await getTenantCustomerAccount(userId, storeId);
+  if (!account) throw new TRPCError({ code: "NOT_FOUND", message: "Conta do cliente nao encontrada." });
+  await db.update(tenantCustomerAccounts).set(data).where(eq(tenantCustomerAccounts.id, account.id));
+  const scope = await getTenantScope(storeId);
+  if (scope.tenantKey === "bonatto") {
+    await db.update(users).set(data).where(eq(users.id, userId));
+  }
+  return { ...account, ...data };
+}
+
 export const clubRouter = router({
-  getPlans: publicProcedure.query(async () => {
-    const config = await getClubConfig();
+  getPlans: publicProcedure
+    .input(z.object({ storeId: z.number().int().positive() }))
+    .query(async ({ input }) => {
+    await assertClubStore(input.storeId);
+    const config = await getClubConfig(input.storeId);
     return config.plans;
   }),
 
-  getPublicConfig: publicProcedure.query(async () => {
-    return getClubConfig();
+  getPublicConfig: publicProcedure
+    .input(z.object({ storeId: z.number().int().positive() }))
+    .query(async ({ input }) => {
+    await assertClubStore(input.storeId);
+    return getClubConfig(input.storeId);
   }),
 
-  getAdminConfig: adminProcedure.query(async () => {
-    return getClubConfig();
-  }),
+  getAdminConfig: staffProcedure
+    .input(z.object({ storeId: z.number().optional() }))
+    .query(async ({ input, ctx }) => getClubConfig(await resolveRequiredStoreId(ctx.user, input.storeId))),
 
-  saveAdminConfig: adminProcedure
-    .input(clubConfigSchema)
-    .mutation(async ({ input }) => {
+  saveAdminConfig: staffProcedure
+    .input(clubConfigSchema.extend({ storeId: z.number().optional() }))
+    .mutation(async ({ input, ctx }) => {
+      const storeId = await resolveRequiredStoreId(ctx.user, input.storeId);
       const ids = ensureClubPlanIds(input);
       if (!ids.includes("bonattao") || !ids.includes("basico")) {
         throw new TRPCError({ code: "BAD_REQUEST", message: "Os dois planos base precisam existir." });
       }
 
-      await saveClubConfig(input);
+      const { storeId: _storeId, ...config } = input;
+      await saveClubConfig(config, storeId);
       return { ok: true };
     }),
 
-  getMyPlan: protectedProcedure.query(async ({ ctx }) => {
-    const db = await getDb();
-    if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+  getMyPlan: protectedProcedure
+    .input(z.object({ storeId: z.number().int().positive() }))
+    .query(async ({ ctx, input }) => {
+    await assertClubStore(input.storeId);
+    const account = await getTenantCustomerAccount(ctx.user.id, input.storeId);
+    if (!account?.clubPlan || !account.clubStatus) return null;
 
-    const userRows = await db.select().from(users).where(eq(users.id, ctx.user.id)).limit(1);
-    if (!userRows[0]) return null;
-
-    const user = userRows[0];
-    if (!user.clubPlan || !user.clubStatus) return null;
-
-    const planDetails = await getClubPlanConfig(user.clubPlan);
+    const planDetails = await getClubPlanConfig(account.clubPlan, input.storeId);
     return {
-      plan: user.clubPlan,
-      status: user.clubStatus,
-      startDate: user.clubStartDate,
-      nextBillingDate: user.clubNextBillingDate,
-      freePizzaUsed: user.clubFreePizzaUsed,
-      freePizzaResetAt: user.clubFreePizzaResetAt,
+      plan: account.clubPlan,
+      status: account.clubStatus,
+      startDate: account.clubStartDate,
+      nextBillingDate: account.clubNextBillingDate,
+      freePizzaUsed: account.clubFreePizzaUsed,
+      freePizzaResetAt: account.clubFreePizzaResetAt,
       planDetails,
     };
   }),
 
   subscribe: protectedProcedure
-    .input(z.object({ plan: z.enum(["bonattao", "basico"]) }))
+    .input(z.object({ storeId: z.number().int().positive(), plan: z.enum(["bonattao", "basico"]) }))
     .mutation(async ({ input, ctx }) => {
-      const planDetails = await getClubPlanConfig(input.plan);
+      await assertClubStore(input.storeId);
+      const planDetails = await getClubPlanConfig(input.plan, input.storeId);
       if (!planDetails) {
         throw new TRPCError({ code: "BAD_REQUEST", message: "Plano de assinatura inválido." });
       }
 
-      const paymentSettings = await getPaymentSettingsAdmin();
+      const paymentSettings = await getPaymentSettingsAdmin(input.storeId);
       if (!paymentSettings.availability.club.enabled) {
         throw new TRPCError({
           code: "PRECONDITION_FAILED",
@@ -145,8 +173,11 @@ export const clubRouter = router({
 
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+      const scope = await getTenantScope(input.storeId);
 
       const result = await db.insert(clubPayments).values({
+        tenantKey: scope.tenantKey,
+        storeId: input.storeId,
         userId: ctx.user.id,
         plan: input.plan,
         amount: planDetails.price.toFixed(2),
@@ -159,10 +190,7 @@ export const clubRouter = router({
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         ((result as any).insertId ?? (result as any)[0]?.insertId ?? 0) as number;
 
-      await db
-        .update(users)
-        .set({ clubPlan: input.plan, clubStatus: "pending" })
-        .where(eq(users.id, ctx.user.id));
+      await updateClubAccount(ctx.user.id, input.storeId, { clubPlan: input.plan, clubStatus: "pending" });
 
       return {
         paymentId,
@@ -174,24 +202,29 @@ export const clubRouter = router({
     }),
 
   checkPayment: protectedProcedure
-    .input(z.object({ paymentId: z.number() }))
+    .input(z.object({ paymentId: z.number(), storeId: z.number().int().positive() }))
     .query(async ({ input, ctx }) => {
+      await assertClubStore(input.storeId);
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
 
       const payment = await db
         .select()
         .from(clubPayments)
-        .where(and(eq(clubPayments.id, input.paymentId), eq(clubPayments.userId, ctx.user.id)))
+        .where(and(
+          eq(clubPayments.id, input.paymentId),
+          eq(clubPayments.userId, ctx.user.id),
+          eq(clubPayments.storeId, input.storeId),
+        ))
         .limit(1);
 
       if (!payment[0]) throw new TRPCError({ code: "NOT_FOUND" });
       return { status: payment[0].status };
     }),
 
-  confirmPayment: adminProcedure
-    .input(z.object({ paymentId: z.number() }))
-    .mutation(async ({ input }) => {
+  confirmPayment: staffProcedure
+    .input(z.object({ paymentId: z.number(), storeId: z.number().optional() }))
+    .mutation(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
 
@@ -202,6 +235,7 @@ export const clubRouter = router({
         .limit(1);
 
       if (!payment[0]) throw new TRPCError({ code: "NOT_FOUND" });
+      await assertStoreEntityAccess(ctx.user, payment[0].storeId, input.storeId);
 
       const now = new Date();
       const nextBilling = new Date(now);
@@ -212,16 +246,14 @@ export const clubRouter = router({
         .set({ status: "paid", paidAt: now })
         .where(eq(clubPayments.id, input.paymentId));
 
-      await db
-        .update(users)
-        .set({
-          clubStatus: "active",
-          clubStartDate: now,
-          clubNextBillingDate: nextBilling,
-          clubFreePizzaUsed: false,
-          clubFreePizzaResetAt: nextBilling,
-        })
-        .where(eq(users.id, payment[0].userId));
+      await updateClubAccount(payment[0].userId, payment[0].storeId, {
+        clubPlan: payment[0].plan,
+        clubStatus: "active",
+        clubStartDate: now,
+        clubNextBillingDate: nextBilling,
+        clubFreePizzaUsed: false,
+        clubFreePizzaResetAt: nextBilling,
+      });
 
       const activatedUser = await db
         .select({ id: users.id, phone: users.phone })
@@ -230,7 +262,7 @@ export const clubRouter = router({
         .limit(1);
 
       if (activatedUser[0]) {
-        fireJourneyTrigger("club_subscriber", activatedUser[0].id, activatedUser[0].phone ?? undefined).catch(
+        fireJourneyTrigger("club_subscriber", activatedUser[0].id, activatedUser[0].phone ?? undefined, payment[0].storeId).catch(
           (error: unknown) => console.error("[Club] club_subscriber trigger failed", error),
         );
       }
@@ -238,52 +270,55 @@ export const clubRouter = router({
       return { ok: true };
     }),
 
-  cancelSubscription: protectedProcedure.mutation(async ({ ctx }) => {
+  cancelSubscription: protectedProcedure
+    .input(z.object({ storeId: z.number().int().positive() }))
+    .mutation(async ({ ctx, input }) => {
+    await assertClubStore(input.storeId);
     const db = await getDb();
     if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
 
-    await db
-      .update(users)
-      .set({
-        clubStatus: "cancelled",
-        clubPlan: null,
-        clubNextBillingDate: null,
-      })
-      .where(eq(users.id, ctx.user.id));
+    await updateClubAccount(ctx.user.id, input.storeId, {
+      clubStatus: "cancelled",
+      clubPlan: null,
+      clubNextBillingDate: null,
+    });
 
     return { ok: true };
   }),
 
-  useFreePizza: protectedProcedure.mutation(async ({ ctx }) => {
+  useFreePizza: protectedProcedure
+    .input(z.object({ storeId: z.number().int().positive() }))
+    .mutation(async ({ ctx, input }) => {
+    await assertClubStore(input.storeId);
     const db = await getDb();
     if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
 
-    const userRows = await db.select().from(users).where(eq(users.id, ctx.user.id)).limit(1);
-    if (!userRows[0]) throw new TRPCError({ code: "NOT_FOUND" });
-
-    const user = userRows[0];
-    if (user.clubStatus !== "active") {
+    let account = await getTenantCustomerAccount(ctx.user.id, input.storeId);
+    if (!account) throw new TRPCError({ code: "NOT_FOUND" });
+    if (account.clubStatus !== "active") {
       throw new TRPCError({ code: "FORBIDDEN", message: "Você não é membro ativo do clube." });
     }
 
-    const plan = await getClubPlanConfig(user.clubPlan);
+    const plan = await getClubPlanConfig(account.clubPlan, input.storeId);
     if (!plan?.freePizzaPerMonth) {
       throw new TRPCError({ code: "FORBIDDEN", message: "Seu plano não inclui pizza grátis por mês." });
     }
 
     const now = new Date();
-    if (user.clubFreePizzaUsed && user.clubFreePizzaResetAt && now > user.clubFreePizzaResetAt) {
+    if (account.clubFreePizzaUsed && account.clubFreePizzaResetAt && now > account.clubFreePizzaResetAt) {
       const nextReset = new Date(now.getFullYear(), now.getMonth() + 1, 1);
-      await db
-        .update(users)
-        .set({ clubFreePizzaUsed: false, clubFreePizzaResetAt: nextReset })
-        .where(and(eq(users.id, ctx.user.id), lte(users.clubFreePizzaResetAt, now)));
+      await updateClubAccount(ctx.user.id, input.storeId, { clubFreePizzaUsed: false, clubFreePizzaResetAt: nextReset });
+      account = { ...account, clubFreePizzaUsed: false, clubFreePizzaResetAt: nextReset };
     }
 
     const result = await db
-      .update(users)
+      .update(tenantCustomerAccounts)
       .set({ clubFreePizzaUsed: true })
-      .where(and(eq(users.id, ctx.user.id), eq(users.clubStatus, "active"), eq(users.clubFreePizzaUsed, false)));
+      .where(and(
+        eq(tenantCustomerAccounts.id, account.id),
+        eq(tenantCustomerAccounts.clubStatus, "active"),
+        eq(tenantCustomerAccounts.clubFreePizzaUsed, false),
+      ));
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const mutationResult = result as any;
@@ -291,31 +326,46 @@ export const clubRouter = router({
     if (!affectedRows) {
       throw new TRPCError({ code: "BAD_REQUEST", message: "Você já usou sua pizza grátis neste mês." });
     }
+    const scope = await getTenantScope(input.storeId);
+    if (scope.tenantKey === "bonatto") {
+      await db.update(users).set({ clubFreePizzaUsed: true }).where(eq(users.id, ctx.user.id));
+    }
 
     return { ok: true };
   }),
 
-  getMembers: adminProcedure.query(async () => {
+  getMembers: staffProcedure
+    .input(z.object({ storeId: z.number().optional() }))
+    .query(async ({ input, ctx }) => {
     const db = await getDb();
     if (!db) return [];
+    const storeId = await resolveRequiredStoreId(ctx.user, input.storeId);
+    const scope = await getTenantScope(storeId);
 
-    const members = await db.select().from(users).where(isNotNull(users.clubPlan));
-    return members.map((user) => ({
+    const members = await db
+      .select({ account: tenantCustomerAccounts, user: users })
+      .from(tenantCustomerAccounts)
+      .innerJoin(users, eq(tenantCustomerAccounts.userId, users.id))
+      .where(and(eq(tenantCustomerAccounts.tenantKey, scope.tenantKey), isNotNull(tenantCustomerAccounts.clubPlan)));
+    return members.map(({ user, account }) => ({
       id: user.id,
       name: user.name,
       email: user.email,
       phone: user.phone,
-      clubPlan: user.clubPlan,
-      clubStatus: user.clubStatus,
-      clubStartDate: user.clubStartDate,
-      clubNextBillingDate: user.clubNextBillingDate,
-      clubFreePizzaUsed: user.clubFreePizzaUsed,
+      clubPlan: account.clubPlan,
+      clubStatus: account.clubStatus,
+      clubStartDate: account.clubStartDate,
+      clubNextBillingDate: account.clubNextBillingDate,
+      clubFreePizzaUsed: account.clubFreePizzaUsed,
     }));
   }),
 
-  getPendingPayments: adminProcedure.query(async () => {
+  getPendingPayments: staffProcedure
+    .input(z.object({ storeId: z.number().optional() }))
+    .query(async ({ input, ctx }) => {
     const db = await getDb();
     if (!db) return [];
+    const storeId = await resolveRequiredStoreId(ctx.user, input.storeId);
 
     return db
       .select({
@@ -332,19 +382,26 @@ export const clubRouter = router({
       })
       .from(clubPayments)
       .leftJoin(users, eq(clubPayments.userId, users.id))
-      .where(eq(clubPayments.status, "pending"));
+      .where(and(eq(clubPayments.status, "pending"), eq(clubPayments.storeId, storeId)));
   }),
 
-  sendPromotion: adminProcedure
-    .input(z.object({ message: z.string().min(1).max(1000) }))
-    .mutation(async ({ input }) => {
+  sendPromotion: staffProcedure
+    .input(z.object({ message: z.string().min(1).max(1000), storeId: z.number().optional() }))
+    .mutation(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+      const storeId = await resolveRequiredStoreId(ctx.user, input.storeId);
+      const scope = await getTenantScope(storeId);
 
       const members = await db
         .select({ phone: users.phone, name: users.name })
-        .from(users)
-        .where(and(isNotNull(users.clubPlan), eq(users.clubStatus, "active")));
+        .from(tenantCustomerAccounts)
+        .innerJoin(users, eq(tenantCustomerAccounts.userId, users.id))
+        .where(and(
+          eq(tenantCustomerAccounts.tenantKey, scope.tenantKey),
+          isNotNull(tenantCustomerAccounts.clubPlan),
+          eq(tenantCustomerAccounts.clubStatus, "active"),
+        ));
 
       let sent = 0;
       let failed = 0;

@@ -569,8 +569,8 @@ export default function DriverApp() {
   return (
     <div className="min-h-screen bg-[#0f0204] text-white flex flex-col max-w-md mx-auto">
 
-      {/*  Header com gradiente Bonatto  */}
-      <div className="bg-gradient-to-b from-[#6E0D12] to-[#4a0809] px-4 pt-8 pb-6 relative overflow-hidden">
+      {/* Header oficial da marca, compartilhado com as demais experiências. */}
+      <div className="bg-[var(--tenant-header,#DA1923)] px-4 pt-8 pb-6 relative overflow-hidden">
         {/* Grid decorativo */}
         <div
           className="absolute inset-0 opacity-10"

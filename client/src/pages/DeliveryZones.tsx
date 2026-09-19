@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { useLocation } from "wouter";
+import { useAdminStore } from "@/contexts/AdminStoreContext";
 import { toast } from "sonner";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -37,6 +38,7 @@ import {
 
 type Zone = {
   id: number;
+  storeId: number;
   neighborhood: string;
   city: string;
   deliveryFee: string;
@@ -64,6 +66,7 @@ export default function DeliveryZones() {
   const { user, loading } = useAuth();
   const [, navigate] = useLocation();
   const utils = trpc.useUtils();
+  const { selectedStoreId, selectedStoreName } = useAdminStore();
 
   const [search, setSearch] = useState("");
   const [showDialog, setShowDialog] = useState(false);
@@ -71,7 +74,10 @@ export default function DeliveryZones() {
   const [form, setForm] = useState<ZoneForm>(emptyForm);
   const [confirmDelete, setConfirmDelete] = useState<Zone | null>(null);
 
-  const { data: zones = [], isLoading } = trpc.deliveryZones.list.useQuery();
+  const { data: zones = [], isLoading } = trpc.deliveryZones.list.useQuery(
+    { storeId: selectedStoreId },
+    { enabled: selectedStoreId !== undefined },
+  );
 
   const createMutation = trpc.deliveryZones.create.useMutation({
     onSuccess: () => {
@@ -149,6 +155,7 @@ export default function DeliveryZones() {
     if (editingZone) {
       updateMutation.mutate({
         id: editingZone.id,
+        storeId: selectedStoreId,
         neighborhood: form.neighborhood.trim(),
         city: form.city.trim(),
         deliveryFee: fee.toFixed(2),
@@ -156,6 +163,7 @@ export default function DeliveryZones() {
       });
     } else {
       createMutation.mutate({
+        storeId: selectedStoreId,
         neighborhood: form.neighborhood.trim(),
         city: form.city.trim(),
         deliveryFee: fee.toFixed(2),
@@ -170,6 +178,14 @@ export default function DeliveryZones() {
       ? (zones.reduce((s, z) => s + parseFloat(z.deliveryFee), 0) / zones.length).toFixed(2)
       : "0.00";
 
+  if (selectedStoreId === undefined) {
+    return (
+      <div className="grid min-h-screen place-items-center bg-background px-6 text-center">
+        <div className="max-w-md"><MapPin className="mx-auto size-10 text-muted-foreground" /><h1 className="mt-4 text-xl font-bold">Selecione uma loja</h1><p className="mt-2 text-sm text-muted-foreground">Volte ao painel e selecione a unidade antes de editar as zonas de entrega.</p><Button className="mt-5" onClick={() => navigate("/admin?tab=settings")}>Voltar ao painel</Button></div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-background text-foreground">
       {/* Header */}
@@ -180,7 +196,7 @@ export default function DeliveryZones() {
         <div className="flex items-center gap-2">
           <MapPin className="w-5 h-5 text-primary" />
           <h1 className="font-bold text-lg" style={{ fontFamily: "'Poppins', sans-serif" }}>
-            Zonas de Entrega
+            Zonas de Entrega: {selectedStoreName}
           </h1>
         </div>
         <div className="ml-auto flex items-center gap-2">
@@ -278,7 +294,7 @@ export default function DeliveryZones() {
                         <Switch
                           checked={zone.isActive}
                           onCheckedChange={(checked) =>
-                            toggleMutation.mutate({ id: zone.id, isActive: checked })
+                            toggleMutation.mutate({ id: zone.id, storeId: selectedStoreId, isActive: checked })
                           }
                         />
                       </TableCell>
@@ -401,7 +417,7 @@ export default function DeliveryZones() {
             <Button
               variant="destructive"
               disabled={deleteMutation.isPending}
-              onClick={() => confirmDelete && deleteMutation.mutate({ id: confirmDelete.id })}
+              onClick={() => confirmDelete && deleteMutation.mutate({ id: confirmDelete.id, storeId: selectedStoreId })}
             >
               {deleteMutation.isPending ? "Removendo..." : "Remover"}
             </Button>

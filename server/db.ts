@@ -33,6 +33,8 @@ import {
   Upsell,
   categories,
   customerAuthProviders,
+  authEventLogs,
+  userConsents,
   customerMetrics,
   coupons,
   diningTables,
@@ -73,6 +75,7 @@ import {
   orderMessages,
   OrderMessage,
   notificationTemplates,
+  NotificationTemplate,
   InsertNotificationTemplate,
   deliveryZones,
   menuSlides,
@@ -88,6 +91,7 @@ import {
   driverPushSubscriptions,
   DriverPushSubscription,
   loyaltyTransactions,
+  tenantCustomerAccounts,
   clientAlerts,
   clientAlertReads,
   ClientAlert,
@@ -277,6 +281,23 @@ async function hasIndex(db: DatabaseClient, tableName: string, indexName: string
   return rows.length > 0;
 }
 
+async function hasConstraint(db: DatabaseClient, tableName: string, constraintName: string): Promise<boolean> {
+  const result = await db.execute(sql.raw(
+    `SELECT 1 FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = '${tableName}' AND CONSTRAINT_NAME = '${constraintName}' LIMIT 1`,
+  ));
+  const rows = (result as unknown as [Array<unknown>])[0] ?? [];
+  return rows.length > 0;
+}
+
+async function getIndexColumns(db: DatabaseClient, tableName: string, indexName: string): Promise<string[]> {
+  const result = await db.execute(sql.raw(`SHOW INDEX FROM \`${tableName}\` WHERE Key_name = '${indexName}'`));
+  const rows = (result as unknown as [Array<{ Column_name?: string; Seq_in_index?: number }>])[0] ?? [];
+  return rows
+    .sort((a, b) => Number(a.Seq_in_index ?? 0) - Number(b.Seq_in_index ?? 0))
+    .map((row) => String(row.Column_name ?? ""))
+    .filter(Boolean);
+}
+
 export async function ensureRuntimeSchema(db: DatabaseClient): Promise<void> {
   if (_schemaReady) {
     return _schemaReady;
@@ -296,9 +317,26 @@ export async function ensureRuntimeSchema(db: DatabaseClient): Promise<void> {
         )
       );
     }
+    const socialUserColumns = [
+      ["firstName", "ALTER TABLE `users` ADD `firstName` varchar(160) NULL AFTER `name`"],
+      ["lastName", "ALTER TABLE `users` ADD `lastName` varchar(160) NULL AFTER `firstName`"],
+      ["username", "ALTER TABLE `users` ADD `username` varchar(191) NULL AFTER `email`"],
+      ["profileCompleted", "ALTER TABLE `users` ADD `profileCompleted` boolean NOT NULL DEFAULT false AFTER `emailVerified`"],
+    ] as const;
+    for (const [column, statement] of socialUserColumns) {
+      if (!(await hasColumn(db, "users", column))) await db.execute(sql.raw(statement));
+    }
 
     if (!(await hasColumn(db, "stores", "displayName"))) {
       await db.execute(sql.raw("ALTER TABLE `stores` ADD `displayName` varchar(200)"));
+    }
+    if (!(await hasColumn(db, "stores", "tenantKey"))) {
+      await db.execute(sql.raw("ALTER TABLE `stores` ADD `tenantKey` varchar(100) NULL AFTER `id`"));
+      await db.execute(sql.raw("UPDATE `stores` SET `tenantKey` = CASE WHEN `isDefault` = 1 OR LOWER(`name`) LIKE '%bonatto%' OR LOWER(`name`) LIKE '%bonnato%' THEN 'bonatto' ELSE `slug` END WHERE `tenantKey` IS NULL OR `tenantKey` = ''"));
+      await db.execute(sql.raw("ALTER TABLE `stores` MODIFY `tenantKey` varchar(100) NOT NULL DEFAULT 'bonatto'"));
+    }
+    if (!(await hasIndex(db, "stores", "stores_tenant_idx"))) {
+      await db.execute(sql.raw("CREATE INDEX `stores_tenant_idx` ON `stores` (`tenantKey`)"));
     }
     if (!(await hasColumn(db, "stores", "document"))) {
       await db.execute(sql.raw("ALTER TABLE `stores` ADD `document` varchar(32)"));
@@ -325,6 +363,301 @@ export async function ensureRuntimeSchema(db: DatabaseClient): Promise<void> {
     if (!(await hasIndex(db, "stores", "stores_status_idx"))) {
       await db.execute(sql.raw("CREATE INDEX `stores_status_idx` ON `stores` (`status`)"));
     }
+
+    await db.execute(sql.raw(`
+      CREATE TABLE IF NOT EXISTS \`store_white_label_configs\` (
+        \`id\` int AUTO_INCREMENT NOT NULL,
+        \`storeId\` int NOT NULL,
+        \`status\` enum('active','inactive','setup_pending') NOT NULL DEFAULT 'setup_pending',
+        \`plan\` enum('essential','pro','enterprise','custom') NOT NULL DEFAULT 'essential',
+        \`domain\` varchar(191),
+        \`subdomain\` varchar(100),
+        \`brandName\` varchar(200) NOT NULL,
+        \`shortName\` varchar(100) NOT NULL,
+        \`tagline\` varchar(240),
+        \`adminTitle\` varchar(200),
+        \`deliveryLabel\` varchar(200),
+        \`logoUrl\` text,
+        \`wordmarkUrl\` text,
+        \`faviconUrl\` text,
+        \`waiterLogoUrl\` text,
+        \`primaryColor\` varchar(20) NOT NULL DEFAULT '#6E0D12',
+        \`primaryDarkColor\` varchar(20) NOT NULL DEFAULT '#450709',
+        \`accentColor\` varchar(20) NOT NULL DEFAULT '#e05c5c',
+        \`backgroundColor\` varchar(20) NOT NULL DEFAULT '#fffaf8',
+        \`textColor\` varchar(20) NOT NULL DEFAULT '#211719',
+        \`featureFlags\` text NOT NULL,
+        \`providerConfig\` text NOT NULL,
+        \`pageConfig\` text NOT NULL,
+        \`contactConfig\` text,
+        \`createdAt\` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        \`updatedAt\` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        PRIMARY KEY (\`id\`),
+        UNIQUE KEY \`store_white_label_store_unique\` (\`storeId\`),
+        UNIQUE KEY \`store_white_label_domain_unique\` (\`domain\`),
+        UNIQUE KEY \`store_white_label_subdomain_unique\` (\`subdomain\`),
+        KEY \`store_white_label_status_idx\` (\`status\`)
+      )
+    `));
+
+    await db.execute(sql.raw(`
+      CREATE TABLE IF NOT EXISTS \`tenant_memberships\` (
+        \`id\` int AUTO_INCREMENT NOT NULL,
+        \`tenantKey\` varchar(100) NOT NULL,
+        \`userId\` int NOT NULL,
+        \`role\` enum('owner','admin','manager') NOT NULL DEFAULT 'admin',
+        \`active\` boolean NOT NULL DEFAULT true,
+        \`createdAt\` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        \`updatedAt\` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        PRIMARY KEY (\`id\`),
+        UNIQUE KEY \`tenant_memberships_unique\` (\`tenantKey\`,\`userId\`),
+        KEY \`tenant_memberships_tenant_idx\` (\`tenantKey\`),
+        KEY \`tenant_memberships_user_idx\` (\`userId\`)
+      )
+    `));
+
+    await db.execute(sql.raw(`
+      CREATE TABLE IF NOT EXISTS \`tenant_customer_accounts\` (
+        \`id\` int AUTO_INCREMENT NOT NULL,
+        \`tenantKey\` varchar(100) NOT NULL,
+        \`userId\` int NOT NULL,
+        \`loyaltyPoints\` int NOT NULL DEFAULT 0,
+        \`clubPlan\` enum('bonattao','basico'),
+        \`clubStatus\` enum('active','pending','cancelled'),
+        \`clubStartDate\` timestamp NULL,
+        \`clubNextBillingDate\` timestamp NULL,
+        \`clubFreePizzaUsed\` boolean NOT NULL DEFAULT false,
+        \`clubFreePizzaResetAt\` timestamp NULL,
+        \`stripeCustomerId\` varchar(255),
+        \`createdAt\` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        \`updatedAt\` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        PRIMARY KEY (\`id\`),
+        UNIQUE KEY \`tenant_customer_accounts_unique\` (\`tenantKey\`,\`userId\`),
+        KEY \`tenant_customer_accounts_tenant_idx\` (\`tenantKey\`),
+        KEY \`tenant_customer_accounts_user_idx\` (\`userId\`),
+        CONSTRAINT \`tenant_customer_accounts_points_nonnegative_chk\` CHECK (\`loyaltyPoints\` >= 0)
+      )
+    `));
+    await db.execute(sql.raw(`
+      INSERT IGNORE INTO \`tenant_customer_accounts\`
+        (\`tenantKey\`, \`userId\`, \`loyaltyPoints\`, \`clubPlan\`, \`clubStatus\`, \`clubStartDate\`,
+         \`clubNextBillingDate\`, \`clubFreePizzaUsed\`, \`clubFreePizzaResetAt\`, \`stripeCustomerId\`)
+      SELECT 'bonatto', \`id\`, \`loyaltyPoints\`, \`clubPlan\`, \`clubStatus\`, \`clubStartDate\`,
+             \`clubNextBillingDate\`, \`clubFreePizzaUsed\`, \`clubFreePizzaResetAt\`, \`stripeCustomerId\`
+      FROM \`users\`
+    `));
+
+    const defaultStoreSql = "COALESCE((SELECT `id` FROM (SELECT `id` FROM `stores` ORDER BY `isDefault` DESC, `id` LIMIT 1) default_store), 0)";
+    const tenantLedgerTables = ["loyalty_transactions", "loyalty_order_credits"] as const;
+    for (const tableName of tenantLedgerTables) {
+      if (!(await hasColumn(db, tableName, "tenantKey"))) {
+        await db.execute(sql.raw(`ALTER TABLE \`${tableName}\` ADD \`tenantKey\` varchar(100) NOT NULL DEFAULT 'bonatto' AFTER \`id\``));
+      }
+      if (!(await hasColumn(db, tableName, "storeId"))) {
+        await db.execute(sql.raw(`ALTER TABLE \`${tableName}\` ADD \`storeId\` int NULL AFTER \`tenantKey\``));
+        await db.execute(sql.raw(`
+          UPDATE \`${tableName}\` ledger
+          LEFT JOIN \`orders\` o ON o.\`id\` = ledger.\`orderId\`
+          LEFT JOIN \`stores\` s ON s.\`id\` = o.\`storeId\`
+          SET ledger.\`storeId\` = o.\`storeId\`, ledger.\`tenantKey\` = COALESCE(s.\`tenantKey\`, 'bonatto')
+          WHERE ledger.\`storeId\` IS NULL
+        `));
+      }
+      const indexName = tableName === "loyalty_transactions" ? "loyalty_tx_tenant_user_idx" : "loyalty_order_credits_tenant_user_idx";
+      if (!(await hasIndex(db, tableName, indexName))) {
+        await db.execute(sql.raw(`CREATE INDEX \`${indexName}\` ON \`${tableName}\` (\`tenantKey\`,\`userId\`)`));
+      }
+    }
+
+    if (!(await hasColumn(db, "club_payments", "tenantKey"))) {
+      await db.execute(sql.raw("ALTER TABLE `club_payments` ADD `tenantKey` varchar(100) NOT NULL DEFAULT 'bonatto' AFTER `id`"));
+    }
+    if (!(await hasColumn(db, "club_payments", "storeId"))) {
+      await db.execute(sql.raw("ALTER TABLE `club_payments` ADD `storeId` int NULL AFTER `tenantKey`"));
+      await db.execute(sql.raw(`UPDATE \`club_payments\` SET \`storeId\` = ${defaultStoreSql} WHERE \`storeId\` IS NULL`));
+      await db.execute(sql.raw("ALTER TABLE `club_payments` MODIFY `storeId` int NOT NULL DEFAULT 0"));
+    }
+    if (!(await hasIndex(db, "club_payments", "club_payments_tenant_user_idx"))) {
+      await db.execute(sql.raw("CREATE INDEX `club_payments_tenant_user_idx` ON `club_payments` (`tenantKey`,`userId`)"));
+    }
+    if (!(await hasIndex(db, "club_payments", "club_payments_store_idx"))) {
+      await db.execute(sql.raw("CREATE INDEX `club_payments_store_idx` ON `club_payments` (`storeId`)"));
+    }
+
+    if (!(await hasColumn(db, "client_notifications", "storeId"))) {
+      await db.execute(sql.raw("ALTER TABLE `client_notifications` ADD `storeId` int NULL AFTER `id`"));
+      await db.execute(sql.raw(`UPDATE \`client_notifications\` SET \`storeId\` = ${defaultStoreSql} WHERE \`storeId\` IS NULL`));
+    }
+    if (!(await hasIndex(db, "client_notifications", "client_notifications_store_user_idx"))) {
+      await db.execute(sql.raw("CREATE INDEX `client_notifications_store_user_idx` ON `client_notifications` (`storeId`,`userId`)"));
+    }
+
+    const automationScopedTables = [
+      ["customer_tags", "customer_tags_store_idx"],
+      ["custom_tags", "custom_tags_store_idx"],
+      ["custom_customer_tags", "custom_customer_tags_store_idx"],
+      ["abandoned_carts", "abandoned_carts_store_idx"],
+      ["journeys", "journeys_store_idx"],
+      ["journey_executions", "journey_executions_store_idx"],
+      ["automation_events", "automation_events_store_idx"],
+    ] as const;
+    for (const [tableName, indexName] of automationScopedTables) {
+      if (!(await hasColumn(db, tableName, "storeId"))) {
+        await db.execute(sql.raw(`ALTER TABLE \`${tableName}\` ADD \`storeId\` int NULL AFTER \`id\``));
+        await db.execute(sql.raw(`UPDATE \`${tableName}\` SET \`storeId\` = ${defaultStoreSql} WHERE \`storeId\` IS NULL`));
+        await db.execute(sql.raw(`ALTER TABLE \`${tableName}\` MODIFY \`storeId\` int NOT NULL DEFAULT 0`));
+      }
+      if (!(await hasIndex(db, tableName, indexName))) {
+        await db.execute(sql.raw(`CREATE INDEX \`${indexName}\` ON \`${tableName}\` (\`storeId\`)`));
+      }
+    }
+    if (await hasIndex(db, "customer_tags", "customer_tags_unique")) {
+      const columns = await getIndexColumns(db, "customer_tags", "customer_tags_unique");
+      if (columns.join(",") !== "storeId,userId,tag") {
+        await db.execute(sql.raw("ALTER TABLE `customer_tags` DROP INDEX `customer_tags_unique`"));
+      }
+    }
+    if (!(await hasIndex(db, "customer_tags", "customer_tags_unique"))) {
+      await db.execute(sql.raw("CREATE UNIQUE INDEX `customer_tags_unique` ON `customer_tags` (`storeId`,`userId`,`tag`)"));
+    }
+    if (await hasIndex(db, "custom_customer_tags", "custom_customer_tags_unique")) {
+      const columns = await getIndexColumns(db, "custom_customer_tags", "custom_customer_tags_unique");
+      if (columns.join(",") !== "storeId,userId,tagId") {
+        await db.execute(sql.raw("ALTER TABLE `custom_customer_tags` DROP INDEX `custom_customer_tags_unique`"));
+      }
+    }
+    if (!(await hasIndex(db, "custom_customer_tags", "custom_customer_tags_unique"))) {
+      await db.execute(sql.raw("CREATE UNIQUE INDEX `custom_customer_tags_unique` ON `custom_customer_tags` (`storeId`,`userId`,`tagId`)"));
+    }
+    if (await hasIndex(db, "custom_tags", "custom_tags_name_unique")) {
+      await db.execute(sql.raw("ALTER TABLE `custom_tags` DROP INDEX `custom_tags_name_unique`"));
+    }
+    if (!(await hasIndex(db, "custom_tags", "custom_tags_store_name_unique"))) {
+      await db.execute(sql.raw("CREATE UNIQUE INDEX `custom_tags_store_name_unique` ON `custom_tags` (`storeId`,`name`)"));
+    }
+
+    if (!(await hasColumn(db, "categories", "storeId"))) {
+      await db.execute(sql.raw("ALTER TABLE `categories` ADD `storeId` int NULL AFTER `id`"));
+      await db.execute(sql.raw(`
+        UPDATE \`categories\`
+        SET \`storeId\` = COALESCE((SELECT \`id\` FROM (SELECT \`id\` FROM \`stores\` ORDER BY \`isDefault\` DESC, \`id\` LIMIT 1) default_store), 0)
+        WHERE \`storeId\` IS NULL
+      `));
+      await db.execute(sql.raw("ALTER TABLE `categories` MODIFY `storeId` int NOT NULL DEFAULT 0"));
+      if (await hasIndex(db, "categories", "categories_slug_unique")) {
+        await db.execute(sql.raw("ALTER TABLE `categories` DROP INDEX `categories_slug_unique`"));
+      }
+      if (await hasIndex(db, "categories", "categories_external_uq")) {
+        await db.execute(sql.raw("ALTER TABLE `categories` DROP INDEX `categories_external_uq`"));
+      }
+    }
+    if (!(await hasIndex(db, "categories", "categories_store_idx"))) {
+      await db.execute(sql.raw("CREATE INDEX `categories_store_idx` ON `categories` (`storeId`)"));
+    }
+    if (!(await hasIndex(db, "categories", "categories_store_slug_unique"))) {
+      await db.execute(sql.raw("CREATE UNIQUE INDEX `categories_store_slug_unique` ON `categories` (`storeId`,`slug`)"));
+    }
+    if (!(await hasIndex(db, "categories", "categories_external_uq"))) {
+      await db.execute(sql.raw("CREATE UNIQUE INDEX `categories_external_uq` ON `categories` (`storeId`,`externalSource`,`externalMerchantId`,`externalId`)"));
+    }
+
+    if (!(await hasColumn(db, "store_settings", "storeId"))) {
+      await db.execute(sql.raw("ALTER TABLE `store_settings` ADD `storeId` int NULL AFTER `id`"));
+      await db.execute(sql.raw(`
+        UPDATE \`store_settings\`
+        SET \`storeId\` = COALESCE((SELECT \`id\` FROM (SELECT \`id\` FROM \`stores\` ORDER BY \`isDefault\` DESC, \`id\` LIMIT 1) default_store), 0)
+        WHERE \`storeId\` IS NULL
+      `));
+      await db.execute(sql.raw("ALTER TABLE `store_settings` MODIFY `storeId` int NOT NULL DEFAULT 0"));
+      if (await hasIndex(db, "store_settings", "store_settings_key_unique")) {
+        await db.execute(sql.raw("ALTER TABLE `store_settings` DROP INDEX `store_settings_key_unique`"));
+      }
+    }
+    if (!(await hasIndex(db, "store_settings", "store_settings_store_idx"))) {
+      await db.execute(sql.raw("CREATE INDEX `store_settings_store_idx` ON `store_settings` (`storeId`)"));
+    }
+    if (!(await hasIndex(db, "store_settings", "store_settings_store_key_unique"))) {
+      await db.execute(sql.raw("CREATE UNIQUE INDEX `store_settings_store_key_unique` ON `store_settings` (`storeId`,`key`)"));
+    }
+
+    const promotionsWasGlobal = !(await hasColumn(db, "promotions", "storeId"));
+    const tenantScopedTables = [
+      ["upsells", "upsells_store_idx"],
+      ["promotions", "promotions_store_idx"],
+      ["raffles", "raffles_store_idx"],
+      ["delivery_zones", "delivery_zones_store_idx"],
+      ["menu_slides", "menu_slides_store_idx"],
+      ["carousel_images", "carousel_images_store_idx"],
+      ["notification_templates", "notification_templates_store_idx"],
+      ["scheduled_notifications", "scheduled_notifications_store_idx"],
+    ] as const;
+    for (const [tableName, indexName] of tenantScopedTables) {
+      if (!(await hasColumn(db, tableName, "storeId"))) {
+        await db.execute(sql.raw(`ALTER TABLE \`${tableName}\` ADD \`storeId\` int NULL AFTER \`id\``));
+        await db.execute(sql.raw(`
+          UPDATE \`${tableName}\`
+          SET \`storeId\` = COALESCE((SELECT \`id\` FROM (SELECT \`id\` FROM \`stores\` ORDER BY \`isDefault\` DESC, \`id\` LIMIT 1) default_store), 0)
+          WHERE \`storeId\` IS NULL
+        `));
+        await db.execute(sql.raw(`ALTER TABLE \`${tableName}\` MODIFY \`storeId\` int NOT NULL DEFAULT 0`));
+      }
+      if (!(await hasIndex(db, tableName, indexName))) {
+        await db.execute(sql.raw(`CREATE INDEX \`${indexName}\` ON \`${tableName}\` (\`storeId\`)`));
+      }
+    }
+    if (!(await hasIndex(db, "delivery_zones", "delivery_zones_store_neighborhood_idx"))) {
+      await db.execute(sql.raw("CREATE INDEX `delivery_zones_store_neighborhood_idx` ON `delivery_zones` (`storeId`,`neighborhood`)"));
+    }
+    if (!(await hasIndex(db, "notification_templates", "notification_templates_store_event_channel_idx"))) {
+      await db.execute(sql.raw("CREATE INDEX `notification_templates_store_event_channel_idx` ON `notification_templates` (`storeId`,`event`,`channel`)"));
+    }
+    if (!(await hasIndex(db, "scheduled_notifications", "scheduled_notifications_store_scheduled_status_idx"))) {
+      await db.execute(sql.raw("CREATE INDEX `scheduled_notifications_store_scheduled_status_idx` ON `scheduled_notifications` (`storeId`,`scheduledAt`,`status`)"));
+    }
+    if (promotionsWasGlobal && await hasIndex(db, "promotions", "promotions_external_uq")) {
+      await db.execute(sql.raw("ALTER TABLE `promotions` DROP INDEX `promotions_external_uq`"));
+    }
+    if (!(await hasIndex(db, "promotions", "promotions_external_uq"))) {
+      await db.execute(sql.raw("CREATE UNIQUE INDEX `promotions_external_uq` ON `promotions` (`storeId`,`externalSource`,`externalMerchantId`,`externalId`)"));
+    }
+
+    await db.execute(sql.raw(`
+      UPDATE \`products\`
+      SET \`storeId\` = COALESCE((SELECT \`id\` FROM (SELECT \`id\` FROM \`stores\` ORDER BY \`isDefault\` DESC, \`id\` LIMIT 1) default_store), 0)
+      WHERE \`storeId\` IS NULL
+    `));
+    await db.execute(sql.raw(`
+      UPDATE \`coupons\`
+      SET \`storeId\` = COALESCE((SELECT \`id\` FROM (SELECT \`id\` FROM \`stores\` ORDER BY \`isDefault\` DESC, \`id\` LIMIT 1) default_store), 0)
+      WHERE \`storeId\` IS NULL
+    `));
+    await db.execute(sql.raw("ALTER TABLE `products` MODIFY `storeId` int NOT NULL DEFAULT 0"));
+    await db.execute(sql.raw("ALTER TABLE `coupons` MODIFY `storeId` int NOT NULL DEFAULT 0"));
+    if (await hasIndex(db, "coupons", "coupons_code_unique")) {
+      await db.execute(sql.raw("ALTER TABLE `coupons` DROP INDEX `coupons_code_unique`"));
+    }
+    if (!(await hasIndex(db, "coupons", "coupons_store_idx"))) {
+      await db.execute(sql.raw("CREATE INDEX `coupons_store_idx` ON `coupons` (`storeId`)"));
+    }
+    if (!(await hasIndex(db, "coupons", "coupons_store_code_unique"))) {
+      await db.execute(sql.raw("CREATE UNIQUE INDEX `coupons_store_code_unique` ON `coupons` (`storeId`,`code`)"));
+    }
+
+    const productsExternalColumns = await getIndexColumns(db, "products", "products_external_uq");
+    if (productsExternalColumns.length > 0 && productsExternalColumns[0] !== "storeId") {
+      await db.execute(sql.raw("ALTER TABLE `products` DROP INDEX `products_external_uq`"));
+    }
+    if (!(await hasIndex(db, "products", "products_external_uq"))) {
+      await db.execute(sql.raw("CREATE UNIQUE INDEX `products_external_uq` ON `products` (`storeId`,`externalSource`,`externalMerchantId`,`externalId`)"));
+    }
+    const couponsExternalColumns = await getIndexColumns(db, "coupons", "coupons_external_uq");
+    if (couponsExternalColumns.length > 0 && couponsExternalColumns[0] !== "storeId") {
+      await db.execute(sql.raw("ALTER TABLE `coupons` DROP INDEX `coupons_external_uq`"));
+    }
+    if (!(await hasIndex(db, "coupons", "coupons_external_uq"))) {
+      await db.execute(sql.raw("CREATE UNIQUE INDEX `coupons_external_uq` ON `coupons` (`storeId`,`externalSource`,`externalMerchantId`,`externalId`)"));
+    }
+
     if (!(await hasIndex(db, "orders", "orders_store_created_idx"))) {
       await db.execute(sql.raw("CREATE INDEX `orders_store_created_idx` ON `orders` (`storeId`,`createdAt`)"));
     }
@@ -671,6 +1004,56 @@ export async function ensureRuntimeSchema(db: DatabaseClient): Promise<void> {
       )
     `));
 
+    const socialProviderColumns = [
+      ["providerUsername", "ALTER TABLE `customer_auth_providers` ADD `providerUsername` varchar(191) NULL AFTER `providerPhone`"],
+      ["displayName", "ALTER TABLE `customer_auth_providers` ADD `displayName` varchar(255) NULL AFTER `providerUsername`"],
+      ["avatarUrl", "ALTER TABLE `customer_auth_providers` ADD `avatarUrl` text NULL AFTER `displayName`"],
+      ["accountType", "ALTER TABLE `customer_auth_providers` ADD `accountType` varchar(64) NULL AFTER `avatarUrl`"],
+      ["accessTokenEncrypted", "ALTER TABLE `customer_auth_providers` ADD `accessTokenEncrypted` text NULL AFTER `accountType`"],
+      ["refreshTokenEncrypted", "ALTER TABLE `customer_auth_providers` ADD `refreshTokenEncrypted` text NULL AFTER `accessTokenEncrypted`"],
+      ["tokenExpiresAt", "ALTER TABLE `customer_auth_providers` ADD `tokenExpiresAt` timestamp NULL AFTER `refreshTokenEncrypted`"],
+      ["grantedScopes", "ALTER TABLE `customer_auth_providers` ADD `grantedScopes` text NULL AFTER `tokenExpiresAt`"],
+      ["rawProfileJson", "ALTER TABLE `customer_auth_providers` ADD `rawProfileJson` text NULL AFTER `grantedScopes`"],
+      ["consentVersion", "ALTER TABLE `customer_auth_providers` ADD `consentVersion` varchar(32) NULL AFTER `isPrimary`"],
+      ["consentedAt", "ALTER TABLE `customer_auth_providers` ADD `consentedAt` timestamp NULL AFTER `consentVersion`"],
+      ["lastSyncedAt", "ALTER TABLE `customer_auth_providers` ADD `lastSyncedAt` timestamp NULL AFTER `linkedAt`"],
+      ["disconnectedAt", "ALTER TABLE `customer_auth_providers` ADD `disconnectedAt` timestamp NULL AFTER `lastSyncedAt`"],
+    ] as const;
+    for (const [column, statement] of socialProviderColumns) {
+      if (!(await hasColumn(db, "customer_auth_providers", column))) await db.execute(sql.raw(statement));
+    }
+
+    await db.execute(sql.raw(`
+      CREATE TABLE IF NOT EXISTS \`auth_event_logs\` (
+        \`id\` int AUTO_INCREMENT NOT NULL,
+        \`userId\` int NULL,
+        \`provider\` varchar(32) NULL,
+        \`event\` enum('login_success','login_failure','provider_connected','provider_disconnected','profile_synced','account_deleted') NOT NULL,
+        \`ipAddress\` varchar(64) NULL,
+        \`userAgent\` text NULL,
+        \`metadataJson\` text NULL,
+        \`createdAt\` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (\`id\`),
+        KEY \`auth_event_logs_user_created_idx\` (\`userId\`,\`createdAt\`),
+        KEY \`auth_event_logs_event_created_idx\` (\`event\`,\`createdAt\`)
+      )
+    `));
+
+    await db.execute(sql.raw(`
+      CREATE TABLE IF NOT EXISTS \`user_consents\` (
+        \`id\` int AUTO_INCREMENT NOT NULL,
+        \`userId\` int NOT NULL,
+        \`kind\` enum('terms','privacy','social_sync') NOT NULL,
+        \`version\` varchar(32) NOT NULL,
+        \`granted\` boolean NOT NULL DEFAULT true,
+        \`ipAddress\` varchar(64) NULL,
+        \`userAgent\` text NULL,
+        \`createdAt\` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (\`id\`),
+        KEY \`user_consents_user_kind_created_idx\` (\`userId\`,\`kind\`,\`createdAt\`)
+      )
+    `));
+
     await db.execute(sql.raw(`
       CREATE TABLE IF NOT EXISTS \`otp_codes\` (
         \`id\` int AUTO_INCREMENT NOT NULL,
@@ -690,6 +1073,153 @@ export async function ensureRuntimeSchema(db: DatabaseClient): Promise<void> {
         KEY \`otp_codes_expires_idx\` (\`expiresAt\`)
       )
     `));
+
+    const platformTables = [
+      "CREATE TABLE IF NOT EXISTS `tenant_site_pages` (`id` int AUTO_INCREMENT PRIMARY KEY,`storeId` int NOT NULL,`pageKey` enum('home','menu','club','landing') NOT NULL,`title` varchar(160) NOT NULL,`draftContent` longtext NOT NULL,`publishedVersionId` int,`updatedByUserId` int,`createdAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,`updatedAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,UNIQUE KEY `tenant_site_pages_store_page_uq` (`storeId`,`pageKey`),KEY `tenant_site_pages_store_idx` (`storeId`))",
+      "CREATE TABLE IF NOT EXISTS `tenant_site_page_versions` (`id` int AUTO_INCREMENT PRIMARY KEY,`pageId` int NOT NULL,`versionNumber` int NOT NULL,`content` longtext NOT NULL,`note` varchar(240),`createdByUserId` int,`createdAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,UNIQUE KEY `tenant_site_page_versions_uq` (`pageId`,`versionNumber`),KEY `tenant_site_page_versions_page_idx` (`pageId`,`createdAt`))",
+      "CREATE TABLE IF NOT EXISTS `tenants` (`id` int AUTO_INCREMENT PRIMARY KEY,`tenantKey` varchar(100) NOT NULL,`legalName` varchar(200) NOT NULL,`displayName` varchar(200) NOT NULL,`document` varchar(32),`status` enum('setup_pending','active','suspended','cancelled') NOT NULL DEFAULT 'setup_pending',`ownerUserId` int,`metadata` text,`createdAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,`updatedAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,UNIQUE KEY `tenants_key_uq` (`tenantKey`),KEY `tenants_status_idx` (`status`))",
+      "CREATE TABLE IF NOT EXISTS `tenant_domains` (`id` int AUTO_INCREMENT PRIMARY KEY,`tenantId` int NOT NULL,`hostname` varchar(255) NOT NULL,`kind` enum('platform_subdomain','custom_domain') NOT NULL,`status` enum('pending','verifying','verified','active','failed','disabled') NOT NULL DEFAULT 'pending',`verificationToken` varchar(96) NOT NULL,`verifiedAt` timestamp NULL,`activatedAt` timestamp NULL,`lastError` text,`createdAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,`updatedAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,UNIQUE KEY `tenant_domains_hostname_uq` (`hostname`),KEY `tenant_domains_tenant_idx` (`tenantId`,`status`))",
+      "CREATE TABLE IF NOT EXISTS `tenant_plans` (`id` int AUTO_INCREMENT PRIMARY KEY,`code` varchar(64) NOT NULL,`name` varchar(120) NOT NULL,`monthlyPrice` decimal(10,2) NOT NULL DEFAULT 0,`entitlements` text NOT NULL,`limits` text NOT NULL,`active` boolean NOT NULL DEFAULT true,`createdAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,`updatedAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,UNIQUE KEY `tenant_plans_code_uq` (`code`))",
+      "CREATE TABLE IF NOT EXISTS `tenant_subscriptions` (`id` int AUTO_INCREMENT PRIMARY KEY,`tenantId` int NOT NULL,`planId` int NOT NULL,`status` enum('trialing','active','past_due','suspended','cancelled') NOT NULL DEFAULT 'trialing',`provider` varchar(32),`externalCustomerId` varchar(191),`externalSubscriptionId` varchar(191),`trialEndsAt` timestamp NULL,`currentPeriodEndsAt` timestamp NULL,`graceEndsAt` timestamp NULL,`createdAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,`updatedAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,UNIQUE KEY `tenant_subscriptions_tenant_uq` (`tenantId`),KEY `tenant_subscriptions_status_idx` (`status`))",
+      "CREATE TABLE IF NOT EXISTS `tenant_audit_logs` (`id` int AUTO_INCREMENT PRIMARY KEY,`tenantId` int NOT NULL,`storeId` int,`actorUserId` int,`action` varchar(120) NOT NULL,`resourceType` varchar(80) NOT NULL,`resourceId` varchar(96),`requestId` varchar(96),`ipAddress` varchar(64),`metadata` text,`createdAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,KEY `tenant_audit_tenant_created_idx` (`tenantId`,`createdAt`))",
+      "CREATE TABLE IF NOT EXISTS `product_option_groups` (`id` int AUTO_INCREMENT PRIMARY KEY,`storeId` int NOT NULL,`productId` int NOT NULL,`name` varchar(120) NOT NULL,`kind` enum('single','multiple','flavor','size','edge') NOT NULL DEFAULT 'multiple',`required` boolean NOT NULL DEFAULT false,`minSelections` int NOT NULL DEFAULT 0,`maxSelections` int NOT NULL DEFAULT 1,`sortOrder` int NOT NULL DEFAULT 0,`active` boolean NOT NULL DEFAULT true,`createdAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,`updatedAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,KEY `product_option_groups_product_idx` (`storeId`,`productId`,`active`))",
+      "CREATE TABLE IF NOT EXISTS `product_options` (`id` int AUTO_INCREMENT PRIMARY KEY,`storeId` int NOT NULL,`groupId` int NOT NULL,`name` varchar(160) NOT NULL,`description` text,`priceDelta` decimal(10,2) NOT NULL DEFAULT 0,`linkedProductId` int,`ingredientId` int,`ingredientQuantity` decimal(10,3),`imageUrl` text,`sortOrder` int NOT NULL DEFAULT 0,`active` boolean NOT NULL DEFAULT true,`createdAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,`updatedAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,KEY `product_options_group_idx` (`storeId`,`groupId`,`active`))",
+      "CREATE TABLE IF NOT EXISTS `product_combos` (`id` int AUTO_INCREMENT PRIMARY KEY,`storeId` int NOT NULL,`productId` int NOT NULL,`name` varchar(160) NOT NULL,`description` text,`active` boolean NOT NULL DEFAULT true,`createdAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,`updatedAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,UNIQUE KEY `product_combos_product_uq` (`storeId`,`productId`))",
+      "CREATE TABLE IF NOT EXISTS `combo_groups` (`id` int AUTO_INCREMENT PRIMARY KEY,`storeId` int NOT NULL,`comboId` int NOT NULL,`name` varchar(120) NOT NULL,`minSelections` int NOT NULL DEFAULT 1,`maxSelections` int NOT NULL DEFAULT 1,`sortOrder` int NOT NULL DEFAULT 0,KEY `combo_groups_combo_idx` (`storeId`,`comboId`))",
+      "CREATE TABLE IF NOT EXISTS `combo_group_items` (`id` int AUTO_INCREMENT PRIMARY KEY,`storeId` int NOT NULL,`groupId` int NOT NULL,`productId` int NOT NULL,`priceDelta` decimal(10,2) NOT NULL DEFAULT 0,`active` boolean NOT NULL DEFAULT true,KEY `combo_group_items_group_idx` (`storeId`,`groupId`))",
+      "CREATE TABLE IF NOT EXISTS `order_item_selections` (`id` int AUTO_INCREMENT PRIMARY KEY,`storeId` int NOT NULL,`orderId` int NOT NULL,`orderItemId` int NOT NULL,`groupName` varchar(120) NOT NULL,`optionName` varchar(160) NOT NULL,`optionId` int,`linkedProductId` int,`priceDelta` decimal(10,2) NOT NULL DEFAULT 0,`quantity` int NOT NULL DEFAULT 1,`metadata` text,`createdAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,KEY `order_item_selections_order_idx` (`storeId`,`orderId`),KEY `order_item_selections_item_idx` (`orderItemId`))",
+      "CREATE TABLE IF NOT EXISTS `kitchen_tickets` (`id` int AUTO_INCREMENT PRIMARY KEY,`storeId` int NOT NULL,`orderId` int NOT NULL,`station` varchar(80) NOT NULL DEFAULT 'cozinha',`status` enum('queued','preparing','ready','completed','cancelled') NOT NULL DEFAULT 'queued',`priority` enum('normal','high','urgent') NOT NULL DEFAULT 'normal',`promisedAt` timestamp NULL,`startedAt` timestamp NULL,`readyAt` timestamp NULL,`completedAt` timestamp NULL,`printedAt` timestamp NULL,`createdAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,`updatedAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,UNIQUE KEY `kitchen_tickets_order_uq` (`storeId`,`orderId`),KEY `kitchen_tickets_board_idx` (`storeId`,`status`,`createdAt`))",
+      "CREATE TABLE IF NOT EXISTS `growth_settings` (`id` int AUTO_INCREMENT PRIMARY KEY,`storeId` int NOT NULL,`cashbackPercent` decimal(5,2) NOT NULL DEFAULT 0,`pointsPerReal` decimal(8,3) NOT NULL DEFAULT 1,`referralReferrerPoints` int NOT NULL DEFAULT 100,`referralReferredPoints` int NOT NULL DEFAULT 50,`npsEnabled` boolean NOT NULL DEFAULT true,`config` text,`updatedAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,UNIQUE KEY `growth_settings_store_uq` (`storeId`))",
+      "CREATE TABLE IF NOT EXISTS `reward_catalog` (`id` int AUTO_INCREMENT PRIMARY KEY,`storeId` int NOT NULL,`name` varchar(160) NOT NULL,`description` text,`rewardType` enum('discount','product','free_delivery','cashback') NOT NULL,`pointsCost` int NOT NULL DEFAULT 0,`value` decimal(10,2) NOT NULL DEFAULT 0,`productId` int,`category` varchar(80),`icon` varchar(64),`imageUrl` text,`badgeText` varchar(64),`buttonText` varchar(64) NOT NULL DEFAULT 'Resgatar',`stock` int,`totalRedemptions` int NOT NULL DEFAULT 0,`maxRedemptionsPerUser` int,`active` boolean NOT NULL DEFAULT true,`featured` boolean NOT NULL DEFAULT false,`sortOrder` int NOT NULL DEFAULT 0,`startsAt` timestamp NULL,`expiresAt` timestamp NULL,`archivedAt` timestamp NULL,`createdAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,`updatedAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,KEY `reward_catalog_store_idx` (`storeId`,`active`),KEY `reward_catalog_display_idx` (`storeId`,`archivedAt`,`sortOrder`),CONSTRAINT `reward_catalog_stock_nonnegative_chk` CHECK (`stock` IS NULL OR `stock` >= 0),CONSTRAINT `reward_catalog_redemptions_nonnegative_chk` CHECK (`totalRedemptions` >= 0))",
+      "CREATE TABLE IF NOT EXISTS `reward_redemptions` (`id` int AUTO_INCREMENT PRIMARY KEY,`storeId` int NOT NULL,`rewardId` int NOT NULL,`userId` int NOT NULL,`couponId` int,`pointsSpent` int NOT NULL,`status` enum('pending','completed','cancelled','refunded','expired') NOT NULL DEFAULT 'pending',`idempotencyKey` varchar(96) NOT NULL,`redeemedAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,`expiresAt` timestamp NULL,`cancelledAt` timestamp NULL,`cancellationReason` varchar(500),`createdAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,`updatedAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,UNIQUE KEY `reward_redemptions_idempotency_uq` (`storeId`,`userId`,`idempotencyKey`),UNIQUE KEY `reward_redemptions_coupon_uq` (`couponId`),KEY `reward_redemptions_reward_idx` (`rewardId`,`status`),KEY `reward_redemptions_user_idx` (`userId`,`status`),CONSTRAINT `reward_redemptions_points_chk` CHECK (`pointsSpent` >= 0))",
+      "CREATE TABLE IF NOT EXISTS `reward_coupons` (`id` int AUTO_INCREMENT PRIMARY KEY,`storeId` int NOT NULL,`rewardId` int NOT NULL,`code` varchar(64) NOT NULL,`status` enum('available','reserved','redeemed','used','expired','cancelled') NOT NULL DEFAULT 'available',`assignedUserId` int,`redemptionId` int,`reservedAt` timestamp NULL,`redeemedAt` timestamp NULL,`usedAt` timestamp NULL,`expiresAt` timestamp NULL,`createdAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,`updatedAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,UNIQUE KEY `reward_coupons_store_code_uq` (`storeId`,`code`),UNIQUE KEY `reward_coupons_redemption_uq` (`redemptionId`),KEY `reward_coupons_reward_status_idx` (`rewardId`,`status`),KEY `reward_coupons_user_idx` (`assignedUserId`))",
+      "CREATE TABLE IF NOT EXISTS `reward_coupon_usages` (`id` int AUTO_INCREMENT PRIMARY KEY,`storeId` int NOT NULL,`couponId` int NOT NULL,`redemptionId` int NOT NULL,`userId` int NOT NULL,`orderId` int NOT NULL,`usedAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,UNIQUE KEY `reward_coupon_usages_coupon_uq` (`couponId`),UNIQUE KEY `reward_coupon_usages_order_uq` (`orderId`),KEY `reward_coupon_usages_user_idx` (`userId`,`usedAt`))",
+      "CREATE TABLE IF NOT EXISTS `nps_responses` (`id` int AUTO_INCREMENT PRIMARY KEY,`storeId` int NOT NULL,`orderId` int NOT NULL,`userId` int,`score` int NOT NULL,`comment` text,`createdAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,UNIQUE KEY `nps_responses_order_uq` (`storeId`,`orderId`))",
+      "CREATE TABLE IF NOT EXISTS `referrals` (`id` int AUTO_INCREMENT PRIMARY KEY,`storeId` int NOT NULL,`referrerUserId` int NOT NULL,`referredUserId` int,`code` varchar(32) NOT NULL,`status` enum('pending','converted','rewarded','cancelled') NOT NULL DEFAULT 'pending',`convertedOrderId` int,`createdAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,`convertedAt` timestamp NULL,UNIQUE KEY `referrals_store_code_uq` (`storeId`,`code`),KEY `referrals_referrer_idx` (`storeId`,`referrerUserId`))",
+      "CREATE TABLE IF NOT EXISTS `integration_connections` (`id` int AUTO_INCREMENT PRIMARY KEY,`storeId` int NOT NULL,`provider` varchar(64) NOT NULL,`status` enum('disconnected','connecting','connected','degraded','error') NOT NULL DEFAULT 'disconnected',`config` text,`credentialsRef` varchar(191),`lastSuccessAt` timestamp NULL,`lastFailureAt` timestamp NULL,`lastError` text,`latencyMs` int,`createdAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,`updatedAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,UNIQUE KEY `integration_connections_provider_uq` (`storeId`,`provider`),KEY `integration_connections_health_idx` (`storeId`,`status`))",
+      "CREATE TABLE IF NOT EXISTS `intelligence_suggestions` (`id` int AUTO_INCREMENT PRIMARY KEY,`storeId` int NOT NULL,`kind` enum('campaign','demand','purchase','pricing','staffing') NOT NULL,`title` varchar(200) NOT NULL,`description` text NOT NULL,`confidence` decimal(5,2) NOT NULL DEFAULT 0,`impactValue` decimal(12,2),`payload` text,`status` enum('new','accepted','dismissed','applied') NOT NULL DEFAULT 'new',`validUntil` timestamp NULL,`createdAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,`updatedAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,KEY `intelligence_suggestions_store_kind_idx` (`storeId`,`kind`,`status`))",
+      "CREATE TABLE IF NOT EXISTS `product_images` (`id` int AUTO_INCREMENT PRIMARY KEY,`storeId` int NOT NULL,`productId` int NOT NULL,`imageUrl` text NOT NULL,`altText` varchar(240),`kind` enum('primary','gallery','flavor','nutrition') NOT NULL DEFAULT 'gallery',`sortOrder` int NOT NULL DEFAULT 0,`active` boolean NOT NULL DEFAULT true,`createdAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,KEY `product_images_product_idx` (`storeId`,`productId`,`active`,`sortOrder`))",
+      "CREATE TABLE IF NOT EXISTS `product_sizes` (`id` int AUTO_INCREMENT PRIMARY KEY,`storeId` int NOT NULL,`productId` int NOT NULL,`name` varchar(120) NOT NULL,`internalCode` varchar(128),`description` text,`price` decimal(10,2) NOT NULL,`promotionalPrice` decimal(10,2),`promotionStartsAt` timestamp NULL,`promotionEndsAt` timestamp NULL,`serves` int,`minFlavors` int,`maxFlavors` int,`maxAddons` int,`preparationTime` int,`active` boolean NOT NULL DEFAULT true,`sortOrder` int NOT NULL DEFAULT 0,`createdAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,`updatedAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,UNIQUE KEY `product_sizes_code_uq` (`storeId`,`productId`,`internalCode`),KEY `product_sizes_product_idx` (`storeId`,`productId`,`active`,`sortOrder`))",
+      "CREATE TABLE IF NOT EXISTS `product_variants` (`id` int AUTO_INCREMENT PRIMARY KEY,`storeId` int NOT NULL,`productId` int NOT NULL,`name` varchar(160) NOT NULL,`sku` varchar(128),`price` decimal(10,2) NOT NULL,`promotionalPrice` decimal(10,2),`active` boolean NOT NULL DEFAULT true,`sortOrder` int NOT NULL DEFAULT 0,`createdAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,`updatedAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,UNIQUE KEY `product_variants_store_sku_uq` (`storeId`,`sku`),KEY `product_variants_product_idx` (`storeId`,`productId`,`active`))",
+      "CREATE TABLE IF NOT EXISTS `product_availability` (`id` int AUTO_INCREMENT PRIMARY KEY,`storeId` int NOT NULL,`productId` int NOT NULL,`weekday` int,`startTime` varchar(5),`endTime` varchar(5),`startsAt` timestamp NULL,`expiresAt` timestamp NULL,`channel` enum('all','delivery','pickup','dine_in','counter') NOT NULL DEFAULT 'all',`unavailableBehavior` enum('hide','show_unavailable','show_return_time') NOT NULL DEFAULT 'show_unavailable',`stockLimit` int,`pausedUntil` timestamp NULL,`active` boolean NOT NULL DEFAULT true,`createdAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,`updatedAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,KEY `product_availability_product_idx` (`storeId`,`productId`,`active`))",
+      "CREATE TABLE IF NOT EXISTS `modifier_size_rules` (`id` int AUTO_INCREMENT PRIMARY KEY,`storeId` int NOT NULL,`modifierOptionId` int NOT NULL,`productSizeId` int NOT NULL,`enabled` boolean NOT NULL DEFAULT true,`priceOverride` decimal(10,2),`maxQuantityOverride` int,`createdAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,`updatedAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,UNIQUE KEY `modifier_size_rules_uq` (`storeId`,`modifierOptionId`,`productSizeId`))",
+      "CREATE TABLE IF NOT EXISTS `multi_flavor_settings` (`id` int AUTO_INCREMENT PRIMARY KEY,`storeId` int NOT NULL,`productId` int NOT NULL,`enabled` boolean NOT NULL DEFAULT false,`pricingRule` enum('highest_price','average_price','proportional_price','size_fixed_price','base_plus_difference') NOT NULL DEFAULT 'highest_price',`allowRepeatedFlavors` boolean NOT NULL DEFAULT false,`visualDivisions` boolean NOT NULL DEFAULT true,`createdAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,`updatedAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,UNIQUE KEY `multi_flavor_settings_product_uq` (`storeId`,`productId`))",
+      "CREATE TABLE IF NOT EXISTS `product_flavors` (`id` int AUTO_INCREMENT PRIMARY KEY,`storeId` int NOT NULL,`productId` int NOT NULL,`name` varchar(160) NOT NULL,`description` text,`imageUrl` text,`ingredients` text,`removableIngredients` text,`active` boolean NOT NULL DEFAULT true,`sortOrder` int NOT NULL DEFAULT 0,`createdAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,`updatedAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,KEY `product_flavors_product_idx` (`storeId`,`productId`,`active`,`sortOrder`))",
+      "CREATE TABLE IF NOT EXISTS `flavor_size_prices` (`id` int AUTO_INCREMENT PRIMARY KEY,`storeId` int NOT NULL,`flavorId` int NOT NULL,`productSizeId` int NOT NULL,`price` decimal(10,2) NOT NULL,`active` boolean NOT NULL DEFAULT true,`createdAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,`updatedAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,UNIQUE KEY `flavor_size_prices_uq` (`storeId`,`flavorId`,`productSizeId`))",
+      "CREATE TABLE IF NOT EXISTS `product_drafts` (`id` int AUTO_INCREMENT PRIMARY KEY,`storeId` int NOT NULL,`productId` int,`createdByUserId` int NOT NULL,`baseVersion` int NOT NULL DEFAULT 0,`status` enum('editing','ready','published','discarded') NOT NULL DEFAULT 'editing',`draftData` longtext NOT NULL,`tutorialProgress` text,`lastSavedAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,`createdAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,`updatedAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,KEY `product_drafts_product_idx` (`storeId`,`productId`,`status`),KEY `product_drafts_user_idx` (`createdByUserId`,`status`))",
+      "CREATE TABLE IF NOT EXISTS `product_revisions` (`id` int AUTO_INCREMENT PRIMARY KEY,`storeId` int NOT NULL,`productId` int NOT NULL,`version` int NOT NULL,`snapshot` longtext NOT NULL,`note` varchar(240),`createdByUserId` int,`createdAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,UNIQUE KEY `product_revisions_uq` (`storeId`,`productId`,`version`),KEY `product_revisions_product_idx` (`productId`,`createdAt`))",
+      "CREATE TABLE IF NOT EXISTS `product_audit_logs` (`id` int AUTO_INCREMENT PRIMARY KEY,`storeId` int NOT NULL,`productId` int NOT NULL,`actorUserId` int,`action` varchar(80) NOT NULL,`fieldName` varchar(160),`previousValue` longtext,`newValue` longtext,`createdAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,KEY `product_audit_logs_product_idx` (`storeId`,`productId`,`createdAt`))",
+    ];
+    for (const statement of platformTables) await db.execute(sql.raw(statement));
+
+    const professionalCatalogColumns: Record<string, ReadonlyArray<readonly [string, string]>> = {
+      products: [
+        ["sku", "varchar(128) NULL AFTER `externalCode`"],
+        ["shortDescription", "varchar(320) NULL AFTER `sku`"],
+        ["productType", "enum('simple','sizes','variants','buildable','multi_flavor','combo','weight','quantity','variable_price') NOT NULL DEFAULT 'simple' AFTER `shortDescription`"],
+        ["pricingEngine", "enum('legacy_v1','configured_v2') NOT NULL DEFAULT 'legacy_v1' AFTER `productType`"],
+        ["editorialStatus", "enum('draft','published','scheduled','archived') NOT NULL DEFAULT 'published' AFTER `pricingEngine`"],
+        ["preparationTime", "int NULL AFTER `editorialStatus`"],
+        ["allergenNotice", "text NULL AFTER `preparationTime`"],
+        ["nutritionalInfo", "text NULL AFTER `allergenNotice`"],
+        ["tags", "text NULL AFTER `nutritionalInfo`"],
+        ["minQuantity", "int NOT NULL DEFAULT 1 AFTER `tags`"],
+        ["maxQuantity", "int NOT NULL DEFAULT 99 AFTER `minQuantity`"],
+        ["couponEligible", "boolean NOT NULL DEFAULT true AFTER `maxQuantity`"],
+        ["pointsEligible", "boolean NOT NULL DEFAULT true AFTER `couponEligible`"],
+        ["version", "int NOT NULL DEFAULT 1 AFTER `pointsEligible`"],
+        ["scheduledPublishAt", "timestamp NULL AFTER `version`"],
+        ["publishedAt", "timestamp NULL AFTER `scheduledPublishAt`"],
+        ["archivedAt", "timestamp NULL AFTER `publishedAt`"],
+      ],
+      product_option_groups: [
+        ["description", "text NULL AFTER `kind`"],
+        ["freeSelections", "int NOT NULL DEFAULT 0 AFTER `maxSelections`"],
+        ["allowRepeatedOptions", "boolean NOT NULL DEFAULT false AFTER `freeSelections`"],
+        ["appliesToAllSizes", "boolean NOT NULL DEFAULT true AFTER `allowRepeatedOptions`"],
+      ],
+      product_options: [
+        ["maxQuantity", "int NOT NULL DEFAULT 1 AFTER `imageUrl`"],
+        ["allowRepeat", "boolean NOT NULL DEFAULT false AFTER `maxQuantity`"],
+      ],
+      combo_groups: [
+        ["required", "boolean NOT NULL DEFAULT true AFTER `name`"],
+        ["active", "boolean NOT NULL DEFAULT true AFTER `sortOrder`"],
+      ],
+      combo_group_items: [["sizeId", "int NULL AFTER `productId`"]],
+      order_items: [
+        ["snapshotVersion", "int NOT NULL DEFAULT 1 AFTER `notes`"],
+        ["configurationSnapshot", "longtext NULL AFTER `snapshotVersion`"],
+        ["pricingBreakdown", "longtext NULL AFTER `configurationSnapshot`"],
+      ],
+      order_item_selections: [["totalPrice", "decimal(10,2) NOT NULL DEFAULT 0 AFTER `quantity`"]],
+      upsells: [
+        ["triggerType", "enum('product_selected','size_selected','modifier_selected','category_selected','cart_value','missing_category','checkout') NOT NULL DEFAULT 'checkout' AFTER `sortOrder`"],
+        ["triggerSizeId", "int NULL AFTER `triggerType`"],
+        ["triggerModifierId", "int NULL AFTER `triggerSizeId`"],
+        ["triggerCategoryId", "int NULL AFTER `triggerModifierId`"],
+        ["displayType", "enum('inline','modal','cart','checkout') NOT NULL DEFAULT 'checkout' AFTER `triggerCategoryId`"],
+        ["priority", "int NOT NULL DEFAULT 0 AFTER `displayType`"],
+        ["startsAt", "timestamp NULL AFTER `priority`"],
+        ["expiresAt", "timestamp NULL AFTER `startsAt`"],
+        ["weekdays", "varchar(32) NULL AFTER `expiresAt`"],
+        ["startTime", "varchar(5) NULL AFTER `weekdays`"],
+        ["endTime", "varchar(5) NULL AFTER `startTime`"],
+        ["maxDisplaysPerCart", "int NOT NULL DEFAULT 1 AFTER `endTime`"],
+        ["dismissible", "boolean NOT NULL DEFAULT true AFTER `maxDisplaysPerCart`"],
+      ],
+    };
+    for (const [table, columns] of Object.entries(professionalCatalogColumns)) {
+      for (const [column, definition] of columns) {
+        if (!(await hasColumn(db, table, column))) {
+          await db.execute(sql.raw(`ALTER TABLE \`${table}\` ADD \`${column}\` ${definition}`));
+        }
+      }
+    }
+    if (!(await hasIndex(db, "products", "products_store_sku_uq"))) {
+      await db.execute(sql.raw("CREATE UNIQUE INDEX `products_store_sku_uq` ON `products` (`storeId`,`sku`)"));
+    }
+    if (!(await hasIndex(db, "products", "products_editorial_idx"))) {
+      await db.execute(sql.raw("CREATE INDEX `products_editorial_idx` ON `products` (`storeId`,`editorialStatus`,`active`)"));
+    }
+
+    const rewardCatalogColumns = [
+      ["category", "varchar(80) NULL AFTER `productId`"],
+      ["icon", "varchar(64) NULL AFTER `category`"],
+      ["imageUrl", "text NULL AFTER `icon`"],
+      ["badgeText", "varchar(64) NULL AFTER `imageUrl`"],
+      ["buttonText", "varchar(64) NOT NULL DEFAULT 'Resgatar' AFTER `badgeText`"],
+      ["stock", "int NULL AFTER `buttonText`"],
+      ["totalRedemptions", "int NOT NULL DEFAULT 0 AFTER `stock`"],
+      ["maxRedemptionsPerUser", "int NULL AFTER `totalRedemptions`"],
+      ["featured", "boolean NOT NULL DEFAULT false AFTER `active`"],
+      ["sortOrder", "int NOT NULL DEFAULT 0 AFTER `featured`"],
+      ["startsAt", "timestamp NULL AFTER `sortOrder`"],
+      ["expiresAt", "timestamp NULL AFTER `startsAt`"],
+      ["archivedAt", "timestamp NULL AFTER `expiresAt`"],
+      ["updatedAt", "timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP AFTER `createdAt`"],
+    ] as const;
+    for (const [column, definition] of rewardCatalogColumns) {
+      if (!(await hasColumn(db, "reward_catalog", column))) {
+        await db.execute(sql.raw(`ALTER TABLE \`reward_catalog\` ADD \`${column}\` ${definition}`));
+      }
+    }
+    if (!(await hasIndex(db, "reward_catalog", "reward_catalog_display_idx"))) {
+      await db.execute(sql.raw("CREATE INDEX `reward_catalog_display_idx` ON `reward_catalog` (`storeId`,`archivedAt`,`sortOrder`)"));
+    }
+    await db.execute(sql.raw("ALTER TABLE `loyalty_transactions` MODIFY COLUMN `type` enum('earn','redeem','refund','adjustment','manual') NOT NULL"));
+    if (!(await hasConstraint(db, "tenant_customer_accounts", "tenant_customer_accounts_points_nonnegative_chk"))) {
+      await db.execute(sql.raw("ALTER TABLE `tenant_customer_accounts` ADD CONSTRAINT `tenant_customer_accounts_points_nonnegative_chk` CHECK (`loyaltyPoints` >= 0)"));
+    }
+    if (!(await hasConstraint(db, "reward_catalog", "reward_catalog_stock_nonnegative_chk"))) {
+      await db.execute(sql.raw("ALTER TABLE `reward_catalog` ADD CONSTRAINT `reward_catalog_stock_nonnegative_chk` CHECK (`stock` IS NULL OR `stock` >= 0)"));
+    }
+    if (!(await hasConstraint(db, "reward_catalog", "reward_catalog_redemptions_nonnegative_chk"))) {
+      await db.execute(sql.raw("ALTER TABLE `reward_catalog` ADD CONSTRAINT `reward_catalog_redemptions_nonnegative_chk` CHECK (`totalRedemptions` >= 0)"));
+    }
+    await db.execute(sql.raw("ALTER TABLE `tenant_memberships` MODIFY `role` enum('owner','admin','manager','site_editor','marketing') NOT NULL DEFAULT 'admin'"));
+    await db.execute(sql.raw("INSERT IGNORE INTO `tenants` (`tenantKey`,`legalName`,`displayName`,`status`) SELECT `tenantKey`,COALESCE(MAX(`displayName`),MAX(`name`)),COALESCE(MAX(`displayName`),MAX(`name`)),'active' FROM `stores` GROUP BY `tenantKey`"));
+    await db.execute(sql.raw("INSERT IGNORE INTO `tenant_plans` (`code`,`name`,`monthlyPrice`,`entitlements`,`limits`) VALUES ('essential','Essencial',0,'{}','{\"stores\":1,\"users\":10}'),('pro','Pro',0,'{}','{\"stores\":5,\"users\":50}'),('enterprise','Enterprise',0,'{}','{}')"));
 
     if (!(await hasColumn(db, "categories", "externalSource"))) {
       await db.execute(
@@ -713,7 +1243,7 @@ export async function ensureRuntimeSchema(db: DatabaseClient): Promise<void> {
       );
     }
     if (!(await hasIndex(db, "products", "products_external_uq"))) {
-      await db.execute(sql.raw("CREATE UNIQUE INDEX `products_external_uq` ON `products` (`externalSource`,`externalMerchantId`,`externalId`)"));
+      await db.execute(sql.raw("CREATE UNIQUE INDEX `products_external_uq` ON `products` (`storeId`,`externalSource`,`externalMerchantId`,`externalId`)"));
     }
 
     if (!(await hasColumn(db, "coupons", "externalSource"))) {
@@ -724,7 +1254,7 @@ export async function ensureRuntimeSchema(db: DatabaseClient): Promise<void> {
       );
     }
     if (!(await hasIndex(db, "coupons", "coupons_external_uq"))) {
-      await db.execute(sql.raw("CREATE UNIQUE INDEX `coupons_external_uq` ON `coupons` (`externalSource`,`externalMerchantId`,`externalId`)"));
+      await db.execute(sql.raw("CREATE UNIQUE INDEX `coupons_external_uq` ON `coupons` (`storeId`,`externalSource`,`externalMerchantId`,`externalId`)"));
     }
 
     if (!(await hasColumn(db, "promotions", "externalSource"))) {
@@ -891,14 +1421,16 @@ export async function clearResetToken(openId: string) {
 
 // --- CATEGORIES ---------------------------------------------------------------
 
-export async function getCategories(activeOnly = true) {
+export async function getCategories(input: boolean | { activeOnly?: boolean; storeId?: number } = true) {
   const db = await getDb();
   if (!db) return [];
-  const query = db.select().from(categories);
-  if (activeOnly) {
-    return query.where(eq(categories.active, true)).orderBy(categories.sortOrder);
-  }
-  return query.orderBy(categories.sortOrder);
+  const opts = typeof input === "boolean" ? { activeOnly: input } : input;
+  const conditions: SQL[] = [];
+  if (opts.activeOnly !== false) conditions.push(eq(categories.active, true));
+  if (opts.storeId !== undefined) conditions.push(eq(categories.storeId, opts.storeId));
+  return db.select().from(categories)
+    .where(conditions.length ? and(...conditions) : undefined)
+    .orderBy(categories.sortOrder, categories.name);
 }
 
 export async function getCategoryById(id: number) {
@@ -934,10 +1466,7 @@ export async function getProducts(opts?: { categoryId?: number; activeOnly?: boo
   const conditions: SQL[] = [];
   if (opts?.activeOnly !== false) conditions.push(eq(products.active, true));
   if (opts?.categoryId) conditions.push(eq(products.categoryId, opts.categoryId));
-  if (opts?.storeId) {
-    const storeCondition = or(isNull(products.storeId), eq(products.storeId, opts.storeId));
-    if (storeCondition) conditions.push(storeCondition);
-  }
+  if (opts?.storeId !== undefined) conditions.push(eq(products.storeId, opts.storeId));
   return db
     .select()
     .from(products)
@@ -1820,9 +2349,34 @@ export async function linkCustomerAuthProvider(data: {
   providerUserId: string;
   providerEmail?: string | null;
   providerPhone?: string | null;
+  providerUsername?: string | null;
+  displayName?: string | null;
+  avatarUrl?: string | null;
+  accountType?: string | null;
+  accessTokenEncrypted?: string | null;
+  refreshTokenEncrypted?: string | null;
+  tokenExpiresAt?: Date | null;
+  grantedScopes?: string[];
+  rawProfileJson?: string | null;
   isPrimary?: boolean;
+  consentVersion?: string | null;
+  consentedAt?: Date | null;
+  lastSyncedAt?: Date | null;
 }) {
   await withDbRetry(async (db) => {
+    const existingProvider = await db
+      .select({ userId: customerAuthProviders.userId })
+      .from(customerAuthProviders)
+      .where(and(
+        eq(customerAuthProviders.provider, data.provider),
+        eq(customerAuthProviders.providerUserId, data.providerUserId),
+      ))
+      .limit(1);
+
+    if (existingProvider[0] && existingProvider[0].userId !== data.userId) {
+      throw new Error("This social account is already linked to another user");
+    }
+
     await db
       .insert(customerAuthProviders)
       .values({
@@ -1831,15 +2385,152 @@ export async function linkCustomerAuthProvider(data: {
         providerUserId: data.providerUserId,
         providerEmail: data.providerEmail ?? null,
         providerPhone: data.providerPhone ?? null,
+        providerUsername: data.providerUsername ?? null,
+        displayName: data.displayName ?? null,
+        avatarUrl: data.avatarUrl ?? null,
+        accountType: data.accountType ?? null,
+        accessTokenEncrypted: data.accessTokenEncrypted ?? null,
+        refreshTokenEncrypted: data.refreshTokenEncrypted ?? null,
+        tokenExpiresAt: data.tokenExpiresAt ?? null,
+        grantedScopes: data.grantedScopes ? JSON.stringify(data.grantedScopes) : null,
+        rawProfileJson: data.rawProfileJson ?? null,
         isPrimary: data.isPrimary ?? false,
+        consentVersion: data.consentVersion ?? null,
+        consentedAt: data.consentedAt ?? null,
+        lastSyncedAt: data.lastSyncedAt ?? null,
+        disconnectedAt: null,
       })
       .onDuplicateKeyUpdate({
         set: {
           providerEmail: data.providerEmail ?? null,
           providerPhone: data.providerPhone ?? null,
+          providerUsername: data.providerUsername ?? null,
+          displayName: data.displayName ?? null,
+          avatarUrl: data.avatarUrl ?? null,
+          accountType: data.accountType ?? null,
+          accessTokenEncrypted: data.accessTokenEncrypted ?? null,
+          refreshTokenEncrypted: data.refreshTokenEncrypted ?? null,
+          tokenExpiresAt: data.tokenExpiresAt ?? null,
+          grantedScopes: data.grantedScopes ? JSON.stringify(data.grantedScopes) : null,
+          rawProfileJson: data.rawProfileJson ?? null,
           isPrimary: data.isPrimary ?? false,
+          consentVersion: data.consentVersion ?? null,
+          consentedAt: data.consentedAt ?? null,
+          lastSyncedAt: data.lastSyncedAt ?? null,
+          disconnectedAt: null,
         },
       });
+  });
+}
+
+export async function getCustomerAuthProviders(userId: number) {
+  return withDbRetry((db) => db
+    .select()
+    .from(customerAuthProviders)
+    .where(and(eq(customerAuthProviders.userId, userId), isNull(customerAuthProviders.disconnectedAt)))
+    .orderBy(desc(customerAuthProviders.isPrimary), desc(customerAuthProviders.linkedAt)));
+}
+
+export async function getCustomerAuthProvider(userId: number, provider: "email" | "phone" | "google" | "apple" | "facebook" | "instagram" | "manus") {
+  return withDbRetry(async (db) => {
+    const rows = await db
+      .select()
+      .from(customerAuthProviders)
+      .where(and(
+        eq(customerAuthProviders.userId, userId),
+        eq(customerAuthProviders.provider, provider),
+        isNull(customerAuthProviders.disconnectedAt),
+      ))
+      .limit(1);
+    return rows[0];
+  });
+}
+
+export async function disconnectCustomerAuthProvider(userId: number, provider: "email" | "phone" | "google" | "apple" | "facebook" | "instagram" | "manus") {
+  await withDbRetry((db) => db
+    .update(customerAuthProviders)
+    .set({
+      accessTokenEncrypted: null,
+      refreshTokenEncrypted: null,
+      disconnectedAt: new Date(),
+      isPrimary: false,
+    })
+    .where(and(eq(customerAuthProviders.userId, userId), eq(customerAuthProviders.provider, provider))));
+}
+
+export async function recordAuthEvent(data: {
+  userId?: number | null;
+  provider?: string | null;
+  event: "login_success" | "login_failure" | "provider_connected" | "provider_disconnected" | "profile_synced" | "account_deleted";
+  ipAddress?: string | null;
+  userAgent?: string | null;
+  metadata?: Record<string, unknown>;
+}) {
+  await withDbRetry((db) => db.insert(authEventLogs).values({
+    userId: data.userId ?? null,
+    provider: data.provider ?? null,
+    event: data.event,
+    ipAddress: data.ipAddress ?? null,
+    userAgent: data.userAgent ?? null,
+    metadataJson: data.metadata ? JSON.stringify(data.metadata) : null,
+  }));
+}
+
+export async function recordUserConsent(data: {
+  userId: number;
+  kind: "terms" | "privacy" | "social_sync";
+  version: string;
+  granted?: boolean;
+  ipAddress?: string | null;
+  userAgent?: string | null;
+}) {
+  await withDbRetry((db) => db.insert(userConsents).values({
+    userId: data.userId,
+    kind: data.kind,
+    version: data.version,
+    granted: data.granted ?? true,
+    ipAddress: data.ipAddress ?? null,
+    userAgent: data.userAgent ?? null,
+  }));
+}
+
+export async function markUserLogin(userId: number, provider: string) {
+  await withDbRetry((db) => db
+    .update(users)
+    .set({ loginMethod: provider, lastSignedIn: new Date() })
+    .where(eq(users.id, userId)));
+}
+
+export async function anonymizeUserAccount(userId: number) {
+  const anonymized = `deleted_${userId}_${randomUUID().replace(/-/g, "").slice(0, 16)}`;
+  await withDbRetry(async (db) => {
+    await db.update(customerAuthProviders).set({
+      accessTokenEncrypted: null,
+      refreshTokenEncrypted: null,
+      providerEmail: null,
+      providerPhone: null,
+      providerUsername: null,
+      rawProfileJson: null,
+      disconnectedAt: new Date(),
+      isPrimary: false,
+    }).where(eq(customerAuthProviders.userId, userId));
+    await db.update(users).set({
+      openId: anonymized,
+      name: "Conta excluida",
+      firstName: null,
+      lastName: null,
+      email: null,
+      username: null,
+      phone: null,
+      avatarUrl: null,
+      passwordHash: null,
+      resetToken: null,
+      resetTokenExpiresAt: null,
+      savedAddress: null,
+      savedCep: null,
+      savedCity: null,
+      status: "inactive",
+    }).where(eq(users.id, userId));
   });
 }
 
@@ -1904,21 +2595,30 @@ export async function consumeOtpCode(id: number) {
 
 // --- COUPONS ------------------------------------------------------------------
 
-export async function getCouponByCode(code: string) {
+export async function getCouponByCode(code: string, storeId?: number) {
   const db = await getDb();
   if (!db) return undefined;
+  const conditions: SQL[] = [eq(coupons.code, code.toUpperCase()), eq(coupons.active, true)];
+  if (storeId !== undefined) conditions.push(eq(coupons.storeId, storeId));
   const result = await db
     .select()
     .from(coupons)
-    .where(and(eq(coupons.code, code.toUpperCase()), eq(coupons.active, true)))
+    .where(and(...conditions))
     .limit(1);
   return result[0];
+}
+
+export async function getCouponById(id: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const [coupon] = await db.select().from(coupons).where(eq(coupons.id, id)).limit(1);
+  return coupon;
 }
 
 export async function getAllCoupons(storeId?: number) {
   const db = await getDb();
   if (!db) return [];
-  if (storeId) return db.select().from(coupons).where(eq(coupons.storeId, storeId)).orderBy(desc(coupons.createdAt));
+  if (storeId !== undefined) return db.select().from(coupons).where(eq(coupons.storeId, storeId)).orderBy(desc(coupons.createdAt));
   return db.select().from(coupons).orderBy(desc(coupons.createdAt));
 }
 
@@ -1934,7 +2634,7 @@ export async function updateCoupon(id: number, data: Partial<typeof coupons.$inf
   await db.update(coupons).set(data).where(eq(coupons.id, id));
 }
 
-export async function incrementCouponUsage(code: string): Promise<boolean> {
+export async function incrementCouponUsage(couponId: number): Promise<boolean> {
   const db = await getDb();
   if (!db) return false;
   // Atomic increment: only increments if usedCount < maxUses (or maxUses is null)
@@ -1944,7 +2644,7 @@ export async function incrementCouponUsage(code: string): Promise<boolean> {
     .set({ usedCount: sql`${coupons.usedCount} + 1` })
     .where(
       and(
-        eq(coupons.code, code.toUpperCase()),
+        eq(coupons.id, couponId),
         sql`(${coupons.maxUses} IS NULL OR ${coupons.usedCount} < ${coupons.maxUses})`
       )
     );
@@ -2048,14 +2748,15 @@ export async function getOrderItems(orderId: number): Promise<OrderItem[]> {
   );
 }
 
-export async function getOrdersByUser(userId: number) {
-  return withDbRetry(async (db) =>
-    db
+export async function getOrdersByUser(userId: number, storeId?: number) {
+  return withDbRetry(async (db) => {
+    const effectiveStoreId = await getEffectiveStoreId(db, storeId);
+    return db
       .select()
       .from(orders)
-      .where(eq(orders.userId, userId))
-      .orderBy(desc(orders.createdAt))
-  );
+      .where(and(eq(orders.userId, userId), eq(orders.storeId, effectiveStoreId)))
+      .orderBy(desc(orders.createdAt));
+  });
 }
 
 export async function getAllOrders(opts?: {
@@ -2402,10 +3103,14 @@ export async function updateUserSocialProfile(
   userId: number,
   data: {
     name?: string | null;
+    firstName?: string | null;
+    lastName?: string | null;
     email?: string | null;
+    username?: string | null;
     avatarUrl?: string | null;
     loginMethod?: "email" | "phone" | "google" | "apple" | "facebook" | "instagram" | "manus";
     emailVerified?: boolean;
+    profileCompleted?: boolean;
     lastSignedIn?: Date;
   }
 ) {
@@ -2413,10 +3118,14 @@ export async function updateUserSocialProfile(
     const updateSet: Record<string, unknown> = {};
 
     if (data.name !== undefined) updateSet.name = data.name;
+    if (data.firstName !== undefined) updateSet.firstName = data.firstName;
+    if (data.lastName !== undefined) updateSet.lastName = data.lastName;
     if (data.email !== undefined) updateSet.email = data.email;
+    if (data.username !== undefined) updateSet.username = data.username;
     if (data.avatarUrl !== undefined) updateSet.avatarUrl = data.avatarUrl;
     if (data.loginMethod !== undefined) updateSet.loginMethod = data.loginMethod;
     if (data.emailVerified !== undefined) updateSet.emailVerified = data.emailVerified;
+    if (data.profileCompleted !== undefined) updateSet.profileCompleted = data.profileCompleted;
     updateSet.lastSignedIn = data.lastSignedIn ?? new Date();
 
     await db.update(users).set(updateSet).where(eq(users.id, userId));
@@ -2603,16 +3312,18 @@ export async function getAdminUsersPage(input?: AdminUsersPageInput) {
 
 // --- COUPONS (EXTENDED) -------------------------------------------------------
 
-export async function getCouponsByUser(userId: number): Promise<Coupon[]> {
+export async function getCouponsByUser(userId: number, storeId?: number): Promise<Coupon[]> {
   const db = await getDb();
   if (!db) return [];
+  const effectiveStoreId = await getEffectiveStoreId(db, storeId);
   return db
     .select()
     .from(coupons)
-    .where(and(eq(coupons.userId, userId), eq(coupons.active, true)));
+    .where(and(eq(coupons.userId, userId), eq(coupons.storeId, effectiveStoreId), eq(coupons.active, true)));
 }
 
 export async function createUserCoupon(data: {
+  storeId: number;
   userId: number;
   code: string;
   discountType: "percentage" | "fixed";
@@ -2623,6 +3334,12 @@ export async function createUserCoupon(data: {
 }) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
+  const [membership] = await db
+    .select({ id: orders.id })
+    .from(orders)
+    .where(and(eq(orders.userId, data.userId), eq(orders.storeId, data.storeId)))
+    .limit(1);
+  if (!membership) throw new Error("Cliente não pertence à loja selecionada");
   await db.insert(coupons).values({
     ...data,
     active: true,
@@ -2632,20 +3349,27 @@ export async function createUserCoupon(data: {
 
 // --- UP-SELLS -----------------------------------------------------------------
 
-export async function getActiveUpsells(): Promise<Upsell[]> {
+async function getEffectiveStoreId(db: DatabaseClient, storeId?: number) {
+  if (storeId && storeId > 0) return storeId;
+  return (await db.select({ id: stores.id }).from(stores).orderBy(desc(stores.isDefault), stores.id).limit(1))[0]?.id ?? 0;
+}
+
+export async function getActiveUpsells(storeId?: number): Promise<Upsell[]> {
   const db = await getDb();
   if (!db) return [];
+  const effectiveStoreId = await getEffectiveStoreId(db, storeId);
   return db
     .select()
     .from(upsells)
-    .where(eq(upsells.active, true))
+    .where(and(eq(upsells.storeId, effectiveStoreId), eq(upsells.active, true)))
     .orderBy(upsells.sortOrder);
 }
 
-export async function getUpsellsForCart(cartProductIds: number[], cartTotal: number): Promise<(Upsell & { suggestedProduct: Product | null })[]> {
+export async function getUpsellsForCart(cartProductIds: number[], cartTotal: number, storeId?: number): Promise<(Upsell & { suggestedProduct: Product | null })[]> {
   const db = await getDb();
   if (!db) return [];
-  const all = await db.select().from(upsells).where(eq(upsells.active, true)).orderBy(upsells.sortOrder);
+  const effectiveStoreId = await getEffectiveStoreId(db, storeId);
+  const all = await db.select().from(upsells).where(and(eq(upsells.storeId, effectiveStoreId), eq(upsells.active, true))).orderBy(upsells.sortOrder);
   const filtered = all.filter((u) => {
     if (u.triggerMinTotal && parseFloat(u.triggerMinTotal) > cartTotal) return false;
     if (u.triggerProductId && !cartProductIds.includes(u.triggerProductId)) return false;
@@ -2656,7 +3380,10 @@ export async function getUpsellsForCart(cartProductIds: number[], cartTotal: num
   // Enrich with suggested product data
   const productIds = Array.from(new Set(filtered.map((u) => u.suggestedProductId)));
   const prods: Product[] = productIds.length > 0
-    ? await db.select().from(products).where(sql`${products.id} IN (${sql.join(productIds.map((id) => sql`${id}`), sql`, `)})`)
+    ? await db.select().from(products).where(and(
+      eq(products.storeId, effectiveStoreId),
+      sql`${products.id} IN (${sql.join(productIds.map((id) => sql`${id}`), sql`, `)})`,
+    ))
     : [];
   return filtered.map((u) => ({
     ...u,
@@ -2670,31 +3397,33 @@ export async function createUpsell(data: Omit<typeof upsells.$inferInsert, "id" 
   await db.insert(upsells).values(data);
 }
 
-export async function updateUpsell(id: number, data: Partial<typeof upsells.$inferInsert>) {
+export async function updateUpsell(id: number, storeId: number, data: Partial<typeof upsells.$inferInsert>) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  await db.update(upsells).set(data).where(eq(upsells.id, id));
+  await db.update(upsells).set(data).where(and(eq(upsells.id, id), eq(upsells.storeId, storeId)));
 }
 
-export async function deleteUpsell(id: number) {
+export async function deleteUpsell(id: number, storeId: number) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  await db.delete(upsells).where(eq(upsells.id, id));
+  await db.delete(upsells).where(and(eq(upsells.id, id), eq(upsells.storeId, storeId)));
 }
 
-export async function getAllUpsells(): Promise<Upsell[]> {
+export async function getAllUpsells(storeId?: number): Promise<Upsell[]> {
   const db = await getDb();
   if (!db) return [];
-  return db.select().from(upsells).orderBy(upsells.sortOrder);
+  const effectiveStoreId = await getEffectiveStoreId(db, storeId);
+  return db.select().from(upsells).where(eq(upsells.storeId, effectiveStoreId)).orderBy(upsells.sortOrder);
 }
 
 // --- PROMOTIONS ---------------------------------------------------------------
 
-export async function getActivePromotions(): Promise<Promotion[]> {
+export async function getActivePromotions(storeId?: number): Promise<Promotion[]> {
   const db = await getDb();
   if (!db) return [];
+  const effectiveStoreId = await getEffectiveStoreId(db, storeId);
   const now = new Date();
-  const all = await db.select().from(promotions).where(eq(promotions.active, true)).orderBy(desc(promotions.createdAt));
+  const all = await db.select().from(promotions).where(and(eq(promotions.storeId, effectiveStoreId), eq(promotions.active, true))).orderBy(desc(promotions.createdAt));
   return all.filter((p) => {
     if (p.endsAt && p.endsAt < now) return false;
     if (p.startsAt && p.startsAt > now) return false;
@@ -2702,10 +3431,11 @@ export async function getActivePromotions(): Promise<Promotion[]> {
   });
 }
 
-export async function getAllPromotions(): Promise<Promotion[]> {
+export async function getAllPromotions(storeId?: number): Promise<Promotion[]> {
   const db = await getDb();
   if (!db) return [];
-  return db.select().from(promotions).orderBy(desc(promotions.createdAt));
+  const effectiveStoreId = await getEffectiveStoreId(db, storeId);
+  return db.select().from(promotions).where(eq(promotions.storeId, effectiveStoreId)).orderBy(desc(promotions.createdAt));
 }
 
 export async function createPromotion(data: Omit<typeof promotions.$inferInsert, "id" | "createdAt" | "updatedAt">) {
@@ -2714,30 +3444,32 @@ export async function createPromotion(data: Omit<typeof promotions.$inferInsert,
   await db.insert(promotions).values(data);
 }
 
-export async function updatePromotion(id: number, data: Partial<typeof promotions.$inferInsert>) {
+export async function updatePromotion(id: number, storeId: number, data: Partial<typeof promotions.$inferInsert>) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  await db.update(promotions).set(data).where(eq(promotions.id, id));
+  await db.update(promotions).set(data).where(and(eq(promotions.id, id), eq(promotions.storeId, storeId)));
 }
 
-export async function deletePromotion(id: number) {
+export async function deletePromotion(id: number, storeId: number) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  await db.delete(promotions).where(eq(promotions.id, id));
+  await db.delete(promotions).where(and(eq(promotions.id, id), eq(promotions.storeId, storeId)));
 }
 
 // --- RAFFLES ------------------------------------------------------------------
 
-export async function getActiveRaffles(): Promise<Raffle[]> {
+export async function getActiveRaffles(storeId?: number): Promise<Raffle[]> {
   const db = await getDb();
   if (!db) return [];
-  return db.select().from(raffles).where(eq(raffles.status, "active")).orderBy(desc(raffles.createdAt));
+  const effectiveStoreId = await getEffectiveStoreId(db, storeId);
+  return db.select().from(raffles).where(and(eq(raffles.storeId, effectiveStoreId), eq(raffles.status, "active"))).orderBy(desc(raffles.createdAt));
 }
 
-export async function getAllRaffles(): Promise<Raffle[]> {
+export async function getAllRaffles(storeId?: number): Promise<Raffle[]> {
   const db = await getDb();
   if (!db) return [];
-  return db.select().from(raffles).orderBy(desc(raffles.createdAt));
+  const effectiveStoreId = await getEffectiveStoreId(db, storeId);
+  return db.select().from(raffles).where(eq(raffles.storeId, effectiveStoreId)).orderBy(desc(raffles.createdAt));
 }
 
 export async function createRaffle(data: Omit<typeof raffles.$inferInsert, "id" | "createdAt" | "updatedAt">) {
@@ -2746,21 +3478,26 @@ export async function createRaffle(data: Omit<typeof raffles.$inferInsert, "id" 
   await db.insert(raffles).values(data);
 }
 
-export async function updateRaffle(id: number, data: Partial<typeof raffles.$inferInsert>) {
+export async function updateRaffle(id: number, storeId: number, data: Partial<typeof raffles.$inferInsert>) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  await db.update(raffles).set(data).where(eq(raffles.id, id));
+  await db.update(raffles).set(data).where(and(eq(raffles.id, id), eq(raffles.storeId, storeId)));
 }
 
-export async function getRaffleEntries(raffleId: number): Promise<RaffleEntry[]> {
+export async function getRaffleEntries(raffleId: number, storeId: number): Promise<RaffleEntry[]> {
   const db = await getDb();
   if (!db) return [];
+  const [raffle] = await db.select({ id: raffles.id }).from(raffles).where(and(eq(raffles.id, raffleId), eq(raffles.storeId, storeId))).limit(1);
+  if (!raffle) return [];
   return db.select().from(raffleEntries).where(eq(raffleEntries.raffleId, raffleId));
 }
 
-export async function enterRaffle(raffleId: number, userId: number, userName: string): Promise<boolean> {
+export async function enterRaffle(raffleId: number, userId: number, userName: string, storeId?: number): Promise<boolean> {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
+  const effectiveStoreId = await getEffectiveStoreId(db, storeId);
+  const [raffle] = await db.select({ id: raffles.id }).from(raffles).where(and(eq(raffles.id, raffleId), eq(raffles.storeId, effectiveStoreId), eq(raffles.status, "active"))).limit(1);
+  if (!raffle) return false;
   // Check if already entered
   const existing = await db
     .select()
@@ -2772,9 +3509,11 @@ export async function enterRaffle(raffleId: number, userId: number, userName: st
   return true;
 }
 
-export async function drawRaffleWinner(raffleId: number): Promise<RaffleEntry | null> {
+export async function drawRaffleWinner(raffleId: number, storeId: number): Promise<RaffleEntry | null> {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
+  const [raffle] = await db.select({ id: raffles.id }).from(raffles).where(and(eq(raffles.id, raffleId), eq(raffles.storeId, storeId))).limit(1);
+  if (!raffle) return null;
   const entries = await db.select().from(raffleEntries).where(eq(raffleEntries.raffleId, raffleId));
   if (entries.length === 0) return null;
   const winner = entries[Math.floor(Math.random() * entries.length)];
@@ -2788,25 +3527,30 @@ export async function drawRaffleWinner(raffleId: number): Promise<RaffleEntry | 
 }
 
 // --- STORE SETTINGS -----------------------------------------------------------
-export async function getStoreSetting(key: string): Promise<string | null> {
+export async function getStoreSetting(key: string, storeId = 0): Promise<string | null> {
   return withDbRetry(async (db) => {
-    const rows = await db.select().from(storeSettings).where(eq(storeSettings.key, key)).limit(1);
+    const effectiveStoreId = storeId || (await db.select({ id: stores.id }).from(stores).orderBy(desc(stores.isDefault), stores.id).limit(1))[0]?.id || 0;
+    const rows = await db.select().from(storeSettings)
+      .where(and(eq(storeSettings.storeId, effectiveStoreId), eq(storeSettings.key, key)))
+      .limit(1);
     return rows[0]?.value ?? null;
   }).catch(() => null);
 }
 
-export async function getAllStoreSettings(): Promise<Record<string, string>> {
+export async function getAllStoreSettings(storeId = 0): Promise<Record<string, string>> {
   return withDbRetry(async (db) => {
-    const rows = await db.select().from(storeSettings);
+    const effectiveStoreId = storeId || (await db.select({ id: stores.id }).from(stores).orderBy(desc(stores.isDefault), stores.id).limit(1))[0]?.id || 0;
+    const rows = await db.select().from(storeSettings).where(eq(storeSettings.storeId, effectiveStoreId));
     return Object.fromEntries(rows.map((r) => [r.key, r.value]));
   }).catch(() => ({}));
 }
 
-export async function setStoreSetting(key: string, value: string): Promise<void> {
+export async function setStoreSetting(key: string, value: string, storeId = 0): Promise<void> {
   await withDbRetry(async (db) => {
+    const effectiveStoreId = storeId || (await db.select({ id: stores.id }).from(stores).orderBy(desc(stores.isDefault), stores.id).limit(1))[0]?.id || 0;
     await db
       .insert(storeSettings)
-      .values({ key, value })
+      .values({ storeId: effectiveStoreId, key, value })
       .onDuplicateKeyUpdate({ set: { value } });
   });
 }
@@ -3051,69 +3795,143 @@ export async function toggleFavorite(userId: number, productId: number): Promise
 
 // --- CLIENT NOTIFICATIONS -----------------------------------------------------
 
-export async function getClientNotifications(userId: number): Promise<ClientNotification[]> {
+export async function getClientNotifications(userId: number, storeId?: number): Promise<ClientNotification[]> {
   const db = await getDb();
   if (!db) return [];
-  return db.select().from(clientNotifications).where(eq(clientNotifications.userId, userId)).orderBy(desc(clientNotifications.createdAt)).limit(50);
+  return db.select().from(clientNotifications).where(and(
+    eq(clientNotifications.userId, userId),
+    storeId ? eq(clientNotifications.storeId, storeId) : undefined,
+  )).orderBy(desc(clientNotifications.createdAt)).limit(50);
 }
 
-export async function getUnreadNotificationCount(userId: number): Promise<number> {
+export async function getUnreadNotificationCount(userId: number, storeId?: number): Promise<number> {
   const db = await getDb();
   if (!db) return 0;
-  const result = await db.select({ count: sql<number>`count(*)` }).from(clientNotifications).where(and(eq(clientNotifications.userId, userId), eq(clientNotifications.read, false)));
+  const result = await db.select({ count: sql<number>`count(*)` }).from(clientNotifications).where(and(
+    eq(clientNotifications.userId, userId),
+    eq(clientNotifications.read, false),
+    storeId ? eq(clientNotifications.storeId, storeId) : undefined,
+  ));
   return result[0]?.count ?? 0;
 }
 
-export async function markNotificationsRead(userId: number): Promise<void> {
+export async function markNotificationsRead(userId: number, storeId?: number): Promise<void> {
   const db = await getDb();
   if (!db) return;
-  await db.update(clientNotifications).set({ read: true }).where(eq(clientNotifications.userId, userId));
+  await db.update(clientNotifications).set({ read: true }).where(and(
+    eq(clientNotifications.userId, userId),
+    storeId ? eq(clientNotifications.storeId, storeId) : undefined,
+  ));
 }
 
-export async function createClientNotification(data: { userId: number; title: string; message: string; type: 'order' | 'promo' | 'system' }): Promise<void> {
+export async function createClientNotification(data: { storeId?: number | null; userId: number; title: string; message: string; type: 'order' | 'promo' | 'system' }): Promise<void> {
   const db = await getDb();
   if (!db) return;
   await db.insert(clientNotifications).values(data);
 }
 
-// // --- LOYALTY POINTS -----------------------------------------------------------
-export async function getUserLoyaltyPoints(userId: number): Promise<number> {
+// --- TENANT CUSTOMER ACCOUNT / LOYALTY ---------------------------------------
+export async function getTenantScope(storeId?: number | null): Promise<{ tenantKey: string; storeId: number | null }> {
+  if (!storeId) return { tenantKey: "bonatto", storeId: null };
   const db = await getDb();
-  if (!db) return 0;
-  const result = await db.select({ loyaltyPoints: users.loyaltyPoints }).from(users).where(eq(users.id, userId)).limit(1);
-  return result[0]?.loyaltyPoints ?? 0;
+  if (!db) return { tenantKey: "bonatto", storeId };
+  const [store] = await db.select({ tenantKey: stores.tenantKey }).from(stores).where(eq(stores.id, storeId)).limit(1);
+  return { tenantKey: store?.tenantKey ?? "bonatto", storeId };
 }
-export async function addLoyaltyPoints(userId: number, points: number, orderId?: number, description?: string): Promise<void> {
+
+export async function getTenantCustomerAccount(userId: number, storeId?: number | null) {
+  const db = await getDb();
+  if (!db) return null;
+  const scope = await getTenantScope(storeId);
+  let [account] = await db
+    .select()
+    .from(tenantCustomerAccounts)
+    .where(and(eq(tenantCustomerAccounts.tenantKey, scope.tenantKey), eq(tenantCustomerAccounts.userId, userId)))
+    .limit(1);
+  if (account) return account;
+
+  const [legacyUser] = await db.select().from(users).where(eq(users.id, userId)).limit(1);
+  if (!legacyUser) return null;
+  const legacy = scope.tenantKey === "bonatto";
+  await db.insert(tenantCustomerAccounts).values({
+    tenantKey: scope.tenantKey,
+    userId,
+    loyaltyPoints: legacy ? legacyUser.loyaltyPoints : 0,
+    clubPlan: legacy ? legacyUser.clubPlan : null,
+    clubStatus: legacy ? legacyUser.clubStatus : null,
+    clubStartDate: legacy ? legacyUser.clubStartDate : null,
+    clubNextBillingDate: legacy ? legacyUser.clubNextBillingDate : null,
+    clubFreePizzaUsed: legacy ? legacyUser.clubFreePizzaUsed : false,
+    clubFreePizzaResetAt: legacy ? legacyUser.clubFreePizzaResetAt : null,
+    stripeCustomerId: legacy ? legacyUser.stripeCustomerId : null,
+  }).onDuplicateKeyUpdate({ set: { userId } });
+  [account] = await db
+    .select()
+    .from(tenantCustomerAccounts)
+    .where(and(eq(tenantCustomerAccounts.tenantKey, scope.tenantKey), eq(tenantCustomerAccounts.userId, userId)))
+    .limit(1);
+  return account ?? null;
+}
+
+async function mirrorBonattoLoyalty(userId: number, tenantKey: string, loyaltyPoints: number) {
+  if (tenantKey !== "bonatto") return;
   const db = await getDb();
   if (!db) return;
-  const balanceBefore = await getUserLoyaltyPoints(userId);
-  const balanceAfter = balanceBefore + points;
-  await db.update(users).set({ loyaltyPoints: sql`${users.loyaltyPoints} + ${points}` }).where(eq(users.id, userId));
-  await db.insert(loyaltyTransactions).values({
-    userId, orderId: orderId ?? null, type: 'earn', points,
-    description: description ?? `+${points} pontos por pedido #${orderId ?? ''}`,
-    balanceBefore, balanceAfter,
-  });
+  await db.update(users).set({ loyaltyPoints }).where(eq(users.id, userId));
 }
-export async function deductLoyaltyPoints(userId: number, points: number, orderId?: number, description?: string): Promise<{ ok: boolean; newBalance: number }> {
+
+export async function getUserLoyaltyPoints(userId: number, storeId?: number | null): Promise<number> {
+  return (await getTenantCustomerAccount(userId, storeId))?.loyaltyPoints ?? 0;
+}
+
+export async function addLoyaltyPoints(
+  userId: number,
+  points: number,
+  orderId?: number,
+  description?: string,
+  storeId?: number | null,
+): Promise<void> {
   const db = await getDb();
-  if (!db) return { ok: false, newBalance: 0 };
-  const current = await getUserLoyaltyPoints(userId);
-  if (current < points) return { ok: false, newBalance: current };
-  const balanceAfter = current - points;
-  await db.update(users).set({ loyaltyPoints: sql`${users.loyaltyPoints} - ${points}` }).where(eq(users.id, userId));
+  if (!db || points === 0) return;
+  const account = await getTenantCustomerAccount(userId, storeId);
+  if (!account) return;
+  const scope = await getTenantScope(storeId);
+  await db
+    .update(tenantCustomerAccounts)
+    .set({ loyaltyPoints: sql`GREATEST(0, ${tenantCustomerAccounts.loyaltyPoints} + ${points})` })
+    .where(eq(tenantCustomerAccounts.id, account.id));
+  const balanceAfter = await getUserLoyaltyPoints(userId, storeId);
+  const balanceBefore = Math.max(0, balanceAfter - points);
+  await mirrorBonattoLoyalty(userId, scope.tenantKey, balanceAfter);
   await db.insert(loyaltyTransactions).values({
-    userId, orderId: orderId ?? null, type: 'redeem', points: -points,
-    description: description ?? `-${points} pontos resgatados como desconto`,
-    balanceBefore: current, balanceAfter,
+    tenantKey: scope.tenantKey,
+    storeId: scope.storeId,
+    userId,
+    orderId: orderId ?? null,
+    type: points > 0 ? "earn" : "manual",
+    points,
+    description: description ?? `${points > 0 ? "+" : ""}${points} pontos por pedido #${orderId ?? ""}`,
+    balanceBefore,
+    balanceAfter,
   });
-  return { ok: true, newBalance: balanceAfter };
 }
-export async function getLoyaltyHistory(userId: number, limit = 30) {
+
+export async function deductLoyaltyPoints(
+  userId: number,
+  points: number,
+  orderId?: number,
+  description?: string,
+  storeId?: number | null,
+): Promise<{ ok: boolean; newBalance: number }> {
+  return deductLoyaltyPointsAtomic(userId, points, orderId, description, storeId);
+}
+
+export async function getLoyaltyHistory(userId: number, limit = 30, storeId?: number | null) {
   const db = await getDb();
   if (!db) return [];
+  const { tenantKey } = await getTenantScope(storeId);
   return db.select().from(loyaltyTransactions)
-    .where(eq(loyaltyTransactions.userId, userId))
+    .where(and(eq(loyaltyTransactions.userId, userId), eq(loyaltyTransactions.tenantKey, tenantKey)))
     .orderBy(sql`${loyaltyTransactions.createdAt} DESC`)
     .limit(limit);
 }
@@ -3124,7 +3942,7 @@ export async function updateUserAvatar(userId: number, avatarUrl: string): Promi
   await db.update(users).set({ avatarUrl }).where(eq(users.id, userId));
 }
 
-export async function getUserSpendingHistory(userId: number) {
+export async function getUserSpendingHistory(userId: number, storeId?: number | null) {
   const db = await getDb();
   if (!db) return [];
   return db
@@ -3134,7 +3952,11 @@ export async function getUserSpendingHistory(userId: number) {
       count: sql<number>`COUNT(*)`,
     })
     .from(orders)
-    .where(and(eq(orders.userId, userId), eq(orders.status, 'delivered')))
+    .where(and(
+      eq(orders.userId, userId),
+      eq(orders.status, 'delivered'),
+      storeId ? eq(orders.storeId, storeId) : undefined,
+    ))
     .groupBy(sql`DATE_FORMAT(${orders.createdAt}, '%Y-%m')`)
     .orderBy(sql`DATE_FORMAT(${orders.createdAt}, '%Y-%m')`)
     .limit(12);
@@ -3221,7 +4043,7 @@ export async function getCrmCustomers(opts?: {
       u.email,
       u.phone,
       u.avatarUrl,
-      u.loyaltyPoints,
+      ${opts?.storeId ? sql`COALESCE(tca.loyaltyPoints, 0)` : sql`u.loyaltyPoints`} AS loyaltyPoints,
       u.createdAt,
       u.lastSignedIn,
       COUNT(DISTINCT o.id) AS totalOrders,
@@ -3231,7 +4053,8 @@ export async function getCrmCustomers(opts?: {
       GROUP_CONCAT(DISTINCT ct.tag ORDER BY ct.assignedAt DESC SEPARATOR ',') AS tags
     FROM users u
     LEFT JOIN orders o ON o.userId = u.id
-    LEFT JOIN customer_tags ct ON ct.userId = u.id
+    LEFT JOIN customer_tags ct ON ct.userId = u.id ${opts?.storeId ? sql`AND ct.storeId = ${opts.storeId}` : sql``}
+    ${opts?.storeId ? sql`LEFT JOIN tenant_customer_accounts tca ON tca.userId = u.id AND tca.tenantKey = (SELECT tenantKey FROM stores WHERE id = ${opts.storeId} LIMIT 1)` : sql``}
     WHERE u.role = 'user'
       ${search ? sql`AND (u.name LIKE ${'%' + search + '%'} OR u.email LIKE ${'%' + search + '%'} OR u.phone LIKE ${'%' + search + '%'})` : sql``}
       ${opts?.storeId ? sql`AND u.id IN (SELECT DISTINCT userId FROM \`orders\` WHERE storeId = ${opts.storeId})` : sql``}
@@ -3283,9 +4106,20 @@ export async function getCrmCustomerDetail(userId: number, storeId?: number) {
   const userRows = await db.select().from(users).where(eq(users.id, userId)).limit(1);
   if (!userRows.length) return null;
   // Strip sensitive fields before returning to the admin CRM view
-  const { passwordHash: _ph, resetToken: _rt, resetTokenExpiresAt: _rte, ...safeUser } = userRows[0] as typeof userRows[0] & {
+  const { passwordHash: _ph, resetToken: _rt, resetTokenExpiresAt: _rte, ...baseSafeUser } = userRows[0] as typeof userRows[0] & {
     passwordHash?: unknown; resetToken?: unknown; resetTokenExpiresAt?: unknown;
   };
+  const account = storeId ? await getTenantCustomerAccount(userId, storeId) : null;
+  const safeUser = account ? {
+    ...baseSafeUser,
+    loyaltyPoints: account.loyaltyPoints,
+    clubPlan: account.clubPlan,
+    clubStatus: account.clubStatus,
+    clubStartDate: account.clubStartDate,
+    clubNextBillingDate: account.clubNextBillingDate,
+    clubFreePizzaUsed: account.clubFreePizzaUsed,
+    clubFreePizzaResetAt: account.clubFreePizzaResetAt,
+  } : baseSafeUser;
 
   const orderRows = await db
     .select()
@@ -3300,7 +4134,7 @@ export async function getCrmCustomerDetail(userId: number, storeId?: number) {
 /**
  * Lista clientes filtrados por tag específica.
  */
-export async function getCrmCustomersByTag(tag: string) {
+export async function getCrmCustomersByTag(tag: string, storeId: number) {
   const db = await getDb();
   if (!db) return [];
   const rows = await db.execute(sql`
@@ -3310,16 +4144,17 @@ export async function getCrmCustomersByTag(tag: string) {
       u.email,
       u.phone,
       u.avatarUrl,
-      u.loyaltyPoints,
+      COALESCE(tca.loyaltyPoints, 0) AS loyaltyPoints,
       u.createdAt,
       COUNT(DISTINCT o.id) AS totalOrders,
       COALESCE(SUM(CASE WHEN o.status = 'delivered' THEN CAST(o.total AS DECIMAL(10,2)) ELSE 0 END), 0) AS totalSpent,
       MAX(o.createdAt) AS lastOrderAt,
       GROUP_CONCAT(DISTINCT ct2.tag ORDER BY ct2.assignedAt DESC SEPARATOR ',') AS tags
     FROM users u
-    INNER JOIN customer_tags ct ON ct.userId = u.id AND ct.tag = ${tag}
-    LEFT JOIN customer_tags ct2 ON ct2.userId = u.id
-    LEFT JOIN orders o ON o.userId = u.id
+    INNER JOIN customer_tags ct ON ct.userId = u.id AND ct.storeId = ${storeId} AND ct.tag = ${tag}
+    LEFT JOIN customer_tags ct2 ON ct2.userId = u.id AND ct2.storeId = ${storeId}
+    LEFT JOIN orders o ON o.userId = u.id AND o.storeId = ${storeId}
+    LEFT JOIN tenant_customer_accounts tca ON tca.userId = u.id AND tca.tenantKey = (SELECT tenantKey FROM stores WHERE id = ${storeId} LIMIT 1)
     WHERE u.role = 'user'
     GROUP BY u.id
     ORDER BY lastOrderAt DESC
@@ -3335,17 +4170,17 @@ export async function getCrmCustomersByTag(tag: string) {
 /**
  * Atribui uma tag manualmente a um cliente.
  */
-export async function assignTagToCustomer(userId: number, tag: string): Promise<void> {
+export async function assignTagToCustomer(userId: number, tag: string, storeId: number): Promise<void> {
   const db = await getDb();
   if (!db) return;
   const now = new Date();
   const existing = await db.execute(sql`
-    SELECT id FROM customer_tags WHERE userId = ${userId} AND tag = ${tag} LIMIT 1
+    SELECT id FROM customer_tags WHERE storeId = ${storeId} AND userId = ${userId} AND tag = ${tag} LIMIT 1
   `);
   const rows = (existing as unknown as [Array<{ id: number }>])[0];
   if (rows.length === 0) {
     await db.execute(sql`
-      INSERT INTO customer_tags (userId, tag, assignedAt, updatedAt) VALUES (${userId}, ${tag}, ${now}, ${now})
+      INSERT INTO customer_tags (storeId, userId, tag, assignedAt, updatedAt) VALUES (${storeId}, ${userId}, ${tag}, ${now}, ${now})
     `);
   }
 }
@@ -3353,20 +4188,20 @@ export async function assignTagToCustomer(userId: number, tag: string): Promise<
 /**
  * Remove uma tag de um cliente.
  */
-export async function removeTagFromCustomer(userId: number, tag: string): Promise<void> {
+export async function removeTagFromCustomer(userId: number, tag: string, storeId: number): Promise<void> {
   const db = await getDb();
   if (!db) return;
-  await db.execute(sql`DELETE FROM customer_tags WHERE userId = ${userId} AND tag = ${tag}`);
+  await db.execute(sql`DELETE FROM customer_tags WHERE storeId = ${storeId} AND userId = ${userId} AND tag = ${tag}`);
 }
 
 /**
  * Retorna todas as tags de um cliente específico.
  */
-export async function getTagsForCustomer(userId: number): Promise<Array<{ tag: string; assignedAt: Date }>> {
+export async function getTagsForCustomer(userId: number, storeId: number): Promise<Array<{ tag: string; assignedAt: Date }>> {
   const db = await getDb();
   if (!db) return [];
   const rows = await db.execute(sql`
-    SELECT tag, assignedAt FROM customer_tags WHERE userId = ${userId} ORDER BY assignedAt DESC
+    SELECT tag, assignedAt FROM customer_tags WHERE storeId = ${storeId} AND userId = ${userId} ORDER BY assignedAt DESC
   `);
   return (rows as unknown as [Array<{ tag: string; assignedAt: Date }>])[0];
 }
@@ -3374,14 +4209,14 @@ export async function getTagsForCustomer(userId: number): Promise<Array<{ tag: s
 /**
  * Retorna execuções de jornadas de um cliente específico.
  */
-export async function getJourneyExecutionsByUser(userId: number) {
+export async function getJourneyExecutionsByUser(userId: number, storeId: number) {
   const db = await getDb();
   if (!db) return [];
   const rows = await db.execute(sql`
     SELECT je.*, j.name AS journeyName
     FROM journey_executions je
     LEFT JOIN journeys j ON j.id = je.journeyId
-    WHERE je.userId = ${userId}
+    WHERE je.storeId = ${storeId} AND je.userId = ${userId}
     ORDER BY je.startedAt DESC
     LIMIT 20
   `);
@@ -3395,11 +4230,11 @@ export async function getJourneyExecutionsByUser(userId: number) {
 /**
  * Retorna carrinhos abandonados de um cliente específico.
  */
-export async function getAbandonedCartsByUser(userId: number) {
+export async function getAbandonedCartsByUser(userId: number, storeId: number) {
   const db = await getDb();
   if (!db) return [];
   const rows = await db.execute(sql`
-    SELECT * FROM abandoned_carts WHERE userId = ${userId} ORDER BY createdAt DESC LIMIT 10
+    SELECT * FROM abandoned_carts WHERE storeId = ${storeId} AND userId = ${userId} ORDER BY createdAt DESC LIMIT 10
   `);
   return (rows as unknown as [Array<{
     id: number; status: string; total: string; items: string;
@@ -3417,12 +4252,12 @@ export async function getCrmStats(storeId?: number) {
     ? await db.execute(sql`
       SELECT
         (SELECT COUNT(DISTINCT o.userId) FROM orders o WHERE o.storeId = ${storeId} AND o.userId IS NOT NULL) AS totalCustomers,
-        (SELECT COUNT(*) FROM customer_tags ct WHERE ct.tag = 'novo' AND EXISTS (SELECT 1 FROM orders o WHERE o.userId = ct.userId AND o.storeId = ${storeId})) AS tagNovo,
-        (SELECT COUNT(*) FROM customer_tags ct WHERE ct.tag = 'recorrente' AND EXISTS (SELECT 1 FROM orders o WHERE o.userId = ct.userId AND o.storeId = ${storeId})) AS tagRecorrente,
-        (SELECT COUNT(*) FROM customer_tags ct WHERE ct.tag = 'indeciso' AND EXISTS (SELECT 1 FROM orders o WHERE o.userId = ct.userId AND o.storeId = ${storeId})) AS tagIndeciso,
-        (SELECT COUNT(*) FROM customer_tags ct WHERE ct.tag = 'inativo_15' AND EXISTS (SELECT 1 FROM orders o WHERE o.userId = ct.userId AND o.storeId = ${storeId})) AS tagInativo15,
-        (SELECT COUNT(*) FROM customer_tags ct WHERE ct.tag = 'inativo_30' AND EXISTS (SELECT 1 FROM orders o WHERE o.userId = ct.userId AND o.storeId = ${storeId})) AS tagInativo30,
-        (SELECT COUNT(*) FROM customer_tags ct WHERE ct.tag = 'inativo_60' AND EXISTS (SELECT 1 FROM orders o WHERE o.userId = ct.userId AND o.storeId = ${storeId})) AS tagInativo60,
+        (SELECT COUNT(*) FROM customer_tags ct WHERE ct.storeId = ${storeId} AND ct.tag = 'novo') AS tagNovo,
+        (SELECT COUNT(*) FROM customer_tags ct WHERE ct.storeId = ${storeId} AND ct.tag = 'recorrente') AS tagRecorrente,
+        (SELECT COUNT(*) FROM customer_tags ct WHERE ct.storeId = ${storeId} AND ct.tag = 'indeciso') AS tagIndeciso,
+        (SELECT COUNT(*) FROM customer_tags ct WHERE ct.storeId = ${storeId} AND ct.tag = 'inativo_15') AS tagInativo15,
+        (SELECT COUNT(*) FROM customer_tags ct WHERE ct.storeId = ${storeId} AND ct.tag = 'inativo_30') AS tagInativo30,
+        (SELECT COUNT(*) FROM customer_tags ct WHERE ct.storeId = ${storeId} AND ct.tag = 'inativo_60') AS tagInativo60,
         (SELECT COUNT(*) FROM abandoned_carts ac WHERE ac.status = 'pending' AND EXISTS (SELECT 1 FROM orders o WHERE o.userId = ac.userId AND o.storeId = ${storeId})) AS carrinhosPendentes,
         (SELECT COUNT(*) FROM journey_executions je WHERE je.status = 'running' AND EXISTS (SELECT 1 FROM orders o WHERE o.userId = je.userId AND o.storeId = ${storeId})) AS jornadasAtivas
     `)
@@ -3453,14 +4288,16 @@ export async function getCrmStats(storeId?: number) {
 /**
  * Lista todos os templates de notificação, opcionalmente filtrados por event/channel.
  */
-export async function listNotificationTemplates(opts?: { event?: string; channel?: string }) {
+export async function listNotificationTemplates(opts?: { storeId?: number; event?: string; channel?: string }) {
   const db = await getDb();
   if (!db) return [];
-  let query = db.select().from(notificationTemplates).$dynamic();
-  if (opts?.event) {
-    query = query.where(eq((notificationTemplates as any).event, opts.event));
-  }
-  return query.orderBy((notificationTemplates as any).event, (notificationTemplates as any).channel);
+  const storeId = await getEffectiveStoreId(db, opts?.storeId);
+  const conditions: SQL[] = [eq(notificationTemplates.storeId, storeId)];
+  if (opts?.event) conditions.push(eq(notificationTemplates.event, opts.event as NotificationTemplate["event"]));
+  if (opts?.channel) conditions.push(eq(notificationTemplates.channel, opts.channel as NotificationTemplate["channel"]));
+  return db.select().from(notificationTemplates)
+    .where(and(...conditions))
+    .orderBy(notificationTemplates.event, notificationTemplates.channel);
 }
 
 /**
@@ -3477,19 +4314,21 @@ export async function createNotificationTemplate(data: InsertNotificationTemplat
 /**
  * Atualiza um template existente.
  */
-export async function updateNotificationTemplate(id: number, data: Partial<InsertNotificationTemplate>) {
+export async function updateNotificationTemplate(id: number, storeId: number, data: Partial<InsertNotificationTemplate>) {
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
-  await db.update(notificationTemplates).set(data).where(eq((notificationTemplates as any).id, id));
+  await db.update(notificationTemplates).set(data)
+    .where(and(eq(notificationTemplates.id, id), eq(notificationTemplates.storeId, storeId)));
 }
 
 /**
  * Remove um template.
  */
-export async function deleteNotificationTemplate(id: number) {
+export async function deleteNotificationTemplate(id: number, storeId: number) {
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
-  await db.delete(notificationTemplates).where(eq((notificationTemplates as any).id, id));
+  await db.delete(notificationTemplates)
+    .where(and(eq(notificationTemplates.id, id), eq(notificationTemplates.storeId, storeId)));
 }
 
 /**
@@ -3499,13 +4338,16 @@ export async function deleteNotificationTemplate(id: number) {
  */
 export async function pickRandomTemplate(
   event: string,
-  channel: "push" | "whatsapp"
+  channel: "push" | "whatsapp",
+  requestedStoreId?: number,
 ): Promise<{ title: string; body: string } | null> {
   const db = await getDb();
   if (!db) return null;
+  const storeId = await getEffectiveStoreId(db, requestedStoreId);
   const rows = await db.execute(sql`
     SELECT title, body FROM notification_templates
-    WHERE event = ${event}
+    WHERE storeId = ${storeId}
+      AND event = ${event}
       AND (channel = ${channel} OR channel = 'both')
       AND isActive = 1
     ORDER BY RAND()
@@ -3518,10 +4360,14 @@ export async function pickRandomTemplate(
 /**
  * Seed de templates variados por status. Só insere se a tabela estiver vazia.
  */
-export async function seedNotificationTemplates() {
+export async function seedNotificationTemplates(requestedStoreId?: number) {
   const db = await getDb();
   if (!db) return;
-  const existing = await db.select().from(notificationTemplates).limit(1);
+  const storeId = await getEffectiveStoreId(db, requestedStoreId);
+  const existing = await db.select({ id: notificationTemplates.id })
+    .from(notificationTemplates)
+    .where(eq(notificationTemplates.storeId, storeId))
+    .limit(1);
   if (existing.length > 0) return;
 
   const templates: InsertNotificationTemplate[] = [
@@ -3603,34 +4449,37 @@ export async function seedNotificationTemplates() {
     { event: "reactivation_60", channel: "whatsapp", title: "Reativação 60 dias", body: "{{clientName}}, sua volta é muito especial pra gente! 🥰\n\nComo presente de boas-vindas, aqui vai *15% de desconto*:\n\n🎟️ Cupom: *{{coupon}}*\n\n⏰ Válido por 24h. Corre!\n\n👉 https://bonattopizza.manus.space" },
   ];
 
-  await db.insert(notificationTemplates).values(templates);
+  await db.insert(notificationTemplates).values(templates.map((template) => ({ ...template, storeId })));
 }
 
 // --- DELIVERY ZONES (BAIRROS) -------------------------------------------------
 
-export async function getAllDeliveryZones(activeOnly = false) {
+export async function getAllDeliveryZones(activeOnly = false, storeId?: number) {
   const db = await getDb();
   if (!db) return [];
+  const effectiveStoreId = await getEffectiveStoreId(db, storeId);
   if (activeOnly) {
     return db.select().from(deliveryZones)
-      .where(eq(deliveryZones.isActive, true))
+      .where(and(eq(deliveryZones.storeId, effectiveStoreId), eq(deliveryZones.isActive, true)))
       .orderBy(deliveryZones.neighborhood);
   }
-  return db.select().from(deliveryZones).orderBy(deliveryZones.neighborhood);
+  return db.select().from(deliveryZones).where(eq(deliveryZones.storeId, effectiveStoreId)).orderBy(deliveryZones.neighborhood);
 }
 
-export async function getDeliveryZoneByNeighborhood(neighborhood: string) {
+export async function getDeliveryZoneByNeighborhood(neighborhood: string, storeId?: number) {
   const db = await getDb();
   if (!db) return null;
+  const effectiveStoreId = await getEffectiveStoreId(db, storeId);
   // Busca case-insensitive: normaliza removendo acentos via LOWER
   const rows = await db.execute(
-    sql`SELECT * FROM delivery_zones WHERE LOWER(neighborhood) = LOWER(${neighborhood}) AND isActive = 1 LIMIT 1`
+    sql`SELECT * FROM delivery_zones WHERE storeId = ${effectiveStoreId} AND LOWER(neighborhood) = LOWER(${neighborhood}) AND isActive = 1 LIMIT 1`
   );
   const list = (rows as unknown as [Array<Record<string, unknown>>])[0];
   if (!list || list.length === 0) return null;
   const r = list[0];
   return {
     id: Number(r.id),
+    storeId: Number(r.storeId),
     neighborhood: String(r.neighborhood),
     city: String(r.city ?? ""),
     deliveryFee: String(r.deliveryFee ?? "0.00"),
@@ -3639,16 +4488,18 @@ export async function getDeliveryZoneByNeighborhood(neighborhood: string) {
   };
 }
 
-export async function searchDeliveryZones(query: string) {
+export async function searchDeliveryZones(query: string, storeId?: number) {
   const db = await getDb();
   if (!db) return [];
+  const effectiveStoreId = await getEffectiveStoreId(db, storeId);
   const like = `%${query}%`;
   const rows = await db.execute(
-    sql`SELECT * FROM delivery_zones WHERE LOWER(neighborhood) LIKE LOWER(${like}) AND isActive = 1 ORDER BY neighborhood LIMIT 10`
+    sql`SELECT * FROM delivery_zones WHERE storeId = ${effectiveStoreId} AND LOWER(neighborhood) LIKE LOWER(${like}) AND isActive = 1 ORDER BY neighborhood LIMIT 10`
   );
   const list = (rows as unknown as [Array<Record<string, unknown>>])[0];
   return (list ?? []).map((r) => ({
     id: Number(r.id),
+    storeId: Number(r.storeId),
     neighborhood: String(r.neighborhood),
     city: String(r.city ?? ""),
     deliveryFee: String(r.deliveryFee ?? "0.00"),
@@ -3658,6 +4509,7 @@ export async function searchDeliveryZones(query: string) {
 }
 
 export async function createDeliveryZone(data: {
+  storeId: number;
   neighborhood: string;
   city?: string;
   deliveryFee: string;
@@ -3666,6 +4518,7 @@ export async function createDeliveryZone(data: {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
   const result = await db.insert(deliveryZones).values({
+    storeId: data.storeId,
     neighborhood: data.neighborhood.trim(),
     city: data.city?.trim() ?? "",
     deliveryFee: data.deliveryFee,
@@ -3675,7 +4528,7 @@ export async function createDeliveryZone(data: {
   return (result as unknown as { insertId: number }).insertId;
 }
 
-export async function updateDeliveryZone(id: number, data: Partial<{
+export async function updateDeliveryZone(id: number, storeId: number, data: Partial<{
   neighborhood: string;
   city: string;
   deliveryFee: string;
@@ -3684,28 +4537,32 @@ export async function updateDeliveryZone(id: number, data: Partial<{
 }>) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  await db.update(deliveryZones).set(data).where(eq(deliveryZones.id, id));
+  await db.update(deliveryZones).set(data).where(and(eq(deliveryZones.id, id), eq(deliveryZones.storeId, storeId)));
 }
 
-export async function deleteDeliveryZone(id: number) {
+export async function deleteDeliveryZone(id: number, storeId: number) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  await db.delete(deliveryZones).where(eq(deliveryZones.id, id));
+  await db.delete(deliveryZones).where(and(eq(deliveryZones.id, id), eq(deliveryZones.storeId, storeId)));
 }
 
 // ─── MENU SLIDES ──────────────────────────────────────────────────────────────
-export async function getMenuSlides(activeOnly = true) {
+export async function getMenuSlides(activeOnly = true, storeId?: number) {
   const db = await getDb();
   if (!db) return [];
+  const effectiveStoreId = await getEffectiveStoreId(db, storeId);
+  const conditions = [eq(menuSlides.storeId, effectiveStoreId)];
+  if (activeOnly) conditions.push(eq(menuSlides.isActive, true));
   const rows = await db
     .select()
     .from(menuSlides)
-    .where(activeOnly ? eq(menuSlides.isActive, true) : undefined)
+    .where(and(...conditions))
     .orderBy(menuSlides.sortOrder, menuSlides.id);
   return rows;
 }
 
 export async function createMenuSlide(data: {
+  storeId: number;
   title: string;
   subtitle?: string | null;
   imageUrl?: string | null;
@@ -3718,6 +4575,7 @@ export async function createMenuSlide(data: {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
   const result = await db.insert(menuSlides).values({
+    storeId: data.storeId,
     title: data.title,
     subtitle: data.subtitle ?? null,
     imageUrl: data.imageUrl ?? null,
@@ -3733,7 +4591,7 @@ export async function createMenuSlide(data: {
   return row;
 }
 
-export async function updateMenuSlide(id: number, data: Partial<{
+export async function updateMenuSlide(id: number, storeId: number, data: Partial<{
   title: string;
   subtitle: string | null;
   imageUrl: string | null;
@@ -3746,22 +4604,23 @@ export async function updateMenuSlide(id: number, data: Partial<{
 }>) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  await db.update(menuSlides).set(data).where(eq(menuSlides.id, id));
-  const [row] = await db.select().from(menuSlides).where(eq(menuSlides.id, id));
+  await db.update(menuSlides).set(data).where(and(eq(menuSlides.id, id), eq(menuSlides.storeId, storeId)));
+  const [row] = await db.select().from(menuSlides).where(and(eq(menuSlides.id, id), eq(menuSlides.storeId, storeId)));
   return row;
 }
 
-export async function deleteMenuSlide(id: number) {
+export async function deleteMenuSlide(id: number, storeId: number) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  await db.delete(menuSlides).where(eq(menuSlides.id, id));
+  await db.delete(menuSlides).where(and(eq(menuSlides.id, id), eq(menuSlides.storeId, storeId)));
   return { success: true };
 }
 
-export async function seedMenuSlides() {
+export async function seedMenuSlides(storeId?: number) {
   const db = await getDb();
   if (!db) return { seeded: false, count: 0 };
-  const existing = await db.select().from(menuSlides);
+  const effectiveStoreId = await getEffectiveStoreId(db, storeId);
+  const existing = await db.select().from(menuSlides).where(eq(menuSlides.storeId, effectiveStoreId));
   if (existing.length > 0) return { seeded: false, count: existing.length };
   const slides = [
     {
@@ -3790,7 +4649,7 @@ export async function seedMenuSlides() {
     },
   ];
   for (const slide of slides) {
-    await db.insert(menuSlides).values({ ...slide, isActive: true });
+    await db.insert(menuSlides).values({ ...slide, storeId: effectiveStoreId, isActive: true });
   }
   return { seeded: true, count: slides.length };
 }
@@ -3798,17 +4657,18 @@ export async function seedMenuSlides() {
 // ─── TAGS PERSONALIZADAS ──────────────────────────────────────────────────────
 
 /** Lista todas as tags personalizadas criadas pelo admin */
-export async function listCustomTags(): Promise<CustomTag[]> {
+export async function listCustomTags(storeId: number): Promise<CustomTag[]> {
   const db = await getDb();
   if (!db) return [];
-  return db.select().from(customTags).orderBy(customTags.name);
+  return db.select().from(customTags).where(eq(customTags.storeId, storeId)).orderBy(customTags.name);
 }
 
 /** Cria uma nova tag personalizada */
-export async function createCustomTag(data: { name: string; color: string; description?: string }): Promise<number> {
+export async function createCustomTag(data: { storeId: number; name: string; color: string; description?: string }): Promise<number> {
   const db = await getDb();
   if (!db) return -1;
   const result = await db.insert(customTags).values({
+    storeId: data.storeId,
     name: data.name.trim().toLowerCase().replace(/\s+/g, "_"),
     color: data.color,
     description: data.description ?? null,
@@ -3818,66 +4678,66 @@ export async function createCustomTag(data: { name: string; color: string; descr
 }
 
 /** Atualiza uma tag personalizada */
-export async function updateCustomTag(id: number, data: { name?: string; color?: string; description?: string }): Promise<void> {
+export async function updateCustomTag(id: number, storeId: number, data: { name?: string; color?: string; description?: string }): Promise<void> {
   const db = await getDb();
   if (!db) return;
   const updates: Record<string, unknown> = {};
   if (data.name) updates.name = data.name.trim().toLowerCase().replace(/\s+/g, "_");
   if (data.color) updates.color = data.color;
   if (data.description !== undefined) updates.description = data.description;
-  await db.update(customTags).set(updates).where(eq(customTags.id, id));
+  await db.update(customTags).set(updates).where(and(eq(customTags.id, id), eq(customTags.storeId, storeId)));
 }
 
 /** Remove uma tag personalizada e todas as atribuições */
-export async function deleteCustomTag(id: number): Promise<void> {
+export async function deleteCustomTag(id: number, storeId: number): Promise<void> {
   const db = await getDb();
   if (!db) return;
-  await db.delete(customCustomerTags).where(eq(customCustomerTags.tagId, id));
-  await db.delete(customTags).where(eq(customTags.id, id));
+  await db.delete(customCustomerTags).where(and(eq(customCustomerTags.tagId, id), eq(customCustomerTags.storeId, storeId)));
+  await db.delete(customTags).where(and(eq(customTags.id, id), eq(customTags.storeId, storeId)));
 }
 
 /** Atribui uma tag personalizada a um cliente */
-export async function assignCustomTagToCustomer(userId: number, tagId: number): Promise<void> {
+export async function assignCustomTagToCustomer(userId: number, tagId: number, storeId: number): Promise<void> {
   const db = await getDb();
   if (!db) return;
   const existing = await db.select().from(customCustomerTags)
-    .where(and(eq(customCustomerTags.userId, userId), eq(customCustomerTags.tagId, tagId)))
+    .where(and(eq(customCustomerTags.storeId, storeId), eq(customCustomerTags.userId, userId), eq(customCustomerTags.tagId, tagId)))
     .limit(1);
   if (existing.length === 0) {
-    await db.insert(customCustomerTags).values({ userId, tagId, assignedAt: new Date() });
+    await db.insert(customCustomerTags).values({ storeId, userId, tagId, assignedAt: new Date() });
   }
 }
 
 /** Remove uma tag personalizada de um cliente */
-export async function removeCustomTagFromCustomer(userId: number, tagId: number): Promise<void> {
+export async function removeCustomTagFromCustomer(userId: number, tagId: number, storeId: number): Promise<void> {
   const db = await getDb();
   if (!db) return;
   await db.delete(customCustomerTags)
-    .where(and(eq(customCustomerTags.userId, userId), eq(customCustomerTags.tagId, tagId)));
+    .where(and(eq(customCustomerTags.storeId, storeId), eq(customCustomerTags.userId, userId), eq(customCustomerTags.tagId, tagId)));
 }
 
 /** Retorna as tags personalizadas de um cliente com detalhes */
-export async function getCustomTagsForCustomer(userId: number): Promise<Array<CustomTag & { assignedAt: Date }>> {
+export async function getCustomTagsForCustomer(userId: number, storeId: number): Promise<Array<CustomTag & { assignedAt: Date }>> {
   const db = await getDb();
   if (!db) return [];
   const rows = await db
-    .select({ id: customTags.id, name: customTags.name, color: customTags.color, description: customTags.description, createdAt: customTags.createdAt, assignedAt: customCustomerTags.assignedAt })
+    .select({ id: customTags.id, storeId: customTags.storeId, name: customTags.name, color: customTags.color, description: customTags.description, createdAt: customTags.createdAt, assignedAt: customCustomerTags.assignedAt })
     .from(customCustomerTags)
     .innerJoin(customTags, eq(customCustomerTags.tagId, customTags.id))
-    .where(eq(customCustomerTags.userId, userId))
+    .where(and(eq(customCustomerTags.storeId, storeId), eq(customCustomerTags.userId, userId)))
     .orderBy(customCustomerTags.assignedAt);
   return rows;
 }
 
 /** Retorna todos os clientes com uma tag personalizada específica (por nome) */
-export async function getCustomersByCustomTagName(tagName: string): Promise<number[]> {
+export async function getCustomersByCustomTagName(tagName: string, storeId: number): Promise<number[]> {
   const db = await getDb();
   if (!db) return [];
-  const tag = await db.select().from(customTags).where(eq(customTags.name, tagName)).limit(1);
+  const tag = await db.select().from(customTags).where(and(eq(customTags.storeId, storeId), eq(customTags.name, tagName))).limit(1);
   if (!tag[0]) return [];
   const rows = await db.select({ userId: customCustomerTags.userId })
     .from(customCustomerTags)
-    .where(eq(customCustomerTags.tagId, tag[0].id));
+    .where(and(eq(customCustomerTags.storeId, storeId), eq(customCustomerTags.tagId, tag[0].id)));
   return rows.map((r) => r.userId);
 }
 
@@ -3898,24 +4758,28 @@ export async function createScheduledNotification(data: InsertScheduledNotificat
   return (resultHeader as unknown as { insertId: number }).insertId;
 }
 
-export async function listScheduledNotifications(): Promise<ScheduledNotification[]> {
+export async function listScheduledNotifications(requestedStoreId?: number): Promise<ScheduledNotification[]> {
   const db = await getDb();
   if (!db) return [];
-  return db.select().from(scheduledNotifications).orderBy(desc(scheduledNotifications.scheduledAt));
+  const storeId = await getEffectiveStoreId(db, requestedStoreId);
+  return db.select().from(scheduledNotifications)
+    .where(eq(scheduledNotifications.storeId, storeId))
+    .orderBy(desc(scheduledNotifications.scheduledAt));
 }
 
-export async function cancelScheduledNotification(id: number): Promise<void> {
+export async function cancelScheduledNotification(id: number, storeId: number): Promise<void> {
   const db = await getDb();
   if (!db) return;
   await db.update(scheduledNotifications)
     .set({ status: "cancelled" })
-    .where(eq(scheduledNotifications.id, id));
+    .where(and(eq(scheduledNotifications.id, id), eq(scheduledNotifications.storeId, storeId)));
 }
 
-export async function deleteScheduledNotification(id: number): Promise<void> {
+export async function deleteScheduledNotification(id: number, storeId: number): Promise<void> {
   const db = await getDb();
   if (!db) return;
-  await db.delete(scheduledNotifications).where(eq(scheduledNotifications.id, id));
+  await db.delete(scheduledNotifications)
+    .where(and(eq(scheduledNotifications.id, id), eq(scheduledNotifications.storeId, storeId)));
 }
 
 export async function getPendingScheduledNotifications(): Promise<ScheduledNotification[]> {
@@ -3941,32 +4805,36 @@ export async function markScheduledNotificationSent(id: number, sentCount: numbe
 
 
 // --- CARROSSEL HERO ---
-export async function getCarouselImages(activeOnly = true) {
+export async function getCarouselImages(activeOnly = true, storeId?: number) {
   const db = await getDb();
   if (!db) return [];
+  const effectiveStoreId = await getEffectiveStoreId(db, storeId);
+  const conditions = [eq(carouselImages.storeId, effectiveStoreId)];
+  if (activeOnly) conditions.push(eq(carouselImages.active, true));
   return db.select().from(carouselImages)
-    .where(activeOnly ? eq(carouselImages.active, true) : undefined)
+    .where(and(...conditions))
     .orderBy(carouselImages.sortOrder, carouselImages.id);
 }
-export async function createCarouselImage(data: { imageUrl: string; title?: string | null; sortOrder?: number }) {
+export async function createCarouselImage(data: { storeId: number; imageUrl: string; title?: string | null; sortOrder?: number }) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
   await db.insert(carouselImages).values({
+    storeId: data.storeId,
     imageUrl: data.imageUrl,
     title: data.title ?? null,
     sortOrder: data.sortOrder ?? 0,
     active: true,
   });
 }
-export async function updateCarouselImage(id: number, data: Partial<{ imageUrl: string; title: string | null; sortOrder: number; active: boolean }>) {
+export async function updateCarouselImage(id: number, storeId: number, data: Partial<{ imageUrl: string; title: string | null; sortOrder: number; active: boolean }>) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  await db.update(carouselImages).set(data).where(eq(carouselImages.id, id));
+  await db.update(carouselImages).set(data).where(and(eq(carouselImages.id, id), eq(carouselImages.storeId, storeId)));
 }
-export async function deleteCarouselImage(id: number) {
+export async function deleteCarouselImage(id: number, storeId: number) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  await db.delete(carouselImages).where(eq(carouselImages.id, id));
+  await db.delete(carouselImages).where(and(eq(carouselImages.id, id), eq(carouselImages.storeId, storeId)));
 }
 
 /** Lista pedidos que têm mensagens, com contagem de não lidas para o admin */
@@ -4240,7 +5108,7 @@ export async function createClientAlert(data: {
 }
 
 /** Lista alertas ativos não lidos pelo usuário (máx 20) */
-export async function listClientAlerts(userId: number): Promise<(ClientAlert & { read: boolean })[]> {
+export async function listClientAlerts(userId: number, storeId: number): Promise<(ClientAlert & { read: boolean })[]> {
   const db = await getDb();
   if (!db) return [];
   const now = new Date();
@@ -4251,6 +5119,7 @@ export async function listClientAlerts(userId: number): Promise<(ClientAlert & {
     .where(
       and(
         eq(clientAlerts.active, true),
+        eq(clientAlerts.storeId, storeId),
         or(isNull(clientAlerts.expiresAt), gt(clientAlerts.expiresAt, now))
       )
     )
@@ -4270,9 +5139,12 @@ export async function listClientAlerts(userId: number): Promise<(ClientAlert & {
 }
 
 /** Marca um alerta como lido para o usuário */
-export async function dismissClientAlert(alertId: number, userId: number): Promise<void> {
+export async function dismissClientAlert(alertId: number, userId: number, storeId: number): Promise<void> {
   const db = await getDb();
   if (!db) return;
+  const [alert] = await db.select({ id: clientAlerts.id }).from(clientAlerts)
+    .where(and(eq(clientAlerts.id, alertId), eq(clientAlerts.storeId, storeId))).limit(1);
+  if (!alert) return;
   try {
     await db.insert(clientAlertReads).values({ alertId, userId });
   } catch {
@@ -4281,7 +5153,7 @@ export async function dismissClientAlert(alertId: number, userId: number): Promi
 }
 
 /** Conta alertas não lidos pelo usuário */
-export async function countUnreadClientAlerts(userId: number): Promise<number> {
+export async function countUnreadClientAlerts(userId: number, storeId: number): Promise<number> {
   const db = await getDb();
   if (!db) return 0;
   const now = new Date();
@@ -4291,6 +5163,7 @@ export async function countUnreadClientAlerts(userId: number): Promise<number> {
     .where(
       and(
         eq(clientAlerts.active, true),
+        eq(clientAlerts.storeId, storeId),
         or(isNull(clientAlerts.expiresAt), gt(clientAlerts.expiresAt, now))
       )
     );
@@ -4434,30 +5307,27 @@ export async function creditLoyaltyForOrderIdempotent(
   orderId: number,
   userId: number,
   points: number,
-  description?: string
+  description?: string,
+  storeId?: number | null,
 ): Promise<boolean> {
   if (points <= 0) return false;
   const db = await getDb();
   if (!db) return false;
+  const scope = await getTenantScope(storeId);
   try {
-    await db.insert(loyaltyOrderCredits).values({ orderId, userId, points });
+    await db.insert(loyaltyOrderCredits).values({
+      tenantKey: scope.tenantKey,
+      storeId: scope.storeId,
+      orderId,
+      userId,
+      points,
+    });
   } catch (err) {
     const msg = (err as { message?: string } | undefined)?.message ?? "";
     if (msg.includes("Duplicate") || msg.includes("ER_DUP_ENTRY")) return false;
     throw err;
   }
-  const balanceBefore = await getUserLoyaltyPoints(userId);
-  const balanceAfter = balanceBefore + points;
-  await db.update(users).set({ loyaltyPoints: sql`${users.loyaltyPoints} + ${points}` }).where(eq(users.id, userId));
-  await db.insert(loyaltyTransactions).values({
-    userId,
-    orderId,
-    type: "earn",
-    points,
-    description: description ?? `+${points} pontos pelo pedido #${orderId}`,
-    balanceBefore,
-    balanceAfter,
-  });
+  await addLoyaltyPoints(userId, points, orderId, description ?? `+${points} pontos pelo pedido #${orderId}`, storeId);
   return true;
 }
 
@@ -4470,19 +5340,26 @@ export async function deductLoyaltyPointsAtomic(
   userId: number,
   points: number,
   orderId?: number,
-  description?: string
+  description?: string,
+  storeId?: number | null,
 ): Promise<{ ok: boolean; newBalance: number }> {
-  if (points <= 0) return { ok: true, newBalance: await getUserLoyaltyPoints(userId) };
+  if (points <= 0) return { ok: true, newBalance: await getUserLoyaltyPoints(userId, storeId) };
   const db = await getDb();
   if (!db) return { ok: false, newBalance: 0 };
+  const account = await getTenantCustomerAccount(userId, storeId);
+  if (!account) return { ok: false, newBalance: 0 };
+  const scope = await getTenantScope(storeId);
   const result = await db
-    .update(users)
-    .set({ loyaltyPoints: sql`${users.loyaltyPoints} - ${points}` })
-    .where(and(eq(users.id, userId), gte(users.loyaltyPoints, points)));
+    .update(tenantCustomerAccounts)
+    .set({ loyaltyPoints: sql`${tenantCustomerAccounts.loyaltyPoints} - ${points}` })
+    .where(and(eq(tenantCustomerAccounts.id, account.id), gte(tenantCustomerAccounts.loyaltyPoints, points)));
   const affected = (result as any)?.rowsAffected ?? (result as any)?.[0]?.affectedRows ?? 0;
-  if (!affected) return { ok: false, newBalance: await getUserLoyaltyPoints(userId) };
-  const newBalance = await getUserLoyaltyPoints(userId);
+  if (!affected) return { ok: false, newBalance: await getUserLoyaltyPoints(userId, storeId) };
+  const newBalance = await getUserLoyaltyPoints(userId, storeId);
+  await mirrorBonattoLoyalty(userId, scope.tenantKey, newBalance);
   await db.insert(loyaltyTransactions).values({
+    tenantKey: scope.tenantKey,
+    storeId: scope.storeId,
     userId,
     orderId: orderId ?? null,
     type: "redeem",
@@ -4506,27 +5383,22 @@ export async function refundLoyaltyPointsForOrder(orderId: number): Promise<numb
   const pointsUsed = order.pointsUsed ?? 0;
   if (pointsUsed <= 0) return 0;
   // Check if we already refunded (to prevent double-refund)
+  const scope = await getTenantScope(order.storeId);
   const existing = await db
     .select()
     .from(loyaltyTransactions)
     .where(and(
       eq(loyaltyTransactions.orderId, orderId),
-      eq(loyaltyTransactions.type, "manual"),
+      eq(loyaltyTransactions.tenantKey, scope.tenantKey),
     ))
-    .limit(1);
-  if (existing.length > 0 && existing[0].description?.startsWith("refund:")) return 0;
-  const balanceBefore = await getUserLoyaltyPoints(order.userId);
-  const balanceAfter = balanceBefore + pointsUsed;
-  await db.update(users).set({ loyaltyPoints: sql`${users.loyaltyPoints} + ${pointsUsed}` }).where(eq(users.id, order.userId));
-  await db.insert(loyaltyTransactions).values({
-    userId: order.userId,
+  if (existing.some((transaction) => transaction.description?.startsWith("refund:"))) return 0;
+  await addLoyaltyPoints(
+    order.userId,
+    pointsUsed,
     orderId,
-    type: "manual",
-    points: pointsUsed,
-    description: `refund: estorno de pontos por cancelamento do pedido #${orderId}`,
-    balanceBefore,
-    balanceAfter,
-  });
+    `refund: estorno de pontos por cancelamento do pedido #${orderId}`,
+    order.storeId,
+  );
   return pointsUsed;
 }
 

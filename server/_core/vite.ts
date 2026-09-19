@@ -9,12 +9,21 @@ import viteConfig from "../../vite.config.ts";
 export async function setupVite(app: Express, server: Server) {
   const serverOptions = {
     middlewareMode: true,
-    hmr: { server },
+    hmr: { server, clientPort: parseInt(process.env.PORT || "3000", 10) },
     allowedHosts: true as const,
   };
 
+  const resolvedViteConfig = typeof viteConfig === "function"
+    ? await viteConfig({
+        command: "serve",
+        mode: process.env.NODE_ENV ?? "development",
+        isSsrBuild: false,
+        isPreview: false,
+      })
+    : await viteConfig;
+
   const vite = await createViteServer({
-    ...viteConfig,
+    ...resolvedViteConfig,
     configFile: false,
     server: serverOptions,
     appType: "custom",

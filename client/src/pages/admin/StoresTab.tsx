@@ -17,12 +17,15 @@ import { toast } from "sonner";
 import {
   Store, Plus, Pencil, Trash2, Users, MapPin, Phone,
   Building2, Star, UserPlus, UserMinus, ChevronDown, ChevronRight,
-  Search, CheckCircle2, XCircle, FileText, ChevronUp
+  Search, CheckCircle2, XCircle, FileText, ChevronUp, Palette
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { AppRouter } from "../../../../server/routers";
+import { WhiteLabelEditor } from "./WhiteLabelEditor";
 
 interface StoreFormData {
+  creationType: "brand" | "unit";
+  tenantKey: string;
   name: string;
   slug: string;
   city: string;
@@ -41,13 +44,14 @@ interface StoreFormData {
 }
 
 const emptyForm: StoreFormData = {
-  name: "", slug: "", city: "", address: "", phone: "", active: true, isDefault: false,
+  creationType: "brand", tenantKey: "", name: "", slug: "", city: "", address: "", phone: "", active: true, isDefault: false,
   cnpj: "", inscricaoEstadual: "", regimeTributario: "1", csc: "", cscId: "", focusNfeToken: "", nfceEnabled: false,
 };
 
 type RouterOutputs = inferRouterOutputs<AppRouter>;
 type AdminStoreRecord = RouterOutputs["stores"]["listAll"][number];
 type StoreManagerRecord = RouterOutputs["stores"]["getManagers"][number];
+type TenantManagerRecord = RouterOutputs["stores"]["getTenantManagers"][number];
 
 function slugify(str: string) {
   return str
@@ -87,7 +91,7 @@ export function StoresTab() {
   });
   const addManager = trpc.stores.addManager.useMutation({
     onSuccess: () => {
-      utils.stores.getManagers.invalidate();
+      void Promise.all([utils.stores.getManagers.invalidate(), utils.stores.getTenantManagers.invalidate()]);
       toast.success("Gerente adicionado com sucesso!");
       setManagerEmail("");
       setSearchEmail("");
@@ -95,7 +99,10 @@ export function StoresTab() {
     onError: (e) => toast.error(e.message),
   });
   const removeManager = trpc.stores.removeManager.useMutation({
-    onSuccess: () => { utils.stores.getManagers.invalidate(); toast.success("Gerente removido!"); },
+    onSuccess: () => {
+      void Promise.all([utils.stores.getManagers.invalidate(), utils.stores.getTenantManagers.invalidate()]);
+      toast.success("Acesso removido!");
+    },
     onError: (e) => toast.error(e.message),
   });
 
@@ -105,15 +112,25 @@ export function StoresTab() {
   const [expandedStore, setExpandedStore] = useState<number | null>(null);
   const [managerEmail, setManagerEmail] = useState("");
   const [searchEmail, setSearchEmail] = useState("");
+  const [managerScope, setManagerScope] = useState<"store" | "tenant">("tenant");
   const [showFiscal, setShowFiscal] = useState(false);
+  const [whiteLabelStore, setWhiteLabelStore] = useState<AdminStoreRecord | null>(null);
 
   // Managers da loja expandida
   const { data: managersData = [] } = trpc.stores.getManagers.useQuery(
     { storeId: expandedStore! },
     { enabled: expandedStore !== null }
   );
+  const { data: tenantManagersData = [] } = trpc.stores.getTenantManagers.useQuery(
+    { storeId: expandedStore! },
+    { enabled: expandedStore !== null },
+  );
   const stores: AdminStoreRecord[] = storesData ?? [];
+  const tenantOptions = Array.from(
+    new Map(stores.map((store) => [store.tenantKey, { key: store.tenantKey, name: store.displayName ?? store.name }])).values(),
+  );
   const managers: StoreManagerRecord[] = managersData ?? [];
+  const tenantManagers: TenantManagerRecord[] = tenantManagersData ?? [];
 
   // Buscar usuário por email
   const findUser = trpc.stores.findUserByEmail.useQuery(
@@ -130,6 +147,8 @@ export function StoresTab() {
 
   function openEdit(store: AdminStoreRecord) {
     setForm({
+      creationType: "unit",
+      tenantKey: store.tenantKey,
       name: store.name,
       slug: store.slug,
       city: store.city,
@@ -156,6 +175,10 @@ export function StoresTab() {
       toast.error("Preencha nome, slug e cidade");
       return;
     }
+    if (!editingId && form.creationType === "unit" && !form.tenantKey) {
+      toast.error("Selecione a marca da nova unidade");
+      return;
+    }
     const fiscalData = {
       cnpj: form.cnpj || null,
       inscricaoEstadual: form.inscricaoEstadual || null,
@@ -179,6 +202,8 @@ export function StoresTab() {
       });
     } else {
       createStore.mutate({
+        creationType: form.creationType,
+        tenantKey: form.creationType === "unit" ? form.tenantKey : undefined,
         name: form.name,
         slug: form.slug,
         city: form.city,
@@ -267,6 +292,9 @@ export function StoresTab() {
                         <FileText className="w-3 h-3" /> NFC-e
                       </Badge>
                     )}
+                    <Badge variant="outline" className="text-[10px] font-mono text-gray-500">
+                      {store.tenantKey}
+                    </Badge>
                   </div>
                   <div className="flex items-center gap-4 mt-1.5 flex-wrap">
                     <span className="text-gray-500 text-sm flex items-center gap-1.5">
@@ -292,6 +320,16 @@ export function StoresTab() {
 
                 {/* Ações */}
                 <div className="flex items-center gap-1">
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => setWhiteLabelStore(store)}
+                    className="text-gray-500 hover:text-[#6E0D12] hover:bg-[#6E0D12]/5 gap-1.5 h-9 px-3"
+                    title="Personalizar marca e plataforma"
+                  >
+                    <Palette className="w-4 h-4" />
+                    <span className="text-xs hidden lg:inline">Marca</span>
+                  </Button>
                   <Button
                     size="sm"
                     variant="ghost"
@@ -339,7 +377,18 @@ export function StoresTab() {
 
                   {/* Buscar e adicionar gerente por email */}
                   <div className="space-y-2">
-                    <Label className="text-gray-600 text-xs font-medium">Adicionar gerente por e-mail</Label>
+                    <div className="flex items-end justify-between gap-3">
+                      <Label className="text-gray-600 text-xs font-medium">Adicionar acesso administrativo por e-mail</Label>
+                      <Select value={managerScope} onValueChange={(value) => setManagerScope(value as "store" | "tenant")}>
+                        <SelectTrigger className="h-8 w-[210px] bg-white text-xs">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="tenant">Toda a marca</SelectItem>
+                          <SelectItem value="store">Somente esta unidade</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
                     <div className="flex gap-2">
                       <div className="relative flex-1">
                         <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
@@ -382,7 +431,7 @@ export function StoresTab() {
                           </div>
                           <Button
                             size="sm"
-                            onClick={() => addManager.mutate({ storeId: store.id, userId: findUser.data!.id })}
+                            onClick={() => addManager.mutate({ storeId: store.id, userId: findUser.data!.id, scope: managerScope })}
                             disabled={addManager.isPending}
                             className="bg-[#6E0D12] hover:bg-[#8B1A1A] text-white gap-1.5 h-8 text-xs"
                           >
@@ -399,9 +448,33 @@ export function StoresTab() {
                     )}
                   </div>
 
+                  {tenantManagers.length > 0 && (
+                    <div className="space-y-2">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-[#6E0D12]">Administradores da marca</p>
+                      {tenantManagers.map((member) => (
+                        <div key={member.id} className="flex items-center justify-between rounded-lg border border-[#6E0D12]/15 bg-[#fdf5f5] px-3 py-2.5">
+                          <div>
+                            <p className="text-sm font-medium text-gray-900">{member.userName ?? `Usuario #${member.userId}`}</p>
+                            <p className="text-xs text-gray-500">{member.userEmail ?? ""} · acesso a todas as unidades</p>
+                          </div>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => removeManager.mutate({ storeId: store.id, userId: member.userId, scope: "tenant" })}
+                            disabled={removeManager.isPending}
+                            className="h-8 w-8 p-0 text-red-400 hover:bg-red-50 hover:text-red-600"
+                            title="Remover acesso da marca"
+                          >
+                            <UserMinus className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
                   {/* Lista de gerentes */}
                   {managers.length === 0 ? (
-                    <p className="text-gray-400 text-sm text-center py-2">Nenhum gerente cadastrado nesta unidade</p>
+                    <p className="text-gray-400 text-sm text-center py-2">Nenhum gerente exclusivo desta unidade</p>
                   ) : (
                     <div className="space-y-2">
                       {managers.map((m: StoreManagerRecord) => (
@@ -418,7 +491,7 @@ export function StoresTab() {
                           <Button
                             size="sm"
                             variant="ghost"
-                            onClick={() => removeManager.mutate({ storeId: store.id, userId: m.userId })}
+                            onClick={() => removeManager.mutate({ storeId: store.id, userId: m.userId, scope: "store" })}
                             disabled={removeManager.isPending}
                             className="text-red-400 hover:text-red-600 hover:bg-red-50 h-8 w-8 p-0"
                             title="Remover gerente"
@@ -446,6 +519,42 @@ export function StoresTab() {
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-2">
+            {!editingId && (
+              <div className="grid gap-3 rounded-xl border border-[#6E0D12]/15 bg-[#fdf5f5] p-3 sm:grid-cols-2">
+                <div className="space-y-1.5">
+                  <Label className="text-gray-700 font-medium">Tipo de cadastro</Label>
+                  <Select
+                    value={form.creationType}
+                    onValueChange={(value) => setForm((current) => ({
+                      ...current,
+                      creationType: value as "brand" | "unit",
+                      tenantKey: value === "brand" ? "" : current.tenantKey,
+                    }))}
+                  >
+                    <SelectTrigger className="bg-white"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="brand">Nova marca independente</SelectItem>
+                      <SelectItem value="unit">Nova unidade de uma marca</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                {form.creationType === "unit" ? (
+                  <div className="space-y-1.5">
+                    <Label className="text-gray-700 font-medium">Marca vinculada *</Label>
+                    <Select value={form.tenantKey} onValueChange={(value) => setForm((current) => ({ ...current, tenantKey: value }))}>
+                      <SelectTrigger className="bg-white"><SelectValue placeholder="Selecione a marca" /></SelectTrigger>
+                      <SelectContent>
+                        {tenantOptions.map((tenant) => <SelectItem key={tenant.key} value={tenant.key}>{tenant.name}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                ) : (
+                  <p className="self-end pb-2 text-xs leading-relaxed text-gray-500">
+                    Cria identidade, recursos e domínio independentes. A primeira loja será a unidade principal.
+                  </p>
+                )}
+              </div>
+            )}
             {/*  Dados básicos  */}
             <div className="space-y-1.5">
               <Label className="text-gray-700 font-medium">Nome da Loja *</Label>
@@ -455,7 +564,7 @@ export function StoresTab() {
                   const name = e.target.value;
                   setForm(f => ({ ...f, name, slug: editingId ? f.slug : slugify(name) }));
                 }}
-                placeholder="Ex: Bonatto Pizza - Joatuba"
+                placeholder="Ex: Bonatto Pizza - Juatuba"
                 className="border-gray-200 text-gray-900 focus:border-[#6E0D12] focus:ring-[#6E0D12]/20"
               />
             </div>
@@ -474,7 +583,7 @@ export function StoresTab() {
               <Input
                 value={form.city}
                 onChange={e => setForm(f => ({ ...f, city: e.target.value }))}
-                placeholder="Ex: Joatuba"
+                placeholder="Ex: Juatuba"
                 className="border-gray-200 text-gray-900 focus:border-[#6E0D12] focus:ring-[#6E0D12]/20"
               />
             </div>
@@ -650,6 +759,12 @@ export function StoresTab() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      <WhiteLabelEditor
+        storeId={whiteLabelStore?.id ?? null}
+        storeName={whiteLabelStore?.name ?? "Loja"}
+        open={whiteLabelStore !== null}
+        onOpenChange={(nextOpen) => { if (!nextOpen) setWhiteLabelStore(null); }}
+      />
     </div>
   );
 }

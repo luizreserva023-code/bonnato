@@ -1,9 +1,16 @@
 import { TRPCError } from "@trpc/server";
 import { getDb } from "./db.ts";
-import { journeys, journeyExecutions, orders, users } from "../drizzle/schema.ts";
+import { journeys, journeyExecutions, orders, tenantCustomerAccounts, users } from "../drizzle/schema.ts";
 import { eq, gte, desc, inArray, and, lt, ne, isNotNull, lte } from "drizzle-orm";
 import { clubRouter } from "./routers/club.ts";
 import { storesRouter } from "./routers/stores.ts";
+import { platformRouter } from "./routers/platform.ts";
+import { siteStudioRouter } from "./routers/siteStudio.ts";
+import { rewardsRouter } from "./routers/rewards.ts";
+import { catalogOrderConfigurationSchema, catalogRouter } from "./routers/catalog.ts";
+import { calculateConfiguredProductPrice, createOrderItemConfigurationSnapshot } from "./domains/catalog/pricing.ts";
+import { getConfiguredCatalogProduct } from "./domains/catalog/repository.ts";
+import { consumeRewardCoupon, validateRewardCoupon, type RewardBenefit } from "./services/rewards.ts";
 import { z } from "zod";
 import { savePushSubscription, removePushSubscription, sendPushToAdmins, sendPushToUser, sendPushToAllUsers, sendPushToDriver } from "./push.ts";
 import { sendWhatsApp, WhatsAppTemplates } from "./whatsapp.ts";
@@ -88,6 +95,7 @@ import {
   getCategories,
   getCategoryById,
   getCouponByCode,
+  getCouponById,
   getCouponsByUser,
   getDailyRevenue,
   getOrderAlertFeed,
@@ -154,6 +162,13 @@ import {
   getCustomerMetricsReport,
   getUserByPhone,
   linkCustomerAuthProvider,
+  getCustomerAuthProviders,
+  getCustomerAuthProvider,
+  disconnectCustomerAuthProvider,
+  recordAuthEvent,
+  recordUserConsent,
+  markUserLogin,
+  anonymizeUserAccount,
   getLatestOtpCode,
   countRecentOtpRequests,
   incrementOtpAttempts,
@@ -162,12 +177,14 @@ import {
   reverseInventoryForOrder,
   pickStoreForDeliveryAddress,
 } from "./db.ts";
+import { revokeSocialProvider, syncSocialProvider, type SocialOAuthProvider } from "./_core/oauth.ts";
 import { COOKIE_NAME, DEFAULT_SESSION_MS } from "../shared/const.ts";
 import { sdk } from "./_core/sdk.ts";
 import { getSessionCookieOptions } from "./_core/cookies.ts";
 import { systemRouter } from "./_core/systemRouter.ts";
 import { protectedProcedure, publicProcedure, router, staffProcedure } from "./_core/trpc.ts";
-import { assertStoreEntityAccess, resolveStoreId } from "./storeUtils.ts";
+import { assertStoreEntityAccess, resolveRequiredStoreId, resolveStoreId } from "./storeUtils.ts";
+import { getWhiteLabelRuntimeByStoreId } from "./whiteLabel.ts";
 import { notifyOwnerAdapter } from "./adapters/pushNotifications.ts";
 // Alias para compatibilidade retroativa — passa pelo adapter
 const notifyOwner = (payload: { title: string; content: string }) =>
@@ -276,6 +293,7 @@ import {
   revertCouponRedemption,
   updateOrderStatusGuarded,
   getUserLoyaltyPoints,
+  getTenantCustomerAccount,
   getLoyaltyHistory,
   updateUserAvatar,
   getUserSpendingHistory,
@@ -330,9 +348,24 @@ const adminProcedure = protectedProcedure.use(({ ctx, next }) => {
 
 type CheckoutPaymentMethod = "credit_card" | "debit_card" | "pix" | "cash";
 
-async function assertPaymentMethodEnabled(paymentMethod: CheckoutPaymentMethod) {
-  const publicPaymentSettings = await getPaymentSettingsPublic();
+async function assertPaymentMethodEnabled(paymentMethod: CheckoutPaymentMethod, storeId?: number) {
+  const publicPaymentSettings = await getPaymentSettingsPublic(storeId);
   const orderConfig = publicPaymentSettings.config.orders;
+  const tenant = storeId ? await getWhiteLabelRuntimeByStoreId(storeId) : null;
+  if (tenant && tenant.status !== "active") {
+    throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Esta loja nao esta disponivel para pagamentos." });
+  }
+  if (tenant) {
+    const tenantPayments = tenant.providers.payments;
+    const providerEnabled = paymentMethod === "pix"
+      ? tenantPayments.pix
+      : paymentMethod === "cash"
+        ? tenantPayments.cash
+        : tenantPayments.card;
+    if (!providerEnabled) {
+      throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Este metodo de pagamento nao esta habilitado para a loja." });
+    }
+  }
 
   if ((paymentMethod === "credit_card" || paymentMethod === "debit_card") && !orderConfig.cardEnabled) {
     throw new TRPCError({
@@ -551,19 +584,40 @@ export const appRouter = router({
         name: z.string().min(2, "Nome deve ter pelo menos 2 caracteres"),
         email: z.string().email("E-mail inválido"),
         password: z.string().min(6, "Senha deve ter pelo menos 6 caracteres"),
+        acceptTerms: z.literal(true, "Aceite os Termos de Uso e a Política de Privacidade"),
+        consentVersion: z.string().min(1).max(32).default("2026-08-01"),
       }))
       .mutation(async ({ input, ctx }) => {
-        const existing = await getUserByEmail(input.email);
+        const email = input.email.trim().toLowerCase();
+        const existing = await getUserByEmail(email);
         if (existing) {
           throw new TRPCError({ code: "CONFLICT", message: "Este e-mail já está cadastrado" });
         }
         const passwordHash = await bcrypt.hash(input.password, 12);
         const openId = `email_${crypto.randomBytes(16).toString("hex")}`;
-        await createEmailUser({ openId, name: input.name, email: input.email, passwordHash });
+        const name = input.name.trim();
+        await createEmailUser({ openId, name, email, passwordHash });
+        const user = await getUserByEmail(email);
+        if (!user) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Não foi possível criar a conta" });
+        await linkCustomerAuthProvider({
+          userId: user.id,
+          provider: "email",
+          providerUserId: email,
+          providerEmail: email,
+          displayName: name,
+          isPrimary: true,
+          consentVersion: input.consentVersion,
+          consentedAt: new Date(),
+        });
+        await Promise.all([
+          recordUserConsent({ userId: user.id, kind: "terms", version: input.consentVersion, ipAddress: ctx.req.ip ?? null, userAgent: ctx.req.get("user-agent") ?? null }),
+          recordUserConsent({ userId: user.id, kind: "privacy", version: input.consentVersion, ipAddress: ctx.req.ip ?? null, userAgent: ctx.req.get("user-agent") ?? null }),
+          recordAuthEvent({ userId: user.id, provider: "email", event: "login_success", ipAddress: ctx.req.ip ?? null, userAgent: ctx.req.get("user-agent") ?? null }),
+        ]);
         // Send welcome email (non-blocking)
-        sendWelcomeEmail(input.email, input.name).catch(console.error);
+        sendWelcomeEmail(email, name).catch(console.error);
         // Create session
-        const sessionToken = await sdk.createSessionToken(openId, { name: input.name, expiresInMs: DEFAULT_SESSION_MS });
+        const sessionToken = await sdk.createSessionToken(openId, { name, expiresInMs: DEFAULT_SESSION_MS });
         const cookieOptions = getSessionCookieOptions(ctx.req);
         ctx.res.cookie(COOKIE_NAME, sessionToken, { ...cookieOptions, maxAge: DEFAULT_SESSION_MS });
         return { success: true };
@@ -575,14 +629,21 @@ export const appRouter = router({
         password: z.string().min(1),
       }))
       .mutation(async ({ input, ctx }) => {
-        const user = await getUserByEmail(input.email);
+        const email = input.email.trim().toLowerCase();
+        const user = await getUserByEmail(email);
         if (!user || !user.passwordHash) {
+          await recordAuthEvent({ provider: "email", event: "login_failure", ipAddress: ctx.req.ip ?? null, userAgent: ctx.req.get("user-agent") ?? null });
           throw new TRPCError({ code: "UNAUTHORIZED", message: "E-mail ou senha incorretos" });
         }
         const valid = await bcrypt.compare(input.password, user.passwordHash);
         if (!valid) {
+          await recordAuthEvent({ userId: user.id, provider: "email", event: "login_failure", ipAddress: ctx.req.ip ?? null, userAgent: ctx.req.get("user-agent") ?? null });
           throw new TRPCError({ code: "UNAUTHORIZED", message: "E-mail ou senha incorretos" });
         }
+        await Promise.all([
+          markUserLogin(user.id, "email"),
+          recordAuthEvent({ userId: user.id, provider: "email", event: "login_success", ipAddress: ctx.req.ip ?? null, userAgent: ctx.req.get("user-agent") ?? null }),
+        ]);
         const sessionToken = await sdk.createSessionToken(user.openId, { name: user.name ?? "", expiresInMs: DEFAULT_SESSION_MS });
         const cookieOptions = getSessionCookieOptions(ctx.req);
         ctx.res.cookie(COOKIE_NAME, sessionToken, { ...cookieOptions, maxAge: DEFAULT_SESSION_MS });
@@ -743,15 +804,112 @@ export const appRouter = router({
         ctx.res.cookie(COOKIE_NAME, sessionToken, { ...cookieOptions, maxAge: DEFAULT_SESSION_MS });
         return { success: true };
       }),
+
+    socialAccounts: protectedProcedure.query(async ({ ctx }) => {
+      const [accounts, user] = await Promise.all([
+        getCustomerAuthProviders(ctx.user.id),
+        getUserById(ctx.user.id),
+      ]);
+      const safeAccounts = accounts.map((account) => ({
+        id: account.id,
+        provider: account.provider,
+        providerEmail: account.providerEmail,
+        providerUsername: account.providerUsername,
+        displayName: account.displayName,
+        avatarUrl: account.avatarUrl,
+        accountType: account.accountType,
+        isPrimary: account.isPrimary,
+        grantedScopes: account.grantedScopes ? JSON.parse(account.grantedScopes) as string[] : [],
+        connectedAt: account.linkedAt,
+        lastSyncedAt: account.lastSyncedAt,
+      }));
+      if (user?.passwordHash && !safeAccounts.some((account) => account.provider === "email")) {
+        safeAccounts.unshift({
+          id: 0,
+          provider: "email" as const,
+          providerEmail: user.email,
+          providerUsername: null,
+          displayName: user.name,
+          avatarUrl: null,
+          accountType: null,
+          isPrimary: user.loginMethod === "email",
+          grantedScopes: [],
+          connectedAt: user.createdAt,
+          lastSyncedAt: user.lastSignedIn,
+        });
+      }
+      return safeAccounts;
+    }),
+
+    syncSocialAccount: protectedProcedure
+      .input(z.object({ provider: z.enum(["google", "facebook", "apple", "instagram"]) }))
+      .mutation(async ({ ctx, input }) => {
+        try {
+          await syncSocialProvider(ctx.user.id, input.provider as SocialOAuthProvider);
+          return { success: true };
+        } catch (error) {
+          console.error("[auth.syncSocialAccount] failed", error);
+          throw new TRPCError({ code: "BAD_REQUEST", message: "Não foi possível sincronizar esta conta. Reconecte o provedor e tente novamente." });
+        }
+      }),
+
+    disconnectSocialAccount: protectedProcedure
+      .input(z.object({ provider: z.enum(["google", "facebook", "apple", "instagram"]) }))
+      .mutation(async ({ ctx, input }) => {
+        const [account, accounts, user] = await Promise.all([
+          getCustomerAuthProvider(ctx.user.id, input.provider),
+          getCustomerAuthProviders(ctx.user.id),
+          getUserById(ctx.user.id),
+        ]);
+        if (!account) throw new TRPCError({ code: "NOT_FOUND", message: "Conexão social não encontrada" });
+        const alternativeLoginMethods = accounts.filter((item) => item.provider !== input.provider && item.provider !== "instagram").length + (user?.passwordHash ? 1 : 0);
+        if (input.provider !== "instagram" && alternativeLoginMethods === 0) {
+          throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Cadastre uma senha ou conecte outro provedor antes de remover seu único acesso." });
+        }
+        await revokeSocialProvider(input.provider, account.accessTokenEncrypted, account.refreshTokenEncrypted).catch((error) => {
+          console.warn("[auth.disconnectSocialAccount] remote revoke failed", error);
+        });
+        await Promise.all([
+          disconnectCustomerAuthProvider(ctx.user.id, input.provider),
+          recordAuthEvent({ userId: ctx.user.id, provider: input.provider, event: "provider_disconnected", ipAddress: ctx.req.ip ?? null, userAgent: ctx.req.get("user-agent") ?? null }),
+        ]);
+        return { success: true };
+      }),
+
+    deleteAccount: protectedProcedure
+      .input(z.object({ confirmation: z.literal("EXCLUIR"), password: z.string().optional() }))
+      .mutation(async ({ ctx, input }) => {
+        const user = await getUserById(ctx.user.id);
+        if (!user) throw new TRPCError({ code: "NOT_FOUND" });
+        if (user.passwordHash) {
+          if (!input.password || !(await bcrypt.compare(input.password, user.passwordHash))) {
+            throw new TRPCError({ code: "UNAUTHORIZED", message: "Confirme sua senha para excluir a conta." });
+          }
+        }
+        const accounts = await getCustomerAuthProviders(user.id);
+        await Promise.all(accounts
+          .filter((account) => account.provider === "google" || account.provider === "facebook" || account.provider === "apple" || account.provider === "instagram")
+          .map((account) => revokeSocialProvider(account.provider as SocialOAuthProvider, account.accessTokenEncrypted, account.refreshTokenEncrypted).catch(console.warn)));
+        await recordAuthEvent({ userId: user.id, event: "account_deleted", ipAddress: ctx.req.ip ?? null, userAgent: ctx.req.get("user-agent") ?? null });
+        await anonymizeUserAccount(user.id);
+        const cookieOptions = getSessionCookieOptions(ctx.req);
+        ctx.res.clearCookie(COOKIE_NAME, { ...cookieOptions, maxAge: -1 });
+        return { success: true };
+      }),
   }),
 
   // --- CATEGORIES -------------------------------------------------------------
   categories: router({
     list: publicProcedure
-      .input(z.object({ activeOnly: z.boolean().optional() }).optional())
-      .query(({ input }) => getCategories(input?.activeOnly ?? true)),
+      .input(z.object({ activeOnly: z.boolean().optional(), storeId: z.number().optional() }).optional())
+      .query(({ input }) => getCategories({ activeOnly: input?.activeOnly ?? true, storeId: input?.storeId })),
 
-    listAll: staffProcedure.query(() => getCategories(false)),
+    listAll: staffProcedure
+      .input(z.object({ storeId: z.number().optional() }).optional())
+      .query(async ({ input, ctx }) => {
+        const storeId = await resolveStoreId(ctx.user, input?.storeId);
+        return getCategories({ activeOnly: false, storeId });
+      }),
 
     create: staffProcedure
       .input(
@@ -762,9 +920,13 @@ export const appRouter = router({
           imageUrl: z.string().max(2048).optional(),
           icon: z.string().max(64).optional(),
           sortOrder: z.number().optional(),
+          storeId: z.number().optional(),
         })
       )
-      .mutation(({ input }) => createCategory({ ...input, active: true })),
+      .mutation(async ({ input, ctx }) => {
+        const storeId = await resolveStoreId(ctx.user, input.storeId);
+        return createCategory({ ...input, storeId: storeId ?? 0, active: true });
+      }),
 
     update: staffProcedure
       .input(
@@ -776,10 +938,14 @@ export const appRouter = router({
           icon: z.string().max(64).optional(),
           sortOrder: z.number().optional(),
           active: z.boolean().optional(),
+          storeId: z.number().optional(),
         })
       )
-      .mutation(({ input }) => {
-        const { id, ...data } = input;
+      .mutation(async ({ input, ctx }) => {
+        const category = await getCategoryById(input.id);
+        if (!category) throw new TRPCError({ code: "NOT_FOUND", message: "Categoria não encontrada." });
+        await assertStoreEntityAccess(ctx.user, category.storeId, input.storeId);
+        const { id, storeId: _storeId, ...data } = input;
         return updateCategory(id, data);
       }),
 
@@ -801,8 +967,13 @@ export const appRouter = router({
       }),
 
     delete: staffProcedure
-      .input(z.object({ id: z.number() }))
-      .mutation(({ input }) => deleteCategory(input.id)),
+      .input(z.object({ id: z.number(), storeId: z.number().optional() }))
+      .mutation(async ({ input, ctx }) => {
+        const category = await getCategoryById(input.id);
+        if (!category) throw new TRPCError({ code: "NOT_FOUND", message: "Categoria não encontrada." });
+        await assertStoreEntityAccess(ctx.user, category.storeId, input.storeId);
+        return deleteCategory(input.id);
+      }),
   }),
 
   // --- PRODUCTS ---------------------------------------------------------------
@@ -840,8 +1011,8 @@ export const appRouter = router({
         })
       )
       .mutation(async ({ input, ctx }) => {
-        const storeId = await resolveStoreId(ctx.user, input.storeId);
-        return createProduct({ ...input, storeId: storeId ?? null, active: true, featured: input.featured ?? false });
+        const storeId = await resolveRequiredStoreId(ctx.user, input.storeId);
+        return createProduct({ ...input, storeId, active: true, featured: input.featured ?? false });
       }),
 
     update: staffProcedure
@@ -878,16 +1049,18 @@ export const appRouter = router({
 
     uploadImage: staffProcedure
       .input(z.object({
+        storeId: z.number().optional(),
         base64: z.string().max(4_300_000), // keep below Vercel request-size limits
         mimeType: z.enum(["image/jpeg", "image/png", "image/webp", "image/gif"]),
         fileName: z.string().max(255).optional(),
       }))
       .mutation(async ({ input, ctx }) => {
+        const storeId = await resolveRequiredStoreId(ctx.user, input.storeId);
         const { storagePutAdapter: storagePut } = await import("./adapters/storage.ts");
         const { compressToWebP } = await import("./imageUtils.ts");
         const rawBuffer = Buffer.from(input.base64, "base64");
         const { buffer, mimeType, ext, reductionPct } = await compressToWebP(rawBuffer, 82, 1200);
-        const key = `products/product-${Date.now()}.${ext}`;
+        const key = `stores/${storeId}/products/product-${Date.now()}.${ext}`;
         const { url } = await storagePut(key, buffer, mimeType);
         console.log(`[upload] produto comprimido ${reductionPct}% → WebP`);
         return { url };
@@ -897,9 +1070,33 @@ export const appRouter = router({
   // --- COUPONS ----------------------------------------------------------------
   coupons: router({
     validate: publicProcedure
-      .input(z.object({ code: z.string(), orderTotal: z.number() }))
+      .input(z.object({
+        code: z.string(),
+        orderTotal: z.number(),
+        storeId: z.number().optional(),
+        items: z.array(z.object({
+          productId: z.number().int().positive(),
+          productPrice: z.union([z.string(), z.number()]),
+          quantity: z.number().int().min(1).max(99),
+        })).max(50).optional(),
+      }))
       .mutation(async ({ input, ctx }) => {
-        const coupon = await getCouponByCode(input.code);
+        const coupon = await getCouponByCode(input.code, input.storeId);
+        if (!coupon && ctx.user && input.storeId) {
+          const rewardBenefit = await validateRewardCoupon({
+            storeId: input.storeId,
+            userId: ctx.user.id,
+            code: input.code,
+            subtotal: input.orderTotal,
+            items: input.items,
+          });
+          return {
+            valid: true,
+            discount: rewardBenefit.discount,
+            coupon: { code: input.code.toUpperCase(), rewardCoupon: true },
+            rewardBenefit,
+          };
+        }
         if (!coupon) throw new TRPCError({ code: "NOT_FOUND", message: "Cupom não encontrado" });
         if (!coupon.active) throw new TRPCError({ code: "BAD_REQUEST", message: "Cupom inativo" });
         if (coupon.expiresAt && new Date() > coupon.expiresAt)
@@ -921,14 +1118,34 @@ export const appRouter = router({
         return { valid: true, discount: Math.min(discount, input.orderTotal), coupon };
       }),
 
-    list: staffProcedure.query(() => getAllCoupons()),
+    list: staffProcedure
+      .input(z.object({ storeId: z.number().optional() }).optional())
+      .query(async ({ input, ctx }) => {
+        const storeId = await resolveStoreId(ctx.user, input?.storeId);
+        return getAllCoupons(storeId);
+      }),
 
     // Public endpoint: returns only active global coupons (no userId) for display in customer panel
-    listActive: protectedProcedure.query(() =>
-      getAllCoupons().then((coupons) =>
+    listActive: protectedProcedure
+      .input(z.object({ storeId: z.number().optional() }).optional())
+      .query(({ input }) =>
+      getAllCoupons(input?.storeId).then((coupons) =>
         coupons.filter((c) => c.active && !c.userId && (!c.expiresAt || new Date() < c.expiresAt))
       )
     ),
+
+    listPublic: publicProcedure
+      .input(z.object({ storeId: z.number().optional() }).optional())
+      .query(({ input }) =>
+        getAllCoupons(input?.storeId).then((coupons) =>
+          coupons.filter((coupon) =>
+            coupon.active &&
+            !coupon.userId &&
+            (!coupon.expiresAt || new Date() < coupon.expiresAt) &&
+            (!coupon.maxUses || coupon.usedCount < coupon.maxUses)
+          )
+        )
+      ),
 
     create: staffProcedure
       .input(
@@ -939,10 +1156,12 @@ export const appRouter = router({
           minOrderValue: z.string().optional(),
           maxUses: z.number().optional(),
           expiresAt: z.date().optional(),
+          storeId: z.number().optional(),
         })
       )
       .mutation(async ({ input, ctx }) => {
-        const result = await createCoupon({ ...input, active: true, usedCount: 0 });
+        const storeId = await resolveRequiredStoreId(ctx.user, input.storeId);
+        const result = await createCoupon({ ...input, storeId, active: true, usedCount: 0 });
         // Alerta automático para clientes
         const discountText = input.discountType === "percentage"
           ? `${input.discountValue}% de desconto`
@@ -953,6 +1172,7 @@ export const appRouter = router({
           message: `Use o cupom **${input.code}** e ganhe ${discountText} no seu pedido.`,
           icon: "🎉",
           url: "/cardapio",
+          storeId,
           expiresAt: input.expiresAt,
         });
         return result;
@@ -967,17 +1187,23 @@ export const appRouter = router({
         discountValue: z.string().regex(/^\d+(\.\d{1,2})?$/, "Valor inválido").optional(),
         minOrderValue: z.string().regex(/^\d+(\.\d{1,2})?$/, "Valor inválido").optional(),
         expiresAt: z.date().nullable().optional(),
+        storeId: z.number().optional(),
       }))
-      .mutation(({ input }) => {
-        const { id, ...data } = input;
+      .mutation(async ({ input, ctx }) => {
+        const coupon = await getCouponById(input.id);
+        if (!coupon) throw new TRPCError({ code: "NOT_FOUND", message: "Cupom não encontrado." });
+        await assertStoreEntityAccess(ctx.user, coupon.storeId, input.storeId);
+        const { id, storeId: _storeId, ...data } = input;
         return updateCoupon(id, data);
       }),
 
     // Public: returns the home popup coupon only if it has been provisioned by an admin.
     // Nenhum side-effect aqui — cupons devem ser criados via seed/admin, não em leitura pública.
-    getHomePopupCoupon: publicProcedure.query(async () => {
+    getHomePopupCoupon: publicProcedure
+      .input(z.object({ storeId: z.number().optional() }).optional())
+      .query(async ({ input }) => {
       const POPUP_CODE = "BONATTO10";
-      const coupon = await getCouponByCode(POPUP_CODE);
+      const coupon = await getCouponByCode(POPUP_CODE, input?.storeId);
       if (!coupon || !coupon.active) return null;
       if (coupon.expiresAt && new Date() > coupon.expiresAt) return null;
       return {
@@ -994,6 +1220,7 @@ export const appRouter = router({
     create: protectedProcedure
       .input(
         z.object({
+          storeId: z.number().int().positive().optional(),
           customerName: z.string().min(1).max(200),
           customerEmail: z.string().email().max(320).optional(),
           customerPhone: z
@@ -1024,8 +1251,9 @@ export const appRouter = router({
                 productId: z.number().int().positive(),
                 productName: z.string().max(200),
                 productPrice: z.string().regex(/^\d+(\.\d{1,2})?$/, "Preço inválido"),
-                quantity: z.number().int().min(1).max(99),
-                notes: z.string().max(500).optional(),
+                  quantity: z.number().int().min(1).max(99),
+                  notes: z.string().max(500).optional(),
+                  configuration: catalogOrderConfigurationSchema.optional(),
               })
             )
             .min(1, "O pedido precisa ter pelo menos 1 item.")
@@ -1033,9 +1261,20 @@ export const appRouter = router({
         })
       )
       .mutation(async ({ input, ctx }) => {
+        const tenantStore = input.storeId ? await getWhiteLabelRuntimeByStoreId(input.storeId) : null;
+        if (input.storeId) {
+          if (!tenantStore || tenantStore.status !== "active") {
+            throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Esta loja não está disponível para pedidos." });
+          }
+        }
         // -- Carregar configurações do banco --
-        const dbSettings = await getAllStoreSettings();
-        await assertPaymentMethodEnabled(input.paymentMethod as CheckoutPaymentMethod);
+        const clubFeatureEnabled = tenantStore?.features.club ?? true;
+        const loyaltyFeatureEnabled = tenantStore?.features.loyalty ?? true;
+        if ((input.pointsToRedeem ?? 0) > 0 && !loyaltyFeatureEnabled) {
+          throw new TRPCError({ code: "PRECONDITION_FAILED", message: "O programa de fidelidade nao esta disponivel nesta loja." });
+        }
+        const dbSettings = await getAllStoreSettings(input.storeId);
+        await assertPaymentMethodEnabled(input.paymentMethod as CheckoutPaymentMethod, input.storeId);
 
         // -- Validação de horário de funcionamento (timezone: America/Sao_Paulo) --
         const now = new Date();
@@ -1108,13 +1347,58 @@ export const appRouter = router({
         const productIds = Array.from(new Set(input.items.map((i) => i.productId)));
         const productsFromDb = await getProductsByIds(productIds);
         const productMap = new Map(productsFromDb.map((p) => [p.id, p]));
-        const resolvedItems: Array<{ productId: number; productName: string; productPrice: string; quantity: number; notes: string | null }> = [];
+        const resolvedItems: Array<{
+          productId: number;
+          productName: string;
+          productPrice: string;
+          quantity: number;
+          notes: string | null;
+          snapshotVersion: number;
+          configurationSnapshot: string | null;
+          pricingBreakdown: string | null;
+        }> = [];
         for (const item of input.items) {
           const product = productMap.get(item.productId);
-          if (!product || !product.active) {
+          if (!product || !product.active || (input.storeId !== undefined && product.storeId !== input.storeId)) {
             throw new TRPCError({ code: "BAD_REQUEST", message: `Produto "${item.productName}" não encontrado ou indisponível.` });
           }
-          resolvedItems.push({ productId: item.productId, productName: product.name, productPrice: product.price, quantity: item.quantity, notes: item.notes ?? null });
+          if (product.pricingEngine === "configured_v2" || item.configuration) {
+            const configuredProduct = await getConfiguredCatalogProduct({ storeId: product.storeId, productId: product.id });
+            const selection = {
+              ...item.configuration,
+              quantity: item.quantity,
+              channel: input.deliveryCep ? "delivery" as const : "pickup" as const,
+            };
+            const pricing = calculateConfiguredProductPrice(configuredProduct, selection);
+            if (pricing.validationErrors.length > 0) {
+              throw new TRPCError({
+                code: "BAD_REQUEST",
+                message: `${product.name}: ${pricing.validationErrors.join(" ")}`,
+              });
+            }
+            const snapshot = createOrderItemConfigurationSnapshot(configuredProduct, selection, pricing);
+            resolvedItems.push({
+              productId: item.productId,
+              productName: product.name,
+              productPrice: pricing.unitTotal.toFixed(2),
+              quantity: item.quantity,
+              notes: item.notes ?? null,
+              snapshotVersion: 2,
+              configurationSnapshot: JSON.stringify(snapshot),
+              pricingBreakdown: JSON.stringify(pricing.breakdown),
+            });
+          } else {
+            resolvedItems.push({
+              productId: item.productId,
+              productName: product.name,
+              productPrice: product.price,
+              quantity: item.quantity,
+              notes: item.notes ?? null,
+              snapshotVersion: 1,
+              configurationSnapshot: null,
+              pricingBreakdown: null,
+            });
+          }
         }
         const subtotal = resolvedItems.reduce(
           (sum, item) => sum + parseFloat(item.productPrice) * item.quantity,
@@ -1126,31 +1410,49 @@ export const appRouter = router({
         // incrementar uso. A aplicação do increment fica atrelada ao registro de
         // resgate (couponRedemptions) para permitir estorno em cancelamento.
         let couponToApply: Awaited<ReturnType<typeof getCouponByCode>> | undefined;
+        let rewardCouponBenefit: RewardBenefit | null = null;
         if (input.couponCode) {
-          couponToApply = await getCouponByCode(input.couponCode);
-          if (!couponToApply) {
-            throw new TRPCError({ code: "BAD_REQUEST", message: "Cupom inválido ou expirado." });
+          if (input.storeId) {
+            try {
+              rewardCouponBenefit = await validateRewardCoupon({
+                storeId: input.storeId,
+                userId: ctx.user.id,
+                code: input.couponCode,
+                subtotal,
+                items: resolvedItems,
+              });
+            } catch (error) {
+              if (!(error instanceof TRPCError) || error.code !== "NOT_FOUND") throw error;
+            }
           }
-          if (!couponToApply.active) {
-            throw new TRPCError({ code: "BAD_REQUEST", message: "Cupom inativo." });
-          }
-          if (couponToApply.expiresAt && new Date() > couponToApply.expiresAt) {
-            throw new TRPCError({ code: "BAD_REQUEST", message: "Cupom expirado." });
-          }
-          if (couponToApply.userId != null && couponToApply.userId !== ctx.user.id) {
-            throw new TRPCError({ code: "FORBIDDEN", message: "Este cupom é exclusivo de outro usuário." });
-          }
-          const minOrder = parseFloat(couponToApply.minOrderValue ?? "0");
-          if (subtotal < minOrder) {
-            throw new TRPCError({
-              code: "BAD_REQUEST",
-              message: `Pedido mínimo de R$ ${minOrder.toFixed(2)} para este cupom.`,
-            });
-          }
-          if (couponToApply.discountType === "percentage") {
-            discountAmount = (subtotal * parseFloat(couponToApply.discountValue)) / 100;
+          if (rewardCouponBenefit) {
+            discountAmount = rewardCouponBenefit.discount;
           } else {
-            discountAmount = parseFloat(couponToApply.discountValue);
+            couponToApply = await getCouponByCode(input.couponCode, input.storeId);
+            if (!couponToApply) {
+              throw new TRPCError({ code: "BAD_REQUEST", message: "Cupom inválido ou expirado." });
+            }
+            if (!couponToApply.active) {
+              throw new TRPCError({ code: "BAD_REQUEST", message: "Cupom inativo." });
+            }
+            if (couponToApply.expiresAt && new Date() > couponToApply.expiresAt) {
+              throw new TRPCError({ code: "BAD_REQUEST", message: "Cupom expirado." });
+            }
+            if (couponToApply.userId != null && couponToApply.userId !== ctx.user.id) {
+              throw new TRPCError({ code: "FORBIDDEN", message: "Este cupom é exclusivo de outro usuário." });
+            }
+            const minOrder = parseFloat(couponToApply.minOrderValue ?? "0");
+            if (subtotal < minOrder) {
+              throw new TRPCError({
+                code: "BAD_REQUEST",
+                message: `Pedido mínimo de R$ ${minOrder.toFixed(2)} para este cupom.`,
+              });
+            }
+            if (couponToApply.discountType === "percentage") {
+              discountAmount = (subtotal * parseFloat(couponToApply.discountValue)) / 100;
+            } else {
+              discountAmount = parseFloat(couponToApply.discountValue);
+            }
           }
         }
 
@@ -1164,27 +1466,43 @@ export const appRouter = router({
         let clubFreeDelivery = false;
         let clubFreePizzaDiscount = 0;
         let reservedFreePizza = false;
-        const userForClub = await getUserById(ctx.user.id);
+        const userForClub = clubFeatureEnabled ? await getTenantCustomerAccount(ctx.user.id, input.storeId) : null;
+        const mirrorLegacyFreePizza = async (used: boolean, resetAt?: Date | null) => {
+          if (tenantStore?.tenantKey !== "bonatto") return;
+          await db.update(users).set({
+            clubFreePizzaUsed: used,
+            ...(resetAt !== undefined ? { clubFreePizzaResetAt: resetAt } : {}),
+          }).where(eq(users.id, ctx.user.id));
+        };
         const reserveFreePizzaBenefit = async () => {
+          if (!userForClub) return false;
           const result = await db
-            .update(users)
+            .update(tenantCustomerAccounts)
             .set({ clubFreePizzaUsed: true })
-            .where(and(eq(users.id, ctx.user.id), eq(users.clubStatus, "active"), eq(users.clubFreePizzaUsed, false)));
+            .where(and(
+              eq(tenantCustomerAccounts.id, userForClub.id),
+              eq(tenantCustomerAccounts.clubStatus, "active"),
+              eq(tenantCustomerAccounts.clubFreePizzaUsed, false),
+            ));
 
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const mutationResult = result as any;
           const affectedRows = mutationResult?.rowsAffected ?? mutationResult?.[0]?.affectedRows ?? 0;
           reservedFreePizza = affectedRows > 0;
+          if (reservedFreePizza) await mirrorLegacyFreePizza(true);
           return reservedFreePizza;
         };
         const releaseFreePizzaBenefit = async () => {
           if (!reservedFreePizza) return;
           reservedFreePizza = false;
-          await db.update(users).set({ clubFreePizzaUsed: false }).where(eq(users.id, ctx.user.id));
+          if (userForClub) {
+            await db.update(tenantCustomerAccounts).set({ clubFreePizzaUsed: false }).where(eq(tenantCustomerAccounts.id, userForClub.id));
+          }
+          await mirrorLegacyFreePizza(false);
         };
 
         if (userForClub && userForClub.clubStatus === "active" && userForClub.clubPlan) {
-          const planConfig = await getClubPlanConfig(userForClub.clubPlan);
+          const planConfig = await getClubPlanConfig(userForClub.clubPlan, input.storeId);
           if (planConfig) {
             clubFreeDelivery = planConfig.freeDelivery;
 
@@ -1193,14 +1511,15 @@ export const appRouter = router({
             if (freePizzaAlreadyUsed && userForClub.clubFreePizzaResetAt && now > userForClub.clubFreePizzaResetAt) {
               const nextReset = new Date(now.getFullYear(), now.getMonth() + 1, 1);
               await db
-                .update(users)
+                .update(tenantCustomerAccounts)
                 .set({ clubFreePizzaUsed: false, clubFreePizzaResetAt: nextReset })
-                .where(and(eq(users.id, ctx.user.id), lte(users.clubFreePizzaResetAt, now)));
+                .where(and(eq(tenantCustomerAccounts.id, userForClub.id), lte(tenantCustomerAccounts.clubFreePizzaResetAt, now)));
+              await mirrorLegacyFreePizza(false, nextReset);
               freePizzaAlreadyUsed = false;
             }
 
             if (planConfig.freePizzaPerMonth && !freePizzaAlreadyUsed) {
-              const pizzaCategoryIds = getPizzaCategoryIds(await getCategories());
+              const pizzaCategoryIds = getPizzaCategoryIds(await getCategories({ storeId: input.storeId }));
               const candidateFreePizzaDiscount = getFreePizzaDiscountForCart(input.items, productMap, pizzaCategoryIds);
               if (candidateFreePizzaDiscount > 0 && await reserveFreePizzaBenefit()) {
                 clubFreePizzaDiscount = candidateFreePizzaDiscount;
@@ -1224,7 +1543,7 @@ export const appRouter = router({
         let rawDeliveryFee = 0;
         if (input.deliveryCep || input.deliveryNeighborhood) {
           if (input.deliveryNeighborhood) {
-            const zone = await getDeliveryZoneByNeighborhood(input.deliveryNeighborhood);
+            const zone = await getDeliveryZoneByNeighborhood(input.deliveryNeighborhood, input.storeId);
             if (zone) rawDeliveryFee = parseFloat(zone.deliveryFee);
             else {
               const feeStr = dbSettings.deliveryFee;
@@ -1235,10 +1554,10 @@ export const appRouter = router({
             rawDeliveryFee = feeStr ? parseFloat(feeStr) : 0;
           }
         }
-        const deliveryFee = clubFreeDelivery ? 0 : rawDeliveryFee;
+        const deliveryFee = clubFreeDelivery || rewardCouponBenefit?.freeDelivery ? 0 : rawDeliveryFee;
 
         if (input.pointsToRedeem && input.pointsToRedeem >= 50) {
-          const userBalance = await getUserLoyaltyPoints(ctx.user.id);
+          const userBalance = await getUserLoyaltyPoints(ctx.user.id, input.storeId);
           const payableBeforePoints = Math.max(0, subtotal - discountAmount + deliveryFee);
           const maxPointsByTotal = Math.floor(payableBeforePoints / POINTS_TO_BRL);
           const pts = Math.min(input.pointsToRedeem, userBalance, maxPointsByTotal);
@@ -1259,12 +1578,14 @@ export const appRouter = router({
           });
         }
         const total = totalBeforeCheck;
-        const routedStore = await pickStoreForDeliveryAddress({
-          deliveryAddress: input.deliveryAddress,
-          deliveryNeighborhood: input.deliveryNeighborhood ?? null,
-          deliveryCity: input.deliveryCity ?? null,
-          deliveryCep: input.deliveryCep ?? null,
-        });
+        const routedStore = input.storeId
+          ? { storeId: input.storeId, reason: "tenant_domain" as const }
+          : await pickStoreForDeliveryAddress({
+              deliveryAddress: input.deliveryAddress,
+              deliveryNeighborhood: input.deliveryNeighborhood ?? null,
+              deliveryCity: input.deliveryCity ?? null,
+              deliveryCep: input.deliveryCep ?? null,
+            });
 
         const orderData = {
           storeId: routedStore.storeId ?? null,
@@ -1293,6 +1614,9 @@ export const appRouter = router({
           productPrice: item.productPrice,
           quantity: item.quantity,
           notes: item.notes ?? null,
+          snapshotVersion: item.snapshotVersion,
+          configurationSnapshot: item.configurationSnapshot,
+          pricingBreakdown: item.pricingBreakdown,
           subtotal: (parseFloat(item.productPrice) * item.quantity).toFixed(2),
         }));
 
@@ -1319,7 +1643,8 @@ export const appRouter = router({
               ctx.user.id,
               pointsUsed,
               orderId,
-              `-${pointsUsed} pontos resgatados no pedido #${orderId}`
+              `-${pointsUsed} pontos resgatados no pedido #${orderId}`,
+              routedStore.storeId,
             );
           } catch (debitErr) {
             try {
@@ -1348,15 +1673,38 @@ export const appRouter = router({
           }
         }
 
-        // 3) Cupom: incremento atômico + registro ligado ao pedido. Se a
+        // 3) Cupom de recompensa: consumo único e vinculado ao pedido.
+        if (rewardCouponBenefit && input.couponCode && input.storeId) {
+          try {
+            await consumeRewardCoupon({
+              storeId: input.storeId,
+              userId: ctx.user.id,
+              code: input.couponCode,
+              orderId,
+            });
+          } catch (rewardCouponError) {
+            try {
+              await updateOrderStatusGuarded(orderId, "cancelled", ["pending"]);
+              if (pointsUsed > 0) {
+                await addLoyaltyPoints(ctx.user.id, pointsUsed, orderId, `Estorno por falha ao aplicar recompensa no pedido #${orderId}`, routedStore.storeId);
+              }
+              await releaseFreePizzaBenefit();
+            } catch (cleanupError) {
+              console.error("[orders.create] cleanup after reward coupon race failed:", cleanupError);
+            }
+            throw rewardCouponError;
+          }
+        }
+
+        // 4) Cupom comum: incremento atômico + registro ligado ao pedido. Se a
         //    corrida contra maxUses disparar, cancela o pedido e estorna pontos.
         if (couponToApply) {
-          const accepted = await incrementCouponUsage(couponToApply.code);
+          const accepted = await incrementCouponUsage(couponToApply.id);
           if (!accepted) {
             try {
               await updateOrderStatusGuarded(orderId, "cancelled", ["pending"]);
               if (pointsUsed > 0) {
-                await addLoyaltyPoints(ctx.user.id, pointsUsed, orderId, `Estorno por falha ao aplicar cupom no pedido #${orderId}`);
+                await addLoyaltyPoints(ctx.user.id, pointsUsed, orderId, `Estorno por falha ao aplicar cupom no pedido #${orderId}`, routedStore.storeId);
               }
               await releaseFreePizzaBenefit();
             } catch (cleanupErr) {
@@ -1399,7 +1747,9 @@ export const appRouter = router({
         return { orderId, total };
       }),
 
-    myOrders: protectedProcedure.query(({ ctx }) => getOrdersByUser(ctx.user.id)),
+    myOrders: protectedProcedure
+      .input(z.object({ storeId: z.number().optional() }).optional())
+      .query(({ input, ctx }) => getOrdersByUser(ctx.user.id, input?.storeId)),
 
     byId: protectedProcedure
       .input(z.object({ id: z.number() }))
@@ -1408,7 +1758,10 @@ export const appRouter = router({
         if (!order) throw new TRPCError({ code: "NOT_FOUND" });
         // Only allow owner or admin to view order details
         if (order.userId !== ctx.user.id && ctx.user.role !== "admin") {
-          throw new TRPCError({ code: "FORBIDDEN", message: "Acesso negado" });
+          if (ctx.user.role !== "manager" || order.storeId == null) {
+            throw new TRPCError({ code: "FORBIDDEN", message: "Acesso negado" });
+          }
+          await assertStoreEntityAccess(ctx.user, order.storeId);
         }
         const items = await getOrderItems(input.id);
         return { ...order, items };
@@ -1501,7 +1854,9 @@ export const appRouter = router({
           // Marcar conversão de automação (carrinho abandonado / reativação)
           if ((input.status === 'confirmed' || input.status === 'preparing') && order.userId) {
             (async () => {
-              try { await markConversions(order.userId!, input.id); } catch (e) { console.error("markConversions error:", e); }
+              if (order.storeId) {
+                try { await markConversions(order.userId!, input.id, order.storeId); } catch (e) { console.error("markConversions error:", e); }
+              }
             })();
           }
           // Se cancelado: estornar pontos e cupom de uso deste pedido
@@ -1524,14 +1879,18 @@ export const appRouter = router({
             if (pointsToAdd > 0) {
               (async () => {
                 try {
+                  const orderTenant = order.storeId ? await getWhiteLabelRuntimeByStoreId(order.storeId) : null;
+                  if (orderTenant && !orderTenant.features.loyalty) return;
                   const credited = await creditLoyaltyForOrderIdempotent(
                     input.id,
                     order.userId!,
                     pointsToAdd,
-                    `+${pointsToAdd} pontos pelo pedido #${input.id}`
+                    `+${pointsToAdd} pontos pelo pedido #${input.id}`,
+                    order.storeId,
                   );
                   if (credited) {
                     await sendPushToUser(order.userId!, {
+                      storeId: order.storeId,
                       title: "⭐ Pontos creditados!",
                       body: `+${pointsToAdd} pontos foram adicionados ao seu saldo Bonatto!`,
                       url: "/minha-conta",
@@ -1572,12 +1931,12 @@ export const appRouter = router({
             };
             (async () => {
               try {
-                const tpl = await pickRandomTemplate(eventName, "push");
+                const tpl = await pickRandomTemplate(eventName, "push", order.storeId ?? undefined);
                 const payload = tpl
                   ? { title: interpolate(tpl.title), body: interpolate(tpl.body) }
                   : pushFallbacks[input.status];
                 if (payload) {
-                  await sendPushToUser(order.userId!, { ...payload, url: "/minha-conta", tag: `order-status-${input.id}` });
+                  await sendPushToUser(order.userId!, { storeId: order.storeId, ...payload, url: "/minha-conta", tag: `order-status-${input.id}` });
                 }
               } catch (e) { console.error("Push error:", e); }
             })();
@@ -1593,7 +1952,7 @@ export const appRouter = router({
             };
             (async () => {
               try {
-                const tpl = await pickRandomTemplate(eventName, "whatsapp");
+                const tpl = await pickRandomTemplate(eventName, "whatsapp", order.storeId ?? undefined);
                 const msg = tpl ? interpolate(tpl.body) : waMsgFallbacks[input.status];
                 if (msg) await sendWhatsApp(phone!, msg);
               } catch (e) { console.error("WhatsApp error:", e); }
@@ -1607,7 +1966,7 @@ export const appRouter = router({
             };
             const journeyTrigger = orderTriggerMap[input.status];
             if (journeyTrigger) {
-              fireJourneyTrigger(journeyTrigger, order.userId, order.customerPhone ?? undefined).catch(() => {});
+              fireJourneyTrigger(journeyTrigger, order.userId, order.customerPhone ?? undefined, order.storeId ?? undefined).catch(() => {});
             }
             // first_order_month: primeiro pedido do mês corrente
             if (input.status === "delivered") {
@@ -1635,7 +1994,7 @@ export const appRouter = router({
                     .limit(1);
                   if (prevDelivered.length === 0) {
                     // É o primeiro pedido entregue do mês
-                    fireJourneyTrigger("first_order_month", order.userId!, order.customerPhone ?? undefined).catch(() => {});
+                    fireJourneyTrigger("first_order_month", order.userId!, order.customerPhone ?? undefined, order.storeId ?? undefined).catch(() => {});
                   }
                 } catch (e) { console.error("first_order_month trigger error:", e); }
               })();
@@ -1688,9 +2047,7 @@ export const appRouter = router({
           config: marketplaceConfigSchema.partial(),
         })
       )
-      .mutation(async ({ input }) => {
-        return saveMarketplaceConfig(input.providerId, input.config);
-      }),
+      .mutation(async ({ input }) => saveMarketplaceConfig(input.providerId, input.config)),
     testConnection: adminProcedure
       .input(z.object({ providerId: marketplaceProviderIdSchema }))
       .mutation(async ({ input }) => {
@@ -1877,11 +2234,11 @@ export const appRouter = router({
     createIntent: protectedProcedure
       .input(z.object({ orderId: z.number() }))
       .mutation(async ({ input, ctx }) => {
-        await assertPaymentMethodEnabled("credit_card");
         // Fetch real order from DB — never trust client-provided amount
         const order = await getOrderById(input.orderId);
         if (!order) throw new TRPCError({ code: "NOT_FOUND", message: "Pedido não encontrado" });
         if (order.userId !== ctx.user.id) throw new TRPCError({ code: "FORBIDDEN", message: "Acesso negado" });
+        await assertPaymentMethodEnabled("credit_card", order.storeId ?? undefined);
         const amountInReais = parseFloat(order.total ?? "0");
         if (amountInReais <= 0) throw new TRPCError({ code: "BAD_REQUEST", message: "Valor do pedido inválido" });
         const paymentIntent = await createPaymentIntent(amountInReais, "brl", {
@@ -1895,10 +2252,10 @@ export const appRouter = router({
         origin: z.string().url(),
       }))
       .mutation(async ({ input, ctx }) => {
-        await assertPaymentMethodEnabled("credit_card");
         const order = await getOrderById(input.orderId);
         if (!order) throw new TRPCError({ code: "NOT_FOUND", message: "Pedido não encontrado" });
         if (order.userId !== ctx.user.id) throw new TRPCError({ code: "FORBIDDEN", message: "Acesso negado" });
+        await assertPaymentMethodEnabled("credit_card", order.storeId ?? undefined);
         const amountInReais = parseFloat(order.total ?? "0");
         if (amountInReais < 0.5) throw new TRPCError({ code: "BAD_REQUEST", message: "Valor mínimo para pagamento online é R$ 0,50" });
         const session = await createCheckoutSession({
@@ -1962,16 +2319,16 @@ export const appRouter = router({
         origin: z.string().url(),
       }))
       .mutation(async ({ input, ctx }) => {
-        const paymentSettings = await assertPaymentMethodEnabled("credit_card");
+        const order = await getOrderById(input.orderId);
+        if (!order) throw new TRPCError({ code: "NOT_FOUND", message: "Pedido nao encontrado" });
+        if (order.userId !== ctx.user.id) throw new TRPCError({ code: "FORBIDDEN" });
+        const paymentSettings = await assertPaymentMethodEnabled("credit_card", order.storeId ?? undefined);
         if (!paymentSettings.config.orders.savedCardsEnabled) {
           throw new TRPCError({
             code: "PRECONDITION_FAILED",
             message: "O uso de cartões salvos está desativado no momento.",
           });
         }
-        const order = await getOrderById(input.orderId);
-        if (!order) throw new TRPCError({ code: "NOT_FOUND", message: "Pedido n\u00e3o encontrado" });
-        if (order.userId !== ctx.user.id) throw new TRPCError({ code: "FORBIDDEN" });
         const user = await getUserById(ctx.user.id);
         if (!user) throw new TRPCError({ code: "NOT_FOUND" });
         const stripeCustomerId = await getOrCreateStripeCustomer({
@@ -1996,14 +2353,17 @@ export const appRouter = router({
     createManualPixCode: protectedProcedure
       .input(z.object({ orderId: z.number() }))
       .mutation(async ({ input, ctx }) => {
-        const paymentSettings = await assertPaymentMethodEnabled("pix");
+        const paymentOrder = await getOrderById(input.orderId);
+        if (!paymentOrder) throw new TRPCError({ code: "NOT_FOUND", message: "Pedido nao encontrado" });
+        if (paymentOrder.userId !== ctx.user.id) throw new TRPCError({ code: "FORBIDDEN" });
+        const paymentSettings = await assertPaymentMethodEnabled("pix", paymentOrder.storeId ?? undefined);
         if (paymentSettings.config.orders.pixMode !== "manual_key") {
           throw new TRPCError({
             code: "PRECONDITION_FAILED",
             message: "O PIX manual não está ativo para pedidos.",
           });
         }
-        const adminPaymentSettings = await getPaymentSettingsAdmin();
+        const adminPaymentSettings = await getPaymentSettingsAdmin(paymentOrder.storeId ?? undefined);
         const pixKey = adminPaymentSettings.pixKey.trim();
         if (!pixKey) {
           throw new TRPCError({
@@ -2041,7 +2401,10 @@ export const appRouter = router({
     createPix: protectedProcedure
       .input(z.object({ orderId: z.number() }))
       .mutation(async ({ input, ctx }) => {
-        const paymentSettings = await assertPaymentMethodEnabled("pix");
+        const paymentOrder = await getOrderById(input.orderId);
+        if (!paymentOrder) throw new TRPCError({ code: "NOT_FOUND", message: "Pedido nao encontrado" });
+        if (paymentOrder.userId !== ctx.user.id) throw new TRPCError({ code: "FORBIDDEN" });
+        const paymentSettings = await assertPaymentMethodEnabled("pix", paymentOrder.storeId ?? undefined);
         if (paymentSettings.config.orders.pixMode !== "dynamic_asaas") {
           throw new TRPCError({
             code: "PRECONDITION_FAILED",
@@ -2131,17 +2494,22 @@ export const appRouter = router({
         savedCity: z.string().optional(),
       }))
       .mutation(({ input, ctx }) => updateUserProfile(ctx.user.id, input)),
-    myCoupons: protectedProcedure.query(({ ctx }) => getCouponsByUser(ctx.user.id)),
+    myCoupons: protectedProcedure
+      .input(z.object({ storeId: z.number().optional() }).optional())
+      .query(({ input, ctx }) => getCouponsByUser(ctx.user.id, input?.storeId)),
   }),
 
   // --- UP-SELLS ---------------------------------------------------------------
   upsells: router({
     forCart: publicProcedure
-      .input(z.object({ productIds: z.array(z.number()), cartTotal: z.number() }))
-      .query(({ input }) => getUpsellsForCart(input.productIds, input.cartTotal)),
-    all: staffProcedure.query(() => getAllUpsells()),
+      .input(z.object({ productIds: z.array(z.number()), cartTotal: z.number(), storeId: z.number().optional() }))
+      .query(({ input }) => getUpsellsForCart(input.productIds, input.cartTotal, input.storeId)),
+    all: staffProcedure
+      .input(z.object({ storeId: z.number().optional() }).optional())
+      .query(async ({ input, ctx }) => getAllUpsells(await resolveRequiredStoreId(ctx.user, input?.storeId))),
     create: staffProcedure
       .input(z.object({
+        storeId: z.number().optional(),
         suggestedProductId: z.number(),
         triggerProductId: z.number().optional(),
         triggerMinTotal: z.string().optional(),
@@ -2152,32 +2520,47 @@ export const appRouter = router({
         active: z.boolean().default(true),
         sortOrder: z.number().default(0),
       }))
-      .mutation(({ input }) => createUpsell(input)),
+      .mutation(async ({ input, ctx }) => {
+        const storeId = await resolveRequiredStoreId(ctx.user, input.storeId);
+        return createUpsell({ ...input, storeId });
+      }),
     update: staffProcedure
-      .input(z.object({ id: z.number(), data: z.object({
+      .input(z.object({ id: z.number(), storeId: z.number().optional(), data: z.object({
         title: z.string().optional(),
         description: z.string().optional(),
         discountPercent: z.number().optional(),
         active: z.boolean().optional(),
         sortOrder: z.number().optional(),
       }) }))
-      .mutation(({ input }) => updateUpsell(input.id, input.data)),
+      .mutation(async ({ input, ctx }) => updateUpsell(input.id, await resolveRequiredStoreId(ctx.user, input.storeId), input.data)),
     delete: staffProcedure
-      .input(z.object({ id: z.number() }))
-      .mutation(({ input }) => deleteUpsell(input.id)),
+      .input(z.object({ id: z.number(), storeId: z.number().optional() }))
+      .mutation(async ({ input, ctx }) => deleteUpsell(input.id, await resolveRequiredStoreId(ctx.user, input.storeId))),
   }),
 
   // --- PROMOTIONS ---------------------------------------------------------------
   promotions: router({
     // Only logged-in customers can see promotions that requiresLogin=true
-    active: protectedProcedure.query(() => getActivePromotions()),
+    active: protectedProcedure
+      .input(z.object({ storeId: z.number().optional() }).optional())
+      .query(({ input }) => getActivePromotions(input?.storeId)),
     // Public promotions (requiresLogin=false) visible to everyone
-    publicActive: publicProcedure.query(() =>
-      getActivePromotions().then((promos) => promos.filter((p) => !p.requiresLogin))
-    ),
-    all: staffProcedure.query(() => getAllPromotions()),
+    publicActive: publicProcedure
+      .input(z.object({ storeId: z.number().optional() }).optional())
+      .query(({ input }) => getActivePromotions(input?.storeId).then((promos) => promos.filter((p) => !p.requiresLogin))),
+    // A promotion can be public while its coupon remains protected by login.
+    homeActive: publicProcedure
+      .input(z.object({ storeId: z.number().optional() }).optional())
+      .query(({ input }) => getActivePromotions(input?.storeId).then((promos) => promos.map((promotion) => ({
+        ...promotion,
+        couponCode: promotion.requiresLogin ? null : promotion.couponCode,
+      })))),
+    all: staffProcedure
+      .input(z.object({ storeId: z.number().optional() }).optional())
+      .query(async ({ input, ctx }) => getAllPromotions(await resolveRequiredStoreId(ctx.user, input?.storeId))),
     create: staffProcedure
       .input(z.object({
+        storeId: z.number().optional(),
         title: z.string().min(1),
         description: z.string().optional(),
         imageUrl: z.string().optional(),
@@ -2187,8 +2570,9 @@ export const appRouter = router({
         startsAt: z.date().optional(),
         endsAt: z.date().optional(),
       }))
-      .mutation(async ({ input }) => {
-        const result = await createPromotion(input);
+      .mutation(async ({ input, ctx }) => {
+        const storeId = await resolveRequiredStoreId(ctx.user, input.storeId);
+        const result = await createPromotion({ ...input, storeId });
         // Alerta automático para clientes
         await createClientAlert({
           type: "promotion",
@@ -2196,12 +2580,13 @@ export const appRouter = router({
           message: input.description ?? "Confira a nova promoção disponível no cardápio!",
           icon: "🍽️",
           url: "/minha-conta",
+          storeId,
           expiresAt: input.endsAt,
         });
         return result;
       }),
     update: staffProcedure
-      .input(z.object({ id: z.number(), data: z.object({
+      .input(z.object({ id: z.number(), storeId: z.number().optional(), data: z.object({
         title: z.string().optional(),
         description: z.string().optional(),
         imageUrl: z.string().optional(),
@@ -2210,35 +2595,41 @@ export const appRouter = router({
         requiresLogin: z.boolean().optional(),
         endsAt: z.date().optional(),
       }) }))
-      .mutation(({ input }) => updatePromotion(input.id, input.data)),
+      .mutation(async ({ input, ctx }) => updatePromotion(input.id, await resolveRequiredStoreId(ctx.user, input.storeId), input.data)),
     delete: staffProcedure
-      .input(z.object({ id: z.number() }))
-      .mutation(({ input }) => deletePromotion(input.id)),
+      .input(z.object({ id: z.number(), storeId: z.number().optional() }))
+      .mutation(async ({ input, ctx }) => deletePromotion(input.id, await resolveRequiredStoreId(ctx.user, input.storeId))),
   }),
 
   // --- RAFFLES ---------------------------------------------------------------
   raffles: router({
-    active: publicProcedure.query(() => getActiveRaffles()),
-    all: staffProcedure.query(() => getAllRaffles()),
+    active: publicProcedure
+      .input(z.object({ storeId: z.number().optional() }).optional())
+      .query(({ input }) => getActiveRaffles(input?.storeId)),
+    all: staffProcedure
+      .input(z.object({ storeId: z.number().optional() }).optional())
+      .query(async ({ input, ctx }) => getAllRaffles(await resolveRequiredStoreId(ctx.user, input?.storeId))),
     entries: staffProcedure
-      .input(z.object({ raffleId: z.number() }))
-      .query(({ input }) => getRaffleEntries(input.raffleId)),
+      .input(z.object({ raffleId: z.number(), storeId: z.number().optional() }))
+      .query(async ({ input, ctx }) => getRaffleEntries(input.raffleId, await resolveRequiredStoreId(ctx.user, input.storeId))),
     enter: protectedProcedure
-      .input(z.object({ raffleId: z.number() }))
-      .mutation(({ input, ctx }) => enterRaffle(input.raffleId, ctx.user.id, ctx.user.name ?? "Cliente")),
+      .input(z.object({ raffleId: z.number(), storeId: z.number().optional() }))
+      .mutation(({ input, ctx }) => enterRaffle(input.raffleId, ctx.user.id, ctx.user.name ?? "Cliente", input.storeId)),
     draw: staffProcedure
-      .input(z.object({ raffleId: z.number() }))
-      .mutation(({ input }) => drawRaffleWinner(input.raffleId)),
+      .input(z.object({ raffleId: z.number(), storeId: z.number().optional() }))
+      .mutation(async ({ input, ctx }) => drawRaffleWinner(input.raffleId, await resolveRequiredStoreId(ctx.user, input.storeId))),
     create: staffProcedure
       .input(z.object({
+        storeId: z.number().optional(),
         title: z.string().min(1),
         description: z.string().optional(),
         prize: z.string().min(1),
         imageUrl: z.string().optional(),
         endsAt: z.date().optional(),
       }))
-      .mutation(async ({ input }) => {
-        const result = await createRaffle({ ...input, status: "active" });
+      .mutation(async ({ input, ctx }) => {
+        const storeId = await resolveRequiredStoreId(ctx.user, input.storeId);
+        const result = await createRaffle({ ...input, storeId, status: "active" });
         // Alerta automático para clientes
         await createClientAlert({
           type: "raffle",
@@ -2246,19 +2637,20 @@ export const appRouter = router({
           message: `Prêmio: ${input.prize}. ${input.description ?? "Participe agora e concorra!"}`,
           icon: "🌟",
           url: "/minha-conta",
+          storeId,
           expiresAt: input.endsAt,
         });
         return result;
       }),
     update: staffProcedure
-      .input(z.object({ id: z.number(), data: z.object({
+      .input(z.object({ id: z.number(), storeId: z.number().optional(), data: z.object({
         title: z.string().optional(),
         description: z.string().optional(),
         prize: z.string().optional(),
         status: z.enum(["active", "closed", "drawn"]).optional(),
         endsAt: z.date().optional(),
       }) }))
-      .mutation(({ input }) => updateRaffle(input.id, input.data)),
+      .mutation(async ({ input, ctx }) => updateRaffle(input.id, await resolveRequiredStoreId(ctx.user, input.storeId), input.data)),
   }),
 
   inventory: router({
@@ -2690,8 +3082,9 @@ export const appRouter = router({
           storeId,
         });
       }),
-    sendCoupon: adminProcedure
+    sendCoupon: staffProcedure
       .input(z.object({
+        storeId: z.number().optional(),
         userId: z.number(),
         code: z.string().min(1),
         discountType: z.enum(["percentage", "fixed"]),
@@ -2700,7 +3093,7 @@ export const appRouter = router({
         maxUses: z.number().optional(),
         expiresAt: z.date().optional(),
       }))
-      .mutation(({ input }) => createUserCoupon(input)),
+      .mutation(async ({ input, ctx }) => createUserCoupon({ ...input, storeId: await resolveRequiredStoreId(ctx.user, input.storeId) })),
   }),
 
   reports: router({
@@ -2929,8 +3322,10 @@ export const appRouter = router({
         if (!result.success) throw new TRPCError({ code: "BAD_REQUEST", message: result.error ?? "Erro ao confirmar entrega" });
         // Notificar o cliente que o pedido foi entregue
         if (result.customerId) {
+          const deliveredOrder = await getOrderById(input.orderId);
           // Push notification com link direto para avaliação
           await sendPushToUser(result.customerId, {
+            storeId: deliveredOrder?.storeId,
             title: "Pedido entregue! 🍕",
             body: `Seu pedido #${input.orderId} chegou. Que tal avaliar a entrega?`,
             url: `/meus-pedidos?avaliar=${input.orderId}`,
@@ -2938,6 +3333,7 @@ export const appRouter = router({
           });
           // Notificação persistente no banco (sino do app)
           await createClientNotification({
+            storeId: deliveredOrder?.storeId,
             userId: result.customerId,
             title: "Pedido entregue! 🍕",
             message: `Seu pedido #${input.orderId} foi entregue. Avalie a experiência!`,
@@ -3115,30 +3511,44 @@ export const appRouter = router({
 
   // --- PAYMENT SETTINGS -------------------------------------------------------
   paymentSettings: router({
-    getPublic: publicProcedure.query(() => getPaymentSettingsPublic()),
-    getAdmin: adminProcedure.query(() => getPaymentSettingsAdmin()),
-    save: adminProcedure
+    getPublic: publicProcedure
+      .input(z.object({ storeId: z.number().optional() }).optional())
+      .query(({ input }) => getPaymentSettingsPublic(input?.storeId)),
+    getAdmin: staffProcedure
+      .input(z.object({ storeId: z.number().optional() }).optional())
+      .query(async ({ ctx, input }) => getPaymentSettingsAdmin(await resolveRequiredStoreId(ctx.user, input?.storeId))),
+    save: staffProcedure
       .input(z.object({
+        storeId: z.number().optional(),
         config: paymentConfigSchema,
         pixKey: z.string().max(120),
       }))
-      .mutation(async ({ input }) => {
-        await savePaymentSettings(input);
-        return getPaymentSettingsAdmin();
+      .mutation(async ({ ctx, input }) => {
+        const storeId = await resolveRequiredStoreId(ctx.user, input.storeId);
+        const { storeId: _requestedStoreId, ...settings } = input;
+        await savePaymentSettings(settings, storeId);
+        return getPaymentSettingsAdmin(storeId);
       }),
   }),
 
   // --- STORE SETTINGS ---------------------------------------------------------
   storeSettings: router({
     // Qualquer um pode ler (para validar horário/CEP no frontend)
-    get: publicProcedure.query(async () => {
-      const settings = await getAllStoreSettings();
+    get: publicProcedure
+      .input(z.object({ storeId: z.number().optional() }).optional())
+      .query(async ({ input }) => {
+      const settings = await getAllStoreSettings(input?.storeId);
       // Strip sensitive fields from public endpoint
       const { pixKey: _pk, whatsappNumber: _wn, ...publicSettings } = settings;
       return publicSettings;
     }),
     // Staff endpoint with all settings including sensitive fields
-    getAdmin: staffProcedure.query(() => getAllStoreSettings()),
+    getAdmin: staffProcedure
+      .input(z.object({ storeId: z.number().optional() }).optional())
+      .query(async ({ input, ctx }) => {
+        const storeId = await resolveStoreId(ctx.user, input?.storeId);
+        return getAllStoreSettings(storeId);
+      }),
     // Staff pode salvar configurações da loja
     save: staffProcedure
       .input(z.object({
@@ -3151,14 +3561,16 @@ export const appRouter = router({
         whatsappNumber: z.string().optional(),
         deliveryFee: z.string().optional(),
         minOrderValue: z.string().optional(),
+        storeId: z.number().optional(),
       }))
-      .mutation(async ({ input }) => {
-        await setStoreSetting("storeHours", JSON.stringify(input.storeHours));
-        await setStoreSetting("deliveryCepPrefixes", JSON.stringify(input.deliveryCepPrefixes));
-        if (input.pixKey !== undefined) await setStoreSetting("pixKey", input.pixKey);
-        if (input.whatsappNumber !== undefined) await setStoreSetting("whatsappNumber", input.whatsappNumber);
-        if (input.deliveryFee !== undefined) await setStoreSetting("deliveryFee", input.deliveryFee);
-        if (input.minOrderValue !== undefined) await setStoreSetting("minOrderValue", input.minOrderValue);
+      .mutation(async ({ input, ctx }) => {
+        const storeId = await resolveStoreId(ctx.user, input.storeId);
+        await setStoreSetting("storeHours", JSON.stringify(input.storeHours), storeId);
+        await setStoreSetting("deliveryCepPrefixes", JSON.stringify(input.deliveryCepPrefixes), storeId);
+        if (input.pixKey !== undefined) await setStoreSetting("pixKey", input.pixKey, storeId);
+        if (input.whatsappNumber !== undefined) await setStoreSetting("whatsappNumber", input.whatsappNumber, storeId);
+        if (input.deliveryFee !== undefined) await setStoreSetting("deliveryFee", input.deliveryFee, storeId);
+        if (input.minOrderValue !== undefined) await setStoreSetting("minOrderValue", input.minOrderValue, storeId);
         return { success: true };
       }),
     savePizzaFlavorConfig: staffProcedure
@@ -3171,9 +3583,41 @@ export const appRouter = router({
           large: z.number().int().min(1).max(4),
           family: z.number().int().min(1).max(4),
         }),
+        storeId: z.number().optional(),
       }))
-      .mutation(async ({ input }) => {
-        await setStoreSetting("pizzaFlavorConfig", JSON.stringify(input));
+      .mutation(async ({ input, ctx }) => {
+        const storeId = await resolveStoreId(ctx.user, input.storeId);
+        const { storeId: _storeId, ...config } = input;
+        await setStoreSetting("pizzaFlavorConfig", JSON.stringify(config), storeId);
+        return { success: true };
+      }),
+    saveMenuLayout: staffProcedure
+      .input(z.object({
+        storeId: z.number().optional(),
+        layout: z.enum(["editorial", "compact", "visual"]),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        const storeId = await resolveStoreId(ctx.user, input.storeId);
+        await setStoreSetting("menuLayout", input.layout, storeId);
+        return { success: true };
+      }),
+    saveHomeLayoutConfig: staffProcedure
+      .input(z.object({
+        storeId: z.number().optional(),
+        greetingSubtitle: z.string().min(1).max(100),
+        orderTitle: z.string().min(1).max(80),
+        orderDescription: z.string().min(1).max(180),
+        orderButtonLabel: z.string().min(1).max(40),
+        quickActionsTitle: z.string().min(1).max(60),
+        offersLabel: z.string().min(1).max(24),
+        couponsLabel: z.string().min(1).max(24),
+        clubLabel: z.string().min(1).max(24),
+        menuLabel: z.string().min(1).max(24),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        const storeId = await resolveStoreId(ctx.user, input.storeId);
+        const { storeId: _storeId, ...config } = input;
+        await setStoreSetting("homeLayoutConfig", JSON.stringify(config), storeId);
         return { success: true };
       }),
   }),
@@ -3204,9 +3648,9 @@ export const appRouter = router({
         });
         // Disparar trigger de automação: rating_submitted (sempre) e rating_negative (≤3)
         const userPhone = ctx.user.phone ?? undefined;
-        fireJourneyTrigger("rating_submitted", ctx.user.id, userPhone).catch(() => {});
+        fireJourneyTrigger("rating_submitted", ctx.user.id, userPhone, order.storeId ?? undefined).catch(() => {});
         if (input.rating <= 3) {
-          fireJourneyTrigger("rating_negative", ctx.user.id, userPhone).catch(() => {});
+          fireJourneyTrigger("rating_negative", ctx.user.id, userPhone, order.storeId ?? undefined).catch(() => {});
         }
         return { success: true };
       }),
@@ -3281,21 +3725,35 @@ export const appRouter = router({
 
   // --- NOTIFICATIONS ----------------------------------------------------------
   notifications: router({
-    list: protectedProcedure.query(({ ctx }) => getClientNotifications(ctx.user.id)),
-    unreadCount: protectedProcedure.query(({ ctx }) => getUnreadNotificationCount(ctx.user.id)),
-    markRead: protectedProcedure.mutation(({ ctx }) => markNotificationsRead(ctx.user.id)),
-    send: adminProcedure
+    list: protectedProcedure
+      .input(z.object({ storeId: z.number().int().positive().optional() }).optional())
+      .query(({ ctx, input }) => getClientNotifications(ctx.user.id, input?.storeId)),
+    unreadCount: protectedProcedure
+      .input(z.object({ storeId: z.number().int().positive().optional() }).optional())
+      .query(({ ctx, input }) => getUnreadNotificationCount(ctx.user.id, input?.storeId)),
+    markRead: protectedProcedure
+      .input(z.object({ storeId: z.number().int().positive().optional() }).optional())
+      .mutation(({ ctx, input }) => markNotificationsRead(ctx.user.id, input?.storeId)),
+    send: staffProcedure
       .input(z.object({
+        storeId: z.number().optional(),
         userId: z.number(),
         title: z.string(),
         message: z.string(),
         type: z.enum(['order', 'promo', 'system']).optional(),
       }))
-      .mutation(({ input }) => createClientNotification({ ...input, type: input.type ?? 'system' })),
+      .mutation(async ({ input, ctx }) => createClientNotification({
+        ...input,
+        storeId: await resolveRequiredStoreId(ctx.user, input.storeId),
+        type: input.type ?? 'system',
+      })),
     // --- Agendamento de notificações ---
-    scheduleList: staffProcedure.query(() => listScheduledNotifications()),
-    scheduleCreate: adminProcedure
+    scheduleList: staffProcedure
+      .input(z.object({ storeId: z.number().optional() }).optional())
+      .query(async ({ ctx, input }) => listScheduledNotifications(await resolveRequiredStoreId(ctx.user, input?.storeId))),
+    scheduleCreate: staffProcedure
       .input(z.object({
+        storeId: z.number().optional(),
         title: z.string().min(1).max(200),
         message: z.string().min(1),
         channel: z.enum(['push', 'whatsapp', 'both']).default('push'),
@@ -3304,7 +3762,8 @@ export const appRouter = router({
         recurrence: z.enum(['once', 'daily', 'weekly']).default('once'),
         neighborhoodFilter: z.array(z.string()).optional().nullable(),
       }))
-      .mutation(({ ctx, input }) => createScheduledNotification({
+      .mutation(async ({ ctx, input }) => createScheduledNotification({
+        storeId: await resolveRequiredStoreId(ctx.user, input.storeId),
         title: input.title,
         message: input.message,
         channel: input.channel,
@@ -3318,35 +3777,42 @@ export const appRouter = router({
         sentCount: 0,
         createdBy: ctx.user.id,
       })),
-    scheduleCancel: adminProcedure
-      .input(z.object({ id: z.number() }))
-      .mutation(({ input }) => cancelScheduledNotification(input.id)),
-    scheduleDelete: adminProcedure
-      .input(z.object({ id: z.number() }))
-      .mutation(({ input }) => deleteScheduledNotification(input.id)),
+    scheduleCancel: staffProcedure
+      .input(z.object({ id: z.number(), storeId: z.number().optional() }))
+      .mutation(async ({ ctx, input }) => cancelScheduledNotification(input.id, await resolveRequiredStoreId(ctx.user, input.storeId))),
+    scheduleDelete: staffProcedure
+      .input(z.object({ id: z.number(), storeId: z.number().optional() }))
+      .mutation(async ({ ctx, input }) => deleteScheduledNotification(input.id, await resolveRequiredStoreId(ctx.user, input.storeId))),
   }),
 
   // --- LOYALTY ----------------------------------------------------------------
   loyalty: router({
-    points: protectedProcedure.query(({ ctx }) => getUserLoyaltyPoints(ctx.user.id)),
-    spendingHistory: protectedProcedure.query(({ ctx }) => getUserSpendingHistory(ctx.user.id)),
-    history: protectedProcedure.query(({ ctx }) => getLoyaltyHistory(ctx.user.id)),
+    points: protectedProcedure
+      .input(z.object({ storeId: z.number().int().positive().optional() }).optional())
+      .query(({ ctx, input }) => getUserLoyaltyPoints(ctx.user.id, input?.storeId)),
+    spendingHistory: protectedProcedure
+      .input(z.object({ storeId: z.number().int().positive().optional() }).optional())
+      .query(({ ctx, input }) => getUserSpendingHistory(ctx.user.id, input?.storeId)),
+    history: protectedProcedure
+      .input(z.object({ storeId: z.number().int().positive().optional() }).optional())
+      .query(({ ctx, input }) => getLoyaltyHistory(ctx.user.id, 30, input?.storeId)),
     // Preview do desconto de pontos (sem debitar — o débito acontece no createOrder)
     preview: protectedProcedure
-      .input(z.object({ points: z.number().int().min(50).max(5000) }))
+      .input(z.object({ points: z.number().int().min(50).max(5000), storeId: z.number().int().positive().optional() }))
       .query(async ({ ctx, input }) => {
         const POINTS_TO_BRL = 0.10;
-        const balance = await getUserLoyaltyPoints(ctx.user.id);
+        const balance = await getUserLoyaltyPoints(ctx.user.id, input.storeId);
         const pts = Math.min(input.points, balance);
         if (pts < 50) throw new TRPCError({ code: 'BAD_REQUEST', message: 'Pontos insuficientes para resgate.' });
         const discount = parseFloat((pts * POINTS_TO_BRL).toFixed(2));
         return { discount, pointsUsed: pts, balance };
       }),
     // Admin: adicionar pontos manualmente
-    adminAdd: adminProcedure
-      .input(z.object({ userId: z.number(), points: z.number().int().min(1), description: z.string().optional() }))
-      .mutation(async ({ input }) => {
-        await addLoyaltyPoints(input.userId, input.points, undefined, input.description ?? `+${input.points} pontos (manual)`);
+    adminAdd: staffProcedure
+      .input(z.object({ userId: z.number(), points: z.number().int().min(1), description: z.string().optional(), storeId: z.number().optional() }))
+      .mutation(async ({ input, ctx }) => {
+        const storeId = await resolveRequiredStoreId(ctx.user, input.storeId);
+        await addLoyaltyPoints(input.userId, input.points, undefined, input.description ?? `+${input.points} pontos (manual)`, storeId);
         return { ok: true };
       }),
   }),
@@ -3402,6 +3868,7 @@ export const appRouter = router({
         const pushPreview = input.message.length > 100 ? input.message.slice(0, 97) + "..." : input.message;
         if (senderRole === 'customer') {
           await sendPushToAdmins({
+            storeId: order.storeId,
             title: "Nova mensagem de cliente",
             body: `Pedido #${input.orderId} - ${order.customerName}: ${pushPreview}`,
             url: `/admin?tab=messages&order=${input.orderId}`,
@@ -3410,6 +3877,7 @@ export const appRouter = router({
         }
         if (senderRole === 'admin' && order.userId) {
           await sendPushToUser(order.userId, {
+            storeId: order.storeId,
             title: "Mensagem da Bonatto Pizza",
             body: pushPreview,
             url: `/rastrear/${input.orderId}`,
@@ -3506,6 +3974,7 @@ export const appRouter = router({
         const reply = content.trim();
         await sendOrderMessage({ orderId: input.orderId, userId: adminId, senderRole: 'admin', message: reply });
         if (order.userId) await sendPushToUser(order.userId, {
+          storeId: order.storeId,
           title: "Resposta da Bonatto Pizza",
           body: reply.length > 100 ? reply.slice(0, 97) + "..." : reply,
           url: `/rastrear/${input.orderId}`,
@@ -3577,19 +4046,23 @@ export const appRouter = router({
   }),
   // ─── MARKETING AUTOMATION ──────────────────────────────────────────────────
   automations: router({
-    listJourneys: adminProcedure.query(async () => {
-      const list = await listJourneys();
+    listJourneys: staffProcedure
+      .input(z.object({ storeId: z.number().optional() }))
+      .query(async ({ input, ctx }) => {
+      const list = await listJourneys(await resolveRequiredStoreId(ctx.user, input.storeId));
       return list.map(j => ({ ...j, steps: JSON.parse(j.steps) as JourneyStep[] }));
     }),
-    getJourney: adminProcedure
-      .input(z.object({ id: z.number() }))
-      .query(async ({ input }) => {
-        const j = await getJourneyById(input.id);
+    getJourney: staffProcedure
+      .input(z.object({ id: z.number(), storeId: z.number().optional() }))
+      .query(async ({ input, ctx }) => {
+        const storeId = await resolveRequiredStoreId(ctx.user, input.storeId);
+        const j = await getJourneyById(input.id, storeId);
         if (!j) throw new TRPCError({ code: 'NOT_FOUND' });
         return { ...j, steps: JSON.parse(j.steps) as JourneyStep[] };
       }),
-    createJourney: adminProcedure
+    createJourney: staffProcedure
       .input(z.object({
+        storeId: z.number().optional(),
         name: z.string().min(1),
         description: z.string().optional(),
         trigger: z.enum(['checkout_abandoned', 'tag_inativo_15', 'tag_inativo_30', 'tag_inativo_60', 'tag_inativo_custom', 'first_order', 'new_user', 'club_subscriber', 'manual', 'order_delivered', 'order_cancelled', 'birthday', 'loyalty_milestone', 'rating_submitted', 'rating_negative', 'club_expiring', 'first_order_month']),
@@ -3629,13 +4102,15 @@ export const appRouter = router({
         })),
         daysInactive: z.number().optional(),
       }))
-      .mutation(async ({ input }) => {
-        const id = await createJourney(input);
+      .mutation(async ({ input, ctx }) => {
+        const storeId = await resolveRequiredStoreId(ctx.user, input.storeId);
+        const id = await createJourney({ ...input, storeId });
         return { id };
       }),
-    updateJourney: adminProcedure
+    updateJourney: staffProcedure
       .input(z.object({
         id: z.number(),
+        storeId: z.number().optional(),
         name: z.string().optional(),
         description: z.string().optional(),
         trigger: z.enum(['checkout_abandoned', 'tag_inativo_15', 'tag_inativo_30', 'tag_inativo_60', 'tag_inativo_custom', 'first_order', 'new_user', 'club_subscriber', 'manual', 'order_delivered', 'order_cancelled', 'birthday', 'loyalty_milestone', 'rating_submitted', 'rating_negative', 'club_expiring', 'first_order_month']).optional(),
@@ -3671,54 +4146,48 @@ export const appRouter = router({
           secret: z.string().optional(),
         })).optional(),
       }))
-      .mutation(async ({ input }) => {
-        const { id, ...data } = input;
-        await updateJourney(id, data as Parameters<typeof updateJourney>[1]);
+      .mutation(async ({ input, ctx }) => {
+        const { id, storeId: requestedStoreId, ...data } = input;
+        const storeId = await resolveRequiredStoreId(ctx.user, requestedStoreId);
+        await updateJourney(id, data as Parameters<typeof updateJourney>[1], storeId);
         return { ok: true };
       }),
-    deleteJourney: adminProcedure
-      .input(z.object({ id: z.number() }))
-      .mutation(async ({ input }) => {
-        await deleteJourney(input.id);
+    deleteJourney: staffProcedure
+      .input(z.object({ id: z.number(), storeId: z.number().optional() }))
+      .mutation(async ({ input, ctx }) => {
+        await deleteJourney(input.id, await resolveRequiredStoreId(ctx.user, input.storeId));
         return { ok: true };
       }),
-    duplicateJourney: adminProcedure
-      .input(z.object({ id: z.number() }))
-      .mutation(async ({ input }) => {
-        const newId = await duplicateJourney(input.id);
+    duplicateJourney: staffProcedure
+      .input(z.object({ id: z.number(), storeId: z.number().optional() }))
+      .mutation(async ({ input, ctx }) => {
+        const newId = await duplicateJourney(input.id, await resolveRequiredStoreId(ctx.user, input.storeId));
         if (newId === -1) throw new TRPCError({ code: 'NOT_FOUND', message: 'Jornada não encontrada' });
         return { id: newId };
       }),
-    toggleJourney: adminProcedure
-      .input(z.object({ id: z.number(), status: z.enum(['active', 'paused', 'draft']) }))
-      .mutation(async ({ input }) => {
-        await updateJourney(input.id, { status: input.status });
+    toggleJourney: staffProcedure
+      .input(z.object({ id: z.number(), status: z.enum(['active', 'paused', 'draft']), storeId: z.number().optional() }))
+      .mutation(async ({ input, ctx }) => {
+        await updateJourney(input.id, { status: input.status }, await resolveRequiredStoreId(ctx.user, input.storeId));
         return { ok: true };
       }),
-    listExecutions: adminProcedure
+    listExecutions: staffProcedure
       .input(z.object({ journeyId: z.number().optional(), storeId: z.number().optional() }))
       .query(async ({ input, ctx }) => {
-        const executions = await listExecutions(input.journeyId);
-        const storeId = await resolveStoreId(ctx.user, input.storeId);
-        if (!storeId || executions.length === 0) return executions;
-        const db = await getDb();
-        if (!db) return executions;
-        const storeUserRows = await db
-          .selectDistinct({ userId: orders.userId })
-          .from(orders)
-          .where(and(eq(orders.storeId, storeId), isNotNull(orders.userId)));
-        const allowedUserIds = new Set(storeUserRows.map((row) => row.userId).filter((value): value is number => typeof value === "number"));
-        return executions.filter((execution) => allowedUserIds.has(execution.userId));
+        const storeId = await resolveRequiredStoreId(ctx.user, input.storeId);
+        return listExecutions(input.journeyId, storeId);
       }),
-    cancelExecution: adminProcedure
-      .input(z.object({ id: z.number() }))
-      .mutation(async ({ input }) => {
-        await cancelExecution(input.id);
+    cancelExecution: staffProcedure
+      .input(z.object({ id: z.number(), storeId: z.number().optional() }))
+      .mutation(async ({ input, ctx }) => {
+        await cancelExecution(input.id, await resolveRequiredStoreId(ctx.user, input.storeId));
         return { ok: true };
       }),
-    triggerJourney: adminProcedure
-      .input(z.object({ journeyId: z.number(), userIds: z.array(z.number()) }))
-      .mutation(async ({ input }) => {
+    triggerJourney: staffProcedure
+      .input(z.object({ journeyId: z.number(), userIds: z.array(z.number()), storeId: z.number().optional() }))
+      .mutation(async ({ input, ctx }) => {
+        const storeId = await resolveRequiredStoreId(ctx.user, input.storeId);
+        if (!await getJourneyById(input.journeyId, storeId)) throw new TRPCError({ code: "NOT_FOUND" });
         let started = 0;
         for (const uid of input.userIds) {
           const r = await startJourneyExecution(input.journeyId, uid);
@@ -3726,57 +4195,69 @@ export const appRouter = router({
         }
         return { started };
       }),
-    listCustomerTags: adminProcedure.query(async () => {
-      const result = await getAllCustomerTagsWithUsers();
+    listCustomerTags: staffProcedure
+      .input(z.object({ storeId: z.number().optional() }))
+      .query(async ({ input, ctx }) => {
+      const result = await getAllCustomerTagsWithUsers(await resolveRequiredStoreId(ctx.user, input.storeId));
       return (result as unknown as [unknown[]])[0] as Array<{
         userId: number; tag: string; assignedAt: Date; name: string; email: string; phone: string;
       }>;
     }),
-    refreshTags: adminProcedure.mutation(async () => {
-      await refreshCustomerTags();
+    refreshTags: staffProcedure
+      .input(z.object({ storeId: z.number().optional() }))
+      .mutation(async ({ input, ctx }) => {
+      await refreshCustomerTags(await resolveRequiredStoreId(ctx.user, input.storeId));
       return { ok: true };
     }),
-    listAbandonedCarts: adminProcedure
-      .input(z.object({ status: z.enum(['pending', 'recovered', 'expired']).optional() }))
-      .query(async ({ input }) => listAbandonedCarts(input.status)),
+    listAbandonedCarts: staffProcedure
+      .input(z.object({ status: z.enum(['pending', 'recovered', 'expired']).optional(), storeId: z.number().optional() }))
+      .query(async ({ input, ctx }) => listAbandonedCarts(input.status, await resolveRequiredStoreId(ctx.user, input.storeId))),
     registerAbandonedCart: protectedProcedure
       .input(z.object({
+        storeId: z.number().int().positive(),
         customerName: z.string(),
         customerPhone: z.string().optional(),
         items: z.array(z.object({
           productId: z.number(),
           productName: z.string(),
-          quantity: z.number(),
+          quantity: z.number().int().min(1).max(99),
           productPrice: z.string(),
         })),
         total: z.string(),
       }))
       .mutation(async ({ ctx, input }) => {
+        const tenant = await getWhiteLabelRuntimeByStoreId(input.storeId);
+        if (!tenant?.features.automations) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Automacoes indisponiveis nesta loja." });
         const id = await registerAbandonedCart({ userId: ctx.user.id, ...input });
         return { id };
       }),
-    generateWebhookToken: adminProcedure
-      .input(z.object({ id: z.number() }))
-      .mutation(async ({ input }) => {
+    generateWebhookToken: staffProcedure
+      .input(z.object({ id: z.number(), storeId: z.number().optional() }))
+      .mutation(async ({ input, ctx }) => {
+        const storeId = await resolveRequiredStoreId(ctx.user, input.storeId);
+        if (!await getJourneyById(input.id, storeId)) throw new TRPCError({ code: "NOT_FOUND" });
         const token = crypto.randomBytes(32).toString('hex');
-        await updateJourney(input.id, { webhookToken: token } as Parameters<typeof updateJourney>[1]);
+        await updateJourney(input.id, { webhookToken: token } as Parameters<typeof updateJourney>[1], storeId);
         return { token };
       }),
-    getWebhookToken: adminProcedure
-      .input(z.object({ id: z.number() }))
-      .query(async ({ input }) => {
-        const j = await getJourneyById(input.id);
+    getWebhookToken: staffProcedure
+      .input(z.object({ id: z.number(), storeId: z.number().optional() }))
+      .query(async ({ input, ctx }) => {
+        const j = await getJourneyById(input.id, await resolveRequiredStoreId(ctx.user, input.storeId));
         if (!j) throw new TRPCError({ code: 'NOT_FOUND' });
         return { token: (j as Record<string, unknown>).webhookToken as string | null };
       }),
-    processExecutions: adminProcedure.mutation(async () => {
-      await processJourneyExecutions();
+    processExecutions: staffProcedure
+      .input(z.object({ storeId: z.number().optional() }))
+      .mutation(async ({ input, ctx }) => {
+      const storeId = await resolveRequiredStoreId(ctx.user, input.storeId);
+      await processJourneyExecutions(storeId);
       return { ok: true };
-    }),
-    getExecutionLogs: adminProcedure
-      .input(z.object({ executionId: z.number() }))
-      .query(async ({ input }) => {
-        const execs = await listExecutions();
+      }),
+    getExecutionLogs: staffProcedure
+      .input(z.object({ executionId: z.number(), storeId: z.number().optional() }))
+      .query(async ({ input, ctx }) => {
+        const execs = await listExecutions(undefined, await resolveRequiredStoreId(ctx.user, input.storeId));
         const exec = execs.find(e => e.id === input.executionId);
         if (!exec) throw new TRPCError({ code: 'NOT_FOUND' });
         return {
@@ -3784,29 +4265,33 @@ export const appRouter = router({
           logs: exec.logs ? JSON.parse(exec.logs) as Array<{ at: string; msg: string }> : [],
         };
       }),
-    testTrigger: adminProcedure
+    testTrigger: staffProcedure
       .input(z.object({
         journeyId: z.number(),
+        storeId: z.number().optional(),
         trigger: z.enum(['checkout_abandoned', 'tag_inativo_15', 'tag_inativo_30', 'tag_inativo_60', 'tag_inativo_custom', 'first_order', 'new_user', 'club_subscriber', 'manual', 'order_delivered', 'order_cancelled', 'birthday', 'loyalty_milestone', 'rating_submitted', 'rating_negative', 'club_expiring', 'first_order_month']),
         userId: z.number().optional(),
         phone: z.string().optional(),
       }))
       .mutation(async ({ input, ctx }) => {
+        const storeId = await resolveRequiredStoreId(ctx.user, input.storeId);
+        if (!await getJourneyById(input.journeyId, storeId)) throw new TRPCError({ code: "NOT_FOUND" });
         const targetUserId = input.userId ?? ctx.user.id;
         await startJourneyExecution(input.journeyId, targetUserId, input.phone);
         return { ok: true, message: `Gatilho disparado para jornada #${input.journeyId} com usuário #${targetUserId}` };
       }),
 
     // ── Painel A/B: estatísticas de grupos A e B por jornada ─────────────────
-    getAbStats: adminProcedure
-      .input(z.object({ journeyId: z.number() }))
-      .query(async ({ input }) => {
+    getAbStats: staffProcedure
+      .input(z.object({ journeyId: z.number(), storeId: z.number().optional() }))
+      .query(async ({ input, ctx }) => {
         const db = await getDb();
         if (!db) return { groupA: 0, groupB: 0, conversionA: 0, conversionB: 0, revenueA: 0, revenueB: 0 };
+        const storeId = await resolveRequiredStoreId(ctx.user, input.storeId);
         const execs = await db
           .select()
           .from(journeyExecutions)
-          .where(eq(journeyExecutions.journeyId, input.journeyId));
+          .where(and(eq(journeyExecutions.journeyId, input.journeyId), eq(journeyExecutions.storeId, storeId)));
         const groupA = execs.filter(e => e.abGroup === 'A');
         const groupB = execs.filter(e => e.abGroup === 'B');
         const convA = groupA.filter(e => e.convertedAt !== null).length;
@@ -3837,27 +4322,57 @@ export const appRouter = router({
       }),
 
     // ── Métricas globais de automações ───────────────────────────────────────
-    getGlobalMetrics: adminProcedure
+    health: staffProcedure
+      .input(z.object({ storeId: z.number().optional() }))
+      .query(async ({ input, ctx }) => {
+        const db = await getDb();
+        const storeId = await resolveRequiredStoreId(ctx.user, input.storeId);
+        if (!db) return {
+          status: "critical" as const,
+          running: 0,
+          overdue: 0,
+          failedLast7Days: 0,
+          completedLast7Days: 0,
+          channels: { push: false, whatsapp: false, email: false },
+          lastExecutionAt: null,
+        };
+
+        const since = new Date(Date.now() - 7 * 86_400_000);
+        const [runningRows, recentRows, latestRows] = await Promise.all([
+          db.select({ id: journeyExecutions.id, nextStepAt: journeyExecutions.nextStepAt }).from(journeyExecutions).where(and(eq(journeyExecutions.storeId, storeId), eq(journeyExecutions.status, "running"))).limit(10_000),
+          db.select({ status: journeyExecutions.status }).from(journeyExecutions).where(and(eq(journeyExecutions.storeId, storeId), gte(journeyExecutions.startedAt, since))).limit(20_000),
+          db.select({ startedAt: journeyExecutions.startedAt }).from(journeyExecutions).where(eq(journeyExecutions.storeId, storeId)).orderBy(desc(journeyExecutions.startedAt)).limit(1),
+        ]);
+        const now = Date.now();
+        const overdue = runningRows.filter((item) => item.nextStepAt && item.nextStepAt.getTime() < now - 5 * 60_000).length;
+        const failedLast7Days = recentRows.filter((item) => item.status === "failed").length;
+        const completedLast7Days = recentRows.filter((item) => item.status === "completed").length;
+        const channels = {
+          push: Boolean(process.env.VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY),
+          whatsapp: (process.env.WHATSAPP_PROVIDER ?? "none") !== "none",
+          email: Boolean(process.env.RESEND_API_KEY),
+        };
+        const status = overdue > 20 || failedLast7Days > 50
+          ? "critical" as const
+          : overdue > 0 || failedLast7Days > 0 || !channels.push
+            ? "attention" as const
+            : "healthy" as const;
+        return { status, running: runningRows.length, overdue, failedLast7Days, completedLast7Days, channels, lastExecutionAt: latestRows[0]?.startedAt ?? null };
+      }),
+
+    getGlobalMetrics: staffProcedure
       .input(z.object({ storeId: z.number().optional() }).optional())
       .query(async ({ input, ctx }) => {
         const db = await getDb();
         if (!db) return { totalExecutions: 0, completedExecutions: 0, conversions: 0, conversionRate: 0, attributedRevenue: 0, activeJourneys: 0, topJourneys: [] };
-        const storeId = await resolveStoreId(ctx.user, input?.storeId);
+        const storeId = await resolveRequiredStoreId(ctx.user, input?.storeId);
         const now = new Date();
         const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
         // Execuções do mês
         let allExecs = await db
           .select()
           .from(journeyExecutions)
-          .where(gte(journeyExecutions.startedAt, monthStart));
-        if (storeId) {
-          const storeUserRows = await db
-            .selectDistinct({ userId: orders.userId })
-            .from(orders)
-            .where(and(eq(orders.storeId, storeId), isNotNull(orders.userId)));
-          const allowedUserIds = new Set(storeUserRows.map((row) => row.userId).filter((value): value is number => typeof value === "number"));
-          allExecs = allExecs.filter((execution) => allowedUserIds.has(execution.userId));
-        }
+          .where(and(eq(journeyExecutions.storeId, storeId), gte(journeyExecutions.startedAt, monthStart)));
         const completed = allExecs.filter(e => e.status === 'completed').length;
         const conversions = allExecs.filter(e => e.convertedAt !== null).length;
         // Receita atribuída
@@ -3868,13 +4383,13 @@ export const appRouter = router({
           attributedRevenue = convOrders.reduce((sum, o) => sum + Number(o.total ?? 0), 0);
         }
         // Jornadas ativas
-        const activeJourneysList = await db.select({ id: journeys.id, name: journeys.name }).from(journeys).where(eq(journeys.status, 'active'));
+        const activeJourneysList = await db.select({ id: journeys.id, name: journeys.name }).from(journeys).where(and(eq(journeys.storeId, storeId), eq(journeys.status, 'active')));
         // Top 5 jornadas por execuções no mês
         const execsByJourney = allExecs.reduce((acc, e) => {
           acc[e.journeyId] = (acc[e.journeyId] ?? 0) + 1;
           return acc;
         }, {} as Record<number, number>);
-        const allJourneysList = await db.select({ id: journeys.id, name: journeys.name }).from(journeys);
+        const allJourneysList = await db.select({ id: journeys.id, name: journeys.name }).from(journeys).where(eq(journeys.storeId, storeId));
         const topJourneys = Object.entries(execsByJourney)
           .sort(([, a], [, b]) => b - a)
           .slice(0, 5)
@@ -3896,15 +4411,16 @@ export const appRouter = router({
       }),
 
     // ── Histórico de jornadas por cliente ────────────────────────────────────
-    getCustomerJourneyHistory: adminProcedure
-      .input(z.object({ userId: z.number() }))
-      .query(async ({ input }) => {
+    getCustomerJourneyHistory: staffProcedure
+      .input(z.object({ userId: z.number(), storeId: z.number().optional() }))
+      .query(async ({ input, ctx }) => {
         const db = await getDb();
         if (!db) return [];
+        const storeId = await resolveRequiredStoreId(ctx.user, input.storeId);
         const execs = await db
           .select()
           .from(journeyExecutions)
-          .where(eq(journeyExecutions.userId, input.userId))
+          .where(and(eq(journeyExecutions.storeId, storeId), eq(journeyExecutions.userId, input.userId)))
           .orderBy(desc(journeyExecutions.startedAt))
           .limit(50);
         const journeyIds = Array.from(new Set(execs.map(e => e.journeyId)));
@@ -3931,9 +4447,9 @@ export const appRouter = router({
         storeId: z.number().optional(),
       }))
       .query(async ({ input, ctx }) => {
-        const storeId = await resolveStoreId(ctx.user, input.storeId);
+        const storeId = await resolveRequiredStoreId(ctx.user, input.storeId);
         if (input.tag) {
-          const customers = await getCrmCustomersByTag(input.tag);
+          const customers = await getCrmCustomersByTag(input.tag, storeId);
           return { customers, total: customers.length };
         }
         const [customers, total] = await Promise.all([
@@ -3942,87 +4458,89 @@ export const appRouter = router({
         ]);
         return { customers, total };
       }),
-    getCustomerDetail: adminProcedure
+    getCustomerDetail: staffProcedure
       .input(z.object({ userId: z.number(), storeId: z.number().optional() }))
       .query(async ({ input, ctx }) => {
-        const storeId = await resolveStoreId(ctx.user, input.storeId);
+        const storeId = await resolveRequiredStoreId(ctx.user, input.storeId);
         const detail = await getCrmCustomerDetail(input.userId, storeId);
         if (!detail) throw new TRPCError({ code: 'NOT_FOUND' });
         const [tags, executions, carts] = await Promise.all([
-          getTagsForCustomer(input.userId),
-          getJourneyExecutionsByUser(input.userId),
-          getAbandonedCartsByUser(input.userId),
+          getTagsForCustomer(input.userId, storeId),
+          getJourneyExecutionsByUser(input.userId, storeId),
+          getAbandonedCartsByUser(input.userId, storeId),
         ]);
         return { ...detail, tags, executions, carts };
       }),
-    assignTag: adminProcedure
-      .input(z.object({ userId: z.number(), tag: z.string() }))
-      .mutation(async ({ input }) => {
-        await assignTagToCustomer(input.userId, input.tag);
+    assignTag: staffProcedure
+      .input(z.object({ userId: z.number(), tag: z.string(), storeId: z.number().optional() }))
+      .mutation(async ({ input, ctx }) => {
+        await assignTagToCustomer(input.userId, input.tag, await resolveRequiredStoreId(ctx.user, input.storeId));
         return { ok: true };
       }),
-    removeTag: adminProcedure
-      .input(z.object({ userId: z.number(), tag: z.string() }))
-      .mutation(async ({ input }) => {
-        await removeTagFromCustomer(input.userId, input.tag);
+    removeTag: staffProcedure
+      .input(z.object({ userId: z.number(), tag: z.string(), storeId: z.number().optional() }))
+      .mutation(async ({ input, ctx }) => {
+        await removeTagFromCustomer(input.userId, input.tag, await resolveRequiredStoreId(ctx.user, input.storeId));
         return { ok: true };
       }),
-    getStats: adminProcedure
+    getStats: staffProcedure
       .input(z.object({ storeId: z.number().optional() }).optional())
       .query(async ({ input, ctx }) => {
-        const storeId = await resolveStoreId(ctx.user, input?.storeId);
+        const storeId = await resolveRequiredStoreId(ctx.user, input?.storeId);
         return getCrmStats(storeId);
       }),
 
     // ── Tags Personalizadas ──────────────────────────────────────────────
-    listCustomTags: adminProcedure.query(async () => {
-      return listCustomTags();
-    }),
-    createCustomTag: adminProcedure
-      .input(z.object({ name: z.string().min(1).max(100), color: z.string().default("#6b7280"), description: z.string().optional() }))
-      .mutation(async ({ input }) => {
-        const id = await createCustomTag(input);
+    listCustomTags: staffProcedure
+      .input(z.object({ storeId: z.number().optional() }))
+      .query(async ({ input, ctx }) => listCustomTags(await resolveRequiredStoreId(ctx.user, input.storeId))),
+    createCustomTag: staffProcedure
+      .input(z.object({ name: z.string().min(1).max(100), color: z.string().default("#6b7280"), description: z.string().optional(), storeId: z.number().optional() }))
+      .mutation(async ({ input, ctx }) => {
+        const id = await createCustomTag({ ...input, storeId: await resolveRequiredStoreId(ctx.user, input.storeId) });
         return { id };
       }),
-    updateCustomTag: adminProcedure
-      .input(z.object({ id: z.number(), name: z.string().optional(), color: z.string().optional(), description: z.string().optional() }))
-      .mutation(async ({ input }) => {
-        const { id, ...data } = input;
-        await updateCustomTag(id, data);
+    updateCustomTag: staffProcedure
+      .input(z.object({ id: z.number(), name: z.string().optional(), color: z.string().optional(), description: z.string().optional(), storeId: z.number().optional() }))
+      .mutation(async ({ input, ctx }) => {
+        const { id, storeId: requestedStoreId, ...data } = input;
+        await updateCustomTag(id, await resolveRequiredStoreId(ctx.user, requestedStoreId), data);
         return { ok: true };
       }),
-    deleteCustomTag: adminProcedure
-      .input(z.object({ id: z.number() }))
-      .mutation(async ({ input }) => {
-        await deleteCustomTag(input.id);
+    deleteCustomTag: staffProcedure
+      .input(z.object({ id: z.number(), storeId: z.number().optional() }))
+      .mutation(async ({ input, ctx }) => {
+        await deleteCustomTag(input.id, await resolveRequiredStoreId(ctx.user, input.storeId));
         return { ok: true };
       }),
-    assignCustomTag: adminProcedure
-      .input(z.object({ userId: z.number(), tagId: z.number() }))
-      .mutation(async ({ input }) => {
-        await assignCustomTagToCustomer(input.userId, input.tagId);
+    assignCustomTag: staffProcedure
+      .input(z.object({ userId: z.number(), tagId: z.number(), storeId: z.number().optional() }))
+      .mutation(async ({ input, ctx }) => {
+        await assignCustomTagToCustomer(input.userId, input.tagId, await resolveRequiredStoreId(ctx.user, input.storeId));
         return { ok: true };
       }),
-    removeCustomTag: adminProcedure
-      .input(z.object({ userId: z.number(), tagId: z.number() }))
-      .mutation(async ({ input }) => {
-        await removeCustomTagFromCustomer(input.userId, input.tagId);
+    removeCustomTag: staffProcedure
+      .input(z.object({ userId: z.number(), tagId: z.number(), storeId: z.number().optional() }))
+      .mutation(async ({ input, ctx }) => {
+        await removeCustomTagFromCustomer(input.userId, input.tagId, await resolveRequiredStoreId(ctx.user, input.storeId));
         return { ok: true };
       }),
-    getCustomTagsForCustomer: adminProcedure
-      .input(z.object({ userId: z.number() }))
-      .query(async ({ input }) => {
-        return getCustomTagsForCustomer(input.userId);
+    getCustomTagsForCustomer: staffProcedure
+      .input(z.object({ userId: z.number(), storeId: z.number().optional() }))
+      .query(async ({ input, ctx }) => {
+        return getCustomTagsForCustomer(input.userId, await resolveRequiredStoreId(ctx.user, input.storeId));
       }),
-    getCustomersByCustomTag: adminProcedure
-      .input(z.object({ tagName: z.string() }))
-      .query(async ({ input }) => {
-        return getCustomersByCustomTagName(input.tagName);
+    getCustomersByCustomTag: staffProcedure
+      .input(z.object({ tagName: z.string(), storeId: z.number().optional() }))
+      .query(async ({ input, ctx }) => {
+        return getCustomersByCustomTagName(input.tagName, await resolveRequiredStoreId(ctx.user, input.storeId));
       }),
-    triggerJourneyForTag: adminProcedure
-      .input(z.object({ journeyId: z.number(), tag: z.string() }))
-      .mutation(async ({ input }) => {
-        const customers = await getCrmCustomersByTag(input.tag);
+    triggerJourneyForTag: staffProcedure
+      .input(z.object({ journeyId: z.number(), tag: z.string(), storeId: z.number().optional() }))
+      .mutation(async ({ input, ctx }) => {
+        const storeId = await resolveRequiredStoreId(ctx.user, input.storeId);
+        if (!await getJourneyById(input.journeyId, storeId)) throw new TRPCError({ code: "NOT_FOUND" });
+        const customers = await getCrmCustomersByTag(input.tag, storeId);
         let started = 0;
         for (const c of customers) {
           const r = await startJourneyExecution(input.journeyId, c.id, c.phone ?? undefined);
@@ -4030,11 +4548,13 @@ export const appRouter = router({
         }
         return { started, total: customers.length };
       }),
-    triggerJourneyForCustomer: adminProcedure
-      .input(z.object({ journeyId: z.number(), userId: z.number() }))
-      .mutation(async ({ input }) => {
+    triggerJourneyForCustomer: staffProcedure
+      .input(z.object({ journeyId: z.number(), userId: z.number(), storeId: z.number().optional() }))
+      .mutation(async ({ input, ctx }) => {
+        const storeId = await resolveRequiredStoreId(ctx.user, input.storeId);
+        if (!await getJourneyById(input.journeyId, storeId)) throw new TRPCError({ code: "NOT_FOUND" });
         const db = await import('./db.ts');
-        const detail = await db.getCrmCustomerDetail(input.userId);
+        const detail = await db.getCrmCustomerDetail(input.userId, storeId);
         if (!detail) throw new TRPCError({ code: 'NOT_FOUND', message: 'Cliente não encontrado' });
         const r = await startJourneyExecution(input.journeyId, input.userId, detail.user.phone ?? undefined);
         return { started: r > 0 ? 1 : 0 };
@@ -4044,16 +4564,22 @@ export const appRouter = router({
   // ── Templates de Notificação ──────────────────────────────────────────────
   notificationTemplates: router({
     list: staffProcedure
-      .input(z.object({ event: z.string().optional(), channel: z.string().optional() }).optional())
-      .query(async ({ input }) => listNotificationTemplates(input ?? {})),
+      .input(z.object({ storeId: z.number().optional(), event: z.string().optional(), channel: z.string().optional() }).optional())
+      .query(async ({ ctx, input }) => listNotificationTemplates({
+        ...input,
+        storeId: await resolveRequiredStoreId(ctx.user, input?.storeId),
+      })),
 
-    seed: staffProcedure.mutation(async () => {
-      await seedNotificationTemplates();
-      return { ok: true };
-    }),
+    seed: staffProcedure
+      .input(z.object({ storeId: z.number().optional() }))
+      .mutation(async ({ ctx, input }) => {
+        await seedNotificationTemplates(await resolveRequiredStoreId(ctx.user, input.storeId));
+        return { ok: true };
+      }),
 
      create: staffProcedure
       .input(z.object({
+        storeId: z.number().optional(),
         event: z.enum(['order_confirmed', 'order_preparing', 'order_out_for_delivery', 'order_delivered', 'order_cancelled', 'cart_abandoned_step1', 'cart_abandoned_step2', 'cart_abandoned_step3', 'reactivation_15', 'reactivation_30', 'reactivation_60', 'custom']),
         channel: z.enum(['push', 'whatsapp', 'both']).default('both'),
         title: z.string().min(1).max(200),
@@ -4061,58 +4587,72 @@ export const appRouter = router({
         redirectUrl: z.string().max(500).optional(),
         isActive: z.boolean().default(true),
       }))
-      .mutation(async ({ input }) => {
-        const id = await createNotificationTemplate(input);
+      .mutation(async ({ ctx, input }) => {
+        const id = await createNotificationTemplate({
+          ...input,
+          storeId: await resolveRequiredStoreId(ctx.user, input.storeId),
+        });
         return { id };
       }),
     update: staffProcedure
       .input(z.object({
         id: z.number(),
+        storeId: z.number().optional(),
         title: z.string().min(1).max(200).optional(),
         body: z.string().min(1).optional(),
         isActive: z.boolean().optional(),
         channel: z.enum(['push', 'whatsapp', 'both']).optional(),
         redirectUrl: z.string().max(500).optional().nullable(),
       }))
-      .mutation(async ({ input }) => {
-        const { id, ...data } = input;
-        await updateNotificationTemplate(id, data);
+      .mutation(async ({ ctx, input }) => {
+        const { id, storeId: requestedStoreId, ...data } = input;
+        await updateNotificationTemplate(id, await resolveRequiredStoreId(ctx.user, requestedStoreId), data);
         return { ok: true };
       }),
 
     delete: staffProcedure
-      .input(z.object({ id: z.number() }))
-      .mutation(async ({ input }) => {
-        await deleteNotificationTemplate(input.id);
+      .input(z.object({ id: z.number(), storeId: z.number().optional() }))
+      .mutation(async ({ ctx, input }) => {
+        await deleteNotificationTemplate(input.id, await resolveRequiredStoreId(ctx.user, input.storeId));
         return { ok: true };
       }),
 
     // Disparo de notificação personalizada em massa
     sendCustom: staffProcedure
       .input(z.object({
+        storeId: z.number().optional(),
         title: z.string().min(1).max(200),
         body: z.string().min(1),
         redirectUrl: z.string().optional(), // ex: "/cardapio", "/promocoes", URL completa
-        tag: z.string().optional(),         // tag de cliente para segmentar (ex: "inativo_30")
+        tag: z.enum(['novo', 'recorrente', 'indeciso', 'inativo_15', 'inativo_30', 'inativo_60']).optional(),
         // se tag for undefined, envia para todos
       }))
-      .mutation(async ({ input }) => {
-        let userIds: number[] | undefined;
+      .mutation(async ({ ctx, input }) => {
+        const storeId = await resolveRequiredStoreId(ctx.user, input.storeId);
+        const database = await getDb();
+        if (!database) {
+          throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Banco de dados indisponível" });
+        }
+        const storeCustomers = await database
+          .selectDistinct({ userId: orders.userId })
+          .from(orders)
+          .where(and(eq(orders.storeId, storeId), isNotNull(orders.userId)));
+        let userIds = storeCustomers
+          .map((row) => row.userId)
+          .filter((userId): userId is number => userId !== null);
 
         // Se tiver tag, buscar apenas os usuários com aquela tag
         if (input.tag) {
-          const { getDb } = await import('./db.ts');
           const { customerTags } = await import('../drizzle/schema.ts');
-          const { eq } = await import('drizzle-orm');
-          const db = await getDb();
-          if (db) {
-            const rows = await db
-              .select({ userId: customerTags.userId })
-              .from(customerTags)
-              .where(eq(customerTags.tag as any, input.tag));
-            userIds = rows.map((r: { userId: number }) => r.userId);
-            if (userIds.length === 0) return { sent: 0 as number, failed: 0 as number, skipped: true as boolean };
-          }
+          const rows = await database
+            .select({ userId: customerTags.userId })
+            .from(customerTags)
+            .where(and(eq(customerTags.storeId, storeId), eq(customerTags.tag, input.tag)));
+          const taggedUserIds = new Set(rows.map((row) => row.userId));
+          userIds = userIds.filter((userId) => taggedUserIds.has(userId));
+        }
+        if (userIds.length === 0) {
+          return { sent: 0 as number, failed: 0 as number, skipped: true as boolean };
         }
 
         const result = await sendPushToAllUsers(
@@ -4131,53 +4671,59 @@ export const appRouter = router({
   deliveryZones: router({
     // Público: buscar zona por bairro (usado no checkout)
     search: publicProcedure
-      .input(z.object({ query: z.string().min(1) }))
+      .input(z.object({ query: z.string().min(1), storeId: z.number().optional() }))
       .query(async ({ input }) => {
-        return searchDeliveryZones(input.query);
+        return searchDeliveryZones(input.query, input.storeId);
       }),
     getByNeighborhood: publicProcedure
-      .input(z.object({ neighborhood: z.string() }))
+      .input(z.object({ neighborhood: z.string(), storeId: z.number().optional() }))
       .query(async ({ input }) => {
-        return getDeliveryZoneByNeighborhood(input.neighborhood);
+        return getDeliveryZoneByNeighborhood(input.neighborhood, input.storeId);
       }),
     // Staff: CRUD completo
-    list: staffProcedure.query(async () => {
-      return getAllDeliveryZones(false);
-    }),
+    list: staffProcedure
+      .input(z.object({ storeId: z.number().optional() }).optional())
+      .query(async ({ input, ctx }) => getAllDeliveryZones(false, await resolveRequiredStoreId(ctx.user, input?.storeId))),
     create: staffProcedure
       .input(z.object({
+        storeId: z.number().optional(),
         neighborhood: z.string().min(1).max(200),
         city: z.string().max(200).optional(),
         deliveryFee: z.string(),
         estimatedMinutes: z.number().int().min(1).optional(),
       }))
-      .mutation(async ({ input }) => {
-        const id = await createDeliveryZone(input);
+      .mutation(async ({ input, ctx }) => {
+        const id = await createDeliveryZone({ ...input, storeId: await resolveRequiredStoreId(ctx.user, input.storeId) });
         return { id };
       }),
     update: staffProcedure
       .input(z.object({
         id: z.number(),
+        storeId: z.number().optional(),
         neighborhood: z.string().min(1).max(200).optional(),
         city: z.string().max(200).optional(),
         deliveryFee: z.string().optional(),
         estimatedMinutes: z.number().int().min(1).optional(),
         isActive: z.boolean().optional(),
       }))
-      .mutation(async ({ input }) => {
-        const { id, ...data } = input;
-        await updateDeliveryZone(id, data);
+      .mutation(async ({ input, ctx }) => {
+        const { id, storeId: requestedStoreId, ...data } = input;
+        await updateDeliveryZone(id, await resolveRequiredStoreId(ctx.user, requestedStoreId), data);
         return { ok: true };
       }),
     delete: staffProcedure
-      .input(z.object({ id: z.number() }))
-      .mutation(async ({ input }) => {
-        await deleteDeliveryZone(input.id);
+      .input(z.object({ id: z.number(), storeId: z.number().optional() }))
+      .mutation(async ({ input, ctx }) => {
+        await deleteDeliveryZone(input.id, await resolveRequiredStoreId(ctx.user, input.storeId));
         return { ok: true };
       }),
   }),
   // --- LOJAS (MULTI-TENANT) --------------------------------------------------
   stores: storesRouter,
+  platform: platformRouter,
+  siteStudio: siteStudioRouter,
+  rewards: rewardsRouter,
+  catalog: catalogRouter,
 
   restaurantNetwork: router({
     distributionProducts: staffProcedure
@@ -4371,25 +4917,34 @@ export const appRouter = router({
   menuSlides: router({
     uploadImage: staffProcedure
       .input(z.object({
+        storeId: z.number().optional(),
         base64: z.string().max(4_300_000), // keep below Vercel request-size limits
         mimeType: z.enum(["image/jpeg", "image/png", "image/webp", "image/gif"]),
         fileName: z.string().max(255).optional(),
       }))
-      .mutation(async ({ input }) => {
+      .mutation(async ({ input, ctx }) => {
+        const storeId = await resolveRequiredStoreId(ctx.user, input.storeId);
         const { storagePutAdapter: storagePut } = await import("./adapters/storage.ts");
         const { compressToWebP } = await import("./imageUtils.ts");
         const rawBuffer = Buffer.from(input.base64, "base64");
         const { buffer, mimeType, ext, reductionPct } = await compressToWebP(rawBuffer, 85, 1920);
-        const key = `banners/slide-${Date.now()}.${ext}`;
+        const key = `stores/${storeId}/banners/slide-${Date.now()}.${ext}`;
         const { url } = await storagePut(key, buffer, mimeType);
         console.log(`[upload] banner comprimido ${reductionPct}% → WebP`);
         return { url };
       }),
-    list: publicProcedure.query(() => getMenuSlides(true)),
-    listAll: staffProcedure.query(() => getMenuSlides(false)),
-    seed: staffProcedure.mutation(() => seedMenuSlides()),
+    list: publicProcedure
+      .input(z.object({ storeId: z.number().optional() }).optional())
+      .query(({ input }) => getMenuSlides(true, input?.storeId)),
+    listAll: staffProcedure
+      .input(z.object({ storeId: z.number().optional() }).optional())
+      .query(async ({ input, ctx }) => getMenuSlides(false, await resolveRequiredStoreId(ctx.user, input?.storeId))),
+    seed: staffProcedure
+      .input(z.object({ storeId: z.number().optional() }).optional())
+      .mutation(async ({ input, ctx }) => seedMenuSlides(await resolveRequiredStoreId(ctx.user, input?.storeId))),
     create: staffProcedure
       .input(z.object({
+        storeId: z.number().optional(),
         title: z.string().min(1).max(200),
         subtitle: z.string().max(300).optional().nullable(),
         imageUrl: z.string().max(2000).optional().nullable(),
@@ -4399,10 +4954,11 @@ export const appRouter = router({
         ctaLink: z.string().max(500).optional().nullable(),
         sortOrder: z.number().int().optional(),
       }))
-      .mutation(({ input }) => createMenuSlide(input)),
+      .mutation(async ({ input, ctx }) => createMenuSlide({ ...input, storeId: await resolveRequiredStoreId(ctx.user, input.storeId) })),
     update: staffProcedure
       .input(z.object({
         id: z.number(),
+        storeId: z.number().optional(),
         title: z.string().min(1).max(200).optional(),
         subtitle: z.string().max(300).optional().nullable(),
         imageUrl: z.string().max(2000).optional().nullable(),
@@ -4413,47 +4969,53 @@ export const appRouter = router({
         sortOrder: z.number().int().optional(),
         isActive: z.boolean().optional(),
       }))
-      .mutation(async ({ input }) => {
-        const { id, ...data } = input;
-        return updateMenuSlide(id, data);
+      .mutation(async ({ input, ctx }) => {
+        const { id, storeId: requestedStoreId, ...data } = input;
+        return updateMenuSlide(id, await resolveRequiredStoreId(ctx.user, requestedStoreId), data);
       }),
     delete: staffProcedure
-      .input(z.object({ id: z.number() }))
-      .mutation(async ({ input }) => {
-        await deleteMenuSlide(input.id);
+      .input(z.object({ id: z.number(), storeId: z.number().optional() }))
+      .mutation(async ({ input, ctx }) => {
+        await deleteMenuSlide(input.id, await resolveRequiredStoreId(ctx.user, input.storeId));
         return { ok: true };
       }),
   }),
 
   // --- CARROSSEL HERO --------------------------------------------------------
   carousel: router({
-    list: publicProcedure.query(() => getCarouselImages(true)),
-    listAll: staffProcedure.query(() => getCarouselImages(false)),
+    list: publicProcedure
+      .input(z.object({ storeId: z.number().optional() }).optional())
+      .query(({ input }) => getCarouselImages(true, input?.storeId)),
+    listAll: staffProcedure
+      .input(z.object({ storeId: z.number().optional() }).optional())
+      .query(async ({ input, ctx }) => getCarouselImages(false, await resolveRequiredStoreId(ctx.user, input?.storeId))),
     uploadImage: staffProcedure
       .input(z.object({
+        storeId: z.number().optional(),
         base64: z.string().max(4_300_000), // keep below Vercel request-size limits
         mimeType: z.enum(["image/jpeg", "image/png", "image/webp", "image/gif"]),
         fileName: z.string().max(255).optional(),
       }))
-      .mutation(async ({ input }) => {
+      .mutation(async ({ input, ctx }) => {
+        const storeId = await resolveRequiredStoreId(ctx.user, input.storeId);
         const { storagePutAdapter: storagePut } = await import("./adapters/storage.ts");
         const { compressToWebP } = await import("./imageUtils.ts");
         const rawBuffer = Buffer.from(input.base64, "base64");
         const { buffer, mimeType, ext, reductionPct } = await compressToWebP(rawBuffer, 85, 1920);
-        const key = `carousel/hero-${Date.now()}.${ext}`;
+        const key = `stores/${storeId}/carousel/hero-${Date.now()}.${ext}`;
         const { url } = await storagePut(key, buffer, mimeType);
         console.log(`[upload] carrossel comprimido ${reductionPct}% → WebP`);
         return { url };
       }),
     create: staffProcedure
-      .input(z.object({ imageUrl: z.string().min(1), title: z.string().optional().nullable(), sortOrder: z.number().optional() }))
-      .mutation(({ input }) => createCarouselImage(input)),
+      .input(z.object({ storeId: z.number().optional(), imageUrl: z.string().min(1), title: z.string().optional().nullable(), sortOrder: z.number().optional() }))
+      .mutation(async ({ input, ctx }) => createCarouselImage({ ...input, storeId: await resolveRequiredStoreId(ctx.user, input.storeId) })),
     update: staffProcedure
-      .input(z.object({ id: z.number(), imageUrl: z.string().optional(), title: z.string().optional().nullable(), sortOrder: z.number().optional(), active: z.boolean().optional() }))
-      .mutation(({ input }) => { const { id, ...data } = input; return updateCarouselImage(id, data); }),
+      .input(z.object({ id: z.number(), storeId: z.number().optional(), imageUrl: z.string().optional(), title: z.string().optional().nullable(), sortOrder: z.number().optional(), active: z.boolean().optional() }))
+      .mutation(async ({ input, ctx }) => { const { id, storeId: requestedStoreId, ...data } = input; return updateCarouselImage(id, await resolveRequiredStoreId(ctx.user, requestedStoreId), data); }),
     delete: staffProcedure
-      .input(z.object({ id: z.number() }))
-      .mutation(async ({ input }) => { await deleteCarouselImage(input.id); return { ok: true }; }),
+      .input(z.object({ id: z.number(), storeId: z.number().optional() }))
+      .mutation(async ({ input, ctx }) => { await deleteCarouselImage(input.id, await resolveRequiredStoreId(ctx.user, input.storeId)); return { ok: true }; }),
   }),
 
   // ─── RECOVERY DASHBOARD ─────────────────────────────────────────────────────────────
@@ -4677,19 +5239,24 @@ export const appRouter = router({
   // --- CLIENT ALERTS ----------------------------------------------------------
   clientAlerts: router({
     // Lista alertas ativos não lidos pelo cliente logado
-    list: protectedProcedure.query(({ ctx }) => listClientAlerts(ctx.user.id)),
+    list: protectedProcedure
+      .input(z.object({ storeId: z.number().int().positive() }))
+      .query(({ ctx, input }) => listClientAlerts(ctx.user.id, input.storeId)),
 
     // Conta alertas não lidos (para badge no nav)
-    unreadCount: protectedProcedure.query(({ ctx }) => countUnreadClientAlerts(ctx.user.id)),
+    unreadCount: protectedProcedure
+      .input(z.object({ storeId: z.number().int().positive() }))
+      .query(({ ctx, input }) => countUnreadClientAlerts(ctx.user.id, input.storeId)),
 
     // Marca alerta como lido
     dismiss: protectedProcedure
-      .input(z.object({ alertId: z.number() }))
-      .mutation(({ input, ctx }) => dismissClientAlert(input.alertId, ctx.user.id)),
+      .input(z.object({ alertId: z.number(), storeId: z.number().int().positive() }))
+      .mutation(({ input, ctx }) => dismissClientAlert(input.alertId, ctx.user.id, input.storeId)),
 
     // Admin: criar alerta manual (novidades do clube, comunicados etc.)
     createManual: staffProcedure
       .input(z.object({
+        storeId: z.number().optional(),
         type: z.enum(["promotion", "raffle", "coupon", "club", "custom"]),
         title: z.string().min(1),
         message: z.string().min(1),
@@ -4697,7 +5264,10 @@ export const appRouter = router({
         url: z.string().optional(),
         expiresAt: z.date().optional(),
       }))
-      .mutation(({ input }) => createClientAlert(input)),
+      .mutation(async ({ input, ctx }) => createClientAlert({
+        ...input,
+        storeId: await resolveRequiredStoreId(ctx.user, input.storeId),
+      })),
   }),
 });
 export type AppRouter = typeof appRouter;

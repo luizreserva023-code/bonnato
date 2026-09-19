@@ -5,6 +5,7 @@ import { useCart } from "@/contexts/CartContext";
 import { trpc } from "@/lib/trpc";
 import { ShoppingCart, X, Zap, TrendingDown } from "lucide-react";
 import { useState } from "react";
+import { useStore } from "@/contexts/StoreContext";
 
 interface UpsellModalProps {
   open: boolean;
@@ -18,17 +19,18 @@ type Phase = "upsell" | "downsell" | "done";
 
 export function UpsellModal({ open, onAccept, onDecline, cartProductIds, cartTotal }: UpsellModalProps) {
   const { addItem } = useCart();
+  const { selectedStore } = useStore();
   const [currentIndex, setCurrentIndex] = useState(0);
   const [phase, setPhase] = useState<Phase>("upsell");
 
   const { data: upsells, isLoading } = trpc.upsells.forCart.useQuery(
-    { productIds: cartProductIds, cartTotal },
-    { enabled: open }
+    { productIds: cartProductIds, cartTotal, storeId: selectedStore?.id },
+    { enabled: open && Boolean(selectedStore?.id) }
   );
 
   const { data: products } = trpc.products.list.useQuery(
-    { categoryId: undefined },
-    { enabled: open }
+    { categoryId: undefined, storeId: selectedStore?.id },
+    { enabled: open && Boolean(selectedStore?.id) }
   );
 
   if (!open) return null;

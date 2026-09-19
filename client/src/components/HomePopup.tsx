@@ -1,55 +1,48 @@
-import { useState, useEffect, useCallback } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useLocation } from "wouter";
-import { X, Tag, Clock, ChevronRight, Copy, CheckCircle2 } from "lucide-react";
+import { CheckCircle2, ChevronRight, Clock, Copy, Flame, Tag, Truck, X } from "lucide-react";
+
 import { trpc } from "@/lib/trpc";
-import { ShinyButton } from "@/components/ui/shiny-button";
 
 const POPUP_SESSION_KEY = "bonatto_popup_shown";
-const POPUP_DELAY_MS = 60_000; // 1 minuto
+const POPUP_DELAY_MS = 60_000;
 
 export function HomePopup() {
   const [visible, setVisible] = useState(false);
   const [copied, setCopied] = useState(false);
-  const [countdown, setCountdown] = useState(15); // urgency countdown after popup opens
+  const [countdown, setCountdown] = useState(15);
   const [, setLocation] = useLocation();
 
   const { data: couponData } = trpc.coupons.getHomePopupCoupon.useQuery(undefined, {
     staleTime: Infinity,
   });
 
-  // Show popup after POPUP_DELAY_MS, only once per session
   useEffect(() => {
     if (sessionStorage.getItem(POPUP_SESSION_KEY)) return;
-
-    const timer = setTimeout(() => {
+    const timer = window.setTimeout(() => {
       setVisible(true);
       sessionStorage.setItem(POPUP_SESSION_KEY, "1");
     }, POPUP_DELAY_MS);
-
-    return () => clearTimeout(timer);
+    return () => window.clearTimeout(timer);
   }, []);
 
-  // Urgency countdown (15 → 0 minutes display)
   useEffect(() => {
     if (!visible) return;
-    const interval = setInterval(() => {
-      setCountdown((prev) => {
-        if (prev <= 1) { clearInterval(interval); return 0; }
-        return prev - 1;
-      });
-    }, 60_000); // decrement every real minute
-    return () => clearInterval(interval);
+    const interval = window.setInterval(() => {
+      setCountdown((current) => Math.max(0, current - 1));
+    }, 60_000);
+    return () => window.clearInterval(interval);
   }, [visible]);
 
   const handleClose = useCallback(() => setVisible(false), []);
 
   const handleCopy = useCallback(() => {
     if (!couponData?.code) return;
-    navigator.clipboard.writeText(couponData.code).then(() => {
+    void navigator.clipboard.writeText(couponData.code).then(() => {
       setCopied(true);
-      setTimeout(() => setCopied(false), 2500);
+      window.setTimeout(() => setCopied(false), 2500);
     });
-  }, [couponData]);
+  }, [couponData?.code]);
 
   const handleCTA = useCallback(() => {
     handleClose();
@@ -58,134 +51,95 @@ export function HomePopup() {
 
   if (!visible || !couponData?.active) return null;
 
-  const code = couponData.code;
-
   return (
     <>
-      {/* Backdrop */}
       <div
-        className="fixed inset-0 z-[9998] bg-black/60 backdrop-blur-sm animate-in fade-in duration-300"
+        className="fixed inset-0 z-[9998] bg-black/55 backdrop-blur-sm animate-in fade-in duration-300"
         onClick={handleClose}
         aria-hidden="true"
       />
 
-      {/* Popup card — mobile: centralizado verticalmente com scroll se necessário */}
       <div
         role="dialog"
         aria-modal="true"
         aria-label="Oferta exclusiva"
-        className="fixed z-[9999] inset-0 flex items-center justify-center p-4"
+        className="fixed inset-0 z-[9999] flex items-end justify-center p-0 sm:items-center sm:p-4"
       >
-        <div className="bg-white rounded-2xl shadow-2xl overflow-hidden w-full max-w-sm animate-in zoom-in-95 slide-in-from-bottom-4 duration-300 max-h-[90dvh] flex flex-col">
-
-          {/* Header banner */}
-          <div className="relative bg-gradient-to-br from-[#6E0D12] via-[#8B1016] to-[#4a0a0d] px-6 pt-8 pb-8 text-white text-center overflow-hidden flex-shrink-0">
-            {/* Decorative circles */}
-            <div className="absolute -top-8 -right-8 w-32 h-32 bg-white/5 rounded-full" />
-            <div className="absolute -bottom-12 -left-6 w-40 h-40 bg-white/5 rounded-full" />
-
-            {/* Close button */}
+        <div className="flex max-h-[calc(100dvh-0.75rem)] w-full max-w-md animate-in flex-col overflow-hidden rounded-t-[28px] bg-white shadow-2xl slide-in-from-bottom-4 duration-300 sm:max-h-[min(92dvh,680px)] sm:rounded-[28px] sm:zoom-in-95">
+          <header className="relative flex-shrink-0 overflow-hidden bg-[var(--tenant-header,#DA1923)] px-5 pb-5 pt-7 text-center text-white sm:px-8 sm:pb-7 sm:pt-8">
+            <div className="absolute -right-10 -top-12 h-32 w-32 rounded-full bg-[#b51620]" />
             <button
+              type="button"
               onClick={handleClose}
-              className="absolute top-3 right-3 text-white/60 hover:text-white transition-colors p-1.5 rounded-full hover:bg-white/10"
+              className="absolute right-3 top-3 z-10 rounded-full p-1.5 text-white/70 hover:bg-white/10 hover:text-white"
               aria-label="Fechar"
             >
-              <X className="w-5 h-5" />
+              <X className="h-5 w-5" />
             </button>
 
-            {/* Urgency badge */}
-            <div className="inline-flex items-center gap-1.5 bg-yellow-400 text-yellow-900 text-xs font-bold px-3 py-1 rounded-full mb-3 uppercase tracking-wide">
-              <Clock className="w-3.5 h-3.5" />
+            <div className="relative mb-3 inline-flex items-center gap-1.5 rounded-full bg-[#ffca32] px-3 py-1 text-[10px] font-bold uppercase tracking-wide text-[#5c3400] sm:text-xs">
+              <Clock className="h-3.5 w-3.5" />
               Oferta por tempo limitado
             </div>
-
-            {/* Headline */}
-            <h2 className="text-2xl font-black leading-tight mb-2">
-              Espera! 🍕<br />
-              <span className="text-yellow-300">10% OFF</span> no seu<br />
-              primeiro pedido
+            <h2 className="relative mx-auto flex max-w-full flex-col items-center uppercase">
+              <span className="text-[2.65rem] font-black leading-none tracking-[-0.035em] text-[#ffca32] sm:text-[3.25rem]">
+                10% OFF
+              </span>
+              <span className="mt-1 whitespace-nowrap text-[1.55rem] font-black leading-none tracking-[-0.025em] text-white sm:text-[1.9rem]">
+                no primeiro pedido
+              </span>
             </h2>
-
-            <p className="text-white/80 text-sm leading-relaxed">
-              Você ficou aqui e a gente notou.<br />
-              Que tal uma pizza fresquinha com desconto especial?
+            <p className="relative mx-auto mt-3 max-w-[32ch] text-xs leading-relaxed text-white/75 sm:text-sm">
+              Seu primeiro sabor Bonatto ficou ainda melhor.
             </p>
-          </div>
+          </header>
 
-          {/* Scrollable body */}
-          <div className="overflow-y-auto flex-1">
-            {/* Coupon section */}
-            <div className="px-6 py-4 bg-[#fdf2f2]">
-              <p className="text-xs text-gray-500 text-center mb-2 font-medium uppercase tracking-wide">
+          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+            <section className="bg-[#fff5f1] px-4 py-4 sm:px-6">
+              <p className="mb-2 text-center text-[10px] font-semibold uppercase tracking-[0.14em] text-[#786966]">
                 Seu cupom exclusivo
               </p>
-
               <button
+                type="button"
                 onClick={handleCopy}
-                className="w-full flex items-center justify-between bg-white border-2 border-dashed border-[#6E0D12] rounded-xl px-4 py-3 group hover:bg-[#fce8e8] transition-colors"
+                className="flex w-full min-w-0 items-center justify-between gap-2 rounded-xl border-2 border-dashed border-[#971117] bg-white px-3 py-3 hover:bg-[#fff0ec] sm:px-4"
               >
-                <div className="flex items-center gap-2">
-                  <Tag className="w-5 h-5 text-[#6E0D12]" />
-                  <span className="text-xl font-black text-[#6E0D12] tracking-widest">{code}</span>
-                </div>
-                <div className="flex items-center gap-1.5 text-sm font-medium text-[#6E0D12]">
-                  {copied ? (
-                    <>
-                      <CheckCircle2 className="w-4 h-4 text-green-600" />
-                      <span className="text-green-600">Copiado!</span>
-                    </>
-                  ) : (
-                    <>
-                      <Copy className="w-4 h-4" />
-                      <span>Copiar</span>
-                    </>
-                  )}
-                </div>
-              </button>
-
-              <p className="text-xs text-gray-400 text-center mt-2">
-                Clique para copiar · Use no checkout · Sem valor mínimo
-              </p>
-            </div>
-
-            {/* Benefits list */}
-            <div className="px-6 py-3">
-              <ul className="space-y-1.5">
-                {[
-                  "✅ Desconto de 10% em qualquer pedido",
-                  "🚀 Entrega em até 60 minutos",
-                  "🔥 Massa artesanal feita na hora",
-                ].map((item) => (
-                  <li key={item} className="text-sm text-gray-600 flex items-start gap-2">
-                    <span>{item}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-
-            {/* CTA */}
-            <div className="px-6 pb-6 pt-3 space-y-2">
-              <ShinyButton className="w-full h-14" onClick={handleCTA}>
-                <span className="flex items-center justify-center gap-2">
-                  Pedir Agora com 10% OFF
-                  <ChevronRight className="w-5 h-5" />
+                <span className="flex min-w-0 items-center gap-2">
+                  <Tag className="h-5 w-5 shrink-0 text-[#971117]" />
+                  <strong className="truncate text-lg tracking-[0.12em] text-[#971117] sm:text-xl">{couponData.code}</strong>
                 </span>
-              </ShinyButton>
+                <span className="flex shrink-0 items-center gap-1 text-xs font-medium text-[#971117] sm:text-sm">
+                  {copied ? <CheckCircle2 className="h-4 w-4 text-green-600" /> : <Copy className="h-4 w-4" />}
+                  {copied ? "Copiado" : "Copiar"}
+                </span>
+              </button>
+              <p className="mt-2 text-center text-[11px] text-[#a0908c]">Toque para copiar e use no checkout.</p>
+            </section>
 
+            <ul className="grid gap-2 px-4 py-3 text-xs text-[#62534e] sm:grid-cols-3 sm:px-6">
+              <li className="flex items-center gap-2"><CheckCircle2 className="h-4 w-4 shrink-0 text-[#da1923]" />10% de desconto</li>
+              <li className="flex items-center gap-2"><Truck className="h-4 w-4 shrink-0 text-[#da1923]" />Entrega rápida</li>
+              <li className="flex items-center gap-2"><Flame className="h-4 w-4 shrink-0 text-[#da1923]" />Feita na hora</li>
+            </ul>
+
+            <footer className="space-y-2 px-4 pb-[calc(1rem+env(safe-area-inset-bottom))] pt-2 sm:px-6 sm:pb-6">
+              <button
+                type="button"
+                onClick={handleCTA}
+                className="flex h-12 w-full items-center justify-center rounded-xl bg-[#211713] px-4 font-bold text-white shadow-[0_5px_0_#971117] hover:-translate-y-0.5"
+              >
+                Pedir agora com 10% OFF
+                <ChevronRight className="ml-2 h-5 w-5" />
+              </button>
               {countdown > 0 && (
-                <p className="text-center text-xs text-gray-400">
-                  ⏰ Oferta válida por mais{" "}
-                  <span className="font-semibold text-[#6E0D12]">{countdown} min</span>
+                <p className="text-center text-[11px] text-[#9c8d89]">
+                  Oferta válida por mais <strong className="text-[#971117]">{countdown} min</strong>
                 </p>
               )}
-
-              <button
-                onClick={handleClose}
-                className="w-full text-xs text-gray-400 hover:text-gray-600 py-1 transition-colors"
-              >
+              <button type="button" onClick={handleClose} className="w-full py-1 text-xs text-[#9c8d89] hover:text-[#62534e]">
                 Não, obrigado
               </button>
-            </div>
+            </footer>
           </div>
         </div>
       </div>

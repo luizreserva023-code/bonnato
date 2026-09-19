@@ -8,6 +8,8 @@ import { trpc } from "@/lib/trpc";
 import { ChevronDown, ChevronUp, Clock, LogIn, Package, ShoppingBag } from "lucide-react";
 import { useState } from "react";
 import { Link } from "wouter";
+import { useStore } from "@/contexts/StoreContext";
+import { BonattoSectionHero } from "@/components/consumer/BonattoSectionHero";
 
 const STATUS_LABELS: Record<string, { label: string; color: string }> = {
   pending: { label: "Aguardando", color: "bg-yellow-100 text-yellow-800" },
@@ -62,10 +64,11 @@ function OrderItemsDetail({ orderId }: { orderId: number }) {
 
 export default function MeusPedidos() {
   const { isAuthenticated, loading } = useAuth();
+  const { selectedStore } = useStore();
   const [expandedId, setExpandedId] = useState<number | null>(null);
   // Poll every 30s so the customer can see status updates in real time
-  const { data: orders, isLoading } = trpc.orders.myOrders.useQuery(undefined, {
-    enabled: isAuthenticated,
+  const { data: orders, isLoading } = trpc.orders.myOrders.useQuery({ storeId: selectedStore?.id }, {
+    enabled: isAuthenticated && Boolean(selectedStore?.id),
     refetchInterval: 30000,
   });
 
@@ -96,11 +99,10 @@ export default function MeusPedidos() {
   }
 
   return (
-    <div className="min-h-screen bg-muted/30 py-8">
-      <div className="container max-w-3xl">
-        <h1 className="text-3xl font-black mb-8" style={{ fontFamily: "'Poppins', sans-serif" }}>
-          Meus Pedidos
-        </h1>
+    <div className="min-h-screen py-8">
+      <div className="container max-w-4xl">
+        <BonattoSectionHero eyebrow="Da cozinha até você" title="Meus pedidos" description="Acompanhe cada etapa, reveja seus sabores e peça de novo quando bater a fome." />
+        <div className="mt-10">
 
         {isLoading ? (
           <div className="space-y-4">
@@ -190,6 +192,7 @@ export default function MeusPedidos() {
             })}
           </div>
         )}
+        </div>
       </div>
     </div>
   );

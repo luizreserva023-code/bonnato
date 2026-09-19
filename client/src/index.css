@@ -1,9 +1,82 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 
+@font-face {
+  font-family: "Corra Montserra";
+  src: url("/fonts/corra-montserra-regular.woff2") format("woff2");
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+}
+
+.site-block-responsive {
+  display: var(--site-block-desktop-display, block);
+  padding-block: var(--site-block-desktop-spacing, 2.25rem);
+}
+
+[data-studio-device="tablet"] .site-block-responsive {
+  display: var(--site-block-tablet-display, block);
+  padding-block: var(--site-block-tablet-spacing, 2.25rem);
+}
+
+[data-studio-device="mobile"] .site-block-responsive {
+  display: var(--site-block-mobile-display, block);
+  padding-block: var(--site-block-mobile-spacing, 2.25rem);
+}
+
+@media (max-width: 1023px) {
+  .site-block-responsive {
+    display: var(--site-block-tablet-display, block);
+    padding-block: var(--site-block-tablet-spacing, 2.25rem);
+  }
+}
+
+@media (max-width: 639px) {
+  .site-block-responsive {
+    display: var(--site-block-mobile-display, block);
+    padding-block: var(--site-block-mobile-spacing, 2.25rem);
+  }
+}
+@font-face {
+  font-family: "Corra Montserra";
+  src: url("/fonts/corra-montserra-medium.woff2") format("woff2");
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Corra Montserra";
+  src: url("/fonts/corra-montserra-semibold.woff2") format("woff2");
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Corra Montserra";
+  src: url("/fonts/corra-montserra-bold.woff2") format("woff2");
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Corra Montserra";
+  src: url("/fonts/corra-montserra-black.woff2") format("woff2");
+  font-style: normal;
+  font-weight: 900;
+  font-display: swap;
+}
+@font-face {
+  font-family: "TGS Perfect Condensed";
+  src: url("/fonts/tgs-perfect-condensed.woff2") format("woff2");
+  font-style: normal;
+  font-weight: 400 900;
+  font-display: swap;
+}
+
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
+  --font-sans: var(--font-body);
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
@@ -43,6 +116,8 @@
 }
 
 :root {
+  --font-body: "Corra Montserra", sans-serif;
+  --font-display: "TGS Perfect Condensed", "Corra Montserra", sans-serif;
   /* Bonatto Pizza - Paleta Vermelha */
   --radius: 0.65rem;
   --background: oklch(0.99 0.002 30);
@@ -51,8 +126,8 @@
   --card-foreground: oklch(0.15 0.01 30);
   --popover: oklch(1 0 0);
   --popover-foreground: oklch(0.15 0.01 30);
-  /* Bonatto Bordô #6E0D12 */
-  --bonatto: #6E0D12;
+  /* Vermelho principal extraído do lettering oficial "Pizza não. Bonatto!". */
+  --bonatto: #DA1923;
   --primary: oklch(0.31 0.14 22);
   --primary-foreground: oklch(0.99 0.002 30);
   --secondary: oklch(0.96 0.01 30);
@@ -105,10 +180,316 @@
   }
   body {
     @apply bg-background text-foreground;
-    font-family: 'Inter', sans-serif;
+    font-family: var(--font-body);
   }
   h1, h2, h3, h4, h5, h6 {
-    font-family: 'Poppins', sans-serif;
+    font-family: var(--font-display);
+    font-weight: 700;
+  }
+  .bonatto-home {
+    font-family: var(--font-body);
+  }
+  .bonatto-home :is(h1, h2, h3, h4, h5, h6) {
+    font-family: var(--font-display);
+    font-weight: 900;
+    font-stretch: condensed;
+    letter-spacing: -0.025em;
+    line-height: 0.95;
+    text-transform: uppercase;
+  }
+  .consumer-shell {
+    --consumer-red: #da1923;
+    --consumer-red-dark: #971117;
+    --consumer-ink: #191412;
+    --consumer-cream: #f5eee6;
+    min-height: 100dvh;
+    color: var(--consumer-ink);
+    background-color: var(--consumer-cream);
+    position: relative;
+    isolation: isolate;
+    background-image: radial-gradient(circle at 12% 18%, rgba(255, 255, 255, 0.9), transparent 30%);
+    font-family: var(--font-body);
+    overflow-x: clip;
+  }
+  .consumer-shell :is(main, section, article, form, .container) {
+    min-width: 0;
+    max-width: 100%;
+  }
+  .consumer-shell :is(img, video, canvas, svg) {
+    max-width: 100%;
+  }
+  .consumer-shell [data-slot="table-container"] {
+    max-width: 100%;
+    overflow-x: auto;
+    overscroll-behavior-inline: contain;
+  }
+  .consumer-shell [role="dialog"] {
+    max-width: min(calc(100vw - 1.5rem), 42rem);
+    max-height: min(calc(100dvh - 1.5rem), 52rem);
+    overflow-y: auto;
+  }
+  .consumer-shell :is(h1, h2, h3, h4, h5, h6) {
+    font-family: var(--font-display);
+    text-wrap: balance;
+    letter-spacing: -0.025em;
+  }
+  .consumer-shell > :not(.bonatto-brand-frame) {
+    position: relative;
+    z-index: 1;
+  }
+  .bonatto-brand-frame {
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    overflow: hidden;
+    pointer-events: none;
+  }
+  .bonatto-checker-rail {
+    position: absolute;
+    inset: 0 auto 0 0;
+    width: 13px;
+    background-color: #da1923;
+    background-image:
+      linear-gradient(45deg, #811017 25%, transparent 25%),
+      linear-gradient(-45deg, #811017 25%, transparent 25%),
+      linear-gradient(45deg, transparent 75%, #811017 75%),
+      linear-gradient(-45deg, transparent 75%, #811017 75%);
+    background-position: 0 0, 0 7px, 7px -7px, -7px 0;
+    background-size: 14px 14px;
+  }
+  .bonatto-frame-character {
+    position: absolute;
+    right: -52px;
+    top: 22%;
+    width: clamp(150px, 14vw, 230px);
+    opacity: 0.055;
+    transform: rotate(-8deg);
+  }
+  .bonatto-frame-sticker {
+    position: absolute;
+    bottom: 4rem;
+    left: 2rem;
+    width: 118px;
+    opacity: 0.08;
+    transform: rotate(-9deg);
+  }
+  .bonatto-frame-tagline {
+    display: none;
+    position: absolute;
+    left: clamp(1.5rem, 5vw, 5rem);
+    top: clamp(1.5rem, 5vh, 4rem);
+    width: clamp(210px, 25vw, 390px);
+    height: auto;
+  }
+  .consumer-shell--auth .bonatto-frame-character {
+    right: 3vw;
+    top: auto;
+    bottom: 4vh;
+    width: clamp(230px, 30vw, 470px);
+    opacity: 0.12;
+  }
+  .consumer-shell--auth .bonatto-frame-sticker {
+    left: 3vw;
+    bottom: 3rem;
+    width: clamp(110px, 12vw, 175px);
+    opacity: 0.32;
+  }
+  .consumer-shell--auth .bonatto-frame-tagline {
+    display: block;
+  }
+  .bonatto-brand-frame--compact .bonatto-frame-sticker {
+    display: none;
+  }
+  .consumer-shell :is(button, a, input, textarea, select) {
+    transition: color 180ms ease, background-color 180ms ease, border-color 180ms ease, box-shadow 180ms ease, transform 180ms ease;
+  }
+  .consumer-shell button:active,
+  .consumer-shell a:active {
+    transform: translateY(1px) scale(0.99);
+  }
+  .consumer-shell :is(button, a, input, textarea, select):focus-visible {
+    outline: 3px solid rgba(218, 25, 35, 0.22);
+    outline-offset: 3px;
+  }
+  .consumer-shell .bg-primary { background-color: var(--consumer-red) !important; }
+  .consumer-shell .text-primary { color: var(--consumer-red-dark) !important; }
+  .consumer-shell .border-primary { border-color: var(--consumer-red) !important; }
+  .consumer-shell [data-slot="card"] {
+    overflow: hidden;
+    border-radius: 1.5rem;
+    background: #fffaf6;
+    border-color: rgba(88, 35, 30, 0.12);
+    box-shadow: 0 14px 0 rgba(151, 17, 23, 0.035), 0 26px 55px rgba(75, 28, 24, 0.07);
+  }
+  .consumer-shell input:not([type="checkbox"]):not([type="radio"]),
+  .consumer-shell textarea,
+  .consumer-shell select {
+    border-color: rgba(88, 35, 30, 0.16);
+    background-color: rgba(255, 250, 246, 0.94);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.8);
+  }
+  .consumer-shell ::selection {
+    background: #da1923;
+    color: #fffaf6;
+  }
+  .bonatto-section-hero {
+    position: relative;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(150px, 0.32fr);
+    min-height: 260px;
+    overflow: hidden;
+    border-radius: 2rem;
+    color: #fff8ee;
+    background: var(--tenant-header, #da1923);
+    box-shadow: 0 16px 0 #b9141c;
+  }
+  .bonatto-section-hero::before {
+    content: "";
+    position: absolute;
+    inset: auto 0 0;
+    height: 28px;
+    background-color: #811017;
+    background-image:
+      linear-gradient(45deg, #da1923 25%, transparent 25%),
+      linear-gradient(-45deg, #da1923 25%, transparent 25%),
+      linear-gradient(45deg, transparent 75%, #da1923 75%),
+      linear-gradient(-45deg, transparent 75%, #da1923 75%);
+    background-position: 0 0, 0 10px, 10px -10px, -10px 0;
+    background-size: 20px 20px;
+  }
+  .bonatto-section-hero__copy {
+    position: relative;
+    z-index: 1;
+    align-self: center;
+    padding: clamp(2rem, 5vw, 4.5rem);
+  }
+  .bonatto-section-hero__eyebrow {
+    margin-bottom: 0.8rem;
+    font-size: 0.72rem;
+    font-weight: 800;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+  }
+  .bonatto-section-hero h1 {
+    max-width: 12ch;
+    font-size: clamp(3rem, 7vw, 6.4rem);
+    font-weight: 900;
+    font-stretch: condensed;
+    line-height: 0.82;
+    text-transform: uppercase;
+  }
+  .bonatto-section-hero__description {
+    max-width: 52ch;
+    margin-top: 1.25rem;
+    color: rgba(255, 248, 238, 0.8);
+    font-size: 0.95rem;
+    line-height: 1.65;
+  }
+  .bonatto-section-hero__aside {
+    position: relative;
+    display: grid;
+    place-items: end center;
+    background: #ffc47e;
+  }
+  .bonatto-section-hero__aside::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    opacity: 0.24;
+    background-image: url("/brand/dna/quadriculado-creme.png");
+    background-size: 280px;
+  }
+  .bonatto-section-hero__aside > img {
+    position: relative;
+    z-index: 1;
+    width: min(220px, 92%);
+    transform: translateY(8%);
+    filter: drop-shadow(0 20px 0 rgba(129, 16, 23, 0.12));
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    .bonatto-section-hero__copy {
+      animation: bonatto-copy-enter 700ms cubic-bezier(.22, 1, .36, 1) both;
+    }
+    .bonatto-section-hero__aside > img {
+      animation: bonatto-mascot-pop 820ms 80ms cubic-bezier(.22, 1, .36, 1) both;
+    }
+  }
+  @keyframes bonatto-copy-enter {
+    from { opacity: 0; transform: translate3d(-24px, 0, 0); }
+    to { opacity: 1; transform: translate3d(0, 0, 0); }
+  }
+  @keyframes bonatto-mascot-pop {
+    from { opacity: 0; transform: translate3d(0, 50px, 0) rotate(8deg); }
+    to { opacity: 1; transform: translate3d(0, 8%, 0) rotate(0); }
+  }
+  @media (max-width: 640px) {
+    .bonatto-section-hero {
+      grid-template-columns: 1fr 104px;
+      min-height: 220px;
+      border-radius: 1.5rem;
+    }
+    .bonatto-section-hero__copy { padding: 1.6rem 1.25rem 2.6rem 1.6rem; }
+    .bonatto-section-hero h1 { font-size: clamp(2.7rem, 14vw, 4rem); }
+    .bonatto-section-hero__description { display: none; }
+    .consumer-shell [data-slot="card"] { border-radius: 1.1rem; }
+    .consumer-shell :is(input, textarea, select) { font-size: 16px; }
+  }
+  @media (max-width: 420px) {
+    .bonatto-section-hero {
+      grid-template-columns: minmax(0, 1fr) 82px;
+      min-height: 188px;
+      border-radius: 1.25rem;
+      box-shadow: 0 9px 0 #b9141c;
+    }
+    .bonatto-section-hero::before { height: 20px; background-size: 14px 14px; }
+    .bonatto-section-hero__copy { padding: 1.25rem 0.8rem 2rem 1.15rem; }
+    .bonatto-section-hero__eyebrow {
+      margin-bottom: 0.5rem;
+      font-size: 0.58rem;
+      letter-spacing: 0.14em;
+    }
+    .bonatto-section-hero h1 {
+      max-width: 9ch;
+      font-size: clamp(2rem, 11vw, 2.85rem);
+      line-height: 0.86;
+      overflow-wrap: anywhere;
+    }
+    .bonatto-section-hero__aside { overflow: hidden; }
+    .bonatto-section-hero__aside > img { width: 118px; max-width: none; }
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    .consumer-shell > main,
+    .consumer-shell > section {
+      animation: consumer-page-enter 360ms cubic-bezier(.22, 1, .36, 1) both;
+    }
+    .consumer-shell--auth .bonatto-frame-character {
+      animation: bonatto-character-enter 900ms cubic-bezier(.22, 1, .36, 1) both;
+    }
+    .consumer-shell--auth .bonatto-frame-tagline {
+      left: 1.25rem;
+      top: 1.4rem;
+      width: min(52vw, 260px);
+      opacity: 0.9;
+    }
+  }
+  @keyframes consumer-page-enter {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes bonatto-character-enter {
+    from { opacity: 0; transform: translate3d(50px, 30px, 0) rotate(2deg); }
+    to { opacity: 0.12; transform: translate3d(0, 0, 0) rotate(-8deg); }
+  }
+  @media (max-width: 767px) {
+    .bonatto-checker-rail { width: 7px; }
+    .bonatto-frame-character { right: -58px; top: 30%; width: 150px; opacity: 0.04; }
+    .bonatto-frame-sticker { display: none; }
+    .consumer-shell--auth .bonatto-frame-character {
+      right: -60px;
+      bottom: 1rem;
+      width: 210px;
+      opacity: 0.07;
+    }
   }
   button:not(:disabled),
   [role="button"]:not([aria-disabled="true"]),
@@ -177,12 +558,7 @@
   }
 }
 
-/* ══════════════════════════════════════════════════════════
-   SHIMMER LINE BUTTON
-   Técnica: conic-gradient rotacionando atrás do botão,
-   mascarado para mostrar apenas a borda fina.
-   Inspirado no Framer "Shimmer Line Button" de Alireza Sinaei.
-══════════════════════════════════════════════════════════ */
+/* Compatibilidade com botões antigos, agora em cor chapada. */
 @property --shimmer-angle {
   syntax: "<angle>";
   initial-value: 0deg;
@@ -195,24 +571,13 @@
 }
 
 .shimmer-wrapper {
-  /* A linha de luz percorre a borda em 2.8s */
-  animation: shimmer-spin 2.8s linear infinite;
-
-  /* Conic gradient: ponto brilhante (branco) + resto transparente */
-  background: conic-gradient(
-    from var(--shimmer-angle),
-    transparent 0%,
-    transparent 68%,
-    rgba(255, 255, 255, 0.55) 76%,
-    rgba(255, 255, 255, 0.95) 82%,
-    rgba(255, 255, 255, 0.55) 88%,
-    transparent 100%
-  );
+  animation: none;
+  background: var(--bonatto);
 }
 
 /* Botão interno: fundo sólido vermelho Bonatto */
 .shimmer-inner {
-  background: hsl(var(--primary)) !important;
+  background: var(--bonatto) !important;
   color: white !important;
 }
 
@@ -222,15 +587,15 @@
   opacity: 0.5;
 }
 
-/* ── Bonatto Button Shine — gradiente bordô claro → escuro com brilho interno ── */
+/* Botões Bonatto usam cor chapada para preservar a identidade visual. */
 .btn-bonatto {
-  background: linear-gradient(160deg, #9b1520 0%, #6E0D12 45%, #5a0a0f 100%) !important;
-  box-shadow: inset 0 1px 0 rgba(255,255,255,0.15), 0 2px 8px rgba(110,13,18,0.45);
+  background: var(--bonatto) !important;
+  box-shadow: 0 2px 8px rgba(218,25,35,0.28);
   transition: filter 0.2s ease, box-shadow 0.2s ease;
 }
 .btn-bonatto:hover {
   filter: brightness(1.12);
-  box-shadow: inset 0 1px 0 rgba(255,255,255,0.2), 0 4px 16px rgba(110,13,18,0.55);
+  box-shadow: 0 4px 16px rgba(218,25,35,0.34);
 }
 
 /* ── CTA Button Pulse ── */
@@ -268,13 +633,13 @@
 .arrow-path {
   stroke-dasharray: 120;
   stroke-dashoffset: 120;
-  animation: arrow-draw 0.9s ease forwards 0.4s, arrow-bounce 2s ease-in-out infinite 1.4s;
+  animation: arrow-draw 0.9s ease forwards 0.4s, arrow-float 2.4s cubic-bezier(0.22, 1, 0.36, 1) infinite 1.4s;
 }
 
 .arrow-head-left {
   stroke-dasharray: 30;
   stroke-dashoffset: 30;
-  animation: arrow-draw 0.4s ease forwards 1.2s, arrow-bounce 2s ease-in-out infinite 1.4s;
+  animation: arrow-draw 0.4s ease forwards 1.2s, arrow-float 2.4s cubic-bezier(0.22, 1, 0.36, 1) infinite 1.4s;
 }
 
 @keyframes arrow-draw {
@@ -283,7 +648,7 @@
   }
 }
 
-@keyframes arrow-bounce {
+@keyframes arrow-float {
   0%, 100% { transform: translateY(0px); }
   50%       { transform: translateY(5px); }
 }
@@ -302,35 +667,15 @@
   border-radius: 16px;
   overflow: hidden;
   padding: 2px;
+  background: var(--bonatto);
 }
 
 .bonatto-border-wrap::before {
-  content: '';
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  width: 250%;
-  height: 250%;
-  background: conic-gradient(
-    from 0deg,
-    transparent 0deg,
-    transparent 60deg,
-    rgba(255, 255, 255, 0.95) 120deg,
-    transparent 180deg,
-    transparent 360deg
-  );
-  animation: bonatto-border-spin 2.5s linear infinite;
+  content: none;
 }
 
 .bonatto-border-wrap:hover::before {
-  background: conic-gradient(
-    from 0deg,
-    transparent 0deg,
-    transparent 60deg,
-    rgba(255, 210, 210, 1.0) 120deg,
-    transparent 180deg,
-    transparent 360deg
-  );
+  content: none;
 }
 
 .bonatto-border-inner {
@@ -346,8 +691,8 @@
   color: white;
   font-weight: 700;
   font-size: 1rem;
-  background: linear-gradient(160deg, #9b1520 0%, #6E0D12 50%, #5a0a0f 100%);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.15);
+  background: var(--bonatto);
+  box-shadow: 0 2px 8px rgba(218, 25, 35, 0.28);
 }
 
 /* ── Órbitas animadas — background hero Home ── */
@@ -419,17 +764,15 @@
   to   { transform: translate(-50%, -50%) rotate(360deg); }
 }
 
-/* ── Gradiente animado (textura) — botão rodapé Home ── */
+/* Compatibilidade com CTAs antigos, agora sem degradê. */
 @keyframes textura {
   0%   { background-position: 0 0; }
   100% { background-position: 100% 0; }
 }
 
 .btn-gradient-animated {
-  animation: 3.4s cubic-bezier(.2,.5,.9,.6) 2s infinite textura;
-  background-image: linear-gradient(45deg, #9b1520, #6E0D12, #9b1520, #6E0D12);
-  background-size: 400% 200%;
-  transition: all .8s;
+  background: var(--bonatto);
+  transition: filter .2s ease;
   color: white;
 }
 
@@ -456,12 +799,12 @@
   --admin-shadow-sm: 0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
   --admin-shadow-md: 0 4px 12px rgba(0,0,0,0.08), 0 1px 3px rgba(0,0,0,0.04);
   --admin-shadow-lg: 0 10px 24px rgba(0,0,0,0.10), 0 2px 6px rgba(0,0,0,0.05);
-  --admin-font: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --admin-font: var(--font-body);
   --admin-duration: 180ms;
   --admin-ease: cubic-bezier(0.2, 0.8, 0.2, 1);
   /* ── Nexus light palette + Bonatto red accent ── */
   --admin-bg: #eef0f4;                        /* Light gray page bg */
-  --admin-sidebar-bg: linear-gradient(180deg, #e8534a 0%, #c0392b 50%, #a93226 100%); /* Red gradient sidebar */
+  --admin-sidebar-bg: #DA1923;
   --admin-sidebar-border: transparent;
   --admin-sidebar-text: rgba(255,255,255,0.85);
   --admin-sidebar-text-active: #ffffff;
@@ -480,13 +823,13 @@
   --admin-divider: #e8ebf0;
   /* Accent: Bonatto red */
   --admin-active-bg: rgba(110,13,18,0.08);
-  --admin-active-text: #6E0D12;
+  --admin-active-text: #DA1923;
   --admin-badge-bg: rgba(110,13,18,0.08);
-  --admin-badge-text: #6E0D12;
+  --admin-badge-text: #DA1923;
   --admin-input-bg: #ffffff;
   --admin-input-border: #d1d5db;
   --admin-chart-bar: #fca5a5;
-  --admin-chart-bar-max: #6E0D12;
+  --admin-chart-bar-max: #DA1923;
   --admin-chart-grid: rgba(0,0,0,0.06);
   --admin-chart-tick: #8a92a0;
   --admin-tooltip-bg: #ffffff;
@@ -500,7 +843,7 @@
   --admin-pipeline-delivery-bg: #fef2f2;
   --admin-pipeline-delivery-text: #dc2626;
   --admin-icon-bg: rgba(110,13,18,0.08);
-  --admin-icon-color: #6E0D12;
+  --admin-icon-color: #DA1923;
   --admin-order-row-bg: #f8f9fb;
   --admin-store-selector-bg: #f0f2f5;
   --admin-store-selector-text: #374151;
@@ -528,6 +871,8 @@
 .admin-page {
   display: flex;
   flex-direction: column;
+  min-width: 0;
+  max-width: 100%;
   gap: 24px;
   font-family: var(--admin-font);
   color: var(--admin-text);
@@ -554,7 +899,7 @@
   margin-bottom: 4px;
 }
 .admin-page-header__title {
-  font-family: var(--admin-font);
+  font-family: var(--font-display);
   font-size: 22px;
   font-weight: 700;
   letter-spacing: -0.02em;
@@ -590,7 +935,7 @@
   font-size: 14px;
   font-weight: 600;
   color: var(--admin-text-heading);
-  font-family: var(--admin-font);
+  font-family: var(--font-display);
   letter-spacing: -0.01em;
 }
 .admin-surface__subtitle {
@@ -809,7 +1154,7 @@
   }
 
   /* Badge */
-  & .bg-primary { background: #6E0D12 !important; }
+  & .bg-primary { background: #DA1923 !important; }
   & .text-primary { color: var(--admin-active-text) !important; }
   & .border-primary { border-color: var(--admin-active-text) !important; }
 

@@ -46,6 +46,16 @@ var init_env = __esm({
       oAuthServerUrl: process.env.OAUTH_SERVER_URL ?? process.env.VITE_OAUTH_PORTAL_URL ?? "",
       googleClientId: process.env.GOOGLE_CLIENT_ID ?? process.env.VITE_GOOGLE_CLIENT_ID ?? "",
       googleClientSecret: process.env.GOOGLE_CLIENT_SECRET ?? "",
+      facebookAppId: process.env.FACEBOOK_APP_ID ?? "",
+      facebookAppSecret: process.env.FACEBOOK_APP_SECRET ?? "",
+      appleClientId: process.env.APPLE_CLIENT_ID ?? "",
+      appleTeamId: process.env.APPLE_TEAM_ID ?? "",
+      appleKeyId: process.env.APPLE_KEY_ID ?? "",
+      applePrivateKey: process.env.APPLE_PRIVATE_KEY ?? "",
+      instagramAppId: process.env.INSTAGRAM_APP_ID ?? "",
+      instagramAppSecret: process.env.INSTAGRAM_APP_SECRET ?? "",
+      metaGraphApiVersion: process.env.META_GRAPH_API_VERSION ?? "v24.0",
+      oauthEncryptionKey: process.env.OAUTH_ENCRYPTION_KEY ?? rawJwtSecret,
       ownerOpenId: process.env.OWNER_OPEN_ID ?? "",
       isProduction: IS_PRODUCTION,
       forgeApiUrl: process.env.BUILT_IN_FORGE_API_URL ?? "",
@@ -205,6 +215,7 @@ var init_timezone = __esm({
 var schema_exports = {};
 __export(schema_exports, {
   abandonedCarts: () => abandonedCarts,
+  authEventLogs: () => authEventLogs,
   automationEvents: () => automationEvents,
   campaignSegments: () => campaignSegments,
   carouselImages: () => carouselImages,
@@ -213,6 +224,8 @@ __export(schema_exports, {
   clientAlerts: () => clientAlerts,
   clientNotifications: () => clientNotifications,
   clubPayments: () => clubPayments,
+  comboGroupItems: () => comboGroupItems,
+  comboGroups: () => comboGroups,
   couponRedemptions: () => couponRedemptions,
   coupons: () => coupons,
   customCustomerTags: () => customCustomerTags,
@@ -229,41 +242,77 @@ __export(schema_exports, {
   drivers: () => drivers,
   externalOrders: () => externalOrders,
   favorites: () => favorites,
+  flavorSizePrices: () => flavorSizePrices,
+  growthSettings: () => growthSettings,
   ifoodIntegrations: () => ifoodIntegrations,
   ifoodLogs: () => ifoodLogs,
   ingredients: () => ingredients,
+  integrationConnections: () => integrationConnections,
+  intelligenceSuggestions: () => intelligenceSuggestions,
   inventoryMovements: () => inventoryMovements,
   journeyExecutions: () => journeyExecutions,
   journeys: () => journeys,
+  kitchenTickets: () => kitchenTickets,
   loyaltyOrderCredits: () => loyaltyOrderCredits,
   loyaltyTransactions: () => loyaltyTransactions,
   menuSlides: () => menuSlides,
+  modifierSizeRules: () => modifierSizeRules,
+  multiFlavorSettings: () => multiFlavorSettings,
   notificationCampaigns: () => notificationCampaigns,
   notificationLogs: () => notificationLogs,
   notificationTemplates: () => notificationTemplates,
+  npsResponses: () => npsResponses,
+  orderItemSelections: () => orderItemSelections,
   orderItems: () => orderItems,
   orderMessages: () => orderMessages,
   orderStageLogs: () => orderStageLogs,
   orders: () => orders,
   otpCodes: () => otpCodes,
+  productAuditLogs: () => productAuditLogs,
+  productAvailability: () => productAvailability,
+  productCombos: () => productCombos,
+  productDrafts: () => productDrafts,
+  productFlavors: () => productFlavors,
+  productImages: () => productImages,
   productIngredients: () => productIngredients,
+  productOptionGroups: () => productOptionGroups,
+  productOptions: () => productOptions,
+  productRevisions: () => productRevisions,
+  productSizes: () => productSizes,
+  productVariants: () => productVariants,
   productivityEvents: () => productivityEvents,
   products: () => products,
   promotions: () => promotions,
   pushSubscriptions: () => pushSubscriptions,
   raffleEntries: () => raffleEntries,
   raffles: () => raffles,
+  referrals: () => referrals,
+  rewardCatalog: () => rewardCatalog,
+  rewardCouponUsages: () => rewardCouponUsages,
+  rewardCoupons: () => rewardCoupons,
+  rewardRedemptions: () => rewardRedemptions,
   scheduledNotifications: () => scheduledNotifications,
   staffMembers: () => staffMembers,
   storeManagers: () => storeManagers,
   storeSettings: () => storeSettings,
+  storeWhiteLabelConfigs: () => storeWhiteLabelConfigs,
   stores: () => stores,
   tableOrderLinks: () => tableOrderLinks,
   tableSessionItems: () => tableSessionItems,
   tableSessions: () => tableSessions,
+  tenantAuditLogs: () => tenantAuditLogs,
+  tenantCustomerAccounts: () => tenantCustomerAccounts,
+  tenantDomains: () => tenantDomains,
+  tenantMemberships: () => tenantMemberships,
+  tenantPlans: () => tenantPlans,
+  tenantSitePageVersions: () => tenantSitePageVersions,
+  tenantSitePages: () => tenantSitePages,
+  tenantSubscriptions: () => tenantSubscriptions,
+  tenants: () => tenants,
   transactions: () => transactions,
   upsells: () => upsells,
   userAddresses: () => userAddresses,
+  userConsents: () => userConsents,
   users: () => users,
   webhookEvents: () => webhookEvents
 });
@@ -279,7 +328,7 @@ import {
   uniqueIndex,
   varchar
 } from "drizzle-orm/mysql-core";
-var users, stores, storeManagers, categories, products, coupons, orders, ifoodIntegrations, externalOrders, ifoodLogs, loyaltyTransactions, orderItems, transactions, webhookEvents, loyaltyOrderCredits, couponRedemptions, upsells, promotions, raffles, raffleEntries, storeSettings, drivers, driverLocations, deliveryRatings, userAddresses, favorites, clientNotifications, orderMessages, ingredients, productIngredients, inventoryMovements, orderStageLogs, productivityEvents, staffMembers, deliveryPredictions, diningTables, tableSessions, tableOrderLinks, tableSessionItems, notificationCampaigns, campaignSegments, notificationLogs, customerMetrics, customerAuthProviders, otpCodes, pushSubscriptions, customerTags, customTags, customCustomerTags, abandonedCarts, journeys, journeyExecutions, notificationTemplates, deliveryZones, clubPayments, menuSlides, scheduledNotifications, carouselImages, driverPushSubscriptions, automationEvents, clientAlerts, clientAlertReads;
+var users, stores, storeManagers, tenantMemberships, tenantSitePages, tenantSitePageVersions, tenantCustomerAccounts, storeWhiteLabelConfigs, tenants, tenantDomains, tenantPlans, tenantSubscriptions, tenantAuditLogs, categories, products, coupons, orders, ifoodIntegrations, externalOrders, ifoodLogs, loyaltyTransactions, orderItems, transactions, webhookEvents, loyaltyOrderCredits, couponRedemptions, upsells, promotions, raffles, raffleEntries, storeSettings, drivers, driverLocations, deliveryRatings, userAddresses, favorites, clientNotifications, orderMessages, ingredients, productIngredients, inventoryMovements, orderStageLogs, productivityEvents, staffMembers, deliveryPredictions, diningTables, tableSessions, tableOrderLinks, tableSessionItems, notificationCampaigns, campaignSegments, notificationLogs, customerMetrics, customerAuthProviders, authEventLogs, userConsents, otpCodes, pushSubscriptions, customerTags, customTags, customCustomerTags, abandonedCarts, journeys, journeyExecutions, notificationTemplates, deliveryZones, clubPayments, menuSlides, scheduledNotifications, carouselImages, driverPushSubscriptions, automationEvents, clientAlerts, clientAlertReads, productOptionGroups, productOptions, productImages, productSizes, productVariants, productAvailability, modifierSizeRules, multiFlavorSettings, productFlavors, flavorSizePrices, productDrafts, productRevisions, productAuditLogs, productCombos, comboGroups, comboGroupItems, orderItemSelections, kitchenTickets, growthSettings, rewardCatalog, rewardCoupons, rewardRedemptions, rewardCouponUsages, npsResponses, referrals, integrationConnections, intelligenceSuggestions;
 var init_schema = __esm({
   "drizzle/schema.ts"() {
     "use strict";
@@ -287,7 +336,10 @@ var init_schema = __esm({
       id: int("id").autoincrement().primaryKey(),
       openId: varchar("openId", { length: 64 }).notNull().unique(),
       name: text("name"),
+      firstName: varchar("firstName", { length: 160 }),
+      lastName: varchar("lastName", { length: 160 }),
       email: varchar("email", { length: 320 }),
+      username: varchar("username", { length: 191 }),
       loginMethod: varchar("loginMethod", { length: 64 }),
       role: mysqlEnum("role", ["user", "admin", "manager"]).default("user").notNull(),
       phone: varchar("phone", { length: 20 }),
@@ -302,6 +354,7 @@ var init_schema = __esm({
       resetToken: varchar("resetToken", { length: 128 }),
       resetTokenExpiresAt: timestamp("resetTokenExpiresAt"),
       emailVerified: boolean("emailVerified").default(false).notNull(),
+      profileCompleted: boolean("profileCompleted").default(false).notNull(),
       avatarUrl: text("avatarUrl"),
       loyaltyPoints: int("loyaltyPoints").default(0).notNull(),
       // Clube do Bonatto
@@ -319,6 +372,7 @@ var init_schema = __esm({
     }));
     stores = mysqlTable("stores", {
       id: int("id").autoincrement().primaryKey(),
+      tenantKey: varchar("tenantKey", { length: 100 }).notNull().default("bonatto"),
       name: varchar("name", { length: 200 }).notNull(),
       displayName: varchar("displayName", { length: 200 }),
       slug: varchar("slug", { length: 100 }).notNull().unique(),
@@ -349,6 +403,7 @@ var init_schema = __esm({
       updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull()
     }, (t2) => ({
       slugIdx: uniqueIndex("stores_slug_idx").on(t2.slug),
+      tenantIdx: index("stores_tenant_idx").on(t2.tenantKey),
       activeIdx: index("stores_active_idx").on(t2.active),
       statusIdx: index("stores_status_idx").on(t2.status)
     }));
@@ -362,10 +417,165 @@ var init_schema = __esm({
       userIdx: index("store_managers_user_idx").on(t2.userId),
       uniqueManager: uniqueIndex("store_managers_unique").on(t2.storeId, t2.userId)
     }));
+    tenantMemberships = mysqlTable("tenant_memberships", {
+      id: int("id").autoincrement().primaryKey(),
+      tenantKey: varchar("tenantKey", { length: 100 }).notNull(),
+      userId: int("userId").notNull(),
+      role: mysqlEnum("role", ["owner", "admin", "manager", "site_editor", "marketing"]).default("admin").notNull(),
+      active: boolean("active").default(true).notNull(),
+      createdAt: timestamp("createdAt").defaultNow().notNull(),
+      updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull()
+    }, (t2) => ({
+      tenantIdx: index("tenant_memberships_tenant_idx").on(t2.tenantKey),
+      userIdx: index("tenant_memberships_user_idx").on(t2.userId),
+      uniqueMembership: uniqueIndex("tenant_memberships_unique").on(t2.tenantKey, t2.userId)
+    }));
+    tenantSitePages = mysqlTable("tenant_site_pages", {
+      id: int("id").autoincrement().primaryKey(),
+      storeId: int("storeId").notNull(),
+      pageKey: mysqlEnum("pageKey", ["home", "menu", "club", "landing"]).notNull(),
+      title: varchar("title", { length: 160 }).notNull(),
+      draftContent: text("draftContent").notNull(),
+      publishedVersionId: int("publishedVersionId"),
+      updatedByUserId: int("updatedByUserId"),
+      createdAt: timestamp("createdAt").defaultNow().notNull(),
+      updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull()
+    }, (t2) => ({
+      storePageUnique: uniqueIndex("tenant_site_pages_store_page_uq").on(t2.storeId, t2.pageKey),
+      storeIdx: index("tenant_site_pages_store_idx").on(t2.storeId)
+    }));
+    tenantSitePageVersions = mysqlTable("tenant_site_page_versions", {
+      id: int("id").autoincrement().primaryKey(),
+      pageId: int("pageId").notNull(),
+      versionNumber: int("versionNumber").notNull(),
+      content: text("content").notNull(),
+      note: varchar("note", { length: 240 }),
+      createdByUserId: int("createdByUserId"),
+      createdAt: timestamp("createdAt").defaultNow().notNull()
+    }, (t2) => ({
+      pageVersionUnique: uniqueIndex("tenant_site_page_versions_uq").on(t2.pageId, t2.versionNumber),
+      pageIdx: index("tenant_site_page_versions_page_idx").on(t2.pageId, t2.createdAt)
+    }));
+    tenantCustomerAccounts = mysqlTable("tenant_customer_accounts", {
+      id: int("id").autoincrement().primaryKey(),
+      tenantKey: varchar("tenantKey", { length: 100 }).notNull(),
+      userId: int("userId").notNull(),
+      loyaltyPoints: int("loyaltyPoints").default(0).notNull(),
+      clubPlan: mysqlEnum("clubPlan", ["bonattao", "basico"]),
+      clubStatus: mysqlEnum("clubStatus", ["active", "pending", "cancelled"]),
+      clubStartDate: timestamp("clubStartDate"),
+      clubNextBillingDate: timestamp("clubNextBillingDate"),
+      clubFreePizzaUsed: boolean("clubFreePizzaUsed").default(false).notNull(),
+      clubFreePizzaResetAt: timestamp("clubFreePizzaResetAt"),
+      stripeCustomerId: varchar("stripeCustomerId", { length: 255 }),
+      createdAt: timestamp("createdAt").defaultNow().notNull(),
+      updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull()
+    }, (t2) => ({
+      tenantIdx: index("tenant_customer_accounts_tenant_idx").on(t2.tenantKey),
+      userIdx: index("tenant_customer_accounts_user_idx").on(t2.userId),
+      uniqueAccount: uniqueIndex("tenant_customer_accounts_unique").on(t2.tenantKey, t2.userId)
+    }));
+    storeWhiteLabelConfigs = mysqlTable("store_white_label_configs", {
+      id: int("id").autoincrement().primaryKey(),
+      storeId: int("storeId").notNull(),
+      status: mysqlEnum("status", ["active", "inactive", "setup_pending"]).default("setup_pending").notNull(),
+      plan: mysqlEnum("plan", ["essential", "pro", "enterprise", "custom"]).default("essential").notNull(),
+      domain: varchar("domain", { length: 191 }),
+      subdomain: varchar("subdomain", { length: 100 }),
+      brandName: varchar("brandName", { length: 200 }).notNull(),
+      shortName: varchar("shortName", { length: 100 }).notNull(),
+      tagline: varchar("tagline", { length: 240 }),
+      adminTitle: varchar("adminTitle", { length: 200 }),
+      deliveryLabel: varchar("deliveryLabel", { length: 200 }),
+      logoUrl: text("logoUrl"),
+      wordmarkUrl: text("wordmarkUrl"),
+      faviconUrl: text("faviconUrl"),
+      waiterLogoUrl: text("waiterLogoUrl"),
+      primaryColor: varchar("primaryColor", { length: 20 }).default("#6E0D12").notNull(),
+      primaryDarkColor: varchar("primaryDarkColor", { length: 20 }).default("#450709").notNull(),
+      accentColor: varchar("accentColor", { length: 20 }).default("#e05c5c").notNull(),
+      backgroundColor: varchar("backgroundColor", { length: 20 }).default("#fffaf8").notNull(),
+      textColor: varchar("textColor", { length: 20 }).default("#211719").notNull(),
+      featureFlags: text("featureFlags").notNull(),
+      providerConfig: text("providerConfig").notNull(),
+      pageConfig: text("pageConfig").notNull(),
+      contactConfig: text("contactConfig"),
+      createdAt: timestamp("createdAt").defaultNow().notNull(),
+      updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull()
+    }, (t2) => ({
+      storeUnique: uniqueIndex("store_white_label_store_unique").on(t2.storeId),
+      domainUnique: uniqueIndex("store_white_label_domain_unique").on(t2.domain),
+      subdomainUnique: uniqueIndex("store_white_label_subdomain_unique").on(t2.subdomain),
+      statusIdx: index("store_white_label_status_idx").on(t2.status)
+    }));
+    tenants = mysqlTable("tenants", {
+      id: int("id").autoincrement().primaryKey(),
+      tenantKey: varchar("tenantKey", { length: 100 }).notNull(),
+      legalName: varchar("legalName", { length: 200 }).notNull(),
+      displayName: varchar("displayName", { length: 200 }).notNull(),
+      document: varchar("document", { length: 32 }),
+      status: mysqlEnum("status", ["setup_pending", "active", "suspended", "cancelled"]).default("setup_pending").notNull(),
+      ownerUserId: int("ownerUserId"),
+      metadata: text("metadata"),
+      createdAt: timestamp("createdAt").defaultNow().notNull(),
+      updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull()
+    }, (t2) => ({ tenantKeyUnique: uniqueIndex("tenants_key_uq").on(t2.tenantKey), statusIdx: index("tenants_status_idx").on(t2.status) }));
+    tenantDomains = mysqlTable("tenant_domains", {
+      id: int("id").autoincrement().primaryKey(),
+      tenantId: int("tenantId").notNull(),
+      hostname: varchar("hostname", { length: 255 }).notNull(),
+      kind: mysqlEnum("kind", ["platform_subdomain", "custom_domain"]).notNull(),
+      status: mysqlEnum("status", ["pending", "verifying", "verified", "active", "failed", "disabled"]).default("pending").notNull(),
+      verificationToken: varchar("verificationToken", { length: 96 }).notNull(),
+      verifiedAt: timestamp("verifiedAt"),
+      activatedAt: timestamp("activatedAt"),
+      lastError: text("lastError"),
+      createdAt: timestamp("createdAt").defaultNow().notNull(),
+      updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull()
+    }, (t2) => ({ hostnameUnique: uniqueIndex("tenant_domains_hostname_uq").on(t2.hostname), tenantIdx: index("tenant_domains_tenant_idx").on(t2.tenantId, t2.status) }));
+    tenantPlans = mysqlTable("tenant_plans", {
+      id: int("id").autoincrement().primaryKey(),
+      code: varchar("code", { length: 64 }).notNull(),
+      name: varchar("name", { length: 120 }).notNull(),
+      monthlyPrice: decimal("monthlyPrice", { precision: 10, scale: 2 }).default("0").notNull(),
+      entitlements: text("entitlements").notNull(),
+      limits: text("limits").notNull(),
+      active: boolean("active").default(true).notNull(),
+      createdAt: timestamp("createdAt").defaultNow().notNull(),
+      updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull()
+    }, (t2) => ({ codeUnique: uniqueIndex("tenant_plans_code_uq").on(t2.code) }));
+    tenantSubscriptions = mysqlTable("tenant_subscriptions", {
+      id: int("id").autoincrement().primaryKey(),
+      tenantId: int("tenantId").notNull(),
+      planId: int("planId").notNull(),
+      status: mysqlEnum("status", ["trialing", "active", "past_due", "suspended", "cancelled"]).default("trialing").notNull(),
+      provider: varchar("provider", { length: 32 }),
+      externalCustomerId: varchar("externalCustomerId", { length: 191 }),
+      externalSubscriptionId: varchar("externalSubscriptionId", { length: 191 }),
+      trialEndsAt: timestamp("trialEndsAt"),
+      currentPeriodEndsAt: timestamp("currentPeriodEndsAt"),
+      graceEndsAt: timestamp("graceEndsAt"),
+      createdAt: timestamp("createdAt").defaultNow().notNull(),
+      updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull()
+    }, (t2) => ({ tenantUnique: uniqueIndex("tenant_subscriptions_tenant_uq").on(t2.tenantId), statusIdx: index("tenant_subscriptions_status_idx").on(t2.status) }));
+    tenantAuditLogs = mysqlTable("tenant_audit_logs", {
+      id: int("id").autoincrement().primaryKey(),
+      tenantId: int("tenantId").notNull(),
+      storeId: int("storeId"),
+      actorUserId: int("actorUserId"),
+      action: varchar("action", { length: 120 }).notNull(),
+      resourceType: varchar("resourceType", { length: 80 }).notNull(),
+      resourceId: varchar("resourceId", { length: 96 }),
+      requestId: varchar("requestId", { length: 96 }),
+      ipAddress: varchar("ipAddress", { length: 64 }),
+      metadata: text("metadata"),
+      createdAt: timestamp("createdAt").defaultNow().notNull()
+    }, (t2) => ({ tenantCreatedIdx: index("tenant_audit_tenant_created_idx").on(t2.tenantId, t2.createdAt) }));
     categories = mysqlTable("categories", {
       id: int("id").autoincrement().primaryKey(),
+      storeId: int("storeId").notNull().default(0),
       name: varchar("name", { length: 100 }).notNull(),
-      slug: varchar("slug", { length: 100 }).notNull().unique(),
+      slug: varchar("slug", { length: 100 }).notNull(),
       description: text("description"),
       imageUrl: text("imageUrl"),
       icon: varchar("icon", { length: 64 }),
@@ -377,13 +587,14 @@ var init_schema = __esm({
       createdAt: timestamp("createdAt").defaultNow().notNull(),
       updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull()
     }, (t2) => ({
+      storeIdx: index("categories_store_idx").on(t2.storeId),
+      storeSlugUnique: uniqueIndex("categories_store_slug_unique").on(t2.storeId, t2.slug),
       activeOrderIdx: index("categories_active_order_idx").on(t2.active, t2.sortOrder),
-      externalIdx: uniqueIndex("categories_external_uq").on(t2.externalSource, t2.externalMerchantId, t2.externalId)
+      externalIdx: uniqueIndex("categories_external_uq").on(t2.storeId, t2.externalSource, t2.externalMerchantId, t2.externalId)
     }));
     products = mysqlTable("products", {
       id: int("id").autoincrement().primaryKey(),
-      storeId: int("storeId"),
-      // null = produto global (compartilhado entre lojas)
+      storeId: int("storeId").notNull().default(0),
       categoryId: int("categoryId").notNull(),
       name: varchar("name", { length: 200 }).notNull(),
       description: text("description"),
@@ -393,6 +604,23 @@ var init_schema = __esm({
       externalMerchantId: varchar("externalMerchantId", { length: 128 }),
       externalId: varchar("externalId", { length: 128 }),
       externalCode: varchar("externalCode", { length: 128 }),
+      sku: varchar("sku", { length: 128 }),
+      shortDescription: varchar("shortDescription", { length: 320 }),
+      productType: mysqlEnum("productType", ["simple", "sizes", "variants", "buildable", "multi_flavor", "combo", "weight", "quantity", "variable_price"]).default("simple").notNull(),
+      pricingEngine: mysqlEnum("pricingEngine", ["legacy_v1", "configured_v2"]).default("legacy_v1").notNull(),
+      editorialStatus: mysqlEnum("editorialStatus", ["draft", "published", "scheduled", "archived"]).default("published").notNull(),
+      preparationTime: int("preparationTime"),
+      allergenNotice: text("allergenNotice"),
+      nutritionalInfo: text("nutritionalInfo"),
+      tags: text("tags"),
+      minQuantity: int("minQuantity").default(1).notNull(),
+      maxQuantity: int("maxQuantity").default(99).notNull(),
+      couponEligible: boolean("couponEligible").default(true).notNull(),
+      pointsEligible: boolean("pointsEligible").default(true).notNull(),
+      version: int("version").default(1).notNull(),
+      scheduledPublishAt: timestamp("scheduledPublishAt"),
+      publishedAt: timestamp("publishedAt"),
+      archivedAt: timestamp("archivedAt"),
       active: boolean("active").default(true).notNull(),
       featured: boolean("featured").default(false).notNull(),
       sortOrder: int("sortOrder").default(0).notNull(),
@@ -402,13 +630,14 @@ var init_schema = __esm({
       storeIdx: index("products_store_idx").on(t2.storeId),
       categoryIdx: index("products_category_idx").on(t2.categoryId),
       activeIdx: index("products_active_idx").on(t2.active),
-      externalIdx: uniqueIndex("products_external_uq").on(t2.externalSource, t2.externalMerchantId, t2.externalId)
+      externalIdx: uniqueIndex("products_external_uq").on(t2.storeId, t2.externalSource, t2.externalMerchantId, t2.externalId),
+      storeSkuUnique: uniqueIndex("products_store_sku_uq").on(t2.storeId, t2.sku),
+      editorialIdx: index("products_editorial_idx").on(t2.storeId, t2.editorialStatus, t2.active)
     }));
     coupons = mysqlTable("coupons", {
       id: int("id").autoincrement().primaryKey(),
-      storeId: int("storeId"),
-      // null = cupom global (válido em todas as lojas)
-      code: varchar("code", { length: 50 }).notNull().unique(),
+      storeId: int("storeId").notNull().default(0),
+      code: varchar("code", { length: 50 }).notNull(),
       externalSource: varchar("externalSource", { length: 32 }),
       externalMerchantId: varchar("externalMerchantId", { length: 128 }),
       externalId: varchar("externalId", { length: 128 }),
@@ -423,8 +652,10 @@ var init_schema = __esm({
       expiresAt: timestamp("expiresAt"),
       createdAt: timestamp("createdAt").defaultNow().notNull()
     }, (t2) => ({
+      storeIdx: index("coupons_store_idx").on(t2.storeId),
+      storeCodeUnique: uniqueIndex("coupons_store_code_unique").on(t2.storeId, t2.code),
       userIdx: index("coupons_user_idx").on(t2.userId),
-      externalIdx: uniqueIndex("coupons_external_uq").on(t2.externalSource, t2.externalMerchantId, t2.externalId)
+      externalIdx: uniqueIndex("coupons_external_uq").on(t2.storeId, t2.externalSource, t2.externalMerchantId, t2.externalId)
     }));
     orders = mysqlTable("orders", {
       id: int("id").autoincrement().primaryKey(),
@@ -534,9 +765,11 @@ var init_schema = __esm({
     }));
     loyaltyTransactions = mysqlTable("loyalty_transactions", {
       id: int("id").autoincrement().primaryKey(),
+      tenantKey: varchar("tenantKey", { length: 100 }).notNull().default("bonatto"),
+      storeId: int("storeId"),
       userId: int("userId").notNull(),
       orderId: int("orderId"),
-      type: mysqlEnum("type", ["earn", "redeem", "manual"]).notNull(),
+      type: mysqlEnum("type", ["earn", "redeem", "refund", "adjustment", "manual"]).notNull(),
       points: int("points").notNull(),
       // positive = earn, negative = redeem
       description: varchar("description", { length: 255 }),
@@ -544,6 +777,7 @@ var init_schema = __esm({
       balanceAfter: int("balanceAfter").notNull(),
       createdAt: timestamp("createdAt").defaultNow().notNull()
     }, (t2) => ({
+      tenantUserIdx: index("loyalty_tx_tenant_user_idx").on(t2.tenantKey, t2.userId),
       userIdx: index("loyalty_tx_user_idx").on(t2.userId),
       orderIdx: index("loyalty_tx_order_idx").on(t2.orderId)
     }));
@@ -555,6 +789,9 @@ var init_schema = __esm({
       productPrice: decimal("productPrice", { precision: 10, scale: 2 }).notNull(),
       quantity: int("quantity").notNull(),
       notes: text("notes"),
+      snapshotVersion: int("snapshotVersion").default(1).notNull(),
+      configurationSnapshot: text("configurationSnapshot"),
+      pricingBreakdown: text("pricingBreakdown"),
       subtotal: decimal("subtotal", { precision: 10, scale: 2 }).notNull(),
       createdAt: timestamp("createdAt").defaultNow().notNull()
     }, (t2) => ({
@@ -588,12 +825,15 @@ var init_schema = __esm({
     }));
     loyaltyOrderCredits = mysqlTable("loyalty_order_credits", {
       id: int("id").autoincrement().primaryKey(),
+      tenantKey: varchar("tenantKey", { length: 100 }).notNull().default("bonatto"),
+      storeId: int("storeId"),
       orderId: int("orderId").notNull(),
       userId: int("userId").notNull(),
       points: int("points").notNull(),
       createdAt: timestamp("createdAt").defaultNow().notNull()
     }, (t2) => ({
       uniqueOrder: uniqueIndex("loyalty_order_credits_order_uq").on(t2.orderId),
+      tenantUserIdx: index("loyalty_order_credits_tenant_user_idx").on(t2.tenantKey, t2.userId),
       userIdx: index("loyalty_order_credits_user_idx").on(t2.userId)
     }));
     couponRedemptions = mysqlTable("coupon_redemptions", {
@@ -611,6 +851,7 @@ var init_schema = __esm({
     }));
     upsells = mysqlTable("upsells", {
       id: int("id").autoincrement().primaryKey(),
+      storeId: int("storeId").notNull().default(0),
       // The product being suggested
       suggestedProductId: int("suggestedProductId").notNull(),
       // Optional: only trigger when this product is in the cart (null = always show)
@@ -623,10 +864,26 @@ var init_schema = __esm({
       discountPercent: int("discountPercent").default(0),
       active: boolean("active").default(true).notNull(),
       sortOrder: int("sortOrder").default(0).notNull(),
+      triggerType: mysqlEnum("triggerType", ["product_selected", "size_selected", "modifier_selected", "category_selected", "cart_value", "missing_category", "checkout"]).default("checkout").notNull(),
+      triggerSizeId: int("triggerSizeId"),
+      triggerModifierId: int("triggerModifierId"),
+      triggerCategoryId: int("triggerCategoryId"),
+      displayType: mysqlEnum("displayType", ["inline", "modal", "cart", "checkout"]).default("checkout").notNull(),
+      priority: int("priority").default(0).notNull(),
+      startsAt: timestamp("startsAt"),
+      expiresAt: timestamp("expiresAt"),
+      weekdays: varchar("weekdays", { length: 32 }),
+      startTime: varchar("startTime", { length: 5 }),
+      endTime: varchar("endTime", { length: 5 }),
+      maxDisplaysPerCart: int("maxDisplaysPerCart").default(1).notNull(),
+      dismissible: boolean("dismissible").default(true).notNull(),
       createdAt: timestamp("createdAt").defaultNow().notNull()
-    });
+    }, (t2) => ({
+      storeIdx: index("upsells_store_idx").on(t2.storeId)
+    }));
     promotions = mysqlTable("promotions", {
       id: int("id").autoincrement().primaryKey(),
+      storeId: int("storeId").notNull().default(0),
       title: varchar("title", { length: 200 }).notNull(),
       description: text("description"),
       imageUrl: text("imageUrl"),
@@ -643,10 +900,12 @@ var init_schema = __esm({
       createdAt: timestamp("createdAt").defaultNow().notNull(),
       updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull()
     }, (t2) => ({
-      externalIdx: uniqueIndex("promotions_external_uq").on(t2.externalSource, t2.externalMerchantId, t2.externalId)
+      storeIdx: index("promotions_store_idx").on(t2.storeId),
+      externalIdx: uniqueIndex("promotions_external_uq").on(t2.storeId, t2.externalSource, t2.externalMerchantId, t2.externalId)
     }));
     raffles = mysqlTable("raffles", {
       id: int("id").autoincrement().primaryKey(),
+      storeId: int("storeId").notNull().default(0),
       title: varchar("title", { length: 200 }).notNull(),
       description: text("description"),
       prize: varchar("prize", { length: 300 }).notNull(),
@@ -658,7 +917,9 @@ var init_schema = __esm({
       endsAt: timestamp("endsAt"),
       createdAt: timestamp("createdAt").defaultNow().notNull(),
       updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull()
-    });
+    }, (t2) => ({
+      storeIdx: index("raffles_store_idx").on(t2.storeId)
+    }));
     raffleEntries = mysqlTable("raffle_entries", {
       id: int("id").autoincrement().primaryKey(),
       raffleId: int("raffleId").notNull(),
@@ -672,10 +933,14 @@ var init_schema = __esm({
     }));
     storeSettings = mysqlTable("store_settings", {
       id: int("id").autoincrement().primaryKey(),
-      key: varchar("key", { length: 100 }).notNull().unique(),
+      storeId: int("storeId").notNull().default(0),
+      key: varchar("key", { length: 100 }).notNull(),
       value: text("value").notNull(),
       updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull()
-    });
+    }, (t2) => ({
+      storeIdx: index("store_settings_store_idx").on(t2.storeId),
+      storeKeyUnique: uniqueIndex("store_settings_store_key_unique").on(t2.storeId, t2.key)
+    }));
     drivers = mysqlTable("drivers", {
       id: int("id").autoincrement().primaryKey(),
       storeId: int("storeId"),
@@ -737,6 +1002,7 @@ var init_schema = __esm({
     }));
     clientNotifications = mysqlTable("client_notifications", {
       id: int("id").autoincrement().primaryKey(),
+      storeId: int("storeId"),
       userId: int("userId").notNull(),
       title: varchar("title", { length: 200 }).notNull(),
       message: text("message").notNull(),
@@ -744,6 +1010,7 @@ var init_schema = __esm({
       read: boolean("read").default(false).notNull(),
       createdAt: timestamp("createdAt").defaultNow().notNull()
     }, (t2) => ({
+      storeUserIdx: index("client_notifications_store_user_idx").on(t2.storeId, t2.userId),
       userIdx: index("client_notifications_user_idx").on(t2.userId),
       userReadIdx: index("client_notifications_user_read_idx").on(t2.userId, t2.read),
       createdAtIdx: index("client_notifications_created_at_idx").on(t2.createdAt)
@@ -1032,13 +1299,51 @@ var init_schema = __esm({
       providerUserId: varchar("providerUserId", { length: 191 }).notNull(),
       providerEmail: varchar("providerEmail", { length: 320 }),
       providerPhone: varchar("providerPhone", { length: 20 }),
+      providerUsername: varchar("providerUsername", { length: 191 }),
+      displayName: varchar("displayName", { length: 255 }),
+      avatarUrl: text("avatarUrl"),
+      accountType: varchar("accountType", { length: 64 }),
+      accessTokenEncrypted: text("accessTokenEncrypted"),
+      refreshTokenEncrypted: text("refreshTokenEncrypted"),
+      tokenExpiresAt: timestamp("tokenExpiresAt"),
+      grantedScopes: text("grantedScopes"),
+      rawProfileJson: text("rawProfileJson"),
       isPrimary: boolean("isPrimary").default(false).notNull(),
+      consentVersion: varchar("consentVersion", { length: 32 }),
+      consentedAt: timestamp("consentedAt"),
       linkedAt: timestamp("linkedAt").defaultNow().notNull(),
+      lastSyncedAt: timestamp("lastSyncedAt"),
+      disconnectedAt: timestamp("disconnectedAt"),
       updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull()
     }, (t2) => ({
       userIdx: index("customer_auth_providers_user_idx").on(t2.userId),
       uniqueProviderUser: uniqueIndex("customer_auth_providers_provider_user_unique").on(t2.provider, t2.providerUserId),
       uniqueUserProvider: uniqueIndex("customer_auth_providers_user_provider_unique").on(t2.userId, t2.provider)
+    }));
+    authEventLogs = mysqlTable("auth_event_logs", {
+      id: int("id").autoincrement().primaryKey(),
+      userId: int("userId"),
+      provider: varchar("provider", { length: 32 }),
+      event: mysqlEnum("event", ["login_success", "login_failure", "provider_connected", "provider_disconnected", "profile_synced", "account_deleted"]).notNull(),
+      ipAddress: varchar("ipAddress", { length: 64 }),
+      userAgent: text("userAgent"),
+      metadataJson: text("metadataJson"),
+      createdAt: timestamp("createdAt").defaultNow().notNull()
+    }, (t2) => ({
+      userCreatedIdx: index("auth_event_logs_user_created_idx").on(t2.userId, t2.createdAt),
+      eventCreatedIdx: index("auth_event_logs_event_created_idx").on(t2.event, t2.createdAt)
+    }));
+    userConsents = mysqlTable("user_consents", {
+      id: int("id").autoincrement().primaryKey(),
+      userId: int("userId").notNull(),
+      kind: mysqlEnum("kind", ["terms", "privacy", "social_sync"]).notNull(),
+      version: varchar("version", { length: 32 }).notNull(),
+      granted: boolean("granted").default(true).notNull(),
+      ipAddress: varchar("ipAddress", { length: 64 }),
+      userAgent: text("userAgent"),
+      createdAt: timestamp("createdAt").defaultNow().notNull()
+    }, (t2) => ({
+      userKindCreatedIdx: index("user_consents_user_kind_created_idx").on(t2.userId, t2.kind, t2.createdAt)
     }));
     otpCodes = mysqlTable("otp_codes", {
       id: int("id").autoincrement().primaryKey(),
@@ -1070,34 +1375,43 @@ var init_schema = __esm({
     }));
     customerTags = mysqlTable("customer_tags", {
       id: int("id").autoincrement().primaryKey(),
+      storeId: int("storeId").notNull().default(0),
       userId: int("userId").notNull(),
       tag: mysqlEnum("tag", ["novo", "recorrente", "indeciso", "inativo_15", "inativo_30", "inativo_60"]).notNull(),
       assignedAt: timestamp("assignedAt").defaultNow().notNull(),
       updatedAt: timestamp("updatedAt").defaultNow().notNull()
     }, (t2) => ({
+      storeIdx: index("customer_tags_store_idx").on(t2.storeId),
       userIdx: index("customer_tags_user_idx").on(t2.userId),
       tagIdx: index("customer_tags_tag_idx").on(t2.tag),
-      uniqueUserTag: uniqueIndex("customer_tags_unique").on(t2.userId, t2.tag)
+      uniqueUserTag: uniqueIndex("customer_tags_unique").on(t2.storeId, t2.userId, t2.tag)
     }));
     customTags = mysqlTable("custom_tags", {
       id: int("id").autoincrement().primaryKey(),
-      name: varchar("name", { length: 100 }).notNull().unique(),
+      storeId: int("storeId").notNull().default(0),
+      name: varchar("name", { length: 100 }).notNull(),
       color: varchar("color", { length: 20 }).default("#6b7280").notNull(),
       description: varchar("description", { length: 255 }),
       createdAt: timestamp("createdAt").defaultNow().notNull()
-    });
+    }, (t2) => ({
+      storeIdx: index("custom_tags_store_idx").on(t2.storeId),
+      uniqueName: uniqueIndex("custom_tags_store_name_unique").on(t2.storeId, t2.name)
+    }));
     customCustomerTags = mysqlTable("custom_customer_tags", {
       id: int("id").autoincrement().primaryKey(),
+      storeId: int("storeId").notNull().default(0),
       userId: int("userId").notNull(),
       tagId: int("tagId").notNull(),
       assignedAt: timestamp("assignedAt").defaultNow().notNull()
     }, (t2) => ({
+      storeIdx: index("custom_customer_tags_store_idx").on(t2.storeId),
       userIdx: index("custom_customer_tags_user_idx").on(t2.userId),
       tagIdx: index("custom_customer_tags_tag_idx").on(t2.tagId),
-      uniqueUserTag: uniqueIndex("custom_customer_tags_unique").on(t2.userId, t2.tagId)
+      uniqueUserTag: uniqueIndex("custom_customer_tags_unique").on(t2.storeId, t2.userId, t2.tagId)
     }));
     abandonedCarts = mysqlTable("abandoned_carts", {
       id: int("id").autoincrement().primaryKey(),
+      storeId: int("storeId").notNull().default(0),
       userId: int("userId").notNull(),
       customerName: varchar("customerName", { length: 200 }).notNull(),
       customerPhone: varchar("customerPhone", { length: 30 }),
@@ -1117,11 +1431,13 @@ var init_schema = __esm({
       createdAt: timestamp("createdAt").defaultNow().notNull(),
       expiresAt: timestamp("expiresAt").notNull()
     }, (t2) => ({
+      storeIdx: index("abandoned_carts_store_idx").on(t2.storeId),
       userIdx: index("abandoned_carts_user_idx").on(t2.userId),
       statusExpiresIdx: index("abandoned_carts_status_expires_idx").on(t2.status, t2.expiresAt)
     }));
     journeys = mysqlTable("journeys", {
       id: int("id").autoincrement().primaryKey(),
+      storeId: int("storeId").notNull().default(0),
       name: varchar("name", { length: 200 }).notNull(),
       description: text("description"),
       trigger: mysqlEnum("trigger", [
@@ -1157,10 +1473,12 @@ var init_schema = __esm({
       createdAt: timestamp("createdAt").defaultNow().notNull(),
       updatedAt: timestamp("updatedAt").defaultNow().notNull()
     }, (t2) => ({
+      storeIdx: index("journeys_store_idx").on(t2.storeId),
       statusIdx: index("journeys_status_idx").on(t2.status)
     }));
     journeyExecutions = mysqlTable("journey_executions", {
       id: int("id").autoincrement().primaryKey(),
+      storeId: int("storeId").notNull().default(0),
       journeyId: int("journeyId").notNull(),
       userId: int("userId").notNull(),
       phone: varchar("phone", { length: 30 }),
@@ -1182,12 +1500,14 @@ var init_schema = __esm({
       adminTaskTitle: varchar("adminTaskTitle", { length: 200 })
       // título da tarefa criada
     }, (t2) => ({
+      storeIdx: index("journey_executions_store_idx").on(t2.storeId),
       journeyIdx: index("journey_executions_journey_idx").on(t2.journeyId),
       userIdx: index("journey_executions_user_idx").on(t2.userId),
       statusNextStepIdx: index("journey_executions_status_next_idx").on(t2.status, t2.nextStepAt)
     }));
     notificationTemplates = mysqlTable("notification_templates", {
       id: int("id").autoincrement().primaryKey(),
+      storeId: int("storeId").notNull().default(0),
       event: mysqlEnum("event", [
         "order_confirmed",
         "order_preparing",
@@ -1209,9 +1529,13 @@ var init_schema = __esm({
       isActive: boolean("isActive").default(true).notNull(),
       createdAt: timestamp("createdAt").defaultNow().notNull(),
       updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull()
-    });
+    }, (t2) => ({
+      storeIdx: index("notification_templates_store_idx").on(t2.storeId),
+      storeEventChannelIdx: index("notification_templates_store_event_channel_idx").on(t2.storeId, t2.event, t2.channel)
+    }));
     deliveryZones = mysqlTable("delivery_zones", {
       id: int("id").autoincrement().primaryKey(),
+      storeId: int("storeId").notNull().default(0),
       neighborhood: varchar("neighborhood", { length: 200 }).notNull(),
       // nome do bairro
       city: varchar("city", { length: 200 }).notNull().default(""),
@@ -1220,9 +1544,14 @@ var init_schema = __esm({
       isActive: boolean("isActive").default(true).notNull(),
       createdAt: timestamp("createdAt").defaultNow().notNull(),
       updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull()
-    });
+    }, (t2) => ({
+      storeIdx: index("delivery_zones_store_idx").on(t2.storeId),
+      storeNeighborhoodIdx: index("delivery_zones_store_neighborhood_idx").on(t2.storeId, t2.neighborhood)
+    }));
     clubPayments = mysqlTable("club_payments", {
       id: int("id").autoincrement().primaryKey(),
+      tenantKey: varchar("tenantKey", { length: 100 }).notNull().default("bonatto"),
+      storeId: int("storeId").notNull().default(0),
       userId: int("userId").notNull(),
       plan: mysqlEnum("plan", ["bonattao", "basico"]).notNull(),
       amount: decimal("amount", { precision: 10, scale: 2 }).notNull(),
@@ -1232,11 +1561,14 @@ var init_schema = __esm({
       paidAt: timestamp("paidAt"),
       createdAt: timestamp("createdAt").defaultNow().notNull()
     }, (t2) => ({
+      tenantUserIdx: index("club_payments_tenant_user_idx").on(t2.tenantKey, t2.userId),
+      storeIdx: index("club_payments_store_idx").on(t2.storeId),
       userIdx: index("club_payments_user_idx").on(t2.userId),
       statusIdx: index("club_payments_status_idx").on(t2.status)
     }));
     menuSlides = mysqlTable("menu_slides", {
       id: int("id").autoincrement().primaryKey(),
+      storeId: int("storeId").notNull().default(0),
       title: varchar("title", { length: 200 }).notNull(),
       subtitle: varchar("subtitle", { length: 300 }),
       imageUrl: text("imageUrl"),
@@ -1248,9 +1580,12 @@ var init_schema = __esm({
       isActive: boolean("isActive").default(true).notNull(),
       createdAt: timestamp("createdAt").defaultNow().notNull(),
       updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull()
-    });
+    }, (t2) => ({
+      storeIdx: index("menu_slides_store_idx").on(t2.storeId)
+    }));
     scheduledNotifications = mysqlTable("scheduled_notifications", {
       id: int("id").autoincrement().primaryKey(),
+      storeId: int("storeId").notNull().default(0),
       title: varchar("title", { length: 200 }).notNull(),
       message: text("message").notNull(),
       channel: mysqlEnum("channel", ["push", "whatsapp", "both"]).default("push").notNull(),
@@ -1266,18 +1601,23 @@ var init_schema = __esm({
       createdAt: timestamp("createdAt").defaultNow().notNull(),
       updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull()
     }, (t2) => ({
+      storeIdx: index("scheduled_notifications_store_idx").on(t2.storeId),
+      storeScheduledStatusIdx: index("scheduled_notifications_store_scheduled_status_idx").on(t2.storeId, t2.scheduledAt, t2.status),
       scheduledAtStatusIdx: index("scheduled_notifications_scheduled_status_idx").on(t2.scheduledAt, t2.status),
       statusIdx: index("scheduled_notifications_status_idx").on(t2.status)
     }));
     carouselImages = mysqlTable("carousel_images", {
       id: int("id").autoincrement().primaryKey(),
+      storeId: int("storeId").notNull().default(0),
       imageUrl: text("imageUrl").notNull(),
       title: varchar("title", { length: 200 }),
       sortOrder: int("sortOrder").default(0).notNull(),
       active: boolean("active").default(true).notNull(),
       createdAt: timestamp("createdAt").defaultNow().notNull(),
       updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull()
-    });
+    }, (t2) => ({
+      storeIdx: index("carousel_images_store_idx").on(t2.storeId)
+    }));
     driverPushSubscriptions = mysqlTable("driver_push_subscriptions", {
       id: int("id").autoincrement().primaryKey(),
       driverId: int("driverId").notNull(),
@@ -1292,6 +1632,7 @@ var init_schema = __esm({
     }));
     automationEvents = mysqlTable("automation_events", {
       id: int("id").autoincrement().primaryKey(),
+      storeId: int("storeId").notNull().default(0),
       type: varchar("type", { length: 60 }).notNull(),
       // 'cart_step1', 'cart_step2', 'cart_step3', 'reactivation_15d', etc.
       userId: int("userId"),
@@ -1306,6 +1647,7 @@ var init_schema = __esm({
       // JSON com detalhes extras
       createdAt: timestamp("createdAt").defaultNow().notNull()
     }, (t2) => ({
+      storeIdx: index("automation_events_store_idx").on(t2.storeId),
       userIdx: index("automation_events_user_idx").on(t2.userId),
       typeStepIdx: index("automation_events_type_step_idx").on(t2.type, t2.step),
       createdAtIdx: index("automation_events_created_idx").on(t2.createdAt)
@@ -1339,12 +1681,395 @@ var init_schema = __esm({
       alertUserIdx: uniqueIndex("client_alert_reads_alert_user_idx").on(t2.alertId, t2.userId),
       userIdx: index("client_alert_reads_user_idx").on(t2.userId)
     }));
+    productOptionGroups = mysqlTable("product_option_groups", {
+      id: int("id").autoincrement().primaryKey(),
+      storeId: int("storeId").notNull(),
+      productId: int("productId").notNull(),
+      name: varchar("name", { length: 120 }).notNull(),
+      kind: mysqlEnum("kind", ["single", "multiple", "flavor", "size", "edge"]).default("multiple").notNull(),
+      description: text("description"),
+      required: boolean("required").default(false).notNull(),
+      minSelections: int("minSelections").default(0).notNull(),
+      maxSelections: int("maxSelections").default(1).notNull(),
+      freeSelections: int("freeSelections").default(0).notNull(),
+      allowRepeatedOptions: boolean("allowRepeatedOptions").default(false).notNull(),
+      appliesToAllSizes: boolean("appliesToAllSizes").default(true).notNull(),
+      sortOrder: int("sortOrder").default(0).notNull(),
+      active: boolean("active").default(true).notNull(),
+      createdAt: timestamp("createdAt").defaultNow().notNull(),
+      updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull()
+    }, (t2) => ({ productIdx: index("product_option_groups_product_idx").on(t2.storeId, t2.productId, t2.active) }));
+    productOptions = mysqlTable("product_options", {
+      id: int("id").autoincrement().primaryKey(),
+      storeId: int("storeId").notNull(),
+      groupId: int("groupId").notNull(),
+      name: varchar("name", { length: 160 }).notNull(),
+      description: text("description"),
+      priceDelta: decimal("priceDelta", { precision: 10, scale: 2 }).default("0").notNull(),
+      linkedProductId: int("linkedProductId"),
+      ingredientId: int("ingredientId"),
+      ingredientQuantity: decimal("ingredientQuantity", { precision: 10, scale: 3 }),
+      imageUrl: text("imageUrl"),
+      maxQuantity: int("maxQuantity").default(1).notNull(),
+      allowRepeat: boolean("allowRepeat").default(false).notNull(),
+      sortOrder: int("sortOrder").default(0).notNull(),
+      active: boolean("active").default(true).notNull(),
+      createdAt: timestamp("createdAt").defaultNow().notNull(),
+      updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull()
+    }, (t2) => ({ groupIdx: index("product_options_group_idx").on(t2.storeId, t2.groupId, t2.active) }));
+    productImages = mysqlTable("product_images", {
+      id: int("id").autoincrement().primaryKey(),
+      storeId: int("storeId").notNull(),
+      productId: int("productId").notNull(),
+      imageUrl: text("imageUrl").notNull(),
+      altText: varchar("altText", { length: 240 }),
+      kind: mysqlEnum("kind", ["primary", "gallery", "flavor", "nutrition"]).default("gallery").notNull(),
+      sortOrder: int("sortOrder").default(0).notNull(),
+      active: boolean("active").default(true).notNull(),
+      createdAt: timestamp("createdAt").defaultNow().notNull()
+    }, (t2) => ({ productIdx: index("product_images_product_idx").on(t2.storeId, t2.productId, t2.active, t2.sortOrder) }));
+    productSizes = mysqlTable("product_sizes", {
+      id: int("id").autoincrement().primaryKey(),
+      storeId: int("storeId").notNull(),
+      productId: int("productId").notNull(),
+      name: varchar("name", { length: 120 }).notNull(),
+      internalCode: varchar("internalCode", { length: 128 }),
+      description: text("description"),
+      price: decimal("price", { precision: 10, scale: 2 }).notNull(),
+      promotionalPrice: decimal("promotionalPrice", { precision: 10, scale: 2 }),
+      promotionStartsAt: timestamp("promotionStartsAt"),
+      promotionEndsAt: timestamp("promotionEndsAt"),
+      serves: int("serves"),
+      minFlavors: int("minFlavors"),
+      maxFlavors: int("maxFlavors"),
+      maxAddons: int("maxAddons"),
+      preparationTime: int("preparationTime"),
+      active: boolean("active").default(true).notNull(),
+      sortOrder: int("sortOrder").default(0).notNull(),
+      createdAt: timestamp("createdAt").defaultNow().notNull(),
+      updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull()
+    }, (t2) => ({
+      productIdx: index("product_sizes_product_idx").on(t2.storeId, t2.productId, t2.active, t2.sortOrder),
+      productCodeUnique: uniqueIndex("product_sizes_code_uq").on(t2.storeId, t2.productId, t2.internalCode)
+    }));
+    productVariants = mysqlTable("product_variants", {
+      id: int("id").autoincrement().primaryKey(),
+      storeId: int("storeId").notNull(),
+      productId: int("productId").notNull(),
+      name: varchar("name", { length: 160 }).notNull(),
+      sku: varchar("sku", { length: 128 }),
+      price: decimal("price", { precision: 10, scale: 2 }).notNull(),
+      promotionalPrice: decimal("promotionalPrice", { precision: 10, scale: 2 }),
+      active: boolean("active").default(true).notNull(),
+      sortOrder: int("sortOrder").default(0).notNull(),
+      createdAt: timestamp("createdAt").defaultNow().notNull(),
+      updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull()
+    }, (t2) => ({ productIdx: index("product_variants_product_idx").on(t2.storeId, t2.productId, t2.active), storeSkuUnique: uniqueIndex("product_variants_store_sku_uq").on(t2.storeId, t2.sku) }));
+    productAvailability = mysqlTable("product_availability", {
+      id: int("id").autoincrement().primaryKey(),
+      storeId: int("storeId").notNull(),
+      productId: int("productId").notNull(),
+      weekday: int("weekday"),
+      startTime: varchar("startTime", { length: 5 }),
+      endTime: varchar("endTime", { length: 5 }),
+      startsAt: timestamp("startsAt"),
+      expiresAt: timestamp("expiresAt"),
+      channel: mysqlEnum("channel", ["all", "delivery", "pickup", "dine_in", "counter"]).default("all").notNull(),
+      unavailableBehavior: mysqlEnum("unavailableBehavior", ["hide", "show_unavailable", "show_return_time"]).default("show_unavailable").notNull(),
+      stockLimit: int("stockLimit"),
+      pausedUntil: timestamp("pausedUntil"),
+      active: boolean("active").default(true).notNull(),
+      createdAt: timestamp("createdAt").defaultNow().notNull(),
+      updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull()
+    }, (t2) => ({ productIdx: index("product_availability_product_idx").on(t2.storeId, t2.productId, t2.active) }));
+    modifierSizeRules = mysqlTable("modifier_size_rules", {
+      id: int("id").autoincrement().primaryKey(),
+      storeId: int("storeId").notNull(),
+      modifierOptionId: int("modifierOptionId").notNull(),
+      productSizeId: int("productSizeId").notNull(),
+      enabled: boolean("enabled").default(true).notNull(),
+      priceOverride: decimal("priceOverride", { precision: 10, scale: 2 }),
+      maxQuantityOverride: int("maxQuantityOverride"),
+      createdAt: timestamp("createdAt").defaultNow().notNull(),
+      updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull()
+    }, (t2) => ({ optionSizeUnique: uniqueIndex("modifier_size_rules_uq").on(t2.storeId, t2.modifierOptionId, t2.productSizeId) }));
+    multiFlavorSettings = mysqlTable("multi_flavor_settings", {
+      id: int("id").autoincrement().primaryKey(),
+      storeId: int("storeId").notNull(),
+      productId: int("productId").notNull(),
+      enabled: boolean("enabled").default(false).notNull(),
+      pricingRule: mysqlEnum("pricingRule", ["highest_price", "average_price", "proportional_price", "size_fixed_price", "base_plus_difference"]).default("highest_price").notNull(),
+      allowRepeatedFlavors: boolean("allowRepeatedFlavors").default(false).notNull(),
+      visualDivisions: boolean("visualDivisions").default(true).notNull(),
+      createdAt: timestamp("createdAt").defaultNow().notNull(),
+      updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull()
+    }, (t2) => ({ productUnique: uniqueIndex("multi_flavor_settings_product_uq").on(t2.storeId, t2.productId) }));
+    productFlavors = mysqlTable("product_flavors", {
+      id: int("id").autoincrement().primaryKey(),
+      storeId: int("storeId").notNull(),
+      productId: int("productId").notNull(),
+      name: varchar("name", { length: 160 }).notNull(),
+      description: text("description"),
+      imageUrl: text("imageUrl"),
+      ingredients: text("ingredients"),
+      removableIngredients: text("removableIngredients"),
+      active: boolean("active").default(true).notNull(),
+      sortOrder: int("sortOrder").default(0).notNull(),
+      createdAt: timestamp("createdAt").defaultNow().notNull(),
+      updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull()
+    }, (t2) => ({ productIdx: index("product_flavors_product_idx").on(t2.storeId, t2.productId, t2.active, t2.sortOrder) }));
+    flavorSizePrices = mysqlTable("flavor_size_prices", {
+      id: int("id").autoincrement().primaryKey(),
+      storeId: int("storeId").notNull(),
+      flavorId: int("flavorId").notNull(),
+      productSizeId: int("productSizeId").notNull(),
+      price: decimal("price", { precision: 10, scale: 2 }).notNull(),
+      active: boolean("active").default(true).notNull(),
+      createdAt: timestamp("createdAt").defaultNow().notNull(),
+      updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull()
+    }, (t2) => ({ flavorSizeUnique: uniqueIndex("flavor_size_prices_uq").on(t2.storeId, t2.flavorId, t2.productSizeId) }));
+    productDrafts = mysqlTable("product_drafts", {
+      id: int("id").autoincrement().primaryKey(),
+      storeId: int("storeId").notNull(),
+      productId: int("productId"),
+      createdByUserId: int("createdByUserId").notNull(),
+      baseVersion: int("baseVersion").default(0).notNull(),
+      status: mysqlEnum("status", ["editing", "ready", "published", "discarded"]).default("editing").notNull(),
+      draftData: text("draftData").notNull(),
+      tutorialProgress: text("tutorialProgress"),
+      lastSavedAt: timestamp("lastSavedAt").defaultNow().notNull(),
+      createdAt: timestamp("createdAt").defaultNow().notNull(),
+      updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull()
+    }, (t2) => ({ productIdx: index("product_drafts_product_idx").on(t2.storeId, t2.productId, t2.status), userIdx: index("product_drafts_user_idx").on(t2.createdByUserId, t2.status) }));
+    productRevisions = mysqlTable("product_revisions", {
+      id: int("id").autoincrement().primaryKey(),
+      storeId: int("storeId").notNull(),
+      productId: int("productId").notNull(),
+      version: int("version").notNull(),
+      snapshot: text("snapshot").notNull(),
+      note: varchar("note", { length: 240 }),
+      createdByUserId: int("createdByUserId"),
+      createdAt: timestamp("createdAt").defaultNow().notNull()
+    }, (t2) => ({ productVersionUnique: uniqueIndex("product_revisions_uq").on(t2.storeId, t2.productId, t2.version), productIdx: index("product_revisions_product_idx").on(t2.productId, t2.createdAt) }));
+    productAuditLogs = mysqlTable("product_audit_logs", {
+      id: int("id").autoincrement().primaryKey(),
+      storeId: int("storeId").notNull(),
+      productId: int("productId").notNull(),
+      actorUserId: int("actorUserId"),
+      action: varchar("action", { length: 80 }).notNull(),
+      fieldName: varchar("fieldName", { length: 160 }),
+      previousValue: text("previousValue"),
+      newValue: text("newValue"),
+      createdAt: timestamp("createdAt").defaultNow().notNull()
+    }, (t2) => ({ productIdx: index("product_audit_logs_product_idx").on(t2.storeId, t2.productId, t2.createdAt) }));
+    productCombos = mysqlTable("product_combos", {
+      id: int("id").autoincrement().primaryKey(),
+      storeId: int("storeId").notNull(),
+      productId: int("productId").notNull(),
+      name: varchar("name", { length: 160 }).notNull(),
+      description: text("description"),
+      active: boolean("active").default(true).notNull(),
+      createdAt: timestamp("createdAt").defaultNow().notNull(),
+      updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull()
+    }, (t2) => ({ productUnique: uniqueIndex("product_combos_product_uq").on(t2.storeId, t2.productId) }));
+    comboGroups = mysqlTable("combo_groups", {
+      id: int("id").autoincrement().primaryKey(),
+      storeId: int("storeId").notNull(),
+      comboId: int("comboId").notNull(),
+      name: varchar("name", { length: 120 }).notNull(),
+      required: boolean("required").default(true).notNull(),
+      minSelections: int("minSelections").default(1).notNull(),
+      maxSelections: int("maxSelections").default(1).notNull(),
+      sortOrder: int("sortOrder").default(0).notNull(),
+      active: boolean("active").default(true).notNull()
+    }, (t2) => ({ comboIdx: index("combo_groups_combo_idx").on(t2.storeId, t2.comboId) }));
+    comboGroupItems = mysqlTable("combo_group_items", {
+      id: int("id").autoincrement().primaryKey(),
+      storeId: int("storeId").notNull(),
+      groupId: int("groupId").notNull(),
+      productId: int("productId").notNull(),
+      sizeId: int("sizeId"),
+      priceDelta: decimal("priceDelta", { precision: 10, scale: 2 }).default("0").notNull(),
+      active: boolean("active").default(true).notNull()
+    }, (t2) => ({ groupIdx: index("combo_group_items_group_idx").on(t2.storeId, t2.groupId) }));
+    orderItemSelections = mysqlTable("order_item_selections", {
+      id: int("id").autoincrement().primaryKey(),
+      storeId: int("storeId").notNull(),
+      orderId: int("orderId").notNull(),
+      orderItemId: int("orderItemId").notNull(),
+      groupName: varchar("groupName", { length: 120 }).notNull(),
+      optionName: varchar("optionName", { length: 160 }).notNull(),
+      optionId: int("optionId"),
+      linkedProductId: int("linkedProductId"),
+      priceDelta: decimal("priceDelta", { precision: 10, scale: 2 }).default("0").notNull(),
+      quantity: int("quantity").default(1).notNull(),
+      totalPrice: decimal("totalPrice", { precision: 10, scale: 2 }).default("0").notNull(),
+      metadata: text("metadata"),
+      createdAt: timestamp("createdAt").defaultNow().notNull()
+    }, (t2) => ({ orderIdx: index("order_item_selections_order_idx").on(t2.storeId, t2.orderId), itemIdx: index("order_item_selections_item_idx").on(t2.orderItemId) }));
+    kitchenTickets = mysqlTable("kitchen_tickets", {
+      id: int("id").autoincrement().primaryKey(),
+      storeId: int("storeId").notNull(),
+      orderId: int("orderId").notNull(),
+      station: varchar("station", { length: 80 }).default("cozinha").notNull(),
+      status: mysqlEnum("status", ["queued", "preparing", "ready", "completed", "cancelled"]).default("queued").notNull(),
+      priority: mysqlEnum("priority", ["normal", "high", "urgent"]).default("normal").notNull(),
+      promisedAt: timestamp("promisedAt"),
+      startedAt: timestamp("startedAt"),
+      readyAt: timestamp("readyAt"),
+      completedAt: timestamp("completedAt"),
+      printedAt: timestamp("printedAt"),
+      createdAt: timestamp("createdAt").defaultNow().notNull(),
+      updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull()
+    }, (t2) => ({ orderUnique: uniqueIndex("kitchen_tickets_order_uq").on(t2.storeId, t2.orderId), boardIdx: index("kitchen_tickets_board_idx").on(t2.storeId, t2.status, t2.createdAt) }));
+    growthSettings = mysqlTable("growth_settings", {
+      id: int("id").autoincrement().primaryKey(),
+      storeId: int("storeId").notNull(),
+      cashbackPercent: decimal("cashbackPercent", { precision: 5, scale: 2 }).default("0").notNull(),
+      pointsPerReal: decimal("pointsPerReal", { precision: 8, scale: 3 }).default("1").notNull(),
+      referralReferrerPoints: int("referralReferrerPoints").default(100).notNull(),
+      referralReferredPoints: int("referralReferredPoints").default(50).notNull(),
+      npsEnabled: boolean("npsEnabled").default(true).notNull(),
+      config: text("config"),
+      updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull()
+    }, (t2) => ({ storeUnique: uniqueIndex("growth_settings_store_uq").on(t2.storeId) }));
+    rewardCatalog = mysqlTable("reward_catalog", {
+      id: int("id").autoincrement().primaryKey(),
+      storeId: int("storeId").notNull(),
+      name: varchar("name", { length: 160 }).notNull(),
+      description: text("description"),
+      rewardType: mysqlEnum("rewardType", ["discount", "product", "free_delivery", "cashback"]).notNull(),
+      pointsCost: int("pointsCost").default(0).notNull(),
+      value: decimal("value", { precision: 10, scale: 2 }).default("0").notNull(),
+      productId: int("productId"),
+      category: varchar("category", { length: 80 }),
+      icon: varchar("icon", { length: 64 }),
+      imageUrl: text("imageUrl"),
+      badgeText: varchar("badgeText", { length: 64 }),
+      buttonText: varchar("buttonText", { length: 64 }).default("Resgatar").notNull(),
+      stock: int("stock"),
+      totalRedemptions: int("totalRedemptions").default(0).notNull(),
+      maxRedemptionsPerUser: int("maxRedemptionsPerUser"),
+      active: boolean("active").default(true).notNull(),
+      featured: boolean("featured").default(false).notNull(),
+      sortOrder: int("sortOrder").default(0).notNull(),
+      startsAt: timestamp("startsAt"),
+      expiresAt: timestamp("expiresAt"),
+      archivedAt: timestamp("archivedAt"),
+      createdAt: timestamp("createdAt").defaultNow().notNull(),
+      updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull()
+    }, (t2) => ({
+      storeIdx: index("reward_catalog_store_idx").on(t2.storeId, t2.active),
+      displayIdx: index("reward_catalog_display_idx").on(t2.storeId, t2.archivedAt, t2.sortOrder)
+    }));
+    rewardCoupons = mysqlTable("reward_coupons", {
+      id: int("id").autoincrement().primaryKey(),
+      storeId: int("storeId").notNull(),
+      rewardId: int("rewardId").notNull(),
+      code: varchar("code", { length: 64 }).notNull(),
+      status: mysqlEnum("status", ["available", "reserved", "redeemed", "used", "expired", "cancelled"]).default("available").notNull(),
+      assignedUserId: int("assignedUserId"),
+      redemptionId: int("redemptionId"),
+      reservedAt: timestamp("reservedAt"),
+      redeemedAt: timestamp("redeemedAt"),
+      usedAt: timestamp("usedAt"),
+      expiresAt: timestamp("expiresAt"),
+      createdAt: timestamp("createdAt").defaultNow().notNull(),
+      updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull()
+    }, (t2) => ({
+      storeCodeUnique: uniqueIndex("reward_coupons_store_code_uq").on(t2.storeId, t2.code),
+      rewardStatusIdx: index("reward_coupons_reward_status_idx").on(t2.rewardId, t2.status),
+      userIdx: index("reward_coupons_user_idx").on(t2.assignedUserId),
+      redemptionIdx: uniqueIndex("reward_coupons_redemption_uq").on(t2.redemptionId)
+    }));
+    rewardRedemptions = mysqlTable("reward_redemptions", {
+      id: int("id").autoincrement().primaryKey(),
+      storeId: int("storeId").notNull(),
+      rewardId: int("rewardId").notNull(),
+      userId: int("userId").notNull(),
+      couponId: int("couponId"),
+      pointsSpent: int("pointsSpent").notNull(),
+      status: mysqlEnum("status", ["pending", "completed", "cancelled", "refunded", "expired"]).default("pending").notNull(),
+      idempotencyKey: varchar("idempotencyKey", { length: 96 }).notNull(),
+      redeemedAt: timestamp("redeemedAt").defaultNow().notNull(),
+      expiresAt: timestamp("expiresAt"),
+      cancelledAt: timestamp("cancelledAt"),
+      cancellationReason: varchar("cancellationReason", { length: 500 }),
+      createdAt: timestamp("createdAt").defaultNow().notNull(),
+      updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull()
+    }, (t2) => ({
+      idempotencyUnique: uniqueIndex("reward_redemptions_idempotency_uq").on(t2.storeId, t2.userId, t2.idempotencyKey),
+      rewardIdx: index("reward_redemptions_reward_idx").on(t2.rewardId, t2.status),
+      userIdx: index("reward_redemptions_user_idx").on(t2.userId, t2.status),
+      couponUnique: uniqueIndex("reward_redemptions_coupon_uq").on(t2.couponId)
+    }));
+    rewardCouponUsages = mysqlTable("reward_coupon_usages", {
+      id: int("id").autoincrement().primaryKey(),
+      storeId: int("storeId").notNull(),
+      couponId: int("couponId").notNull(),
+      redemptionId: int("redemptionId").notNull(),
+      userId: int("userId").notNull(),
+      orderId: int("orderId").notNull(),
+      usedAt: timestamp("usedAt").defaultNow().notNull()
+    }, (t2) => ({
+      couponUnique: uniqueIndex("reward_coupon_usages_coupon_uq").on(t2.couponId),
+      orderUnique: uniqueIndex("reward_coupon_usages_order_uq").on(t2.orderId),
+      userIdx: index("reward_coupon_usages_user_idx").on(t2.userId, t2.usedAt)
+    }));
+    npsResponses = mysqlTable("nps_responses", {
+      id: int("id").autoincrement().primaryKey(),
+      storeId: int("storeId").notNull(),
+      orderId: int("orderId").notNull(),
+      userId: int("userId"),
+      score: int("score").notNull(),
+      comment: text("comment"),
+      createdAt: timestamp("createdAt").defaultNow().notNull()
+    }, (t2) => ({ orderUnique: uniqueIndex("nps_responses_order_uq").on(t2.storeId, t2.orderId) }));
+    referrals = mysqlTable("referrals", {
+      id: int("id").autoincrement().primaryKey(),
+      storeId: int("storeId").notNull(),
+      referrerUserId: int("referrerUserId").notNull(),
+      referredUserId: int("referredUserId"),
+      code: varchar("code", { length: 32 }).notNull(),
+      status: mysqlEnum("status", ["pending", "converted", "rewarded", "cancelled"]).default("pending").notNull(),
+      convertedOrderId: int("convertedOrderId"),
+      createdAt: timestamp("createdAt").defaultNow().notNull(),
+      convertedAt: timestamp("convertedAt")
+    }, (t2) => ({ storeCodeUnique: uniqueIndex("referrals_store_code_uq").on(t2.storeId, t2.code), referrerIdx: index("referrals_referrer_idx").on(t2.storeId, t2.referrerUserId) }));
+    integrationConnections = mysqlTable("integration_connections", {
+      id: int("id").autoincrement().primaryKey(),
+      storeId: int("storeId").notNull(),
+      provider: varchar("provider", { length: 64 }).notNull(),
+      status: mysqlEnum("status", ["disconnected", "connecting", "connected", "degraded", "error"]).default("disconnected").notNull(),
+      config: text("config"),
+      credentialsRef: varchar("credentialsRef", { length: 191 }),
+      lastSuccessAt: timestamp("lastSuccessAt"),
+      lastFailureAt: timestamp("lastFailureAt"),
+      lastError: text("lastError"),
+      latencyMs: int("latencyMs"),
+      createdAt: timestamp("createdAt").defaultNow().notNull(),
+      updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull()
+    }, (t2) => ({ providerUnique: uniqueIndex("integration_connections_provider_uq").on(t2.storeId, t2.provider), healthIdx: index("integration_connections_health_idx").on(t2.storeId, t2.status) }));
+    intelligenceSuggestions = mysqlTable("intelligence_suggestions", {
+      id: int("id").autoincrement().primaryKey(),
+      storeId: int("storeId").notNull(),
+      kind: mysqlEnum("kind", ["campaign", "demand", "purchase", "pricing", "staffing"]).notNull(),
+      title: varchar("title", { length: 200 }).notNull(),
+      description: text("description").notNull(),
+      confidence: decimal("confidence", { precision: 5, scale: 2 }).default("0").notNull(),
+      impactValue: decimal("impactValue", { precision: 12, scale: 2 }),
+      payload: text("payload"),
+      status: mysqlEnum("status", ["new", "accepted", "dismissed", "applied"]).default("new").notNull(),
+      validUntil: timestamp("validUntil"),
+      createdAt: timestamp("createdAt").defaultNow().notNull(),
+      updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull()
+    }, (t2) => ({ storeKindIdx: index("intelligence_suggestions_store_kind_idx").on(t2.storeId, t2.kind, t2.status) }));
   }
 });
 
 // server/runtimeSchema.ts
 function shouldRunRuntimeSchemaMigrations() {
-  return process.env.NODE_ENV !== "production" || process.env.RUNTIME_SCHEMA_MIGRATIONS === "true";
+  return process.env.RUNTIME_SCHEMA_MIGRATIONS === "true";
 }
 var init_runtimeSchema = __esm({
   "server/runtimeSchema.ts"() {
@@ -1358,6 +2083,7 @@ __export(db_exports, {
   addLoyaltyPoints: () => addLoyaltyPoints,
   addTableSessionItem: () => addTableSessionItem,
   adjustIngredientStock: () => adjustIngredientStock,
+  anonymizeUserAccount: () => anonymizeUserAccount,
   assignCustomTagToCustomer: () => assignCustomTagToCustomer,
   assignDriverToOrder: () => assignDriverToOrder,
   assignTagToCustomer: () => assignTagToCustomer,
@@ -1416,6 +2142,7 @@ __export(db_exports, {
   deleteStaffMember: () => deleteStaffMember,
   deleteUpsell: () => deleteUpsell,
   deleteUserAddress: () => deleteUserAddress,
+  disconnectCustomerAuthProvider: () => disconnectCustomerAuthProvider,
   dismissClientAlert: () => dismissClientAlert,
   drawRaffleWinner: () => drawRaffleWinner,
   driverConfirmDelivery: () => driverConfirmDelivery,
@@ -1443,12 +2170,15 @@ __export(db_exports, {
   getCategoryById: () => getCategoryById,
   getClientNotifications: () => getClientNotifications,
   getCouponByCode: () => getCouponByCode,
+  getCouponById: () => getCouponById,
   getCouponsByUser: () => getCouponsByUser,
   getCrmCustomerDetail: () => getCrmCustomerDetail,
   getCrmCustomers: () => getCrmCustomers,
   getCrmCustomersByTag: () => getCrmCustomersByTag,
   getCrmStats: () => getCrmStats,
   getCustomTagsForCustomer: () => getCustomTagsForCustomer,
+  getCustomerAuthProvider: () => getCustomerAuthProvider,
+  getCustomerAuthProviders: () => getCustomerAuthProviders,
   getCustomerMetricsReport: () => getCustomerMetricsReport,
   getCustomersByCustomTagName: () => getCustomersByCustomTagName,
   getDailyRevenue: () => getDailyRevenue,
@@ -1501,6 +2231,8 @@ __export(db_exports, {
   getTableSessionItemById: () => getTableSessionItemById,
   getTableSessions: () => getTableSessions,
   getTagsForCustomer: () => getTagsForCustomer,
+  getTenantCustomerAccount: () => getTenantCustomerAccount,
+  getTenantScope: () => getTenantScope,
   getTopCategories: () => getTopCategories,
   getTopProducts: () => getTopProducts,
   getTotalUnreadForAdmin: () => getTotalUnreadForAdmin,
@@ -1530,9 +2262,12 @@ __export(db_exports, {
   markMessagesRead: () => markMessagesRead,
   markNotificationsRead: () => markNotificationsRead,
   markScheduledNotificationSent: () => markScheduledNotificationSent,
+  markUserLogin: () => markUserLogin,
   openTableSession: () => openTableSession,
   pickRandomTemplate: () => pickRandomTemplate,
   pickStoreForDeliveryAddress: () => pickStoreForDeliveryAddress,
+  recordAuthEvent: () => recordAuthEvent,
+  recordUserConsent: () => recordUserConsent,
   recordWebhookEventOnce: () => recordWebhookEventOnce,
   refundLoyaltyPointsForOrder: () => refundLoyaltyPointsForOrder,
   regenerateStaffAccessToken: () => regenerateStaffAccessToken,
@@ -1736,6 +2471,18 @@ async function hasIndex(db, tableName, indexName) {
   const rows = result[0] ?? [];
   return rows.length > 0;
 }
+async function hasConstraint(db, tableName, constraintName) {
+  const result = await db.execute(sql.raw(
+    `SELECT 1 FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = '${tableName}' AND CONSTRAINT_NAME = '${constraintName}' LIMIT 1`
+  ));
+  const rows = result[0] ?? [];
+  return rows.length > 0;
+}
+async function getIndexColumns(db, tableName, indexName) {
+  const result = await db.execute(sql.raw(`SHOW INDEX FROM \`${tableName}\` WHERE Key_name = '${indexName}'`));
+  const rows = result[0] ?? [];
+  return rows.sort((a, b) => Number(a.Seq_in_index ?? 0) - Number(b.Seq_in_index ?? 0)).map((row) => String(row.Column_name ?? "")).filter(Boolean);
+}
 async function ensureRuntimeSchema(db) {
   if (_schemaReady) {
     return _schemaReady;
@@ -1753,8 +2500,25 @@ async function ensureRuntimeSchema(db) {
         )
       );
     }
+    const socialUserColumns = [
+      ["firstName", "ALTER TABLE `users` ADD `firstName` varchar(160) NULL AFTER `name`"],
+      ["lastName", "ALTER TABLE `users` ADD `lastName` varchar(160) NULL AFTER `firstName`"],
+      ["username", "ALTER TABLE `users` ADD `username` varchar(191) NULL AFTER `email`"],
+      ["profileCompleted", "ALTER TABLE `users` ADD `profileCompleted` boolean NOT NULL DEFAULT false AFTER `emailVerified`"]
+    ];
+    for (const [column, statement] of socialUserColumns) {
+      if (!await hasColumn(db, "users", column)) await db.execute(sql.raw(statement));
+    }
     if (!await hasColumn(db, "stores", "displayName")) {
       await db.execute(sql.raw("ALTER TABLE `stores` ADD `displayName` varchar(200)"));
+    }
+    if (!await hasColumn(db, "stores", "tenantKey")) {
+      await db.execute(sql.raw("ALTER TABLE `stores` ADD `tenantKey` varchar(100) NULL AFTER `id`"));
+      await db.execute(sql.raw("UPDATE `stores` SET `tenantKey` = CASE WHEN `isDefault` = 1 OR LOWER(`name`) LIKE '%bonatto%' OR LOWER(`name`) LIKE '%bonnato%' THEN 'bonatto' ELSE `slug` END WHERE `tenantKey` IS NULL OR `tenantKey` = ''"));
+      await db.execute(sql.raw("ALTER TABLE `stores` MODIFY `tenantKey` varchar(100) NOT NULL DEFAULT 'bonatto'"));
+    }
+    if (!await hasIndex(db, "stores", "stores_tenant_idx")) {
+      await db.execute(sql.raw("CREATE INDEX `stores_tenant_idx` ON `stores` (`tenantKey`)"));
     }
     if (!await hasColumn(db, "stores", "document")) {
       await db.execute(sql.raw("ALTER TABLE `stores` ADD `document` varchar(32)"));
@@ -1780,6 +2544,288 @@ async function ensureRuntimeSchema(db) {
     }
     if (!await hasIndex(db, "stores", "stores_status_idx")) {
       await db.execute(sql.raw("CREATE INDEX `stores_status_idx` ON `stores` (`status`)"));
+    }
+    await db.execute(sql.raw(`
+      CREATE TABLE IF NOT EXISTS \`store_white_label_configs\` (
+        \`id\` int AUTO_INCREMENT NOT NULL,
+        \`storeId\` int NOT NULL,
+        \`status\` enum('active','inactive','setup_pending') NOT NULL DEFAULT 'setup_pending',
+        \`plan\` enum('essential','pro','enterprise','custom') NOT NULL DEFAULT 'essential',
+        \`domain\` varchar(191),
+        \`subdomain\` varchar(100),
+        \`brandName\` varchar(200) NOT NULL,
+        \`shortName\` varchar(100) NOT NULL,
+        \`tagline\` varchar(240),
+        \`adminTitle\` varchar(200),
+        \`deliveryLabel\` varchar(200),
+        \`logoUrl\` text,
+        \`wordmarkUrl\` text,
+        \`faviconUrl\` text,
+        \`waiterLogoUrl\` text,
+        \`primaryColor\` varchar(20) NOT NULL DEFAULT '#6E0D12',
+        \`primaryDarkColor\` varchar(20) NOT NULL DEFAULT '#450709',
+        \`accentColor\` varchar(20) NOT NULL DEFAULT '#e05c5c',
+        \`backgroundColor\` varchar(20) NOT NULL DEFAULT '#fffaf8',
+        \`textColor\` varchar(20) NOT NULL DEFAULT '#211719',
+        \`featureFlags\` text NOT NULL,
+        \`providerConfig\` text NOT NULL,
+        \`pageConfig\` text NOT NULL,
+        \`contactConfig\` text,
+        \`createdAt\` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        \`updatedAt\` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        PRIMARY KEY (\`id\`),
+        UNIQUE KEY \`store_white_label_store_unique\` (\`storeId\`),
+        UNIQUE KEY \`store_white_label_domain_unique\` (\`domain\`),
+        UNIQUE KEY \`store_white_label_subdomain_unique\` (\`subdomain\`),
+        KEY \`store_white_label_status_idx\` (\`status\`)
+      )
+    `));
+    await db.execute(sql.raw(`
+      CREATE TABLE IF NOT EXISTS \`tenant_memberships\` (
+        \`id\` int AUTO_INCREMENT NOT NULL,
+        \`tenantKey\` varchar(100) NOT NULL,
+        \`userId\` int NOT NULL,
+        \`role\` enum('owner','admin','manager') NOT NULL DEFAULT 'admin',
+        \`active\` boolean NOT NULL DEFAULT true,
+        \`createdAt\` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        \`updatedAt\` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        PRIMARY KEY (\`id\`),
+        UNIQUE KEY \`tenant_memberships_unique\` (\`tenantKey\`,\`userId\`),
+        KEY \`tenant_memberships_tenant_idx\` (\`tenantKey\`),
+        KEY \`tenant_memberships_user_idx\` (\`userId\`)
+      )
+    `));
+    await db.execute(sql.raw(`
+      CREATE TABLE IF NOT EXISTS \`tenant_customer_accounts\` (
+        \`id\` int AUTO_INCREMENT NOT NULL,
+        \`tenantKey\` varchar(100) NOT NULL,
+        \`userId\` int NOT NULL,
+        \`loyaltyPoints\` int NOT NULL DEFAULT 0,
+        \`clubPlan\` enum('bonattao','basico'),
+        \`clubStatus\` enum('active','pending','cancelled'),
+        \`clubStartDate\` timestamp NULL,
+        \`clubNextBillingDate\` timestamp NULL,
+        \`clubFreePizzaUsed\` boolean NOT NULL DEFAULT false,
+        \`clubFreePizzaResetAt\` timestamp NULL,
+        \`stripeCustomerId\` varchar(255),
+        \`createdAt\` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        \`updatedAt\` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        PRIMARY KEY (\`id\`),
+        UNIQUE KEY \`tenant_customer_accounts_unique\` (\`tenantKey\`,\`userId\`),
+        KEY \`tenant_customer_accounts_tenant_idx\` (\`tenantKey\`),
+        KEY \`tenant_customer_accounts_user_idx\` (\`userId\`),
+        CONSTRAINT \`tenant_customer_accounts_points_nonnegative_chk\` CHECK (\`loyaltyPoints\` >= 0)
+      )
+    `));
+    await db.execute(sql.raw(`
+      INSERT IGNORE INTO \`tenant_customer_accounts\`
+        (\`tenantKey\`, \`userId\`, \`loyaltyPoints\`, \`clubPlan\`, \`clubStatus\`, \`clubStartDate\`,
+         \`clubNextBillingDate\`, \`clubFreePizzaUsed\`, \`clubFreePizzaResetAt\`, \`stripeCustomerId\`)
+      SELECT 'bonatto', \`id\`, \`loyaltyPoints\`, \`clubPlan\`, \`clubStatus\`, \`clubStartDate\`,
+             \`clubNextBillingDate\`, \`clubFreePizzaUsed\`, \`clubFreePizzaResetAt\`, \`stripeCustomerId\`
+      FROM \`users\`
+    `));
+    const defaultStoreSql = "COALESCE((SELECT `id` FROM (SELECT `id` FROM `stores` ORDER BY `isDefault` DESC, `id` LIMIT 1) default_store), 0)";
+    const tenantLedgerTables = ["loyalty_transactions", "loyalty_order_credits"];
+    for (const tableName of tenantLedgerTables) {
+      if (!await hasColumn(db, tableName, "tenantKey")) {
+        await db.execute(sql.raw(`ALTER TABLE \`${tableName}\` ADD \`tenantKey\` varchar(100) NOT NULL DEFAULT 'bonatto' AFTER \`id\``));
+      }
+      if (!await hasColumn(db, tableName, "storeId")) {
+        await db.execute(sql.raw(`ALTER TABLE \`${tableName}\` ADD \`storeId\` int NULL AFTER \`tenantKey\``));
+        await db.execute(sql.raw(`
+          UPDATE \`${tableName}\` ledger
+          LEFT JOIN \`orders\` o ON o.\`id\` = ledger.\`orderId\`
+          LEFT JOIN \`stores\` s ON s.\`id\` = o.\`storeId\`
+          SET ledger.\`storeId\` = o.\`storeId\`, ledger.\`tenantKey\` = COALESCE(s.\`tenantKey\`, 'bonatto')
+          WHERE ledger.\`storeId\` IS NULL
+        `));
+      }
+      const indexName = tableName === "loyalty_transactions" ? "loyalty_tx_tenant_user_idx" : "loyalty_order_credits_tenant_user_idx";
+      if (!await hasIndex(db, tableName, indexName)) {
+        await db.execute(sql.raw(`CREATE INDEX \`${indexName}\` ON \`${tableName}\` (\`tenantKey\`,\`userId\`)`));
+      }
+    }
+    if (!await hasColumn(db, "club_payments", "tenantKey")) {
+      await db.execute(sql.raw("ALTER TABLE `club_payments` ADD `tenantKey` varchar(100) NOT NULL DEFAULT 'bonatto' AFTER `id`"));
+    }
+    if (!await hasColumn(db, "club_payments", "storeId")) {
+      await db.execute(sql.raw("ALTER TABLE `club_payments` ADD `storeId` int NULL AFTER `tenantKey`"));
+      await db.execute(sql.raw(`UPDATE \`club_payments\` SET \`storeId\` = ${defaultStoreSql} WHERE \`storeId\` IS NULL`));
+      await db.execute(sql.raw("ALTER TABLE `club_payments` MODIFY `storeId` int NOT NULL DEFAULT 0"));
+    }
+    if (!await hasIndex(db, "club_payments", "club_payments_tenant_user_idx")) {
+      await db.execute(sql.raw("CREATE INDEX `club_payments_tenant_user_idx` ON `club_payments` (`tenantKey`,`userId`)"));
+    }
+    if (!await hasIndex(db, "club_payments", "club_payments_store_idx")) {
+      await db.execute(sql.raw("CREATE INDEX `club_payments_store_idx` ON `club_payments` (`storeId`)"));
+    }
+    if (!await hasColumn(db, "client_notifications", "storeId")) {
+      await db.execute(sql.raw("ALTER TABLE `client_notifications` ADD `storeId` int NULL AFTER `id`"));
+      await db.execute(sql.raw(`UPDATE \`client_notifications\` SET \`storeId\` = ${defaultStoreSql} WHERE \`storeId\` IS NULL`));
+    }
+    if (!await hasIndex(db, "client_notifications", "client_notifications_store_user_idx")) {
+      await db.execute(sql.raw("CREATE INDEX `client_notifications_store_user_idx` ON `client_notifications` (`storeId`,`userId`)"));
+    }
+    const automationScopedTables = [
+      ["customer_tags", "customer_tags_store_idx"],
+      ["custom_tags", "custom_tags_store_idx"],
+      ["custom_customer_tags", "custom_customer_tags_store_idx"],
+      ["abandoned_carts", "abandoned_carts_store_idx"],
+      ["journeys", "journeys_store_idx"],
+      ["journey_executions", "journey_executions_store_idx"],
+      ["automation_events", "automation_events_store_idx"]
+    ];
+    for (const [tableName, indexName] of automationScopedTables) {
+      if (!await hasColumn(db, tableName, "storeId")) {
+        await db.execute(sql.raw(`ALTER TABLE \`${tableName}\` ADD \`storeId\` int NULL AFTER \`id\``));
+        await db.execute(sql.raw(`UPDATE \`${tableName}\` SET \`storeId\` = ${defaultStoreSql} WHERE \`storeId\` IS NULL`));
+        await db.execute(sql.raw(`ALTER TABLE \`${tableName}\` MODIFY \`storeId\` int NOT NULL DEFAULT 0`));
+      }
+      if (!await hasIndex(db, tableName, indexName)) {
+        await db.execute(sql.raw(`CREATE INDEX \`${indexName}\` ON \`${tableName}\` (\`storeId\`)`));
+      }
+    }
+    if (await hasIndex(db, "customer_tags", "customer_tags_unique")) {
+      const columns = await getIndexColumns(db, "customer_tags", "customer_tags_unique");
+      if (columns.join(",") !== "storeId,userId,tag") {
+        await db.execute(sql.raw("ALTER TABLE `customer_tags` DROP INDEX `customer_tags_unique`"));
+      }
+    }
+    if (!await hasIndex(db, "customer_tags", "customer_tags_unique")) {
+      await db.execute(sql.raw("CREATE UNIQUE INDEX `customer_tags_unique` ON `customer_tags` (`storeId`,`userId`,`tag`)"));
+    }
+    if (await hasIndex(db, "custom_customer_tags", "custom_customer_tags_unique")) {
+      const columns = await getIndexColumns(db, "custom_customer_tags", "custom_customer_tags_unique");
+      if (columns.join(",") !== "storeId,userId,tagId") {
+        await db.execute(sql.raw("ALTER TABLE `custom_customer_tags` DROP INDEX `custom_customer_tags_unique`"));
+      }
+    }
+    if (!await hasIndex(db, "custom_customer_tags", "custom_customer_tags_unique")) {
+      await db.execute(sql.raw("CREATE UNIQUE INDEX `custom_customer_tags_unique` ON `custom_customer_tags` (`storeId`,`userId`,`tagId`)"));
+    }
+    if (await hasIndex(db, "custom_tags", "custom_tags_name_unique")) {
+      await db.execute(sql.raw("ALTER TABLE `custom_tags` DROP INDEX `custom_tags_name_unique`"));
+    }
+    if (!await hasIndex(db, "custom_tags", "custom_tags_store_name_unique")) {
+      await db.execute(sql.raw("CREATE UNIQUE INDEX `custom_tags_store_name_unique` ON `custom_tags` (`storeId`,`name`)"));
+    }
+    if (!await hasColumn(db, "categories", "storeId")) {
+      await db.execute(sql.raw("ALTER TABLE `categories` ADD `storeId` int NULL AFTER `id`"));
+      await db.execute(sql.raw(`
+        UPDATE \`categories\`
+        SET \`storeId\` = COALESCE((SELECT \`id\` FROM (SELECT \`id\` FROM \`stores\` ORDER BY \`isDefault\` DESC, \`id\` LIMIT 1) default_store), 0)
+        WHERE \`storeId\` IS NULL
+      `));
+      await db.execute(sql.raw("ALTER TABLE `categories` MODIFY `storeId` int NOT NULL DEFAULT 0"));
+      if (await hasIndex(db, "categories", "categories_slug_unique")) {
+        await db.execute(sql.raw("ALTER TABLE `categories` DROP INDEX `categories_slug_unique`"));
+      }
+      if (await hasIndex(db, "categories", "categories_external_uq")) {
+        await db.execute(sql.raw("ALTER TABLE `categories` DROP INDEX `categories_external_uq`"));
+      }
+    }
+    if (!await hasIndex(db, "categories", "categories_store_idx")) {
+      await db.execute(sql.raw("CREATE INDEX `categories_store_idx` ON `categories` (`storeId`)"));
+    }
+    if (!await hasIndex(db, "categories", "categories_store_slug_unique")) {
+      await db.execute(sql.raw("CREATE UNIQUE INDEX `categories_store_slug_unique` ON `categories` (`storeId`,`slug`)"));
+    }
+    if (!await hasIndex(db, "categories", "categories_external_uq")) {
+      await db.execute(sql.raw("CREATE UNIQUE INDEX `categories_external_uq` ON `categories` (`storeId`,`externalSource`,`externalMerchantId`,`externalId`)"));
+    }
+    if (!await hasColumn(db, "store_settings", "storeId")) {
+      await db.execute(sql.raw("ALTER TABLE `store_settings` ADD `storeId` int NULL AFTER `id`"));
+      await db.execute(sql.raw(`
+        UPDATE \`store_settings\`
+        SET \`storeId\` = COALESCE((SELECT \`id\` FROM (SELECT \`id\` FROM \`stores\` ORDER BY \`isDefault\` DESC, \`id\` LIMIT 1) default_store), 0)
+        WHERE \`storeId\` IS NULL
+      `));
+      await db.execute(sql.raw("ALTER TABLE `store_settings` MODIFY `storeId` int NOT NULL DEFAULT 0"));
+      if (await hasIndex(db, "store_settings", "store_settings_key_unique")) {
+        await db.execute(sql.raw("ALTER TABLE `store_settings` DROP INDEX `store_settings_key_unique`"));
+      }
+    }
+    if (!await hasIndex(db, "store_settings", "store_settings_store_idx")) {
+      await db.execute(sql.raw("CREATE INDEX `store_settings_store_idx` ON `store_settings` (`storeId`)"));
+    }
+    if (!await hasIndex(db, "store_settings", "store_settings_store_key_unique")) {
+      await db.execute(sql.raw("CREATE UNIQUE INDEX `store_settings_store_key_unique` ON `store_settings` (`storeId`,`key`)"));
+    }
+    const promotionsWasGlobal = !await hasColumn(db, "promotions", "storeId");
+    const tenantScopedTables = [
+      ["upsells", "upsells_store_idx"],
+      ["promotions", "promotions_store_idx"],
+      ["raffles", "raffles_store_idx"],
+      ["delivery_zones", "delivery_zones_store_idx"],
+      ["menu_slides", "menu_slides_store_idx"],
+      ["carousel_images", "carousel_images_store_idx"],
+      ["notification_templates", "notification_templates_store_idx"],
+      ["scheduled_notifications", "scheduled_notifications_store_idx"]
+    ];
+    for (const [tableName, indexName] of tenantScopedTables) {
+      if (!await hasColumn(db, tableName, "storeId")) {
+        await db.execute(sql.raw(`ALTER TABLE \`${tableName}\` ADD \`storeId\` int NULL AFTER \`id\``));
+        await db.execute(sql.raw(`
+          UPDATE \`${tableName}\`
+          SET \`storeId\` = COALESCE((SELECT \`id\` FROM (SELECT \`id\` FROM \`stores\` ORDER BY \`isDefault\` DESC, \`id\` LIMIT 1) default_store), 0)
+          WHERE \`storeId\` IS NULL
+        `));
+        await db.execute(sql.raw(`ALTER TABLE \`${tableName}\` MODIFY \`storeId\` int NOT NULL DEFAULT 0`));
+      }
+      if (!await hasIndex(db, tableName, indexName)) {
+        await db.execute(sql.raw(`CREATE INDEX \`${indexName}\` ON \`${tableName}\` (\`storeId\`)`));
+      }
+    }
+    if (!await hasIndex(db, "delivery_zones", "delivery_zones_store_neighborhood_idx")) {
+      await db.execute(sql.raw("CREATE INDEX `delivery_zones_store_neighborhood_idx` ON `delivery_zones` (`storeId`,`neighborhood`)"));
+    }
+    if (!await hasIndex(db, "notification_templates", "notification_templates_store_event_channel_idx")) {
+      await db.execute(sql.raw("CREATE INDEX `notification_templates_store_event_channel_idx` ON `notification_templates` (`storeId`,`event`,`channel`)"));
+    }
+    if (!await hasIndex(db, "scheduled_notifications", "scheduled_notifications_store_scheduled_status_idx")) {
+      await db.execute(sql.raw("CREATE INDEX `scheduled_notifications_store_scheduled_status_idx` ON `scheduled_notifications` (`storeId`,`scheduledAt`,`status`)"));
+    }
+    if (promotionsWasGlobal && await hasIndex(db, "promotions", "promotions_external_uq")) {
+      await db.execute(sql.raw("ALTER TABLE `promotions` DROP INDEX `promotions_external_uq`"));
+    }
+    if (!await hasIndex(db, "promotions", "promotions_external_uq")) {
+      await db.execute(sql.raw("CREATE UNIQUE INDEX `promotions_external_uq` ON `promotions` (`storeId`,`externalSource`,`externalMerchantId`,`externalId`)"));
+    }
+    await db.execute(sql.raw(`
+      UPDATE \`products\`
+      SET \`storeId\` = COALESCE((SELECT \`id\` FROM (SELECT \`id\` FROM \`stores\` ORDER BY \`isDefault\` DESC, \`id\` LIMIT 1) default_store), 0)
+      WHERE \`storeId\` IS NULL
+    `));
+    await db.execute(sql.raw(`
+      UPDATE \`coupons\`
+      SET \`storeId\` = COALESCE((SELECT \`id\` FROM (SELECT \`id\` FROM \`stores\` ORDER BY \`isDefault\` DESC, \`id\` LIMIT 1) default_store), 0)
+      WHERE \`storeId\` IS NULL
+    `));
+    await db.execute(sql.raw("ALTER TABLE `products` MODIFY `storeId` int NOT NULL DEFAULT 0"));
+    await db.execute(sql.raw("ALTER TABLE `coupons` MODIFY `storeId` int NOT NULL DEFAULT 0"));
+    if (await hasIndex(db, "coupons", "coupons_code_unique")) {
+      await db.execute(sql.raw("ALTER TABLE `coupons` DROP INDEX `coupons_code_unique`"));
+    }
+    if (!await hasIndex(db, "coupons", "coupons_store_idx")) {
+      await db.execute(sql.raw("CREATE INDEX `coupons_store_idx` ON `coupons` (`storeId`)"));
+    }
+    if (!await hasIndex(db, "coupons", "coupons_store_code_unique")) {
+      await db.execute(sql.raw("CREATE UNIQUE INDEX `coupons_store_code_unique` ON `coupons` (`storeId`,`code`)"));
+    }
+    const productsExternalColumns = await getIndexColumns(db, "products", "products_external_uq");
+    if (productsExternalColumns.length > 0 && productsExternalColumns[0] !== "storeId") {
+      await db.execute(sql.raw("ALTER TABLE `products` DROP INDEX `products_external_uq`"));
+    }
+    if (!await hasIndex(db, "products", "products_external_uq")) {
+      await db.execute(sql.raw("CREATE UNIQUE INDEX `products_external_uq` ON `products` (`storeId`,`externalSource`,`externalMerchantId`,`externalId`)"));
+    }
+    const couponsExternalColumns = await getIndexColumns(db, "coupons", "coupons_external_uq");
+    if (couponsExternalColumns.length > 0 && couponsExternalColumns[0] !== "storeId") {
+      await db.execute(sql.raw("ALTER TABLE `coupons` DROP INDEX `coupons_external_uq`"));
+    }
+    if (!await hasIndex(db, "coupons", "coupons_external_uq")) {
+      await db.execute(sql.raw("CREATE UNIQUE INDEX `coupons_external_uq` ON `coupons` (`storeId`,`externalSource`,`externalMerchantId`,`externalId`)"));
     }
     if (!await hasIndex(db, "orders", "orders_store_created_idx")) {
       await db.execute(sql.raw("CREATE INDEX `orders_store_created_idx` ON `orders` (`storeId`,`createdAt`)"));
@@ -2112,6 +3158,53 @@ async function ensureRuntimeSchema(db) {
         KEY \`customer_auth_providers_user_idx\` (\`userId\`)
       )
     `));
+    const socialProviderColumns = [
+      ["providerUsername", "ALTER TABLE `customer_auth_providers` ADD `providerUsername` varchar(191) NULL AFTER `providerPhone`"],
+      ["displayName", "ALTER TABLE `customer_auth_providers` ADD `displayName` varchar(255) NULL AFTER `providerUsername`"],
+      ["avatarUrl", "ALTER TABLE `customer_auth_providers` ADD `avatarUrl` text NULL AFTER `displayName`"],
+      ["accountType", "ALTER TABLE `customer_auth_providers` ADD `accountType` varchar(64) NULL AFTER `avatarUrl`"],
+      ["accessTokenEncrypted", "ALTER TABLE `customer_auth_providers` ADD `accessTokenEncrypted` text NULL AFTER `accountType`"],
+      ["refreshTokenEncrypted", "ALTER TABLE `customer_auth_providers` ADD `refreshTokenEncrypted` text NULL AFTER `accessTokenEncrypted`"],
+      ["tokenExpiresAt", "ALTER TABLE `customer_auth_providers` ADD `tokenExpiresAt` timestamp NULL AFTER `refreshTokenEncrypted`"],
+      ["grantedScopes", "ALTER TABLE `customer_auth_providers` ADD `grantedScopes` text NULL AFTER `tokenExpiresAt`"],
+      ["rawProfileJson", "ALTER TABLE `customer_auth_providers` ADD `rawProfileJson` text NULL AFTER `grantedScopes`"],
+      ["consentVersion", "ALTER TABLE `customer_auth_providers` ADD `consentVersion` varchar(32) NULL AFTER `isPrimary`"],
+      ["consentedAt", "ALTER TABLE `customer_auth_providers` ADD `consentedAt` timestamp NULL AFTER `consentVersion`"],
+      ["lastSyncedAt", "ALTER TABLE `customer_auth_providers` ADD `lastSyncedAt` timestamp NULL AFTER `linkedAt`"],
+      ["disconnectedAt", "ALTER TABLE `customer_auth_providers` ADD `disconnectedAt` timestamp NULL AFTER `lastSyncedAt`"]
+    ];
+    for (const [column, statement] of socialProviderColumns) {
+      if (!await hasColumn(db, "customer_auth_providers", column)) await db.execute(sql.raw(statement));
+    }
+    await db.execute(sql.raw(`
+      CREATE TABLE IF NOT EXISTS \`auth_event_logs\` (
+        \`id\` int AUTO_INCREMENT NOT NULL,
+        \`userId\` int NULL,
+        \`provider\` varchar(32) NULL,
+        \`event\` enum('login_success','login_failure','provider_connected','provider_disconnected','profile_synced','account_deleted') NOT NULL,
+        \`ipAddress\` varchar(64) NULL,
+        \`userAgent\` text NULL,
+        \`metadataJson\` text NULL,
+        \`createdAt\` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (\`id\`),
+        KEY \`auth_event_logs_user_created_idx\` (\`userId\`,\`createdAt\`),
+        KEY \`auth_event_logs_event_created_idx\` (\`event\`,\`createdAt\`)
+      )
+    `));
+    await db.execute(sql.raw(`
+      CREATE TABLE IF NOT EXISTS \`user_consents\` (
+        \`id\` int AUTO_INCREMENT NOT NULL,
+        \`userId\` int NOT NULL,
+        \`kind\` enum('terms','privacy','social_sync') NOT NULL,
+        \`version\` varchar(32) NOT NULL,
+        \`granted\` boolean NOT NULL DEFAULT true,
+        \`ipAddress\` varchar(64) NULL,
+        \`userAgent\` text NULL,
+        \`createdAt\` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (\`id\`),
+        KEY \`user_consents_user_kind_created_idx\` (\`userId\`,\`kind\`,\`createdAt\`)
+      )
+    `));
     await db.execute(sql.raw(`
       CREATE TABLE IF NOT EXISTS \`otp_codes\` (
         \`id\` int AUTO_INCREMENT NOT NULL,
@@ -2131,6 +3224,150 @@ async function ensureRuntimeSchema(db) {
         KEY \`otp_codes_expires_idx\` (\`expiresAt\`)
       )
     `));
+    const platformTables = [
+      "CREATE TABLE IF NOT EXISTS `tenant_site_pages` (`id` int AUTO_INCREMENT PRIMARY KEY,`storeId` int NOT NULL,`pageKey` enum('home','menu','club','landing') NOT NULL,`title` varchar(160) NOT NULL,`draftContent` longtext NOT NULL,`publishedVersionId` int,`updatedByUserId` int,`createdAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,`updatedAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,UNIQUE KEY `tenant_site_pages_store_page_uq` (`storeId`,`pageKey`),KEY `tenant_site_pages_store_idx` (`storeId`))",
+      "CREATE TABLE IF NOT EXISTS `tenant_site_page_versions` (`id` int AUTO_INCREMENT PRIMARY KEY,`pageId` int NOT NULL,`versionNumber` int NOT NULL,`content` longtext NOT NULL,`note` varchar(240),`createdByUserId` int,`createdAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,UNIQUE KEY `tenant_site_page_versions_uq` (`pageId`,`versionNumber`),KEY `tenant_site_page_versions_page_idx` (`pageId`,`createdAt`))",
+      "CREATE TABLE IF NOT EXISTS `tenants` (`id` int AUTO_INCREMENT PRIMARY KEY,`tenantKey` varchar(100) NOT NULL,`legalName` varchar(200) NOT NULL,`displayName` varchar(200) NOT NULL,`document` varchar(32),`status` enum('setup_pending','active','suspended','cancelled') NOT NULL DEFAULT 'setup_pending',`ownerUserId` int,`metadata` text,`createdAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,`updatedAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,UNIQUE KEY `tenants_key_uq` (`tenantKey`),KEY `tenants_status_idx` (`status`))",
+      "CREATE TABLE IF NOT EXISTS `tenant_domains` (`id` int AUTO_INCREMENT PRIMARY KEY,`tenantId` int NOT NULL,`hostname` varchar(255) NOT NULL,`kind` enum('platform_subdomain','custom_domain') NOT NULL,`status` enum('pending','verifying','verified','active','failed','disabled') NOT NULL DEFAULT 'pending',`verificationToken` varchar(96) NOT NULL,`verifiedAt` timestamp NULL,`activatedAt` timestamp NULL,`lastError` text,`createdAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,`updatedAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,UNIQUE KEY `tenant_domains_hostname_uq` (`hostname`),KEY `tenant_domains_tenant_idx` (`tenantId`,`status`))",
+      "CREATE TABLE IF NOT EXISTS `tenant_plans` (`id` int AUTO_INCREMENT PRIMARY KEY,`code` varchar(64) NOT NULL,`name` varchar(120) NOT NULL,`monthlyPrice` decimal(10,2) NOT NULL DEFAULT 0,`entitlements` text NOT NULL,`limits` text NOT NULL,`active` boolean NOT NULL DEFAULT true,`createdAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,`updatedAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,UNIQUE KEY `tenant_plans_code_uq` (`code`))",
+      "CREATE TABLE IF NOT EXISTS `tenant_subscriptions` (`id` int AUTO_INCREMENT PRIMARY KEY,`tenantId` int NOT NULL,`planId` int NOT NULL,`status` enum('trialing','active','past_due','suspended','cancelled') NOT NULL DEFAULT 'trialing',`provider` varchar(32),`externalCustomerId` varchar(191),`externalSubscriptionId` varchar(191),`trialEndsAt` timestamp NULL,`currentPeriodEndsAt` timestamp NULL,`graceEndsAt` timestamp NULL,`createdAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,`updatedAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,UNIQUE KEY `tenant_subscriptions_tenant_uq` (`tenantId`),KEY `tenant_subscriptions_status_idx` (`status`))",
+      "CREATE TABLE IF NOT EXISTS `tenant_audit_logs` (`id` int AUTO_INCREMENT PRIMARY KEY,`tenantId` int NOT NULL,`storeId` int,`actorUserId` int,`action` varchar(120) NOT NULL,`resourceType` varchar(80) NOT NULL,`resourceId` varchar(96),`requestId` varchar(96),`ipAddress` varchar(64),`metadata` text,`createdAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,KEY `tenant_audit_tenant_created_idx` (`tenantId`,`createdAt`))",
+      "CREATE TABLE IF NOT EXISTS `product_option_groups` (`id` int AUTO_INCREMENT PRIMARY KEY,`storeId` int NOT NULL,`productId` int NOT NULL,`name` varchar(120) NOT NULL,`kind` enum('single','multiple','flavor','size','edge') NOT NULL DEFAULT 'multiple',`required` boolean NOT NULL DEFAULT false,`minSelections` int NOT NULL DEFAULT 0,`maxSelections` int NOT NULL DEFAULT 1,`sortOrder` int NOT NULL DEFAULT 0,`active` boolean NOT NULL DEFAULT true,`createdAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,`updatedAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,KEY `product_option_groups_product_idx` (`storeId`,`productId`,`active`))",
+      "CREATE TABLE IF NOT EXISTS `product_options` (`id` int AUTO_INCREMENT PRIMARY KEY,`storeId` int NOT NULL,`groupId` int NOT NULL,`name` varchar(160) NOT NULL,`description` text,`priceDelta` decimal(10,2) NOT NULL DEFAULT 0,`linkedProductId` int,`ingredientId` int,`ingredientQuantity` decimal(10,3),`imageUrl` text,`sortOrder` int NOT NULL DEFAULT 0,`active` boolean NOT NULL DEFAULT true,`createdAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,`updatedAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,KEY `product_options_group_idx` (`storeId`,`groupId`,`active`))",
+      "CREATE TABLE IF NOT EXISTS `product_combos` (`id` int AUTO_INCREMENT PRIMARY KEY,`storeId` int NOT NULL,`productId` int NOT NULL,`name` varchar(160) NOT NULL,`description` text,`active` boolean NOT NULL DEFAULT true,`createdAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,`updatedAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,UNIQUE KEY `product_combos_product_uq` (`storeId`,`productId`))",
+      "CREATE TABLE IF NOT EXISTS `combo_groups` (`id` int AUTO_INCREMENT PRIMARY KEY,`storeId` int NOT NULL,`comboId` int NOT NULL,`name` varchar(120) NOT NULL,`minSelections` int NOT NULL DEFAULT 1,`maxSelections` int NOT NULL DEFAULT 1,`sortOrder` int NOT NULL DEFAULT 0,KEY `combo_groups_combo_idx` (`storeId`,`comboId`))",
+      "CREATE TABLE IF NOT EXISTS `combo_group_items` (`id` int AUTO_INCREMENT PRIMARY KEY,`storeId` int NOT NULL,`groupId` int NOT NULL,`productId` int NOT NULL,`priceDelta` decimal(10,2) NOT NULL DEFAULT 0,`active` boolean NOT NULL DEFAULT true,KEY `combo_group_items_group_idx` (`storeId`,`groupId`))",
+      "CREATE TABLE IF NOT EXISTS `order_item_selections` (`id` int AUTO_INCREMENT PRIMARY KEY,`storeId` int NOT NULL,`orderId` int NOT NULL,`orderItemId` int NOT NULL,`groupName` varchar(120) NOT NULL,`optionName` varchar(160) NOT NULL,`optionId` int,`linkedProductId` int,`priceDelta` decimal(10,2) NOT NULL DEFAULT 0,`quantity` int NOT NULL DEFAULT 1,`metadata` text,`createdAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,KEY `order_item_selections_order_idx` (`storeId`,`orderId`),KEY `order_item_selections_item_idx` (`orderItemId`))",
+      "CREATE TABLE IF NOT EXISTS `kitchen_tickets` (`id` int AUTO_INCREMENT PRIMARY KEY,`storeId` int NOT NULL,`orderId` int NOT NULL,`station` varchar(80) NOT NULL DEFAULT 'cozinha',`status` enum('queued','preparing','ready','completed','cancelled') NOT NULL DEFAULT 'queued',`priority` enum('normal','high','urgent') NOT NULL DEFAULT 'normal',`promisedAt` timestamp NULL,`startedAt` timestamp NULL,`readyAt` timestamp NULL,`completedAt` timestamp NULL,`printedAt` timestamp NULL,`createdAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,`updatedAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,UNIQUE KEY `kitchen_tickets_order_uq` (`storeId`,`orderId`),KEY `kitchen_tickets_board_idx` (`storeId`,`status`,`createdAt`))",
+      "CREATE TABLE IF NOT EXISTS `growth_settings` (`id` int AUTO_INCREMENT PRIMARY KEY,`storeId` int NOT NULL,`cashbackPercent` decimal(5,2) NOT NULL DEFAULT 0,`pointsPerReal` decimal(8,3) NOT NULL DEFAULT 1,`referralReferrerPoints` int NOT NULL DEFAULT 100,`referralReferredPoints` int NOT NULL DEFAULT 50,`npsEnabled` boolean NOT NULL DEFAULT true,`config` text,`updatedAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,UNIQUE KEY `growth_settings_store_uq` (`storeId`))",
+      "CREATE TABLE IF NOT EXISTS `reward_catalog` (`id` int AUTO_INCREMENT PRIMARY KEY,`storeId` int NOT NULL,`name` varchar(160) NOT NULL,`description` text,`rewardType` enum('discount','product','free_delivery','cashback') NOT NULL,`pointsCost` int NOT NULL DEFAULT 0,`value` decimal(10,2) NOT NULL DEFAULT 0,`productId` int,`category` varchar(80),`icon` varchar(64),`imageUrl` text,`badgeText` varchar(64),`buttonText` varchar(64) NOT NULL DEFAULT 'Resgatar',`stock` int,`totalRedemptions` int NOT NULL DEFAULT 0,`maxRedemptionsPerUser` int,`active` boolean NOT NULL DEFAULT true,`featured` boolean NOT NULL DEFAULT false,`sortOrder` int NOT NULL DEFAULT 0,`startsAt` timestamp NULL,`expiresAt` timestamp NULL,`archivedAt` timestamp NULL,`createdAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,`updatedAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,KEY `reward_catalog_store_idx` (`storeId`,`active`),KEY `reward_catalog_display_idx` (`storeId`,`archivedAt`,`sortOrder`),CONSTRAINT `reward_catalog_stock_nonnegative_chk` CHECK (`stock` IS NULL OR `stock` >= 0),CONSTRAINT `reward_catalog_redemptions_nonnegative_chk` CHECK (`totalRedemptions` >= 0))",
+      "CREATE TABLE IF NOT EXISTS `reward_redemptions` (`id` int AUTO_INCREMENT PRIMARY KEY,`storeId` int NOT NULL,`rewardId` int NOT NULL,`userId` int NOT NULL,`couponId` int,`pointsSpent` int NOT NULL,`status` enum('pending','completed','cancelled','refunded','expired') NOT NULL DEFAULT 'pending',`idempotencyKey` varchar(96) NOT NULL,`redeemedAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,`expiresAt` timestamp NULL,`cancelledAt` timestamp NULL,`cancellationReason` varchar(500),`createdAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,`updatedAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,UNIQUE KEY `reward_redemptions_idempotency_uq` (`storeId`,`userId`,`idempotencyKey`),UNIQUE KEY `reward_redemptions_coupon_uq` (`couponId`),KEY `reward_redemptions_reward_idx` (`rewardId`,`status`),KEY `reward_redemptions_user_idx` (`userId`,`status`),CONSTRAINT `reward_redemptions_points_chk` CHECK (`pointsSpent` >= 0))",
+      "CREATE TABLE IF NOT EXISTS `reward_coupons` (`id` int AUTO_INCREMENT PRIMARY KEY,`storeId` int NOT NULL,`rewardId` int NOT NULL,`code` varchar(64) NOT NULL,`status` enum('available','reserved','redeemed','used','expired','cancelled') NOT NULL DEFAULT 'available',`assignedUserId` int,`redemptionId` int,`reservedAt` timestamp NULL,`redeemedAt` timestamp NULL,`usedAt` timestamp NULL,`expiresAt` timestamp NULL,`createdAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,`updatedAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,UNIQUE KEY `reward_coupons_store_code_uq` (`storeId`,`code`),UNIQUE KEY `reward_coupons_redemption_uq` (`redemptionId`),KEY `reward_coupons_reward_status_idx` (`rewardId`,`status`),KEY `reward_coupons_user_idx` (`assignedUserId`))",
+      "CREATE TABLE IF NOT EXISTS `reward_coupon_usages` (`id` int AUTO_INCREMENT PRIMARY KEY,`storeId` int NOT NULL,`couponId` int NOT NULL,`redemptionId` int NOT NULL,`userId` int NOT NULL,`orderId` int NOT NULL,`usedAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,UNIQUE KEY `reward_coupon_usages_coupon_uq` (`couponId`),UNIQUE KEY `reward_coupon_usages_order_uq` (`orderId`),KEY `reward_coupon_usages_user_idx` (`userId`,`usedAt`))",
+      "CREATE TABLE IF NOT EXISTS `nps_responses` (`id` int AUTO_INCREMENT PRIMARY KEY,`storeId` int NOT NULL,`orderId` int NOT NULL,`userId` int,`score` int NOT NULL,`comment` text,`createdAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,UNIQUE KEY `nps_responses_order_uq` (`storeId`,`orderId`))",
+      "CREATE TABLE IF NOT EXISTS `referrals` (`id` int AUTO_INCREMENT PRIMARY KEY,`storeId` int NOT NULL,`referrerUserId` int NOT NULL,`referredUserId` int,`code` varchar(32) NOT NULL,`status` enum('pending','converted','rewarded','cancelled') NOT NULL DEFAULT 'pending',`convertedOrderId` int,`createdAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,`convertedAt` timestamp NULL,UNIQUE KEY `referrals_store_code_uq` (`storeId`,`code`),KEY `referrals_referrer_idx` (`storeId`,`referrerUserId`))",
+      "CREATE TABLE IF NOT EXISTS `integration_connections` (`id` int AUTO_INCREMENT PRIMARY KEY,`storeId` int NOT NULL,`provider` varchar(64) NOT NULL,`status` enum('disconnected','connecting','connected','degraded','error') NOT NULL DEFAULT 'disconnected',`config` text,`credentialsRef` varchar(191),`lastSuccessAt` timestamp NULL,`lastFailureAt` timestamp NULL,`lastError` text,`latencyMs` int,`createdAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,`updatedAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,UNIQUE KEY `integration_connections_provider_uq` (`storeId`,`provider`),KEY `integration_connections_health_idx` (`storeId`,`status`))",
+      "CREATE TABLE IF NOT EXISTS `intelligence_suggestions` (`id` int AUTO_INCREMENT PRIMARY KEY,`storeId` int NOT NULL,`kind` enum('campaign','demand','purchase','pricing','staffing') NOT NULL,`title` varchar(200) NOT NULL,`description` text NOT NULL,`confidence` decimal(5,2) NOT NULL DEFAULT 0,`impactValue` decimal(12,2),`payload` text,`status` enum('new','accepted','dismissed','applied') NOT NULL DEFAULT 'new',`validUntil` timestamp NULL,`createdAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,`updatedAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,KEY `intelligence_suggestions_store_kind_idx` (`storeId`,`kind`,`status`))",
+      "CREATE TABLE IF NOT EXISTS `product_images` (`id` int AUTO_INCREMENT PRIMARY KEY,`storeId` int NOT NULL,`productId` int NOT NULL,`imageUrl` text NOT NULL,`altText` varchar(240),`kind` enum('primary','gallery','flavor','nutrition') NOT NULL DEFAULT 'gallery',`sortOrder` int NOT NULL DEFAULT 0,`active` boolean NOT NULL DEFAULT true,`createdAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,KEY `product_images_product_idx` (`storeId`,`productId`,`active`,`sortOrder`))",
+      "CREATE TABLE IF NOT EXISTS `product_sizes` (`id` int AUTO_INCREMENT PRIMARY KEY,`storeId` int NOT NULL,`productId` int NOT NULL,`name` varchar(120) NOT NULL,`internalCode` varchar(128),`description` text,`price` decimal(10,2) NOT NULL,`promotionalPrice` decimal(10,2),`promotionStartsAt` timestamp NULL,`promotionEndsAt` timestamp NULL,`serves` int,`minFlavors` int,`maxFlavors` int,`maxAddons` int,`preparationTime` int,`active` boolean NOT NULL DEFAULT true,`sortOrder` int NOT NULL DEFAULT 0,`createdAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,`updatedAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,UNIQUE KEY `product_sizes_code_uq` (`storeId`,`productId`,`internalCode`),KEY `product_sizes_product_idx` (`storeId`,`productId`,`active`,`sortOrder`))",
+      "CREATE TABLE IF NOT EXISTS `product_variants` (`id` int AUTO_INCREMENT PRIMARY KEY,`storeId` int NOT NULL,`productId` int NOT NULL,`name` varchar(160) NOT NULL,`sku` varchar(128),`price` decimal(10,2) NOT NULL,`promotionalPrice` decimal(10,2),`active` boolean NOT NULL DEFAULT true,`sortOrder` int NOT NULL DEFAULT 0,`createdAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,`updatedAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,UNIQUE KEY `product_variants_store_sku_uq` (`storeId`,`sku`),KEY `product_variants_product_idx` (`storeId`,`productId`,`active`))",
+      "CREATE TABLE IF NOT EXISTS `product_availability` (`id` int AUTO_INCREMENT PRIMARY KEY,`storeId` int NOT NULL,`productId` int NOT NULL,`weekday` int,`startTime` varchar(5),`endTime` varchar(5),`startsAt` timestamp NULL,`expiresAt` timestamp NULL,`channel` enum('all','delivery','pickup','dine_in','counter') NOT NULL DEFAULT 'all',`unavailableBehavior` enum('hide','show_unavailable','show_return_time') NOT NULL DEFAULT 'show_unavailable',`stockLimit` int,`pausedUntil` timestamp NULL,`active` boolean NOT NULL DEFAULT true,`createdAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,`updatedAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,KEY `product_availability_product_idx` (`storeId`,`productId`,`active`))",
+      "CREATE TABLE IF NOT EXISTS `modifier_size_rules` (`id` int AUTO_INCREMENT PRIMARY KEY,`storeId` int NOT NULL,`modifierOptionId` int NOT NULL,`productSizeId` int NOT NULL,`enabled` boolean NOT NULL DEFAULT true,`priceOverride` decimal(10,2),`maxQuantityOverride` int,`createdAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,`updatedAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,UNIQUE KEY `modifier_size_rules_uq` (`storeId`,`modifierOptionId`,`productSizeId`))",
+      "CREATE TABLE IF NOT EXISTS `multi_flavor_settings` (`id` int AUTO_INCREMENT PRIMARY KEY,`storeId` int NOT NULL,`productId` int NOT NULL,`enabled` boolean NOT NULL DEFAULT false,`pricingRule` enum('highest_price','average_price','proportional_price','size_fixed_price','base_plus_difference') NOT NULL DEFAULT 'highest_price',`allowRepeatedFlavors` boolean NOT NULL DEFAULT false,`visualDivisions` boolean NOT NULL DEFAULT true,`createdAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,`updatedAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,UNIQUE KEY `multi_flavor_settings_product_uq` (`storeId`,`productId`))",
+      "CREATE TABLE IF NOT EXISTS `product_flavors` (`id` int AUTO_INCREMENT PRIMARY KEY,`storeId` int NOT NULL,`productId` int NOT NULL,`name` varchar(160) NOT NULL,`description` text,`imageUrl` text,`ingredients` text,`removableIngredients` text,`active` boolean NOT NULL DEFAULT true,`sortOrder` int NOT NULL DEFAULT 0,`createdAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,`updatedAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,KEY `product_flavors_product_idx` (`storeId`,`productId`,`active`,`sortOrder`))",
+      "CREATE TABLE IF NOT EXISTS `flavor_size_prices` (`id` int AUTO_INCREMENT PRIMARY KEY,`storeId` int NOT NULL,`flavorId` int NOT NULL,`productSizeId` int NOT NULL,`price` decimal(10,2) NOT NULL,`active` boolean NOT NULL DEFAULT true,`createdAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,`updatedAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,UNIQUE KEY `flavor_size_prices_uq` (`storeId`,`flavorId`,`productSizeId`))",
+      "CREATE TABLE IF NOT EXISTS `product_drafts` (`id` int AUTO_INCREMENT PRIMARY KEY,`storeId` int NOT NULL,`productId` int,`createdByUserId` int NOT NULL,`baseVersion` int NOT NULL DEFAULT 0,`status` enum('editing','ready','published','discarded') NOT NULL DEFAULT 'editing',`draftData` longtext NOT NULL,`tutorialProgress` text,`lastSavedAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,`createdAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,`updatedAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,KEY `product_drafts_product_idx` (`storeId`,`productId`,`status`),KEY `product_drafts_user_idx` (`createdByUserId`,`status`))",
+      "CREATE TABLE IF NOT EXISTS `product_revisions` (`id` int AUTO_INCREMENT PRIMARY KEY,`storeId` int NOT NULL,`productId` int NOT NULL,`version` int NOT NULL,`snapshot` longtext NOT NULL,`note` varchar(240),`createdByUserId` int,`createdAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,UNIQUE KEY `product_revisions_uq` (`storeId`,`productId`,`version`),KEY `product_revisions_product_idx` (`productId`,`createdAt`))",
+      "CREATE TABLE IF NOT EXISTS `product_audit_logs` (`id` int AUTO_INCREMENT PRIMARY KEY,`storeId` int NOT NULL,`productId` int NOT NULL,`actorUserId` int,`action` varchar(80) NOT NULL,`fieldName` varchar(160),`previousValue` longtext,`newValue` longtext,`createdAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,KEY `product_audit_logs_product_idx` (`storeId`,`productId`,`createdAt`))"
+    ];
+    for (const statement of platformTables) await db.execute(sql.raw(statement));
+    const professionalCatalogColumns = {
+      products: [
+        ["sku", "varchar(128) NULL AFTER `externalCode`"],
+        ["shortDescription", "varchar(320) NULL AFTER `sku`"],
+        ["productType", "enum('simple','sizes','variants','buildable','multi_flavor','combo','weight','quantity','variable_price') NOT NULL DEFAULT 'simple' AFTER `shortDescription`"],
+        ["pricingEngine", "enum('legacy_v1','configured_v2') NOT NULL DEFAULT 'legacy_v1' AFTER `productType`"],
+        ["editorialStatus", "enum('draft','published','scheduled','archived') NOT NULL DEFAULT 'published' AFTER `pricingEngine`"],
+        ["preparationTime", "int NULL AFTER `editorialStatus`"],
+        ["allergenNotice", "text NULL AFTER `preparationTime`"],
+        ["nutritionalInfo", "text NULL AFTER `allergenNotice`"],
+        ["tags", "text NULL AFTER `nutritionalInfo`"],
+        ["minQuantity", "int NOT NULL DEFAULT 1 AFTER `tags`"],
+        ["maxQuantity", "int NOT NULL DEFAULT 99 AFTER `minQuantity`"],
+        ["couponEligible", "boolean NOT NULL DEFAULT true AFTER `maxQuantity`"],
+        ["pointsEligible", "boolean NOT NULL DEFAULT true AFTER `couponEligible`"],
+        ["version", "int NOT NULL DEFAULT 1 AFTER `pointsEligible`"],
+        ["scheduledPublishAt", "timestamp NULL AFTER `version`"],
+        ["publishedAt", "timestamp NULL AFTER `scheduledPublishAt`"],
+        ["archivedAt", "timestamp NULL AFTER `publishedAt`"]
+      ],
+      product_option_groups: [
+        ["description", "text NULL AFTER `kind`"],
+        ["freeSelections", "int NOT NULL DEFAULT 0 AFTER `maxSelections`"],
+        ["allowRepeatedOptions", "boolean NOT NULL DEFAULT false AFTER `freeSelections`"],
+        ["appliesToAllSizes", "boolean NOT NULL DEFAULT true AFTER `allowRepeatedOptions`"]
+      ],
+      product_options: [
+        ["maxQuantity", "int NOT NULL DEFAULT 1 AFTER `imageUrl`"],
+        ["allowRepeat", "boolean NOT NULL DEFAULT false AFTER `maxQuantity`"]
+      ],
+      combo_groups: [
+        ["required", "boolean NOT NULL DEFAULT true AFTER `name`"],
+        ["active", "boolean NOT NULL DEFAULT true AFTER `sortOrder`"]
+      ],
+      combo_group_items: [["sizeId", "int NULL AFTER `productId`"]],
+      order_items: [
+        ["snapshotVersion", "int NOT NULL DEFAULT 1 AFTER `notes`"],
+        ["configurationSnapshot", "longtext NULL AFTER `snapshotVersion`"],
+        ["pricingBreakdown", "longtext NULL AFTER `configurationSnapshot`"]
+      ],
+      order_item_selections: [["totalPrice", "decimal(10,2) NOT NULL DEFAULT 0 AFTER `quantity`"]],
+      upsells: [
+        ["triggerType", "enum('product_selected','size_selected','modifier_selected','category_selected','cart_value','missing_category','checkout') NOT NULL DEFAULT 'checkout' AFTER `sortOrder`"],
+        ["triggerSizeId", "int NULL AFTER `triggerType`"],
+        ["triggerModifierId", "int NULL AFTER `triggerSizeId`"],
+        ["triggerCategoryId", "int NULL AFTER `triggerModifierId`"],
+        ["displayType", "enum('inline','modal','cart','checkout') NOT NULL DEFAULT 'checkout' AFTER `triggerCategoryId`"],
+        ["priority", "int NOT NULL DEFAULT 0 AFTER `displayType`"],
+        ["startsAt", "timestamp NULL AFTER `priority`"],
+        ["expiresAt", "timestamp NULL AFTER `startsAt`"],
+        ["weekdays", "varchar(32) NULL AFTER `expiresAt`"],
+        ["startTime", "varchar(5) NULL AFTER `weekdays`"],
+        ["endTime", "varchar(5) NULL AFTER `startTime`"],
+        ["maxDisplaysPerCart", "int NOT NULL DEFAULT 1 AFTER `endTime`"],
+        ["dismissible", "boolean NOT NULL DEFAULT true AFTER `maxDisplaysPerCart`"]
+      ]
+    };
+    for (const [table, columns] of Object.entries(professionalCatalogColumns)) {
+      for (const [column, definition] of columns) {
+        if (!await hasColumn(db, table, column)) {
+          await db.execute(sql.raw(`ALTER TABLE \`${table}\` ADD \`${column}\` ${definition}`));
+        }
+      }
+    }
+    if (!await hasIndex(db, "products", "products_store_sku_uq")) {
+      await db.execute(sql.raw("CREATE UNIQUE INDEX `products_store_sku_uq` ON `products` (`storeId`,`sku`)"));
+    }
+    if (!await hasIndex(db, "products", "products_editorial_idx")) {
+      await db.execute(sql.raw("CREATE INDEX `products_editorial_idx` ON `products` (`storeId`,`editorialStatus`,`active`)"));
+    }
+    const rewardCatalogColumns = [
+      ["category", "varchar(80) NULL AFTER `productId`"],
+      ["icon", "varchar(64) NULL AFTER `category`"],
+      ["imageUrl", "text NULL AFTER `icon`"],
+      ["badgeText", "varchar(64) NULL AFTER `imageUrl`"],
+      ["buttonText", "varchar(64) NOT NULL DEFAULT 'Resgatar' AFTER `badgeText`"],
+      ["stock", "int NULL AFTER `buttonText`"],
+      ["totalRedemptions", "int NOT NULL DEFAULT 0 AFTER `stock`"],
+      ["maxRedemptionsPerUser", "int NULL AFTER `totalRedemptions`"],
+      ["featured", "boolean NOT NULL DEFAULT false AFTER `active`"],
+      ["sortOrder", "int NOT NULL DEFAULT 0 AFTER `featured`"],
+      ["startsAt", "timestamp NULL AFTER `sortOrder`"],
+      ["expiresAt", "timestamp NULL AFTER `startsAt`"],
+      ["archivedAt", "timestamp NULL AFTER `expiresAt`"],
+      ["updatedAt", "timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP AFTER `createdAt`"]
+    ];
+    for (const [column, definition] of rewardCatalogColumns) {
+      if (!await hasColumn(db, "reward_catalog", column)) {
+        await db.execute(sql.raw(`ALTER TABLE \`reward_catalog\` ADD \`${column}\` ${definition}`));
+      }
+    }
+    if (!await hasIndex(db, "reward_catalog", "reward_catalog_display_idx")) {
+      await db.execute(sql.raw("CREATE INDEX `reward_catalog_display_idx` ON `reward_catalog` (`storeId`,`archivedAt`,`sortOrder`)"));
+    }
+    await db.execute(sql.raw("ALTER TABLE `loyalty_transactions` MODIFY COLUMN `type` enum('earn','redeem','refund','adjustment','manual') NOT NULL"));
+    if (!await hasConstraint(db, "tenant_customer_accounts", "tenant_customer_accounts_points_nonnegative_chk")) {
+      await db.execute(sql.raw("ALTER TABLE `tenant_customer_accounts` ADD CONSTRAINT `tenant_customer_accounts_points_nonnegative_chk` CHECK (`loyaltyPoints` >= 0)"));
+    }
+    if (!await hasConstraint(db, "reward_catalog", "reward_catalog_stock_nonnegative_chk")) {
+      await db.execute(sql.raw("ALTER TABLE `reward_catalog` ADD CONSTRAINT `reward_catalog_stock_nonnegative_chk` CHECK (`stock` IS NULL OR `stock` >= 0)"));
+    }
+    if (!await hasConstraint(db, "reward_catalog", "reward_catalog_redemptions_nonnegative_chk")) {
+      await db.execute(sql.raw("ALTER TABLE `reward_catalog` ADD CONSTRAINT `reward_catalog_redemptions_nonnegative_chk` CHECK (`totalRedemptions` >= 0)"));
+    }
+    await db.execute(sql.raw("ALTER TABLE `tenant_memberships` MODIFY `role` enum('owner','admin','manager','site_editor','marketing') NOT NULL DEFAULT 'admin'"));
+    await db.execute(sql.raw("INSERT IGNORE INTO `tenants` (`tenantKey`,`legalName`,`displayName`,`status`) SELECT `tenantKey`,COALESCE(MAX(`displayName`),MAX(`name`)),COALESCE(MAX(`displayName`),MAX(`name`)),'active' FROM `stores` GROUP BY `tenantKey`"));
+    await db.execute(sql.raw("INSERT IGNORE INTO `tenant_plans` (`code`,`name`,`monthlyPrice`,`entitlements`,`limits`) VALUES ('essential','Essencial',0,'{}','{\"stores\":1,\"users\":10}'),('pro','Pro',0,'{}','{\"stores\":5,\"users\":50}'),('enterprise','Enterprise',0,'{}','{}')"));
     if (!await hasColumn(db, "categories", "externalSource")) {
       await db.execute(
         sql.raw(
@@ -2152,7 +3389,7 @@ async function ensureRuntimeSchema(db) {
       );
     }
     if (!await hasIndex(db, "products", "products_external_uq")) {
-      await db.execute(sql.raw("CREATE UNIQUE INDEX `products_external_uq` ON `products` (`externalSource`,`externalMerchantId`,`externalId`)"));
+      await db.execute(sql.raw("CREATE UNIQUE INDEX `products_external_uq` ON `products` (`storeId`,`externalSource`,`externalMerchantId`,`externalId`)"));
     }
     if (!await hasColumn(db, "coupons", "externalSource")) {
       await db.execute(
@@ -2162,7 +3399,7 @@ async function ensureRuntimeSchema(db) {
       );
     }
     if (!await hasIndex(db, "coupons", "coupons_external_uq")) {
-      await db.execute(sql.raw("CREATE UNIQUE INDEX `coupons_external_uq` ON `coupons` (`externalSource`,`externalMerchantId`,`externalId`)"));
+      await db.execute(sql.raw("CREATE UNIQUE INDEX `coupons_external_uq` ON `coupons` (`storeId`,`externalSource`,`externalMerchantId`,`externalId`)"));
     }
     if (!await hasColumn(db, "promotions", "externalSource")) {
       await db.execute(
@@ -2294,14 +3531,14 @@ async function clearResetToken(openId) {
     await db.update(users).set({ resetToken: null, resetTokenExpiresAt: null }).where(eq(users.openId, openId));
   });
 }
-async function getCategories(activeOnly = true) {
+async function getCategories(input = true) {
   const db = await getDb();
   if (!db) return [];
-  const query = db.select().from(categories);
-  if (activeOnly) {
-    return query.where(eq(categories.active, true)).orderBy(categories.sortOrder);
-  }
-  return query.orderBy(categories.sortOrder);
+  const opts = typeof input === "boolean" ? { activeOnly: input } : input;
+  const conditions = [];
+  if (opts.activeOnly !== false) conditions.push(eq(categories.active, true));
+  if (opts.storeId !== void 0) conditions.push(eq(categories.storeId, opts.storeId));
+  return db.select().from(categories).where(conditions.length ? and(...conditions) : void 0).orderBy(categories.sortOrder, categories.name);
 }
 async function getCategoryById(id) {
   const db = await getDb();
@@ -2330,10 +3567,7 @@ async function getProducts(opts) {
   const conditions = [];
   if (opts?.activeOnly !== false) conditions.push(eq(products.active, true));
   if (opts?.categoryId) conditions.push(eq(products.categoryId, opts.categoryId));
-  if (opts?.storeId) {
-    const storeCondition = or(isNull(products.storeId), eq(products.storeId, opts.storeId));
-    if (storeCondition) conditions.push(storeCondition);
-  }
+  if (opts?.storeId !== void 0) conditions.push(eq(products.storeId, opts.storeId));
   return db.select().from(products).where(conditions.length ? and(...conditions) : void 0).orderBy(products.sortOrder, products.name);
 }
 async function getProductById(id) {
@@ -3028,20 +4262,129 @@ async function createPhoneUser(data) {
 }
 async function linkCustomerAuthProvider(data) {
   await withDbRetry(async (db) => {
+    const existingProvider = await db.select({ userId: customerAuthProviders.userId }).from(customerAuthProviders).where(and(
+      eq(customerAuthProviders.provider, data.provider),
+      eq(customerAuthProviders.providerUserId, data.providerUserId)
+    )).limit(1);
+    if (existingProvider[0] && existingProvider[0].userId !== data.userId) {
+      throw new Error("This social account is already linked to another user");
+    }
     await db.insert(customerAuthProviders).values({
       userId: data.userId,
       provider: data.provider,
       providerUserId: data.providerUserId,
       providerEmail: data.providerEmail ?? null,
       providerPhone: data.providerPhone ?? null,
-      isPrimary: data.isPrimary ?? false
+      providerUsername: data.providerUsername ?? null,
+      displayName: data.displayName ?? null,
+      avatarUrl: data.avatarUrl ?? null,
+      accountType: data.accountType ?? null,
+      accessTokenEncrypted: data.accessTokenEncrypted ?? null,
+      refreshTokenEncrypted: data.refreshTokenEncrypted ?? null,
+      tokenExpiresAt: data.tokenExpiresAt ?? null,
+      grantedScopes: data.grantedScopes ? JSON.stringify(data.grantedScopes) : null,
+      rawProfileJson: data.rawProfileJson ?? null,
+      isPrimary: data.isPrimary ?? false,
+      consentVersion: data.consentVersion ?? null,
+      consentedAt: data.consentedAt ?? null,
+      lastSyncedAt: data.lastSyncedAt ?? null,
+      disconnectedAt: null
     }).onDuplicateKeyUpdate({
       set: {
         providerEmail: data.providerEmail ?? null,
         providerPhone: data.providerPhone ?? null,
-        isPrimary: data.isPrimary ?? false
+        providerUsername: data.providerUsername ?? null,
+        displayName: data.displayName ?? null,
+        avatarUrl: data.avatarUrl ?? null,
+        accountType: data.accountType ?? null,
+        accessTokenEncrypted: data.accessTokenEncrypted ?? null,
+        refreshTokenEncrypted: data.refreshTokenEncrypted ?? null,
+        tokenExpiresAt: data.tokenExpiresAt ?? null,
+        grantedScopes: data.grantedScopes ? JSON.stringify(data.grantedScopes) : null,
+        rawProfileJson: data.rawProfileJson ?? null,
+        isPrimary: data.isPrimary ?? false,
+        consentVersion: data.consentVersion ?? null,
+        consentedAt: data.consentedAt ?? null,
+        lastSyncedAt: data.lastSyncedAt ?? null,
+        disconnectedAt: null
       }
     });
+  });
+}
+async function getCustomerAuthProviders(userId) {
+  return withDbRetry((db) => db.select().from(customerAuthProviders).where(and(eq(customerAuthProviders.userId, userId), isNull(customerAuthProviders.disconnectedAt))).orderBy(desc(customerAuthProviders.isPrimary), desc(customerAuthProviders.linkedAt)));
+}
+async function getCustomerAuthProvider(userId, provider) {
+  return withDbRetry(async (db) => {
+    const rows = await db.select().from(customerAuthProviders).where(and(
+      eq(customerAuthProviders.userId, userId),
+      eq(customerAuthProviders.provider, provider),
+      isNull(customerAuthProviders.disconnectedAt)
+    )).limit(1);
+    return rows[0];
+  });
+}
+async function disconnectCustomerAuthProvider(userId, provider) {
+  await withDbRetry((db) => db.update(customerAuthProviders).set({
+    accessTokenEncrypted: null,
+    refreshTokenEncrypted: null,
+    disconnectedAt: /* @__PURE__ */ new Date(),
+    isPrimary: false
+  }).where(and(eq(customerAuthProviders.userId, userId), eq(customerAuthProviders.provider, provider))));
+}
+async function recordAuthEvent(data) {
+  await withDbRetry((db) => db.insert(authEventLogs).values({
+    userId: data.userId ?? null,
+    provider: data.provider ?? null,
+    event: data.event,
+    ipAddress: data.ipAddress ?? null,
+    userAgent: data.userAgent ?? null,
+    metadataJson: data.metadata ? JSON.stringify(data.metadata) : null
+  }));
+}
+async function recordUserConsent(data) {
+  await withDbRetry((db) => db.insert(userConsents).values({
+    userId: data.userId,
+    kind: data.kind,
+    version: data.version,
+    granted: data.granted ?? true,
+    ipAddress: data.ipAddress ?? null,
+    userAgent: data.userAgent ?? null
+  }));
+}
+async function markUserLogin(userId, provider) {
+  await withDbRetry((db) => db.update(users).set({ loginMethod: provider, lastSignedIn: /* @__PURE__ */ new Date() }).where(eq(users.id, userId)));
+}
+async function anonymizeUserAccount(userId) {
+  const anonymized = `deleted_${userId}_${randomUUID().replace(/-/g, "").slice(0, 16)}`;
+  await withDbRetry(async (db) => {
+    await db.update(customerAuthProviders).set({
+      accessTokenEncrypted: null,
+      refreshTokenEncrypted: null,
+      providerEmail: null,
+      providerPhone: null,
+      providerUsername: null,
+      rawProfileJson: null,
+      disconnectedAt: /* @__PURE__ */ new Date(),
+      isPrimary: false
+    }).where(eq(customerAuthProviders.userId, userId));
+    await db.update(users).set({
+      openId: anonymized,
+      name: "Conta excluida",
+      firstName: null,
+      lastName: null,
+      email: null,
+      username: null,
+      phone: null,
+      avatarUrl: null,
+      passwordHash: null,
+      resetToken: null,
+      resetTokenExpiresAt: null,
+      savedAddress: null,
+      savedCep: null,
+      savedCity: null,
+      status: "inactive"
+    }).where(eq(users.id, userId));
   });
 }
 async function createOtpCode(data) {
@@ -3082,16 +4425,24 @@ async function consumeOtpCode(id) {
     await db.update(otpCodes).set({ consumedAt: /* @__PURE__ */ new Date() }).where(eq(otpCodes.id, id));
   });
 }
-async function getCouponByCode(code) {
+async function getCouponByCode(code, storeId) {
   const db = await getDb();
   if (!db) return void 0;
-  const result = await db.select().from(coupons).where(and(eq(coupons.code, code.toUpperCase()), eq(coupons.active, true))).limit(1);
+  const conditions = [eq(coupons.code, code.toUpperCase()), eq(coupons.active, true)];
+  if (storeId !== void 0) conditions.push(eq(coupons.storeId, storeId));
+  const result = await db.select().from(coupons).where(and(...conditions)).limit(1);
   return result[0];
+}
+async function getCouponById(id) {
+  const db = await getDb();
+  if (!db) return void 0;
+  const [coupon] = await db.select().from(coupons).where(eq(coupons.id, id)).limit(1);
+  return coupon;
 }
 async function getAllCoupons(storeId) {
   const db = await getDb();
   if (!db) return [];
-  if (storeId) return db.select().from(coupons).where(eq(coupons.storeId, storeId)).orderBy(desc(coupons.createdAt));
+  if (storeId !== void 0) return db.select().from(coupons).where(eq(coupons.storeId, storeId)).orderBy(desc(coupons.createdAt));
   return db.select().from(coupons).orderBy(desc(coupons.createdAt));
 }
 async function createCoupon(data) {
@@ -3104,12 +4455,12 @@ async function updateCoupon(id, data) {
   if (!db) throw new Error("DB not available");
   await db.update(coupons).set(data).where(eq(coupons.id, id));
 }
-async function incrementCouponUsage(code) {
+async function incrementCouponUsage(couponId) {
   const db = await getDb();
   if (!db) return false;
   const result = await db.update(coupons).set({ usedCount: sql`${coupons.usedCount} + 1` }).where(
     and(
-      eq(coupons.code, code.toUpperCase()),
+      eq(coupons.id, couponId),
       sql`(${coupons.maxUses} IS NULL OR ${coupons.usedCount} < ${coupons.maxUses})`
     )
   );
@@ -3185,10 +4536,11 @@ async function getOrderItems(orderId) {
     async (db) => db.select().from(orderItems).where(eq(orderItems.orderId, orderId))
   );
 }
-async function getOrdersByUser(userId) {
-  return withDbRetry(
-    async (db) => db.select().from(orders).where(eq(orders.userId, userId)).orderBy(desc(orders.createdAt))
-  );
+async function getOrdersByUser(userId, storeId) {
+  return withDbRetry(async (db) => {
+    const effectiveStoreId = await getEffectiveStoreId(db, storeId);
+    return db.select().from(orders).where(and(eq(orders.userId, userId), eq(orders.storeId, effectiveStoreId))).orderBy(desc(orders.createdAt));
+  });
 }
 async function getAllOrders(opts) {
   return withDbRetry(async (db) => {
@@ -3443,10 +4795,14 @@ async function updateUserSocialProfile(userId, data) {
   await withDbRetry(async (db) => {
     const updateSet = {};
     if (data.name !== void 0) updateSet.name = data.name;
+    if (data.firstName !== void 0) updateSet.firstName = data.firstName;
+    if (data.lastName !== void 0) updateSet.lastName = data.lastName;
     if (data.email !== void 0) updateSet.email = data.email;
+    if (data.username !== void 0) updateSet.username = data.username;
     if (data.avatarUrl !== void 0) updateSet.avatarUrl = data.avatarUrl;
     if (data.loginMethod !== void 0) updateSet.loginMethod = data.loginMethod;
     if (data.emailVerified !== void 0) updateSet.emailVerified = data.emailVerified;
+    if (data.profileCompleted !== void 0) updateSet.profileCompleted = data.profileCompleted;
     updateSet.lastSignedIn = data.lastSignedIn ?? /* @__PURE__ */ new Date();
     await db.update(users).set(updateSet).where(eq(users.id, userId));
   });
@@ -3571,29 +4927,38 @@ async function getAdminUsersPage(input) {
     };
   });
 }
-async function getCouponsByUser(userId) {
+async function getCouponsByUser(userId, storeId) {
   const db = await getDb();
   if (!db) return [];
-  return db.select().from(coupons).where(and(eq(coupons.userId, userId), eq(coupons.active, true)));
+  const effectiveStoreId = await getEffectiveStoreId(db, storeId);
+  return db.select().from(coupons).where(and(eq(coupons.userId, userId), eq(coupons.storeId, effectiveStoreId), eq(coupons.active, true)));
 }
 async function createUserCoupon(data) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
+  const [membership] = await db.select({ id: orders.id }).from(orders).where(and(eq(orders.userId, data.userId), eq(orders.storeId, data.storeId))).limit(1);
+  if (!membership) throw new Error("Cliente n\xE3o pertence \xE0 loja selecionada");
   await db.insert(coupons).values({
     ...data,
     active: true,
     usedCount: 0
   });
 }
-async function getActiveUpsells() {
-  const db = await getDb();
-  if (!db) return [];
-  return db.select().from(upsells).where(eq(upsells.active, true)).orderBy(upsells.sortOrder);
+async function getEffectiveStoreId(db, storeId) {
+  if (storeId && storeId > 0) return storeId;
+  return (await db.select({ id: stores.id }).from(stores).orderBy(desc(stores.isDefault), stores.id).limit(1))[0]?.id ?? 0;
 }
-async function getUpsellsForCart(cartProductIds, cartTotal) {
+async function getActiveUpsells(storeId) {
   const db = await getDb();
   if (!db) return [];
-  const all = await db.select().from(upsells).where(eq(upsells.active, true)).orderBy(upsells.sortOrder);
+  const effectiveStoreId = await getEffectiveStoreId(db, storeId);
+  return db.select().from(upsells).where(and(eq(upsells.storeId, effectiveStoreId), eq(upsells.active, true))).orderBy(upsells.sortOrder);
+}
+async function getUpsellsForCart(cartProductIds, cartTotal, storeId) {
+  const db = await getDb();
+  if (!db) return [];
+  const effectiveStoreId = await getEffectiveStoreId(db, storeId);
+  const all = await db.select().from(upsells).where(and(eq(upsells.storeId, effectiveStoreId), eq(upsells.active, true))).orderBy(upsells.sortOrder);
   const filtered = all.filter((u) => {
     if (u.triggerMinTotal && parseFloat(u.triggerMinTotal) > cartTotal) return false;
     if (u.triggerProductId && !cartProductIds.includes(u.triggerProductId)) return false;
@@ -3601,7 +4966,10 @@ async function getUpsellsForCart(cartProductIds, cartTotal) {
     return true;
   });
   const productIds = Array.from(new Set(filtered.map((u) => u.suggestedProductId)));
-  const prods = productIds.length > 0 ? await db.select().from(products).where(sql`${products.id} IN (${sql.join(productIds.map((id) => sql`${id}`), sql`, `)})`) : [];
+  const prods = productIds.length > 0 ? await db.select().from(products).where(and(
+    eq(products.storeId, effectiveStoreId),
+    sql`${products.id} IN (${sql.join(productIds.map((id) => sql`${id}`), sql`, `)})`
+  )) : [];
   return filtered.map((u) => ({
     ...u,
     suggestedProduct: prods.find((p) => p.id === u.suggestedProductId) ?? null
@@ -3612,88 +4980,100 @@ async function createUpsell(data) {
   if (!db) throw new Error("DB not available");
   await db.insert(upsells).values(data);
 }
-async function updateUpsell(id, data) {
+async function updateUpsell(id, storeId, data) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  await db.update(upsells).set(data).where(eq(upsells.id, id));
+  await db.update(upsells).set(data).where(and(eq(upsells.id, id), eq(upsells.storeId, storeId)));
 }
-async function deleteUpsell(id) {
+async function deleteUpsell(id, storeId) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  await db.delete(upsells).where(eq(upsells.id, id));
+  await db.delete(upsells).where(and(eq(upsells.id, id), eq(upsells.storeId, storeId)));
 }
-async function getAllUpsells() {
+async function getAllUpsells(storeId) {
   const db = await getDb();
   if (!db) return [];
-  return db.select().from(upsells).orderBy(upsells.sortOrder);
+  const effectiveStoreId = await getEffectiveStoreId(db, storeId);
+  return db.select().from(upsells).where(eq(upsells.storeId, effectiveStoreId)).orderBy(upsells.sortOrder);
 }
-async function getActivePromotions() {
+async function getActivePromotions(storeId) {
   const db = await getDb();
   if (!db) return [];
+  const effectiveStoreId = await getEffectiveStoreId(db, storeId);
   const now = /* @__PURE__ */ new Date();
-  const all = await db.select().from(promotions).where(eq(promotions.active, true)).orderBy(desc(promotions.createdAt));
+  const all = await db.select().from(promotions).where(and(eq(promotions.storeId, effectiveStoreId), eq(promotions.active, true))).orderBy(desc(promotions.createdAt));
   return all.filter((p) => {
     if (p.endsAt && p.endsAt < now) return false;
     if (p.startsAt && p.startsAt > now) return false;
     return true;
   });
 }
-async function getAllPromotions() {
+async function getAllPromotions(storeId) {
   const db = await getDb();
   if (!db) return [];
-  return db.select().from(promotions).orderBy(desc(promotions.createdAt));
+  const effectiveStoreId = await getEffectiveStoreId(db, storeId);
+  return db.select().from(promotions).where(eq(promotions.storeId, effectiveStoreId)).orderBy(desc(promotions.createdAt));
 }
 async function createPromotion(data) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
   await db.insert(promotions).values(data);
 }
-async function updatePromotion(id, data) {
+async function updatePromotion(id, storeId, data) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  await db.update(promotions).set(data).where(eq(promotions.id, id));
+  await db.update(promotions).set(data).where(and(eq(promotions.id, id), eq(promotions.storeId, storeId)));
 }
-async function deletePromotion(id) {
+async function deletePromotion(id, storeId) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  await db.delete(promotions).where(eq(promotions.id, id));
+  await db.delete(promotions).where(and(eq(promotions.id, id), eq(promotions.storeId, storeId)));
 }
-async function getActiveRaffles() {
+async function getActiveRaffles(storeId) {
   const db = await getDb();
   if (!db) return [];
-  return db.select().from(raffles).where(eq(raffles.status, "active")).orderBy(desc(raffles.createdAt));
+  const effectiveStoreId = await getEffectiveStoreId(db, storeId);
+  return db.select().from(raffles).where(and(eq(raffles.storeId, effectiveStoreId), eq(raffles.status, "active"))).orderBy(desc(raffles.createdAt));
 }
-async function getAllRaffles() {
+async function getAllRaffles(storeId) {
   const db = await getDb();
   if (!db) return [];
-  return db.select().from(raffles).orderBy(desc(raffles.createdAt));
+  const effectiveStoreId = await getEffectiveStoreId(db, storeId);
+  return db.select().from(raffles).where(eq(raffles.storeId, effectiveStoreId)).orderBy(desc(raffles.createdAt));
 }
 async function createRaffle(data) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
   await db.insert(raffles).values(data);
 }
-async function updateRaffle(id, data) {
+async function updateRaffle(id, storeId, data) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  await db.update(raffles).set(data).where(eq(raffles.id, id));
+  await db.update(raffles).set(data).where(and(eq(raffles.id, id), eq(raffles.storeId, storeId)));
 }
-async function getRaffleEntries(raffleId) {
+async function getRaffleEntries(raffleId, storeId) {
   const db = await getDb();
   if (!db) return [];
+  const [raffle] = await db.select({ id: raffles.id }).from(raffles).where(and(eq(raffles.id, raffleId), eq(raffles.storeId, storeId))).limit(1);
+  if (!raffle) return [];
   return db.select().from(raffleEntries).where(eq(raffleEntries.raffleId, raffleId));
 }
-async function enterRaffle(raffleId, userId, userName) {
+async function enterRaffle(raffleId, userId, userName, storeId) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
+  const effectiveStoreId = await getEffectiveStoreId(db, storeId);
+  const [raffle] = await db.select({ id: raffles.id }).from(raffles).where(and(eq(raffles.id, raffleId), eq(raffles.storeId, effectiveStoreId), eq(raffles.status, "active"))).limit(1);
+  if (!raffle) return false;
   const existing = await db.select().from(raffleEntries).where(and(eq(raffleEntries.raffleId, raffleId), eq(raffleEntries.userId, userId))).limit(1);
   if (existing.length > 0) return false;
   await db.insert(raffleEntries).values({ raffleId, userId, userName });
   return true;
 }
-async function drawRaffleWinner(raffleId) {
+async function drawRaffleWinner(raffleId, storeId) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
+  const [raffle] = await db.select({ id: raffles.id }).from(raffles).where(and(eq(raffles.id, raffleId), eq(raffles.storeId, storeId))).limit(1);
+  if (!raffle) return null;
   const entries = await db.select().from(raffleEntries).where(eq(raffleEntries.raffleId, raffleId));
   if (entries.length === 0) return null;
   const winner = entries[Math.floor(Math.random() * entries.length)];
@@ -3705,21 +5085,24 @@ async function drawRaffleWinner(raffleId) {
   }).where(eq(raffles.id, raffleId));
   return winner;
 }
-async function getStoreSetting(key) {
+async function getStoreSetting(key, storeId = 0) {
   return withDbRetry(async (db) => {
-    const rows = await db.select().from(storeSettings).where(eq(storeSettings.key, key)).limit(1);
+    const effectiveStoreId = storeId || (await db.select({ id: stores.id }).from(stores).orderBy(desc(stores.isDefault), stores.id).limit(1))[0]?.id || 0;
+    const rows = await db.select().from(storeSettings).where(and(eq(storeSettings.storeId, effectiveStoreId), eq(storeSettings.key, key))).limit(1);
     return rows[0]?.value ?? null;
   }).catch(() => null);
 }
-async function getAllStoreSettings() {
+async function getAllStoreSettings(storeId = 0) {
   return withDbRetry(async (db) => {
-    const rows = await db.select().from(storeSettings);
+    const effectiveStoreId = storeId || (await db.select({ id: stores.id }).from(stores).orderBy(desc(stores.isDefault), stores.id).limit(1))[0]?.id || 0;
+    const rows = await db.select().from(storeSettings).where(eq(storeSettings.storeId, effectiveStoreId));
     return Object.fromEntries(rows.map((r) => [r.key, r.value]));
   }).catch(() => ({}));
 }
-async function setStoreSetting(key, value) {
+async function setStoreSetting(key, value, storeId = 0) {
   await withDbRetry(async (db) => {
-    await db.insert(storeSettings).values({ key, value }).onDuplicateKeyUpdate({ set: { value } });
+    const effectiveStoreId = storeId || (await db.select({ id: stores.id }).from(stores).orderBy(desc(stores.isDefault), stores.id).limit(1))[0]?.id || 0;
+    await db.insert(storeSettings).values({ storeId: effectiveStoreId, key, value }).onDuplicateKeyUpdate({ set: { value } });
   });
 }
 async function getAllDrivers(activeOnly = true, storeId) {
@@ -3888,85 +5271,125 @@ async function toggleFavorite(userId, productId) {
     return true;
   }
 }
-async function getClientNotifications(userId) {
+async function getClientNotifications(userId, storeId) {
   const db = await getDb();
   if (!db) return [];
-  return db.select().from(clientNotifications).where(eq(clientNotifications.userId, userId)).orderBy(desc(clientNotifications.createdAt)).limit(50);
+  return db.select().from(clientNotifications).where(and(
+    eq(clientNotifications.userId, userId),
+    storeId ? eq(clientNotifications.storeId, storeId) : void 0
+  )).orderBy(desc(clientNotifications.createdAt)).limit(50);
 }
-async function getUnreadNotificationCount(userId) {
+async function getUnreadNotificationCount(userId, storeId) {
   const db = await getDb();
   if (!db) return 0;
-  const result = await db.select({ count: sql`count(*)` }).from(clientNotifications).where(and(eq(clientNotifications.userId, userId), eq(clientNotifications.read, false)));
+  const result = await db.select({ count: sql`count(*)` }).from(clientNotifications).where(and(
+    eq(clientNotifications.userId, userId),
+    eq(clientNotifications.read, false),
+    storeId ? eq(clientNotifications.storeId, storeId) : void 0
+  ));
   return result[0]?.count ?? 0;
 }
-async function markNotificationsRead(userId) {
+async function markNotificationsRead(userId, storeId) {
   const db = await getDb();
   if (!db) return;
-  await db.update(clientNotifications).set({ read: true }).where(eq(clientNotifications.userId, userId));
+  await db.update(clientNotifications).set({ read: true }).where(and(
+    eq(clientNotifications.userId, userId),
+    storeId ? eq(clientNotifications.storeId, storeId) : void 0
+  ));
 }
 async function createClientNotification(data) {
   const db = await getDb();
   if (!db) return;
   await db.insert(clientNotifications).values(data);
 }
-async function getUserLoyaltyPoints(userId) {
+async function getTenantScope(storeId) {
+  if (!storeId) return { tenantKey: "bonatto", storeId: null };
   const db = await getDb();
-  if (!db) return 0;
-  const result = await db.select({ loyaltyPoints: users.loyaltyPoints }).from(users).where(eq(users.id, userId)).limit(1);
-  return result[0]?.loyaltyPoints ?? 0;
+  if (!db) return { tenantKey: "bonatto", storeId };
+  const [store] = await db.select({ tenantKey: stores.tenantKey }).from(stores).where(eq(stores.id, storeId)).limit(1);
+  return { tenantKey: store?.tenantKey ?? "bonatto", storeId };
 }
-async function addLoyaltyPoints(userId, points, orderId, description) {
+async function getTenantCustomerAccount(userId, storeId) {
+  const db = await getDb();
+  if (!db) return null;
+  const scope = await getTenantScope(storeId);
+  let [account] = await db.select().from(tenantCustomerAccounts).where(and(eq(tenantCustomerAccounts.tenantKey, scope.tenantKey), eq(tenantCustomerAccounts.userId, userId))).limit(1);
+  if (account) return account;
+  const [legacyUser] = await db.select().from(users).where(eq(users.id, userId)).limit(1);
+  if (!legacyUser) return null;
+  const legacy = scope.tenantKey === "bonatto";
+  await db.insert(tenantCustomerAccounts).values({
+    tenantKey: scope.tenantKey,
+    userId,
+    loyaltyPoints: legacy ? legacyUser.loyaltyPoints : 0,
+    clubPlan: legacy ? legacyUser.clubPlan : null,
+    clubStatus: legacy ? legacyUser.clubStatus : null,
+    clubStartDate: legacy ? legacyUser.clubStartDate : null,
+    clubNextBillingDate: legacy ? legacyUser.clubNextBillingDate : null,
+    clubFreePizzaUsed: legacy ? legacyUser.clubFreePizzaUsed : false,
+    clubFreePizzaResetAt: legacy ? legacyUser.clubFreePizzaResetAt : null,
+    stripeCustomerId: legacy ? legacyUser.stripeCustomerId : null
+  }).onDuplicateKeyUpdate({ set: { userId } });
+  [account] = await db.select().from(tenantCustomerAccounts).where(and(eq(tenantCustomerAccounts.tenantKey, scope.tenantKey), eq(tenantCustomerAccounts.userId, userId))).limit(1);
+  return account ?? null;
+}
+async function mirrorBonattoLoyalty(userId, tenantKey, loyaltyPoints) {
+  if (tenantKey !== "bonatto") return;
   const db = await getDb();
   if (!db) return;
-  const balanceBefore = await getUserLoyaltyPoints(userId);
-  const balanceAfter = balanceBefore + points;
-  await db.update(users).set({ loyaltyPoints: sql`${users.loyaltyPoints} + ${points}` }).where(eq(users.id, userId));
+  await db.update(users).set({ loyaltyPoints }).where(eq(users.id, userId));
+}
+async function getUserLoyaltyPoints(userId, storeId) {
+  return (await getTenantCustomerAccount(userId, storeId))?.loyaltyPoints ?? 0;
+}
+async function addLoyaltyPoints(userId, points, orderId, description, storeId) {
+  const db = await getDb();
+  if (!db || points === 0) return;
+  const account = await getTenantCustomerAccount(userId, storeId);
+  if (!account) return;
+  const scope = await getTenantScope(storeId);
+  await db.update(tenantCustomerAccounts).set({ loyaltyPoints: sql`GREATEST(0, ${tenantCustomerAccounts.loyaltyPoints} + ${points})` }).where(eq(tenantCustomerAccounts.id, account.id));
+  const balanceAfter = await getUserLoyaltyPoints(userId, storeId);
+  const balanceBefore = Math.max(0, balanceAfter - points);
+  await mirrorBonattoLoyalty(userId, scope.tenantKey, balanceAfter);
   await db.insert(loyaltyTransactions).values({
+    tenantKey: scope.tenantKey,
+    storeId: scope.storeId,
     userId,
     orderId: orderId ?? null,
-    type: "earn",
+    type: points > 0 ? "earn" : "manual",
     points,
-    description: description ?? `+${points} pontos por pedido #${orderId ?? ""}`,
+    description: description ?? `${points > 0 ? "+" : ""}${points} pontos por pedido #${orderId ?? ""}`,
     balanceBefore,
     balanceAfter
   });
 }
-async function deductLoyaltyPoints(userId, points, orderId, description) {
-  const db = await getDb();
-  if (!db) return { ok: false, newBalance: 0 };
-  const current = await getUserLoyaltyPoints(userId);
-  if (current < points) return { ok: false, newBalance: current };
-  const balanceAfter = current - points;
-  await db.update(users).set({ loyaltyPoints: sql`${users.loyaltyPoints} - ${points}` }).where(eq(users.id, userId));
-  await db.insert(loyaltyTransactions).values({
-    userId,
-    orderId: orderId ?? null,
-    type: "redeem",
-    points: -points,
-    description: description ?? `-${points} pontos resgatados como desconto`,
-    balanceBefore: current,
-    balanceAfter
-  });
-  return { ok: true, newBalance: balanceAfter };
+async function deductLoyaltyPoints(userId, points, orderId, description, storeId) {
+  return deductLoyaltyPointsAtomic(userId, points, orderId, description, storeId);
 }
-async function getLoyaltyHistory(userId, limit = 30) {
+async function getLoyaltyHistory(userId, limit = 30, storeId) {
   const db = await getDb();
   if (!db) return [];
-  return db.select().from(loyaltyTransactions).where(eq(loyaltyTransactions.userId, userId)).orderBy(sql`${loyaltyTransactions.createdAt} DESC`).limit(limit);
+  const { tenantKey } = await getTenantScope(storeId);
+  return db.select().from(loyaltyTransactions).where(and(eq(loyaltyTransactions.userId, userId), eq(loyaltyTransactions.tenantKey, tenantKey))).orderBy(sql`${loyaltyTransactions.createdAt} DESC`).limit(limit);
 }
 async function updateUserAvatar(userId, avatarUrl) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
   await db.update(users).set({ avatarUrl }).where(eq(users.id, userId));
 }
-async function getUserSpendingHistory(userId) {
+async function getUserSpendingHistory(userId, storeId) {
   const db = await getDb();
   if (!db) return [];
   return db.select({
     month: sql`DATE_FORMAT(${orders.createdAt}, '%Y-%m')`,
     total: sql`SUM(${orders.total})`,
     count: sql`COUNT(*)`
-  }).from(orders).where(and(eq(orders.userId, userId), eq(orders.status, "delivered"))).groupBy(sql`DATE_FORMAT(${orders.createdAt}, '%Y-%m')`).orderBy(sql`DATE_FORMAT(${orders.createdAt}, '%Y-%m')`).limit(12);
+  }).from(orders).where(and(
+    eq(orders.userId, userId),
+    eq(orders.status, "delivered"),
+    storeId ? eq(orders.storeId, storeId) : void 0
+  )).groupBy(sql`DATE_FORMAT(${orders.createdAt}, '%Y-%m')`).orderBy(sql`DATE_FORMAT(${orders.createdAt}, '%Y-%m')`).limit(12);
 }
 async function getOrderMessages(orderId) {
   const db = await getDb();
@@ -4025,7 +5448,7 @@ async function getCrmCustomers(opts) {
       u.email,
       u.phone,
       u.avatarUrl,
-      u.loyaltyPoints,
+      ${opts?.storeId ? sql`COALESCE(tca.loyaltyPoints, 0)` : sql`u.loyaltyPoints`} AS loyaltyPoints,
       u.createdAt,
       u.lastSignedIn,
       COUNT(DISTINCT o.id) AS totalOrders,
@@ -4035,7 +5458,8 @@ async function getCrmCustomers(opts) {
       GROUP_CONCAT(DISTINCT ct.tag ORDER BY ct.assignedAt DESC SEPARATOR ',') AS tags
     FROM users u
     LEFT JOIN orders o ON o.userId = u.id
-    LEFT JOIN customer_tags ct ON ct.userId = u.id
+    LEFT JOIN customer_tags ct ON ct.userId = u.id ${opts?.storeId ? sql`AND ct.storeId = ${opts.storeId}` : sql``}
+    ${opts?.storeId ? sql`LEFT JOIN tenant_customer_accounts tca ON tca.userId = u.id AND tca.tenantKey = (SELECT tenantKey FROM stores WHERE id = ${opts.storeId} LIMIT 1)` : sql``}
     WHERE u.role = 'user'
       ${search ? sql`AND (u.name LIKE ${"%" + search + "%"} OR u.email LIKE ${"%" + search + "%"} OR u.phone LIKE ${"%" + search + "%"})` : sql``}
       ${opts?.storeId ? sql`AND u.id IN (SELECT DISTINCT userId FROM \`orders\` WHERE storeId = ${opts.storeId})` : sql``}
@@ -4063,11 +5487,22 @@ async function getCrmCustomerDetail(userId, storeId) {
   if (!db) return null;
   const userRows = await db.select().from(users).where(eq(users.id, userId)).limit(1);
   if (!userRows.length) return null;
-  const { passwordHash: _ph, resetToken: _rt, resetTokenExpiresAt: _rte, ...safeUser } = userRows[0];
+  const { passwordHash: _ph, resetToken: _rt, resetTokenExpiresAt: _rte, ...baseSafeUser } = userRows[0];
+  const account = storeId ? await getTenantCustomerAccount(userId, storeId) : null;
+  const safeUser = account ? {
+    ...baseSafeUser,
+    loyaltyPoints: account.loyaltyPoints,
+    clubPlan: account.clubPlan,
+    clubStatus: account.clubStatus,
+    clubStartDate: account.clubStartDate,
+    clubNextBillingDate: account.clubNextBillingDate,
+    clubFreePizzaUsed: account.clubFreePizzaUsed,
+    clubFreePizzaResetAt: account.clubFreePizzaResetAt
+  } : baseSafeUser;
   const orderRows = await db.select().from(orders).where(storeId ? and(eq(orders.userId, userId), eq(orders.storeId, storeId)) : eq(orders.userId, userId)).orderBy(desc(orders.createdAt)).limit(20);
   return { user: safeUser, orders: orderRows };
 }
-async function getCrmCustomersByTag(tag) {
+async function getCrmCustomersByTag(tag, storeId) {
   const db = await getDb();
   if (!db) return [];
   const rows = await db.execute(sql`
@@ -4077,67 +5512,68 @@ async function getCrmCustomersByTag(tag) {
       u.email,
       u.phone,
       u.avatarUrl,
-      u.loyaltyPoints,
+      COALESCE(tca.loyaltyPoints, 0) AS loyaltyPoints,
       u.createdAt,
       COUNT(DISTINCT o.id) AS totalOrders,
       COALESCE(SUM(CASE WHEN o.status = 'delivered' THEN CAST(o.total AS DECIMAL(10,2)) ELSE 0 END), 0) AS totalSpent,
       MAX(o.createdAt) AS lastOrderAt,
       GROUP_CONCAT(DISTINCT ct2.tag ORDER BY ct2.assignedAt DESC SEPARATOR ',') AS tags
     FROM users u
-    INNER JOIN customer_tags ct ON ct.userId = u.id AND ct.tag = ${tag}
-    LEFT JOIN customer_tags ct2 ON ct2.userId = u.id
-    LEFT JOIN orders o ON o.userId = u.id
+    INNER JOIN customer_tags ct ON ct.userId = u.id AND ct.storeId = ${storeId} AND ct.tag = ${tag}
+    LEFT JOIN customer_tags ct2 ON ct2.userId = u.id AND ct2.storeId = ${storeId}
+    LEFT JOIN orders o ON o.userId = u.id AND o.storeId = ${storeId}
+    LEFT JOIN tenant_customer_accounts tca ON tca.userId = u.id AND tca.tenantKey = (SELECT tenantKey FROM stores WHERE id = ${storeId} LIMIT 1)
     WHERE u.role = 'user'
     GROUP BY u.id
     ORDER BY lastOrderAt DESC
   `);
   return rows[0];
 }
-async function assignTagToCustomer(userId, tag) {
+async function assignTagToCustomer(userId, tag, storeId) {
   const db = await getDb();
   if (!db) return;
   const now = /* @__PURE__ */ new Date();
   const existing = await db.execute(sql`
-    SELECT id FROM customer_tags WHERE userId = ${userId} AND tag = ${tag} LIMIT 1
+    SELECT id FROM customer_tags WHERE storeId = ${storeId} AND userId = ${userId} AND tag = ${tag} LIMIT 1
   `);
   const rows = existing[0];
   if (rows.length === 0) {
     await db.execute(sql`
-      INSERT INTO customer_tags (userId, tag, assignedAt, updatedAt) VALUES (${userId}, ${tag}, ${now}, ${now})
+      INSERT INTO customer_tags (storeId, userId, tag, assignedAt, updatedAt) VALUES (${storeId}, ${userId}, ${tag}, ${now}, ${now})
     `);
   }
 }
-async function removeTagFromCustomer(userId, tag) {
+async function removeTagFromCustomer(userId, tag, storeId) {
   const db = await getDb();
   if (!db) return;
-  await db.execute(sql`DELETE FROM customer_tags WHERE userId = ${userId} AND tag = ${tag}`);
+  await db.execute(sql`DELETE FROM customer_tags WHERE storeId = ${storeId} AND userId = ${userId} AND tag = ${tag}`);
 }
-async function getTagsForCustomer(userId) {
+async function getTagsForCustomer(userId, storeId) {
   const db = await getDb();
   if (!db) return [];
   const rows = await db.execute(sql`
-    SELECT tag, assignedAt FROM customer_tags WHERE userId = ${userId} ORDER BY assignedAt DESC
+    SELECT tag, assignedAt FROM customer_tags WHERE storeId = ${storeId} AND userId = ${userId} ORDER BY assignedAt DESC
   `);
   return rows[0];
 }
-async function getJourneyExecutionsByUser(userId) {
+async function getJourneyExecutionsByUser(userId, storeId) {
   const db = await getDb();
   if (!db) return [];
   const rows = await db.execute(sql`
     SELECT je.*, j.name AS journeyName
     FROM journey_executions je
     LEFT JOIN journeys j ON j.id = je.journeyId
-    WHERE je.userId = ${userId}
+    WHERE je.storeId = ${storeId} AND je.userId = ${userId}
     ORDER BY je.startedAt DESC
     LIMIT 20
   `);
   return rows[0];
 }
-async function getAbandonedCartsByUser(userId) {
+async function getAbandonedCartsByUser(userId, storeId) {
   const db = await getDb();
   if (!db) return [];
   const rows = await db.execute(sql`
-    SELECT * FROM abandoned_carts WHERE userId = ${userId} ORDER BY createdAt DESC LIMIT 10
+    SELECT * FROM abandoned_carts WHERE storeId = ${storeId} AND userId = ${userId} ORDER BY createdAt DESC LIMIT 10
   `);
   return rows[0];
 }
@@ -4147,12 +5583,12 @@ async function getCrmStats(storeId) {
   const rows = storeId ? await db.execute(sql`
       SELECT
         (SELECT COUNT(DISTINCT o.userId) FROM orders o WHERE o.storeId = ${storeId} AND o.userId IS NOT NULL) AS totalCustomers,
-        (SELECT COUNT(*) FROM customer_tags ct WHERE ct.tag = 'novo' AND EXISTS (SELECT 1 FROM orders o WHERE o.userId = ct.userId AND o.storeId = ${storeId})) AS tagNovo,
-        (SELECT COUNT(*) FROM customer_tags ct WHERE ct.tag = 'recorrente' AND EXISTS (SELECT 1 FROM orders o WHERE o.userId = ct.userId AND o.storeId = ${storeId})) AS tagRecorrente,
-        (SELECT COUNT(*) FROM customer_tags ct WHERE ct.tag = 'indeciso' AND EXISTS (SELECT 1 FROM orders o WHERE o.userId = ct.userId AND o.storeId = ${storeId})) AS tagIndeciso,
-        (SELECT COUNT(*) FROM customer_tags ct WHERE ct.tag = 'inativo_15' AND EXISTS (SELECT 1 FROM orders o WHERE o.userId = ct.userId AND o.storeId = ${storeId})) AS tagInativo15,
-        (SELECT COUNT(*) FROM customer_tags ct WHERE ct.tag = 'inativo_30' AND EXISTS (SELECT 1 FROM orders o WHERE o.userId = ct.userId AND o.storeId = ${storeId})) AS tagInativo30,
-        (SELECT COUNT(*) FROM customer_tags ct WHERE ct.tag = 'inativo_60' AND EXISTS (SELECT 1 FROM orders o WHERE o.userId = ct.userId AND o.storeId = ${storeId})) AS tagInativo60,
+        (SELECT COUNT(*) FROM customer_tags ct WHERE ct.storeId = ${storeId} AND ct.tag = 'novo') AS tagNovo,
+        (SELECT COUNT(*) FROM customer_tags ct WHERE ct.storeId = ${storeId} AND ct.tag = 'recorrente') AS tagRecorrente,
+        (SELECT COUNT(*) FROM customer_tags ct WHERE ct.storeId = ${storeId} AND ct.tag = 'indeciso') AS tagIndeciso,
+        (SELECT COUNT(*) FROM customer_tags ct WHERE ct.storeId = ${storeId} AND ct.tag = 'inativo_15') AS tagInativo15,
+        (SELECT COUNT(*) FROM customer_tags ct WHERE ct.storeId = ${storeId} AND ct.tag = 'inativo_30') AS tagInativo30,
+        (SELECT COUNT(*) FROM customer_tags ct WHERE ct.storeId = ${storeId} AND ct.tag = 'inativo_60') AS tagInativo60,
         (SELECT COUNT(*) FROM abandoned_carts ac WHERE ac.status = 'pending' AND EXISTS (SELECT 1 FROM orders o WHERE o.userId = ac.userId AND o.storeId = ${storeId})) AS carrinhosPendentes,
         (SELECT COUNT(*) FROM journey_executions je WHERE je.status = 'running' AND EXISTS (SELECT 1 FROM orders o WHERE o.userId = je.userId AND o.storeId = ${storeId})) AS jornadasAtivas
     `) : await db.execute(sql`
@@ -4173,11 +5609,11 @@ async function getCrmStats(storeId) {
 async function listNotificationTemplates(opts) {
   const db = await getDb();
   if (!db) return [];
-  let query = db.select().from(notificationTemplates).$dynamic();
-  if (opts?.event) {
-    query = query.where(eq(notificationTemplates.event, opts.event));
-  }
-  return query.orderBy(notificationTemplates.event, notificationTemplates.channel);
+  const storeId = await getEffectiveStoreId(db, opts?.storeId);
+  const conditions = [eq(notificationTemplates.storeId, storeId)];
+  if (opts?.event) conditions.push(eq(notificationTemplates.event, opts.event));
+  if (opts?.channel) conditions.push(eq(notificationTemplates.channel, opts.channel));
+  return db.select().from(notificationTemplates).where(and(...conditions)).orderBy(notificationTemplates.event, notificationTemplates.channel);
 }
 async function createNotificationTemplate(data) {
   const db = await getDb();
@@ -4186,22 +5622,24 @@ async function createNotificationTemplate(data) {
   const rows = result;
   return rows[0].insertId;
 }
-async function updateNotificationTemplate(id, data) {
+async function updateNotificationTemplate(id, storeId, data) {
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
-  await db.update(notificationTemplates).set(data).where(eq(notificationTemplates.id, id));
+  await db.update(notificationTemplates).set(data).where(and(eq(notificationTemplates.id, id), eq(notificationTemplates.storeId, storeId)));
 }
-async function deleteNotificationTemplate(id) {
+async function deleteNotificationTemplate(id, storeId) {
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
-  await db.delete(notificationTemplates).where(eq(notificationTemplates.id, id));
+  await db.delete(notificationTemplates).where(and(eq(notificationTemplates.id, id), eq(notificationTemplates.storeId, storeId)));
 }
-async function pickRandomTemplate(event, channel) {
+async function pickRandomTemplate(event, channel, requestedStoreId) {
   const db = await getDb();
   if (!db) return null;
+  const storeId = await getEffectiveStoreId(db, requestedStoreId);
   const rows = await db.execute(sql`
     SELECT title, body FROM notification_templates
-    WHERE event = ${event}
+    WHERE storeId = ${storeId}
+      AND event = ${event}
       AND (channel = ${channel} OR channel = 'both')
       AND isActive = 1
     ORDER BY RAND()
@@ -4210,10 +5648,11 @@ async function pickRandomTemplate(event, channel) {
   const result = rows[0];
   return result[0] ?? null;
 }
-async function seedNotificationTemplates() {
+async function seedNotificationTemplates(requestedStoreId) {
   const db = await getDb();
   if (!db) return;
-  const existing = await db.select().from(notificationTemplates).limit(1);
+  const storeId = await getEffectiveStoreId(db, requestedStoreId);
+  const existing = await db.select({ id: notificationTemplates.id }).from(notificationTemplates).where(eq(notificationTemplates.storeId, storeId)).limit(1);
   if (existing.length > 0) return;
   const templates = [
     // ── order_confirmed ──
@@ -4283,27 +5722,30 @@ async function seedNotificationTemplates() {
     { event: "reactivation_60", channel: "whatsapp", title: "Reativa\xE7\xE3o 60 dias", body: "{{clientName}}! \u{1F622}\n\nA gente sente muito a sua falta na Bonatto Pizza.\n\nPara te receber de volta, preparamos um cupom especial de *15% de desconto*:\n\n\u{1F39F}\uFE0F *{{coupon}}*\n\n\u{1F355} Novidades no card\xE1pio te esperam!\n\n\u{1F449} https://bonattopizza.manus.space" },
     { event: "reactivation_60", channel: "whatsapp", title: "Reativa\xE7\xE3o 60 dias", body: "{{clientName}}, sua volta \xE9 muito especial pra gente! \u{1F970}\n\nComo presente de boas-vindas, aqui vai *15% de desconto*:\n\n\u{1F39F}\uFE0F Cupom: *{{coupon}}*\n\n\u23F0 V\xE1lido por 24h. Corre!\n\n\u{1F449} https://bonattopizza.manus.space" }
   ];
-  await db.insert(notificationTemplates).values(templates);
+  await db.insert(notificationTemplates).values(templates.map((template) => ({ ...template, storeId })));
 }
-async function getAllDeliveryZones(activeOnly = false) {
+async function getAllDeliveryZones(activeOnly = false, storeId) {
   const db = await getDb();
   if (!db) return [];
+  const effectiveStoreId = await getEffectiveStoreId(db, storeId);
   if (activeOnly) {
-    return db.select().from(deliveryZones).where(eq(deliveryZones.isActive, true)).orderBy(deliveryZones.neighborhood);
+    return db.select().from(deliveryZones).where(and(eq(deliveryZones.storeId, effectiveStoreId), eq(deliveryZones.isActive, true))).orderBy(deliveryZones.neighborhood);
   }
-  return db.select().from(deliveryZones).orderBy(deliveryZones.neighborhood);
+  return db.select().from(deliveryZones).where(eq(deliveryZones.storeId, effectiveStoreId)).orderBy(deliveryZones.neighborhood);
 }
-async function getDeliveryZoneByNeighborhood(neighborhood) {
+async function getDeliveryZoneByNeighborhood(neighborhood, storeId) {
   const db = await getDb();
   if (!db) return null;
+  const effectiveStoreId = await getEffectiveStoreId(db, storeId);
   const rows = await db.execute(
-    sql`SELECT * FROM delivery_zones WHERE LOWER(neighborhood) = LOWER(${neighborhood}) AND isActive = 1 LIMIT 1`
+    sql`SELECT * FROM delivery_zones WHERE storeId = ${effectiveStoreId} AND LOWER(neighborhood) = LOWER(${neighborhood}) AND isActive = 1 LIMIT 1`
   );
   const list = rows[0];
   if (!list || list.length === 0) return null;
   const r = list[0];
   return {
     id: Number(r.id),
+    storeId: Number(r.storeId),
     neighborhood: String(r.neighborhood),
     city: String(r.city ?? ""),
     deliveryFee: String(r.deliveryFee ?? "0.00"),
@@ -4311,16 +5753,18 @@ async function getDeliveryZoneByNeighborhood(neighborhood) {
     isActive: Boolean(r.isActive)
   };
 }
-async function searchDeliveryZones(query) {
+async function searchDeliveryZones(query, storeId) {
   const db = await getDb();
   if (!db) return [];
+  const effectiveStoreId = await getEffectiveStoreId(db, storeId);
   const like2 = `%${query}%`;
   const rows = await db.execute(
-    sql`SELECT * FROM delivery_zones WHERE LOWER(neighborhood) LIKE LOWER(${like2}) AND isActive = 1 ORDER BY neighborhood LIMIT 10`
+    sql`SELECT * FROM delivery_zones WHERE storeId = ${effectiveStoreId} AND LOWER(neighborhood) LIKE LOWER(${like2}) AND isActive = 1 ORDER BY neighborhood LIMIT 10`
   );
   const list = rows[0];
   return (list ?? []).map((r) => ({
     id: Number(r.id),
+    storeId: Number(r.storeId),
     neighborhood: String(r.neighborhood),
     city: String(r.city ?? ""),
     deliveryFee: String(r.deliveryFee ?? "0.00"),
@@ -4332,6 +5776,7 @@ async function createDeliveryZone(data) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
   const result = await db.insert(deliveryZones).values({
+    storeId: data.storeId,
     neighborhood: data.neighborhood.trim(),
     city: data.city?.trim() ?? "",
     deliveryFee: data.deliveryFee,
@@ -4340,26 +5785,30 @@ async function createDeliveryZone(data) {
   });
   return result.insertId;
 }
-async function updateDeliveryZone(id, data) {
+async function updateDeliveryZone(id, storeId, data) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  await db.update(deliveryZones).set(data).where(eq(deliveryZones.id, id));
+  await db.update(deliveryZones).set(data).where(and(eq(deliveryZones.id, id), eq(deliveryZones.storeId, storeId)));
 }
-async function deleteDeliveryZone(id) {
+async function deleteDeliveryZone(id, storeId) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  await db.delete(deliveryZones).where(eq(deliveryZones.id, id));
+  await db.delete(deliveryZones).where(and(eq(deliveryZones.id, id), eq(deliveryZones.storeId, storeId)));
 }
-async function getMenuSlides(activeOnly = true) {
+async function getMenuSlides(activeOnly = true, storeId) {
   const db = await getDb();
   if (!db) return [];
-  const rows = await db.select().from(menuSlides).where(activeOnly ? eq(menuSlides.isActive, true) : void 0).orderBy(menuSlides.sortOrder, menuSlides.id);
+  const effectiveStoreId = await getEffectiveStoreId(db, storeId);
+  const conditions = [eq(menuSlides.storeId, effectiveStoreId)];
+  if (activeOnly) conditions.push(eq(menuSlides.isActive, true));
+  const rows = await db.select().from(menuSlides).where(and(...conditions)).orderBy(menuSlides.sortOrder, menuSlides.id);
   return rows;
 }
 async function createMenuSlide(data) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
   const result = await db.insert(menuSlides).values({
+    storeId: data.storeId,
     title: data.title,
     subtitle: data.subtitle ?? null,
     imageUrl: data.imageUrl ?? null,
@@ -4374,23 +5823,24 @@ async function createMenuSlide(data) {
   const [row] = await db.select().from(menuSlides).where(eq(menuSlides.id, id));
   return row;
 }
-async function updateMenuSlide(id, data) {
+async function updateMenuSlide(id, storeId, data) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  await db.update(menuSlides).set(data).where(eq(menuSlides.id, id));
-  const [row] = await db.select().from(menuSlides).where(eq(menuSlides.id, id));
+  await db.update(menuSlides).set(data).where(and(eq(menuSlides.id, id), eq(menuSlides.storeId, storeId)));
+  const [row] = await db.select().from(menuSlides).where(and(eq(menuSlides.id, id), eq(menuSlides.storeId, storeId)));
   return row;
 }
-async function deleteMenuSlide(id) {
+async function deleteMenuSlide(id, storeId) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  await db.delete(menuSlides).where(eq(menuSlides.id, id));
+  await db.delete(menuSlides).where(and(eq(menuSlides.id, id), eq(menuSlides.storeId, storeId)));
   return { success: true };
 }
-async function seedMenuSlides() {
+async function seedMenuSlides(storeId) {
   const db = await getDb();
   if (!db) return { seeded: false, count: 0 };
-  const existing = await db.select().from(menuSlides);
+  const effectiveStoreId = await getEffectiveStoreId(db, storeId);
+  const existing = await db.select().from(menuSlides).where(eq(menuSlides.storeId, effectiveStoreId));
   if (existing.length > 0) return { seeded: false, count: existing.length };
   const slides = [
     {
@@ -4419,19 +5869,20 @@ async function seedMenuSlides() {
     }
   ];
   for (const slide of slides) {
-    await db.insert(menuSlides).values({ ...slide, isActive: true });
+    await db.insert(menuSlides).values({ ...slide, storeId: effectiveStoreId, isActive: true });
   }
   return { seeded: true, count: slides.length };
 }
-async function listCustomTags() {
+async function listCustomTags(storeId) {
   const db = await getDb();
   if (!db) return [];
-  return db.select().from(customTags).orderBy(customTags.name);
+  return db.select().from(customTags).where(eq(customTags.storeId, storeId)).orderBy(customTags.name);
 }
 async function createCustomTag(data) {
   const db = await getDb();
   if (!db) return -1;
   const result = await db.insert(customTags).values({
+    storeId: data.storeId,
     name: data.name.trim().toLowerCase().replace(/\s+/g, "_"),
     color: data.color,
     description: data.description ?? null,
@@ -4439,46 +5890,46 @@ async function createCustomTag(data) {
   });
   return Number(result[0].insertId);
 }
-async function updateCustomTag(id, data) {
+async function updateCustomTag(id, storeId, data) {
   const db = await getDb();
   if (!db) return;
   const updates = {};
   if (data.name) updates.name = data.name.trim().toLowerCase().replace(/\s+/g, "_");
   if (data.color) updates.color = data.color;
   if (data.description !== void 0) updates.description = data.description;
-  await db.update(customTags).set(updates).where(eq(customTags.id, id));
+  await db.update(customTags).set(updates).where(and(eq(customTags.id, id), eq(customTags.storeId, storeId)));
 }
-async function deleteCustomTag(id) {
+async function deleteCustomTag(id, storeId) {
   const db = await getDb();
   if (!db) return;
-  await db.delete(customCustomerTags).where(eq(customCustomerTags.tagId, id));
-  await db.delete(customTags).where(eq(customTags.id, id));
+  await db.delete(customCustomerTags).where(and(eq(customCustomerTags.tagId, id), eq(customCustomerTags.storeId, storeId)));
+  await db.delete(customTags).where(and(eq(customTags.id, id), eq(customTags.storeId, storeId)));
 }
-async function assignCustomTagToCustomer(userId, tagId) {
+async function assignCustomTagToCustomer(userId, tagId, storeId) {
   const db = await getDb();
   if (!db) return;
-  const existing = await db.select().from(customCustomerTags).where(and(eq(customCustomerTags.userId, userId), eq(customCustomerTags.tagId, tagId))).limit(1);
+  const existing = await db.select().from(customCustomerTags).where(and(eq(customCustomerTags.storeId, storeId), eq(customCustomerTags.userId, userId), eq(customCustomerTags.tagId, tagId))).limit(1);
   if (existing.length === 0) {
-    await db.insert(customCustomerTags).values({ userId, tagId, assignedAt: /* @__PURE__ */ new Date() });
+    await db.insert(customCustomerTags).values({ storeId, userId, tagId, assignedAt: /* @__PURE__ */ new Date() });
   }
 }
-async function removeCustomTagFromCustomer(userId, tagId) {
+async function removeCustomTagFromCustomer(userId, tagId, storeId) {
   const db = await getDb();
   if (!db) return;
-  await db.delete(customCustomerTags).where(and(eq(customCustomerTags.userId, userId), eq(customCustomerTags.tagId, tagId)));
+  await db.delete(customCustomerTags).where(and(eq(customCustomerTags.storeId, storeId), eq(customCustomerTags.userId, userId), eq(customCustomerTags.tagId, tagId)));
 }
-async function getCustomTagsForCustomer(userId) {
+async function getCustomTagsForCustomer(userId, storeId) {
   const db = await getDb();
   if (!db) return [];
-  const rows = await db.select({ id: customTags.id, name: customTags.name, color: customTags.color, description: customTags.description, createdAt: customTags.createdAt, assignedAt: customCustomerTags.assignedAt }).from(customCustomerTags).innerJoin(customTags, eq(customCustomerTags.tagId, customTags.id)).where(eq(customCustomerTags.userId, userId)).orderBy(customCustomerTags.assignedAt);
+  const rows = await db.select({ id: customTags.id, storeId: customTags.storeId, name: customTags.name, color: customTags.color, description: customTags.description, createdAt: customTags.createdAt, assignedAt: customCustomerTags.assignedAt }).from(customCustomerTags).innerJoin(customTags, eq(customCustomerTags.tagId, customTags.id)).where(and(eq(customCustomerTags.storeId, storeId), eq(customCustomerTags.userId, userId))).orderBy(customCustomerTags.assignedAt);
   return rows;
 }
-async function getCustomersByCustomTagName(tagName) {
+async function getCustomersByCustomTagName(tagName, storeId) {
   const db = await getDb();
   if (!db) return [];
-  const tag = await db.select().from(customTags).where(eq(customTags.name, tagName)).limit(1);
+  const tag = await db.select().from(customTags).where(and(eq(customTags.storeId, storeId), eq(customTags.name, tagName))).limit(1);
   if (!tag[0]) return [];
-  const rows = await db.select({ userId: customCustomerTags.userId }).from(customCustomerTags).where(eq(customCustomerTags.tagId, tag[0].id));
+  const rows = await db.select({ userId: customCustomerTags.userId }).from(customCustomerTags).where(and(eq(customCustomerTags.storeId, storeId), eq(customCustomerTags.tagId, tag[0].id)));
   return rows.map((r) => r.userId);
 }
 async function updateStripeCustomerId(userId, stripeCustomerId) {
@@ -4493,20 +5944,21 @@ async function createScheduledNotification(data) {
   const resultHeader = Array.isArray(result) ? result[0] : result;
   return resultHeader.insertId;
 }
-async function listScheduledNotifications() {
+async function listScheduledNotifications(requestedStoreId) {
   const db = await getDb();
   if (!db) return [];
-  return db.select().from(scheduledNotifications).orderBy(desc(scheduledNotifications.scheduledAt));
+  const storeId = await getEffectiveStoreId(db, requestedStoreId);
+  return db.select().from(scheduledNotifications).where(eq(scheduledNotifications.storeId, storeId)).orderBy(desc(scheduledNotifications.scheduledAt));
 }
-async function cancelScheduledNotification(id) {
+async function cancelScheduledNotification(id, storeId) {
   const db = await getDb();
   if (!db) return;
-  await db.update(scheduledNotifications).set({ status: "cancelled" }).where(eq(scheduledNotifications.id, id));
+  await db.update(scheduledNotifications).set({ status: "cancelled" }).where(and(eq(scheduledNotifications.id, id), eq(scheduledNotifications.storeId, storeId)));
 }
-async function deleteScheduledNotification(id) {
+async function deleteScheduledNotification(id, storeId) {
   const db = await getDb();
   if (!db) return;
-  await db.delete(scheduledNotifications).where(eq(scheduledNotifications.id, id));
+  await db.delete(scheduledNotifications).where(and(eq(scheduledNotifications.id, id), eq(scheduledNotifications.storeId, storeId)));
 }
 async function getPendingScheduledNotifications() {
   const db = await getDb();
@@ -4524,30 +5976,34 @@ async function markScheduledNotificationSent(id, sentCount) {
   if (!db) return;
   await db.update(scheduledNotifications).set({ status: "sent", sentAt: /* @__PURE__ */ new Date(), sentCount }).where(eq(scheduledNotifications.id, id));
 }
-async function getCarouselImages(activeOnly = true) {
+async function getCarouselImages(activeOnly = true, storeId) {
   const db = await getDb();
   if (!db) return [];
-  return db.select().from(carouselImages).where(activeOnly ? eq(carouselImages.active, true) : void 0).orderBy(carouselImages.sortOrder, carouselImages.id);
+  const effectiveStoreId = await getEffectiveStoreId(db, storeId);
+  const conditions = [eq(carouselImages.storeId, effectiveStoreId)];
+  if (activeOnly) conditions.push(eq(carouselImages.active, true));
+  return db.select().from(carouselImages).where(and(...conditions)).orderBy(carouselImages.sortOrder, carouselImages.id);
 }
 async function createCarouselImage(data) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
   await db.insert(carouselImages).values({
+    storeId: data.storeId,
     imageUrl: data.imageUrl,
     title: data.title ?? null,
     sortOrder: data.sortOrder ?? 0,
     active: true
   });
 }
-async function updateCarouselImage(id, data) {
+async function updateCarouselImage(id, storeId, data) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  await db.update(carouselImages).set(data).where(eq(carouselImages.id, id));
+  await db.update(carouselImages).set(data).where(and(eq(carouselImages.id, id), eq(carouselImages.storeId, storeId)));
 }
-async function deleteCarouselImage(id) {
+async function deleteCarouselImage(id, storeId) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  await db.delete(carouselImages).where(eq(carouselImages.id, id));
+  await db.delete(carouselImages).where(and(eq(carouselImages.id, id), eq(carouselImages.storeId, storeId)));
 }
 async function getOrdersWithMessages(storeId) {
   const db = await getDb();
@@ -4716,13 +6172,14 @@ async function createClientAlert(data) {
   });
   return result.insertId;
 }
-async function listClientAlerts(userId) {
+async function listClientAlerts(userId, storeId) {
   const db = await getDb();
   if (!db) return [];
   const now = /* @__PURE__ */ new Date();
   const alerts = await db.select().from(clientAlerts).where(
     and(
       eq(clientAlerts.active, true),
+      eq(clientAlerts.storeId, storeId),
       or(isNull(clientAlerts.expiresAt), gt(clientAlerts.expiresAt, now))
     )
   ).orderBy(desc(clientAlerts.createdAt)).limit(20);
@@ -4731,21 +6188,24 @@ async function listClientAlerts(userId) {
   const readSet = new Set(reads.map((r) => r.alertId));
   return alerts.map((a) => ({ ...a, read: readSet.has(a.id) }));
 }
-async function dismissClientAlert(alertId, userId) {
+async function dismissClientAlert(alertId, userId, storeId) {
   const db = await getDb();
   if (!db) return;
+  const [alert] = await db.select({ id: clientAlerts.id }).from(clientAlerts).where(and(eq(clientAlerts.id, alertId), eq(clientAlerts.storeId, storeId))).limit(1);
+  if (!alert) return;
   try {
     await db.insert(clientAlertReads).values({ alertId, userId });
   } catch {
   }
 }
-async function countUnreadClientAlerts(userId) {
+async function countUnreadClientAlerts(userId, storeId) {
   const db = await getDb();
   if (!db) return 0;
   const now = /* @__PURE__ */ new Date();
   const alerts = await db.select({ id: clientAlerts.id }).from(clientAlerts).where(
     and(
       eq(clientAlerts.active, true),
+      eq(clientAlerts.storeId, storeId),
       or(isNull(clientAlerts.expiresAt), gt(clientAlerts.expiresAt, now))
     )
   );
@@ -4841,40 +6301,42 @@ async function recordWebhookEventOnce(provider, eventId, eventType) {
     throw err;
   }
 }
-async function creditLoyaltyForOrderIdempotent(orderId, userId, points, description) {
+async function creditLoyaltyForOrderIdempotent(orderId, userId, points, description, storeId) {
   if (points <= 0) return false;
   const db = await getDb();
   if (!db) return false;
+  const scope = await getTenantScope(storeId);
   try {
-    await db.insert(loyaltyOrderCredits).values({ orderId, userId, points });
+    await db.insert(loyaltyOrderCredits).values({
+      tenantKey: scope.tenantKey,
+      storeId: scope.storeId,
+      orderId,
+      userId,
+      points
+    });
   } catch (err) {
     const msg = err?.message ?? "";
     if (msg.includes("Duplicate") || msg.includes("ER_DUP_ENTRY")) return false;
     throw err;
   }
-  const balanceBefore = await getUserLoyaltyPoints(userId);
-  const balanceAfter = balanceBefore + points;
-  await db.update(users).set({ loyaltyPoints: sql`${users.loyaltyPoints} + ${points}` }).where(eq(users.id, userId));
-  await db.insert(loyaltyTransactions).values({
-    userId,
-    orderId,
-    type: "earn",
-    points,
-    description: description ?? `+${points} pontos pelo pedido #${orderId}`,
-    balanceBefore,
-    balanceAfter
-  });
+  await addLoyaltyPoints(userId, points, orderId, description ?? `+${points} pontos pelo pedido #${orderId}`, storeId);
   return true;
 }
-async function deductLoyaltyPointsAtomic(userId, points, orderId, description) {
-  if (points <= 0) return { ok: true, newBalance: await getUserLoyaltyPoints(userId) };
+async function deductLoyaltyPointsAtomic(userId, points, orderId, description, storeId) {
+  if (points <= 0) return { ok: true, newBalance: await getUserLoyaltyPoints(userId, storeId) };
   const db = await getDb();
   if (!db) return { ok: false, newBalance: 0 };
-  const result = await db.update(users).set({ loyaltyPoints: sql`${users.loyaltyPoints} - ${points}` }).where(and(eq(users.id, userId), gte(users.loyaltyPoints, points)));
+  const account = await getTenantCustomerAccount(userId, storeId);
+  if (!account) return { ok: false, newBalance: 0 };
+  const scope = await getTenantScope(storeId);
+  const result = await db.update(tenantCustomerAccounts).set({ loyaltyPoints: sql`${tenantCustomerAccounts.loyaltyPoints} - ${points}` }).where(and(eq(tenantCustomerAccounts.id, account.id), gte(tenantCustomerAccounts.loyaltyPoints, points)));
   const affected = result?.rowsAffected ?? result?.[0]?.affectedRows ?? 0;
-  if (!affected) return { ok: false, newBalance: await getUserLoyaltyPoints(userId) };
-  const newBalance = await getUserLoyaltyPoints(userId);
+  if (!affected) return { ok: false, newBalance: await getUserLoyaltyPoints(userId, storeId) };
+  const newBalance = await getUserLoyaltyPoints(userId, storeId);
+  await mirrorBonattoLoyalty(userId, scope.tenantKey, newBalance);
   await db.insert(loyaltyTransactions).values({
+    tenantKey: scope.tenantKey,
+    storeId: scope.storeId,
     userId,
     orderId: orderId ?? null,
     type: "redeem",
@@ -4892,23 +6354,19 @@ async function refundLoyaltyPointsForOrder(orderId) {
   if (!order || !order.userId) return 0;
   const pointsUsed = order.pointsUsed ?? 0;
   if (pointsUsed <= 0) return 0;
+  const scope = await getTenantScope(order.storeId);
   const existing = await db.select().from(loyaltyTransactions).where(and(
     eq(loyaltyTransactions.orderId, orderId),
-    eq(loyaltyTransactions.type, "manual")
-  )).limit(1);
-  if (existing.length > 0 && existing[0].description?.startsWith("refund:")) return 0;
-  const balanceBefore = await getUserLoyaltyPoints(order.userId);
-  const balanceAfter = balanceBefore + pointsUsed;
-  await db.update(users).set({ loyaltyPoints: sql`${users.loyaltyPoints} + ${pointsUsed}` }).where(eq(users.id, order.userId));
-  await db.insert(loyaltyTransactions).values({
-    userId: order.userId,
+    eq(loyaltyTransactions.tenantKey, scope.tenantKey)
+  ));
+  if (existing.some((transaction) => transaction.description?.startsWith("refund:"))) return 0;
+  await addLoyaltyPoints(
+    order.userId,
+    pointsUsed,
     orderId,
-    type: "manual",
-    points: pointsUsed,
-    description: `refund: estorno de pontos por cancelamento do pedido #${orderId}`,
-    balanceBefore,
-    balanceAfter
-  });
+    `refund: estorno de pontos por cancelamento do pedido #${orderId}`,
+    order.storeId
+  );
   return pointsUsed;
 }
 async function registerCouponRedemption(couponId, code, orderId, userId) {
@@ -5010,6 +6468,7 @@ async function saveInAppNotification(userId, payload) {
   const db = await getDb();
   if (!db) return;
   await db.insert(clientNotifications).values({
+    storeId: payload.storeId ?? null,
     userId,
     title: payload.title,
     message: payload.body,
@@ -5023,6 +6482,7 @@ async function saveInAppNotificationsForUsers(userIds, payload) {
   if (!db) return;
   await db.insert(clientNotifications).values(
     uniqueUserIds.map((userId) => ({
+      storeId: payload.storeId ?? null,
       userId,
       title: payload.title,
       message: payload.body,
@@ -5083,6 +6543,7 @@ async function savePushSubscription(userId, endpoint, p256dh, auth, userAgent) {
 async function sendPushToAllUsers(payload, userIds) {
   const db = await getDb();
   if (!db) return { sent: 0, failed: 0 };
+  if (userIds && userIds.length === 0) return { sent: 0, failed: 0 };
   if (!isVapidConfigured) {
     const { users: users2 } = await Promise.resolve().then(() => (init_schema(), schema_exports));
     const targetRows = userIds && userIds.length > 0 ? await db.select({ id: users2.id }).from(users2).where(inArray2(users2.id, userIds)) : await db.select({ id: users2.id }).from(users2);
@@ -5258,14 +6719,55 @@ __export(storage_exports2, {
   storageGetAdapter: () => storageGetAdapter,
   storagePutAdapter: () => storagePutAdapter
 });
+function hasManusStorageConfig() {
+  return Boolean(
+    process.env.BUILT_IN_FORGE_API_URL?.trim() && process.env.BUILT_IN_FORGE_API_KEY?.trim()
+  );
+}
+function isVercelRuntime() {
+  return process.env.VERCEL === "1" || Boolean(process.env.VERCEL_ENV);
+}
 function resolveStorageProvider() {
   const explicit = (process.env.STORAGE_PROVIDER ?? "").trim().toLowerCase();
+  if (explicit === "local") return "local";
   if (explicit === "vercel_blob" || explicit === "vercel-blob") return "vercel_blob";
   if (explicit === "s3" || explicit === "r2" || explicit === "minio" || explicit === "manus") {
     return explicit;
   }
   if (process.env.BLOB_READ_WRITE_TOKEN?.trim()) return "vercel_blob";
+  if (hasManusStorageConfig()) return "manus";
+  if (!isVercelRuntime()) return "local";
   return "manus";
+}
+async function putLocal(relKey, data, _contentType) {
+  const { mkdir, writeFile } = await import("node:fs/promises");
+  const path = await import("node:path");
+  const crypto7 = await import("node:crypto");
+  const normalized = relKey.replace(/\\/g, "/").replace(/^\/+/, "");
+  if (!normalized || normalized.split("/").includes("..")) {
+    throw new Error("Invalid local storage path");
+  }
+  const parsed = path.posix.parse(normalized);
+  const key = path.posix.join(
+    parsed.dir,
+    `${parsed.name}-${crypto7.randomUUID().slice(0, 8)}${parsed.ext}`
+  );
+  const root = path.resolve(process.cwd(), ".local-uploads");
+  const filePath = path.resolve(root, ...key.split("/"));
+  if (!filePath.startsWith(`${root}${path.sep}`)) {
+    throw new Error("Invalid local storage path");
+  }
+  await mkdir(path.dirname(filePath), { recursive: true });
+  const body = typeof data === "string" ? Buffer.from(data) : Buffer.from(data);
+  await writeFile(filePath, body);
+  return { key, url: `/uploads/${key}`, provider: "local" };
+}
+async function getLocal(relKey) {
+  const key = relKey.replace(/\\/g, "/").replace(/^\/+/, "");
+  if (!key || key.split("/").includes("..")) {
+    throw new Error("Invalid local storage path");
+  }
+  return { key, url: `/uploads/${key}`, provider: "local" };
 }
 async function putManus(relKey, data, contentType) {
   const { storagePut: storagePut2 } = await Promise.resolve().then(() => (init_storage(), storage_exports));
@@ -5362,6 +6864,8 @@ async function getS3Compatible(provider, relKey) {
 async function storagePutAdapter(relKey, data, contentType = "application/octet-stream") {
   const provider = resolveStorageProvider();
   switch (provider) {
+    case "local":
+      return putLocal(relKey, data, contentType);
     case "vercel_blob":
       return putVercelBlob(relKey, data, contentType);
     case "s3":
@@ -5378,6 +6882,8 @@ async function storagePutAdapter(relKey, data, contentType = "application/octet-
 async function storageGetAdapter(relKey) {
   const provider = resolveStorageProvider();
   switch (provider) {
+    case "local":
+      return getLocal(relKey);
     case "vercel_blob":
       return getVercelBlob(relKey);
     case "s3":
@@ -5970,7 +7476,7 @@ Entre em contato conosco para mais informa\xE7\xF5es. Pedimos desculpas pelo inc
 // server/automation.ts
 init_push();
 init_db();
-async function refreshCustomerTags() {
+async function refreshCustomerTags(storeId) {
   const db = await getDb();
   if (!db) return;
   const now = /* @__PURE__ */ new Date();
@@ -5978,6 +7484,7 @@ async function refreshCustomerTags() {
   const userOrderStats = await db.execute(sql2`
     SELECT
       u.id AS userId,
+      o.storeId AS storeId,
       COUNT(o.id) AS totalOrders,
       MAX(o.createdAt) AS lastOrderAt,
       MIN(o.createdAt) AS firstOrderAt,
@@ -5987,9 +7494,10 @@ async function refreshCustomerTags() {
         ELSE NULL
       END AS avgDaysBetween
     FROM users u
-    LEFT JOIN orders o ON o.userId = u.id AND o.status = 'delivered'
+    INNER JOIN orders o ON o.userId = u.id AND o.status = 'delivered'
     WHERE u.role = 'user'
-    GROUP BY u.id
+      ${storeId ? sql2`AND o.storeId = ${storeId}` : sql2``}
+    GROUP BY u.id, o.storeId
   `);
   const rows = userOrderStats[0];
   for (const row of rows) {
@@ -6008,16 +7516,17 @@ async function refreshCustomerTags() {
     if (total > 10 && daysSinceLast !== null && daysSinceLast < 30) tags.push("recorrente");
     if (avg !== null && avg >= 12 && avg <= 20 && total > 2) tags.push("indeciso");
     for (const tag of tags) {
-      const existing = await db.select().from(customerTags).where(and3(eq3(customerTags.userId, row.userId), eq3(customerTags.tag, tag))).limit(1);
+      const existing = await db.select().from(customerTags).where(and3(eq3(customerTags.storeId, row.storeId), eq3(customerTags.userId, row.userId), eq3(customerTags.tag, tag))).limit(1);
       if (existing.length === 0) {
         await db.insert(customerTags).values({
+          storeId: row.storeId,
           userId: row.userId,
           tag,
           assignedAt: now,
           updatedAt: now
         });
       } else {
-        await db.update(customerTags).set({ updatedAt: now }).where(and3(eq3(customerTags.userId, row.userId), eq3(customerTags.tag, tag)));
+        await db.update(customerTags).set({ updatedAt: now }).where(and3(eq3(customerTags.storeId, row.storeId), eq3(customerTags.userId, row.userId), eq3(customerTags.tag, tag)));
       }
     }
     const allTags = ["novo", "recorrente", "indeciso", "inativo_15", "inativo_30", "inativo_60"];
@@ -6026,6 +7535,7 @@ async function refreshCustomerTags() {
       await db.delete(customerTags).where(
         and3(
           eq3(customerTags.userId, row.userId),
+          eq3(customerTags.storeId, row.storeId),
           inArray3(customerTags.tag, toRemove)
         )
       );
@@ -6033,9 +7543,9 @@ async function refreshCustomerTags() {
     for (const tag of tags) {
       if (tag === "inativo_15" || tag === "inativo_30" || tag === "inativo_60") {
         const triggerName = `tag_${tag}`;
-        const wasAlreadyTagged = await db.select().from(customerTags).where(and3(eq3(customerTags.userId, row.userId), eq3(customerTags.tag, tag))).limit(1);
+        const wasAlreadyTagged = await db.select().from(customerTags).where(and3(eq3(customerTags.storeId, row.storeId), eq3(customerTags.userId, row.userId), eq3(customerTags.tag, tag))).limit(1);
         if (!wasAlreadyTagged.length) {
-          newInactivityTriggers.push({ trigger: triggerName, userId: row.userId });
+          newInactivityTriggers.push({ trigger: triggerName, userId: row.userId, storeId: row.storeId });
         }
       }
     }
@@ -6043,7 +7553,11 @@ async function refreshCustomerTags() {
       const daysSinceLast2 = Math.floor(
         (now.getTime() - new Date(row.lastOrderAt).getTime()) / (1e3 * 60 * 60 * 24)
       );
-      const customJourneys = await db.select().from(journeys).where(and3(eq3(journeys.trigger, "tag_inativo_custom"), eq3(journeys.status, "active")));
+      const customJourneys = await db.select().from(journeys).where(and3(
+        eq3(journeys.storeId, row.storeId),
+        eq3(journeys.trigger, "tag_inativo_custom"),
+        eq3(journeys.status, "active")
+      ));
       for (const cj of customJourneys) {
         const requiredDays = cj.daysInactive ?? 0;
         if (requiredDays > 0 && daysSinceLast2 >= requiredDays) {
@@ -6059,8 +7573,8 @@ async function refreshCustomerTags() {
       }
     }
   }
-  for (const { trigger, userId } of newInactivityTriggers) {
-    fireJourneyTrigger(trigger, userId).catch(
+  for (const { trigger, userId, storeId: triggerStoreId } of newInactivityTriggers) {
+    fireJourneyTrigger(trigger, userId, void 0, triggerStoreId).catch(
       (err) => console.error(`[Automation] inactivity trigger ${trigger} failed for user ${userId}:`, err)
     );
   }
@@ -6070,7 +7584,11 @@ async function registerAbandonedCart(data) {
   if (!db) return -1;
   const now = /* @__PURE__ */ new Date();
   const expiresAt = new Date(now.getTime() + 2 * 60 * 60 * 1e3);
-  const existing = await db.select().from(abandonedCarts).where(and3(eq3(abandonedCarts.userId, data.userId), eq3(abandonedCarts.status, "pending"))).limit(1);
+  const existing = await db.select().from(abandonedCarts).where(and3(
+    eq3(abandonedCarts.storeId, data.storeId),
+    eq3(abandonedCarts.userId, data.userId),
+    eq3(abandonedCarts.status, "pending")
+  )).limit(1);
   if (existing.length > 0) {
     await db.update(abandonedCarts).set({
       items: JSON.stringify(data.items),
@@ -6081,6 +7599,7 @@ async function registerAbandonedCart(data) {
     return existing[0].id;
   }
   const result = await db.insert(abandonedCarts).values({
+    storeId: data.storeId,
     userId: data.userId,
     customerName: data.customerName,
     customerPhone: data.customerPhone,
@@ -6092,10 +7611,10 @@ async function registerAbandonedCart(data) {
   });
   return Number(result[0].insertId);
 }
-async function markCartRecovered(userId) {
+async function markCartRecovered(userId, storeId) {
   const db = await getDb();
   if (!db) return;
-  await db.update(abandonedCarts).set({ status: "recovered", recoveredAt: /* @__PURE__ */ new Date() }).where(and3(eq3(abandonedCarts.userId, userId), eq3(abandonedCarts.status, "pending")));
+  await db.update(abandonedCarts).set({ status: "recovered", recoveredAt: /* @__PURE__ */ new Date() }).where(and3(eq3(abandonedCarts.storeId, storeId), eq3(abandonedCarts.userId, userId), eq3(abandonedCarts.status, "pending")));
 }
 async function startJourneyExecution(journeyId, userId, phone, metadata) {
   const db = await getDb();
@@ -6114,6 +7633,7 @@ async function startJourneyExecution(journeyId, userId, phone, metadata) {
   const firstStep = steps[0];
   const nextStepAt = firstStep?.type === "wait" && firstStep.delayMinutes ? new Date(Date.now() + firstStep.delayMinutes * 60 * 1e3) : /* @__PURE__ */ new Date();
   const result = await db.insert(journeyExecutions).values({
+    storeId: journey[0].storeId,
     journeyId,
     userId,
     phone: phone ?? null,
@@ -6126,13 +7646,14 @@ async function startJourneyExecution(journeyId, userId, phone, metadata) {
   });
   return Number(result[0].insertId);
 }
-async function processJourneyExecutions() {
+async function processJourneyExecutions(storeId) {
   const db = await getDb();
   if (!db) return;
   const now = /* @__PURE__ */ new Date();
   const pending = await db.select().from(journeyExecutions).where(
     and3(
       eq3(journeyExecutions.status, "running"),
+      storeId ? eq3(journeyExecutions.storeId, storeId) : void 0,
       lt(journeyExecutions.nextStepAt, now)
     )
   ).limit(50);
@@ -6160,6 +7681,7 @@ async function processExecution(exec) {
     if (journey[0].exitOnOrder) {
       const exitOrder = await db.select({ id: orders.id }).from(orders).where(
         and3(
+          eq3(orders.storeId, exec.storeId),
           eq3(orders.userId, exec.userId),
           gte2(orders.createdAt, exec.startedAt),
           inArray3(orders.status, ["pending", "confirmed", "preparing", "out_for_delivery", "delivered"])
@@ -6196,16 +7718,16 @@ async function processExecution(exec) {
       if (step.tag) {
         const tagIdNum = Number(step.tag);
         if (!isNaN(tagIdNum) && tagIdNum > 0) {
-          const existingCustom = await db.select().from(customCustomerTags).where(and3(eq3(customCustomerTags.userId, exec.userId), eq3(customCustomerTags.tagId, tagIdNum))).limit(1);
+          const existingCustom = await db.select().from(customCustomerTags).where(and3(eq3(customCustomerTags.storeId, exec.storeId), eq3(customCustomerTags.userId, exec.userId), eq3(customCustomerTags.tagId, tagIdNum))).limit(1);
           if (!existingCustom.length) {
-            await db.insert(customCustomerTags).values({ userId: exec.userId, tagId: tagIdNum, assignedAt: /* @__PURE__ */ new Date() });
+            await db.insert(customCustomerTags).values({ storeId: exec.storeId, userId: exec.userId, tagId: tagIdNum, assignedAt: /* @__PURE__ */ new Date() });
           }
           log(`Tag personalizada adicionada: id=${tagIdNum}`);
         } else {
           const tag = step.tag;
-          const existing = await db.select().from(customerTags).where(and3(eq3(customerTags.userId, exec.userId), eq3(customerTags.tag, tag))).limit(1);
+          const existing = await db.select().from(customerTags).where(and3(eq3(customerTags.storeId, exec.storeId), eq3(customerTags.userId, exec.userId), eq3(customerTags.tag, tag))).limit(1);
           if (!existing.length) {
-            await db.insert(customerTags).values({ userId: exec.userId, tag, assignedAt: /* @__PURE__ */ new Date(), updatedAt: /* @__PURE__ */ new Date() });
+            await db.insert(customerTags).values({ storeId: exec.storeId, userId: exec.userId, tag, assignedAt: /* @__PURE__ */ new Date(), updatedAt: /* @__PURE__ */ new Date() });
           }
           log(`Tag do sistema adicionada: ${tag}`);
         }
@@ -6215,10 +7737,10 @@ async function processExecution(exec) {
       if (step.tag) {
         const tagIdNum = Number(step.tag);
         if (!isNaN(tagIdNum) && tagIdNum > 0) {
-          await db.delete(customCustomerTags).where(and3(eq3(customCustomerTags.userId, exec.userId), eq3(customCustomerTags.tagId, tagIdNum)));
+          await db.delete(customCustomerTags).where(and3(eq3(customCustomerTags.storeId, exec.storeId), eq3(customCustomerTags.userId, exec.userId), eq3(customCustomerTags.tagId, tagIdNum)));
           log(`Tag personalizada removida: id=${tagIdNum}`);
         } else {
-          await db.delete(customerTags).where(and3(eq3(customerTags.userId, exec.userId), eq3(customerTags.tag, step.tag)));
+          await db.delete(customerTags).where(and3(eq3(customerTags.storeId, exec.storeId), eq3(customerTags.userId, exec.userId), eq3(customerTags.tag, step.tag)));
           log(`Tag do sistema removida: ${step.tag}`);
         }
       }
@@ -6228,6 +7750,7 @@ async function processExecution(exec) {
       if (step.condition === "purchased_since_start") {
         const recentOrder = await db.select().from(orders).where(
           and3(
+            eq3(orders.storeId, exec.storeId),
             eq3(orders.userId, exec.userId),
             gte2(orders.createdAt, exec.startedAt),
             inArray3(orders.status, ["pending", "confirmed", "preparing", "out_for_delivery", "delivered"])
@@ -6235,7 +7758,7 @@ async function processExecution(exec) {
         ).limit(1);
         conditionMet = recentOrder.length > 0;
       } else if (step.condition === "has_tag" && step.conditionTag) {
-        const tagRow = await db.select().from(customerTags).where(and3(eq3(customerTags.userId, exec.userId), eq3(customerTags.tag, step.conditionTag))).limit(1);
+        const tagRow = await db.select().from(customerTags).where(and3(eq3(customerTags.storeId, exec.storeId), eq3(customerTags.userId, exec.userId), eq3(customerTags.tag, step.conditionTag))).limit(1);
         conditionMet = tagRow.length > 0;
       }
       const action = conditionMet ? step.onTrue : step.onFalse;
@@ -6254,6 +7777,7 @@ async function processExecution(exec) {
       const discountLabel = discountType === "percentage" ? `${discountValue}% de desconto` : `R$ ${Number(discountValue).toFixed(2).replace(".", ",")} de desconto`;
       const validityLabel = expiryDays > 0 ? ` (v\xE1lido por ${expiryDays} dia${expiryDays !== 1 ? "s" : ""})` : "";
       await db.insert(coupons).values({
+        storeId: exec.storeId,
         code,
         discountType,
         discountValue: String(discountValue),
@@ -6265,6 +7789,7 @@ async function processExecution(exec) {
         expiresAt: expiresAt ?? void 0
       });
       await db.insert(clientNotifications).values({
+        storeId: exec.storeId,
         userId: exec.userId,
         title: "\u{1F381} Cupom exclusivo para voc\xEA!",
         message: `Use o c\xF3digo ${code} e ganhe ${discountLabel}${validityLabel}. V\xE1lido no pr\xF3ximo pedido.`,
@@ -6272,6 +7797,7 @@ async function processExecution(exec) {
         read: false
       });
       await sendPushToUser(exec.userId, {
+        storeId: exec.storeId,
         title: "\u{1F381} Cupom exclusivo para voc\xEA!",
         body: `Use ${code} e ganhe ${discountLabel}${validityLabel}.`,
         url: "/cardapio",
@@ -6294,21 +7820,12 @@ Use no seu pr\xF3ximo pedido: ${appUrl}/cardapio`
     } else if (step.type === "update_loyalty") {
       const points = step.loyaltyPoints ?? 0;
       if (points !== 0) {
-        const userRow = await db.select({ loyaltyPoints: users.loyaltyPoints }).from(users).where(eq3(users.id, exec.userId)).limit(1);
-        const currentPoints = userRow[0]?.loyaltyPoints ?? 0;
-        const newBalance = Math.max(0, currentPoints + points);
         const description = step.loyaltyDescription ?? `Automa\xE7\xE3o: ${points > 0 ? "+" : ""}${points} pontos`;
-        await db.update(users).set({ loyaltyPoints: newBalance }).where(eq3(users.id, exec.userId));
-        await db.insert(loyaltyTransactions).values({
-          userId: exec.userId,
-          type: "manual",
-          points,
-          description,
-          balanceBefore: currentPoints,
-          balanceAfter: newBalance
-        });
+        await addLoyaltyPoints(exec.userId, points, void 0, description, exec.storeId);
+        const newBalance = await getUserLoyaltyPoints(exec.userId, exec.storeId);
         const pointsLabel = points > 0 ? `+${points} pontos adicionados` : `${points} pontos removidos`;
         await db.insert(clientNotifications).values({
+          storeId: exec.storeId,
           userId: exec.userId,
           title: points > 0 ? "\u2B50 Pontos adicionados!" : "\u{1F4C9} Pontos removidos",
           message: `${pointsLabel}. Seu saldo atual \xE9 de ${newBalance} pontos. ${description}`,
@@ -6316,6 +7833,7 @@ Use no seu pr\xF3ximo pedido: ${appUrl}/cardapio`
           read: false
         });
         await sendPushToUser(exec.userId, {
+          storeId: exec.storeId,
           title: points > 0 ? "\u2B50 Voc\xEA ganhou pontos!" : "\u{1F4C9} Pontos atualizados",
           body: `${pointsLabel}. Saldo atual: ${newBalance} pontos.`,
           url: "/minha-conta",
@@ -6330,6 +7848,7 @@ Use no seu pr\xF3ximo pedido: ${appUrl}/cardapio`
       const alertIcon = step.alertIcon ?? "\u{1F514}";
       const alertUrl = step.alertUrl ?? null;
       await db.insert(clientNotifications).values({
+        storeId: exec.storeId,
         userId: exec.userId,
         title: `${alertIcon} ${alertTitle}`,
         message: alertMsg,
@@ -6338,6 +7857,7 @@ Use no seu pr\xF3ximo pedido: ${appUrl}/cardapio`
       });
       if (alertMsg) {
         await sendPushToUser(exec.userId, {
+          storeId: exec.storeId,
           title: `${alertIcon} ${alertTitle}`,
           body: alertMsg,
           url: alertUrl ?? "/",
@@ -6357,6 +7877,7 @@ Use no seu pr\xF3ximo pedido: ${appUrl}/cardapio`
           await sendWhatsApp(exec.phone, msgToSend);
         } else if (channel === "push") {
           await sendPushToUser(exec.userId, {
+            storeId: exec.storeId,
             title: titleToSend,
             body: msgToSend,
             url: "/",
@@ -6369,7 +7890,7 @@ Use no seu pr\xF3ximo pedido: ${appUrl}/cardapio`
       currentStepIdx++;
     } else if (step.type === "pause_journey") {
       if (step.pauseJourneyId) {
-        await db.update(journeys).set({ status: "paused", updatedAt: /* @__PURE__ */ new Date() }).where(and3(eq3(journeys.id, step.pauseJourneyId), eq3(journeys.status, "active")));
+        await db.update(journeys).set({ status: "paused", updatedAt: /* @__PURE__ */ new Date() }).where(and3(eq3(journeys.id, step.pauseJourneyId), eq3(journeys.storeId, exec.storeId), eq3(journeys.status, "active")));
         log(`Jornada #${step.pauseJourneyId} pausada automaticamente`);
       }
       currentStepIdx++;
@@ -6393,20 +7914,21 @@ Use no seu pr\xF3ximo pedido: ${appUrl}/cardapio`
   }
   await db.update(journeyExecutions).set({ status: "completed", completedAt: /* @__PURE__ */ new Date(), currentStep: currentStepIdx, logs: JSON.stringify(logs) }).where(eq3(journeyExecutions.id, exec.id));
 }
-async function getAllCustomerTagsWithUsers() {
+async function getAllCustomerTagsWithUsers(storeId) {
   const db = await getDb();
   if (!db) return [[], []];
   return db.execute(sql2`
     SELECT ct.userId, ct.tag, ct.assignedAt, u.name, u.email, u.phone
     FROM customer_tags ct
     JOIN users u ON u.id = ct.userId
+    WHERE ct.storeId = ${storeId}
     ORDER BY ct.assignedAt DESC
   `);
 }
-async function listJourneys() {
+async function listJourneys(storeId) {
   const db = await getDb();
   if (!db) return [];
-  const list = await db.select().from(journeys).orderBy(journeys.createdAt);
+  const list = await db.select().from(journeys).where(eq3(journeys.storeId, storeId)).orderBy(journeys.createdAt);
   const enriched = await Promise.all(list.map(async (j) => {
     const execs = await db.select({ id: journeyExecutions.id, startedAt: journeyExecutions.startedAt }).from(journeyExecutions).where(eq3(journeyExecutions.journeyId, j.id));
     const execCount = execs.length;
@@ -6418,16 +7940,17 @@ async function listJourneys() {
   }));
   return enriched;
 }
-async function getJourneyById(id) {
+async function getJourneyById(id, storeId) {
   const db = await getDb();
   if (!db) return null;
-  const rows = await db.select().from(journeys).where(eq3(journeys.id, id)).limit(1);
+  const rows = await db.select().from(journeys).where(and3(eq3(journeys.id, id), storeId ? eq3(journeys.storeId, storeId) : void 0)).limit(1);
   return rows[0] ?? null;
 }
 async function createJourney(data) {
   const db = await getDb();
   if (!db) return -1;
   const result = await db.insert(journeys).values({
+    storeId: data.storeId,
     name: data.name,
     description: data.description ?? null,
     trigger: data.trigger,
@@ -6439,27 +7962,28 @@ async function createJourney(data) {
   });
   return Number(result[0].insertId);
 }
-async function updateJourney(id, data) {
+async function updateJourney(id, data, storeId) {
   const db = await getDb();
   if (!db) return;
   await db.update(journeys).set({
     ...data,
     steps: data.steps ? JSON.stringify(data.steps) : void 0,
     updatedAt: /* @__PURE__ */ new Date()
-  }).where(eq3(journeys.id, id));
+  }).where(and3(eq3(journeys.id, id), storeId ? eq3(journeys.storeId, storeId) : void 0));
 }
-async function deleteJourney(id) {
+async function deleteJourney(id, storeId) {
   const db = await getDb();
   if (!db) return;
-  await db.delete(journeyExecutions).where(eq3(journeyExecutions.journeyId, id));
-  await db.delete(journeys).where(eq3(journeys.id, id));
+  await db.delete(journeyExecutions).where(and3(eq3(journeyExecutions.journeyId, id), storeId ? eq3(journeyExecutions.storeId, storeId) : void 0));
+  await db.delete(journeys).where(and3(eq3(journeys.id, id), storeId ? eq3(journeys.storeId, storeId) : void 0));
 }
-async function duplicateJourney(id) {
+async function duplicateJourney(id, storeId) {
   const db = await getDb();
   if (!db) return -1;
-  const original = await db.select().from(journeys).where(eq3(journeys.id, id)).limit(1);
+  const original = await db.select().from(journeys).where(and3(eq3(journeys.id, id), storeId ? eq3(journeys.storeId, storeId) : void 0)).limit(1);
   if (!original[0]) return -1;
   const result = await db.insert(journeys).values({
+    storeId: original[0].storeId,
     name: `${original[0].name} (c\xF3pia)`,
     description: original[0].description,
     trigger: original[0].trigger,
@@ -6470,29 +7994,30 @@ async function duplicateJourney(id) {
   });
   return Number(result[0].insertId);
 }
-async function listExecutions(journeyId) {
+async function listExecutions(journeyId, storeId) {
   const db = await getDb();
   if (!db) return [];
   if (journeyId) {
-    return db.select().from(journeyExecutions).where(eq3(journeyExecutions.journeyId, journeyId)).orderBy(journeyExecutions.startedAt);
+    return db.select().from(journeyExecutions).where(and3(eq3(journeyExecutions.journeyId, journeyId), storeId ? eq3(journeyExecutions.storeId, storeId) : void 0)).orderBy(journeyExecutions.startedAt);
   }
-  return db.select().from(journeyExecutions).orderBy(journeyExecutions.startedAt);
+  return db.select().from(journeyExecutions).where(storeId ? eq3(journeyExecutions.storeId, storeId) : void 0).orderBy(journeyExecutions.startedAt);
 }
-async function cancelExecution(id) {
+async function cancelExecution(id, storeId) {
   const db = await getDb();
   if (!db) return;
-  await db.update(journeyExecutions).set({ status: "cancelled", completedAt: /* @__PURE__ */ new Date() }).where(eq3(journeyExecutions.id, id));
+  await db.update(journeyExecutions).set({ status: "cancelled", completedAt: /* @__PURE__ */ new Date() }).where(and3(eq3(journeyExecutions.id, id), storeId ? eq3(journeyExecutions.storeId, storeId) : void 0));
 }
-async function listAbandonedCarts(status) {
+async function listAbandonedCarts(status, storeId) {
   const db = await getDb();
   if (!db) return [];
   if (status) {
-    return db.select().from(abandonedCarts).where(eq3(abandonedCarts.status, status)).orderBy(abandonedCarts.createdAt);
+    return db.select().from(abandonedCarts).where(and3(eq3(abandonedCarts.status, status), eq3(abandonedCarts.storeId, storeId))).orderBy(abandonedCarts.createdAt);
   }
-  return db.select().from(abandonedCarts).orderBy(abandonedCarts.createdAt);
+  return db.select().from(abandonedCarts).where(eq3(abandonedCarts.storeId, storeId)).orderBy(abandonedCarts.createdAt);
 }
-async function fireJourneyTrigger(trigger, userId, phone) {
-  const activeJourneys = await getActiveJourneysForTrigger(trigger);
+async function fireJourneyTrigger(trigger, userId, phone, storeId) {
+  if (!storeId) return;
+  const activeJourneys = await getActiveJourneysForTrigger(trigger, storeId);
   for (const journey of activeJourneys) {
     try {
       await startJourneyExecution(journey.id, userId, phone);
@@ -6501,14 +8026,15 @@ async function fireJourneyTrigger(trigger, userId, phone) {
     }
   }
 }
-async function getActiveJourneysForTrigger(trigger) {
+async function getActiveJourneysForTrigger(trigger, storeId) {
   const db = await getDb();
   if (!db) return [];
-  return db.select().from(journeys).where(and3(eq3(journeys.trigger, trigger), eq3(journeys.status, "active")));
+  return db.select().from(journeys).where(and3(eq3(journeys.trigger, trigger), eq3(journeys.status, "active"), eq3(journeys.storeId, storeId)));
 }
 async function logAutomationEvent(db, params) {
   if (!db) return;
   await db.insert(automationEvents).values({
+    storeId: params.storeId,
     type: params.type,
     userId: params.userId,
     cartId: params.cartId,
@@ -6521,13 +8047,14 @@ async function logAutomationEvent(db, params) {
     createdAt: /* @__PURE__ */ new Date()
   });
 }
-async function generateRecoveryCoupon(db, userId, discountPercent, suffix) {
+async function generateRecoveryCoupon(db, storeId, userId, discountPercent, suffix) {
   if (!db) return "VOLTA10";
   const code = `VOLTA${discountPercent}-${suffix.toUpperCase().replace(/\W/g, "").slice(0, 6)}`;
-  const existing = await db.select().from(coupons).where(eq3(coupons.code, code)).limit(1);
+  const existing = await db.select().from(coupons).where(and3(eq3(coupons.storeId, storeId), eq3(coupons.code, code))).limit(1);
   if (existing.length > 0) return code;
   const expiresAt = new Date(Date.now() + 48 * 60 * 60 * 1e3);
   await db.insert(coupons).values({
+    storeId,
     code,
     discountType: "percentage",
     discountValue: String(discountPercent),
@@ -6594,11 +8121,12 @@ async function processReactivation() {
     { tag: "inativo_60", type: "reactivation_60d", discount: 15, validHours: 24 }
   ];
   for (const segment of segments) {
-    const taggedUsers = await db.select({ userId: customerTags.userId, assignedAt: customerTags.assignedAt }).from(customerTags).where(eq3(customerTags.tag, segment.tag)).limit(30);
+    const taggedUsers = await db.select({ storeId: customerTags.storeId, userId: customerTags.userId, assignedAt: customerTags.assignedAt }).from(customerTags).where(eq3(customerTags.tag, segment.tag)).limit(30);
     for (const tagged of taggedUsers) {
       const recentlySent = await db.select({ id: automationEvents.id }).from(automationEvents).where(
         and3(
           eq3(automationEvents.type, segment.type),
+          eq3(automationEvents.storeId, tagged.storeId),
           eq3(automationEvents.userId, tagged.userId),
           gte2(automationEvents.createdAt, new Date(now.getTime() - 30 * 24 * 60 * 60 * 1e3))
         )
@@ -6610,7 +8138,7 @@ async function processReactivation() {
       const phone = user.phone ?? "";
       if (!phone) continue;
       const suffix = `${user.id}-${segment.tag.replace("_", "")}`;
-      const couponCode = await generateRecoveryCoupon(db, user.id, segment.discount, suffix);
+      const couponCode = await generateRecoveryCoupon(db, tagged.storeId, user.id, segment.discount, suffix);
       const name = user.name ?? "cliente";
       const tagToEvent = {
         inativo_15: "reactivation_15",
@@ -6619,30 +8147,31 @@ async function processReactivation() {
       };
       const templateEvent = tagToEvent[segment.tag] ?? "reactivation_15";
       const interpolate = (t2) => t2.replace(/\{\{clientName\}\}/g, name).replace(/\{\{coupon\}\}/g, couponCode);
-      const waTpl = await pickRandomTemplate(templateEvent, "whatsapp");
+      const waTpl = await pickRandomTemplate(templateEvent, "whatsapp", tagged.storeId);
       const copy = REACTIVATION_COPY[segment.tag];
       const waMsg = waTpl ? interpolate(waTpl.body) : copy ? copy.whatsapp(name, couponCode) : "";
       if (waMsg) {
         await sendWhatsApp(phone, waMsg);
-        await logAutomationEvent(db, { type: segment.type, userId: user.id, channel: "whatsapp", step: 1, status: "sent", metadata: { couponCode, tag: segment.tag } });
+        await logAutomationEvent(db, { storeId: tagged.storeId, type: segment.type, userId: user.id, channel: "whatsapp", step: 1, status: "sent", metadata: { couponCode, tag: segment.tag } });
       }
-      const pushTpl = await pickRandomTemplate(templateEvent, "push");
+      const pushTpl = await pickRandomTemplate(templateEvent, "push", tagged.storeId);
       const pushTitle = pushTpl ? interpolate(pushTpl.title) : copy?.push.title ?? "\u{1F355} Sentimos sua falta!";
       const pushBody = pushTpl ? interpolate(pushTpl.body) : copy?.push.body ?? "Temos uma oferta especial para voc\xEA!";
-      await sendPushToUser(user.id, { title: pushTitle, body: pushBody, url: "/" });
-      await logAutomationEvent(db, { type: segment.type, userId: user.id, channel: "push", step: 1, status: "sent", metadata: { couponCode, tag: segment.tag } });
-      await fireJourneyTrigger(segment.tag, user.id, phone);
+      await sendPushToUser(user.id, { storeId: tagged.storeId, title: pushTitle, body: pushBody, url: "/" });
+      await logAutomationEvent(db, { storeId: tagged.storeId, type: segment.type, userId: user.id, channel: "push", step: 1, status: "sent", metadata: { couponCode, tag: segment.tag } });
+      await fireJourneyTrigger(segment.tag, user.id, phone, tagged.storeId);
       console.log(`[Reactivation] Enviado para userId=${user.id} (${segment.tag}) cupom=${couponCode}`);
     }
   }
 }
-async function markConversions(userId, orderId) {
+async function markConversions(userId, orderId, storeId) {
   const db = await getDb();
   if (!db) return;
   const now = /* @__PURE__ */ new Date();
-  await markCartRecovered(userId);
-  await db.update(journeyExecutions).set({ convertedAt: now, conversionOrderId: orderId, status: "completed", completedAt: now }).where(and3(eq3(journeyExecutions.userId, userId), eq3(journeyExecutions.status, "running")));
+  await markCartRecovered(userId, storeId);
+  await db.update(journeyExecutions).set({ convertedAt: now, conversionOrderId: orderId, status: "completed", completedAt: now }).where(and3(eq3(journeyExecutions.storeId, storeId), eq3(journeyExecutions.userId, userId), eq3(journeyExecutions.status, "running")));
   await db.insert(automationEvents).values({
+    storeId,
     type: "conversion",
     userId,
     orderId,
@@ -6735,12 +8264,12 @@ init_db();
 // server/routers.ts
 init_db();
 init_schema();
-import { TRPCError as TRPCError7 } from "@trpc/server";
-import { eq as eq12, gte as gte4, desc as desc3, inArray as inArray4, and as and9, isNotNull as isNotNull2, lte as lte3 } from "drizzle-orm";
+import { TRPCError as TRPCError12 } from "@trpc/server";
+import { eq as eq19, gte as gte4, desc as desc7, inArray as inArray11, and as and16, isNotNull as isNotNull2, lte as lte3 } from "drizzle-orm";
 
 // server/routers/club.ts
-import { TRPCError as TRPCError3 } from "@trpc/server";
-import { and as and4, eq as eq5, isNotNull, lte as lte2 } from "drizzle-orm";
+import { TRPCError as TRPCError4 } from "@trpc/server";
+import { and as and6, eq as eq7, isNotNull } from "drizzle-orm";
 import { z as z2 } from "zod";
 init_db();
 
@@ -6786,6 +8315,21 @@ var adminProcedure = t.procedure.use(
       ctx: {
         ...ctx,
         user: ctx.user
+      }
+    });
+  })
+);
+var platformAdminProcedure = t.procedure.use(
+  t.middleware(async (opts) => {
+    const { ctx, next } = opts;
+    if (!ctx.user || !isPlatformAdmin(ctx.user.role)) {
+      throw new TRPCError2({ code: "FORBIDDEN", message: NOT_ADMIN_ERR_MSG });
+    }
+    return next({
+      ctx: {
+        ...ctx,
+        user: ctx.user,
+        isPlatformAdmin: true
       }
     });
   })
@@ -6960,8 +8504,8 @@ function normalizeConfig(input) {
     plans: normalizedPlans
   };
 }
-async function getClubConfig() {
-  const stored = await getStoreSetting(CLUB_CONFIG_KEY);
+async function getClubConfig(storeId) {
+  const stored = await getStoreSetting(CLUB_CONFIG_KEY, storeId);
   if (!stored) return DEFAULT_CLUB_CONFIG;
   try {
     return normalizeConfig(JSON.parse(stored));
@@ -6969,13 +8513,13 @@ async function getClubConfig() {
     return DEFAULT_CLUB_CONFIG;
   }
 }
-async function saveClubConfig(config) {
+async function saveClubConfig(config, storeId) {
   const normalized = normalizeConfig(config);
-  await setStoreSetting(CLUB_CONFIG_KEY, JSON.stringify(normalized));
+  await setStoreSetting(CLUB_CONFIG_KEY, JSON.stringify(normalized), storeId);
 }
-async function getClubPlanConfig(planId) {
+async function getClubPlanConfig(planId, storeId) {
   if (planId !== "bonattao" && planId !== "basico") return null;
-  const config = await getClubConfig();
+  const config = await getClubConfig(storeId);
   return config.plans.find((plan) => plan.id === planId) ?? null;
 }
 
@@ -7061,8 +8605,8 @@ function getPaymentAvailability(config, runtime) {
     }
   };
 }
-async function getPaymentSettingsAdmin() {
-  const settings = await getAllStoreSettings();
+async function getPaymentSettingsAdmin(storeId) {
+  const settings = await getAllStoreSettings(storeId);
   const config = normalizePaymentConfig(settings[PAYMENT_CONFIG_KEY]);
   const pixKey = settings.pixKey ?? "";
   const runtime = getPaymentRuntimeStatus(pixKey);
@@ -7074,8 +8618,8 @@ async function getPaymentSettingsAdmin() {
     availability
   };
 }
-async function getPaymentSettingsPublic() {
-  const { config, runtime, availability } = await getPaymentSettingsAdmin();
+async function getPaymentSettingsPublic(storeId) {
+  const { config, runtime, availability } = await getPaymentSettingsAdmin(storeId);
   return {
     config: {
       orders: {
@@ -7100,9 +8644,9 @@ async function getPaymentSettingsPublic() {
     }
   };
 }
-async function savePaymentSettings(input) {
-  await setStoreSetting(PAYMENT_CONFIG_KEY, JSON.stringify(input.config));
-  await setStoreSetting("pixKey", input.pixKey.trim());
+async function savePaymentSettings(input, storeId) {
+  await setStoreSetting(PAYMENT_CONFIG_KEY, JSON.stringify(input.config), storeId);
+  await setStoreSetting("pixKey", input.pixKey.trim(), storeId);
 }
 
 // server/lib/pix.ts
@@ -7142,13 +8686,407 @@ function generatePixQrCodeUrl(pixCode) {
   return `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encoded}`;
 }
 
-// server/routers/club.ts
-var adminProcedure2 = protectedProcedure.use(({ ctx, next }) => {
-  if (ctx.user.role !== "admin") {
-    throw new TRPCError3({ code: "FORBIDDEN", message: "Acesso restrito a administradores" });
+// server/whiteLabel.ts
+init_schema();
+import { and as and4, desc as desc2, eq as eq5, or as or3 } from "drizzle-orm";
+
+// shared/whiteLabel.ts
+var WHITE_LABEL_ADMIN_TABS = [
+  "dashboard",
+  "orders",
+  "menu",
+  "club",
+  "inventory",
+  "staff",
+  "dining",
+  "coupons",
+  "reports",
+  "network",
+  "distribution",
+  "promotions",
+  "raffles",
+  "upsells",
+  "users",
+  "drivers",
+  "marketplaces",
+  "payments",
+  "settings",
+  "stores",
+  "recovery",
+  "platform"
+];
+var WHITE_LABEL_PAGE_KEYS = [
+  "home",
+  "menu",
+  "checkout",
+  "orders",
+  "profile",
+  "club",
+  "tracking",
+  "driver",
+  "waiter"
+];
+var allAdminTabs = Object.fromEntries(WHITE_LABEL_ADMIN_TABS.map((tab) => [tab, true]));
+var BONATTO_FEATURE_FLAGS = {
+  adminTabs: allAdminTabs,
+  crm: true,
+  automations: true,
+  notifications: true,
+  deliveryZones: true,
+  salesDashboard: true,
+  waiterApp: true,
+  driverApp: true,
+  loyalty: true,
+  club: true,
+  inventory: true,
+  diningRoom: true,
+  marketplaces: true,
+  auditTrail: true,
+  healthPanel: true,
+  globalSearch: true
+};
+var ESSENTIAL_FEATURE_FLAGS = {
+  adminTabs: {
+    dashboard: true,
+    orders: true,
+    menu: true,
+    users: true,
+    settings: true
+  },
+  crm: false,
+  automations: false,
+  notifications: true,
+  deliveryZones: true,
+  salesDashboard: false,
+  waiterApp: false,
+  driverApp: true,
+  loyalty: false,
+  club: false,
+  inventory: false,
+  diningRoom: false,
+  marketplaces: false,
+  auditTrail: true,
+  healthPanel: true,
+  globalSearch: false
+};
+function enforceTenantSafeFeatures(features) {
+  return features;
+}
+var DEFAULT_PROVIDER_CONFIG = {
+  auth: { google: true, apple: false, facebook: false, instagram: false },
+  maps: { provider: "openstreetmap" },
+  push: { provider: "vapid", enabled: true },
+  email: { provider: "none", enabled: false },
+  payments: { pix: true, card: false, cash: true, provider: "manual" },
+  marketplaces: { ifood: false, aiqfome: false, rappi: false, deliveryMuch: false }
+};
+var DEFAULT_PAGE_CONFIG = {
+  home: { enabled: true, title: "Pe\xE7a online", description: "Seu pedido favorito em poucos toques.", heroImage: "" },
+  menu: { enabled: true, title: "Card\xE1pio", description: "Escolha seus produtos e monte o pedido.", heroImage: "" },
+  checkout: { enabled: true, title: "Finalizar pedido", description: "Confirme entrega e pagamento.", heroImage: "" },
+  orders: { enabled: true, title: "Meus pedidos", description: "Acompanhe seus pedidos.", heroImage: "" },
+  profile: { enabled: true, title: "Minha conta", description: "Dados, endere\xE7os e prefer\xEAncias.", heroImage: "" },
+  club: { enabled: false, title: "Clube", description: "Benef\xEDcios para clientes recorrentes.", heroImage: "" },
+  tracking: { enabled: true, title: "Rastrear pedido", description: "Acompanhe cada etapa da entrega.", heroImage: "" },
+  driver: { enabled: true, title: "Entregas", description: "Opera\xE7\xE3o dos entregadores.", heroImage: "" },
+  waiter: { enabled: false, title: "Sal\xE3o", description: "Atendimento de mesas e comandas.", heroImage: "" }
+};
+var DEFAULT_CONTACT_CONFIG = {
+  supportEmail: "",
+  supportPhone: "",
+  whatsapp: "",
+  instagram: ""
+};
+function mergeWhiteLabelFeatures(value, bonatto = false) {
+  const base = bonatto ? BONATTO_FEATURE_FLAGS : ESSENTIAL_FEATURE_FLAGS;
+  return {
+    ...base,
+    ...value ?? {},
+    adminTabs: { ...base.adminTabs, ...value?.adminTabs ?? {} }
+  };
+}
+function mergeWhiteLabelProviders(value) {
+  return {
+    ...DEFAULT_PROVIDER_CONFIG,
+    ...value ?? {},
+    auth: { ...DEFAULT_PROVIDER_CONFIG.auth, ...value?.auth ?? {} },
+    maps: { ...DEFAULT_PROVIDER_CONFIG.maps, ...value?.maps ?? {} },
+    push: { ...DEFAULT_PROVIDER_CONFIG.push, ...value?.push ?? {} },
+    email: { ...DEFAULT_PROVIDER_CONFIG.email, ...value?.email ?? {} },
+    payments: { ...DEFAULT_PROVIDER_CONFIG.payments, ...value?.payments ?? {} },
+    marketplaces: { ...DEFAULT_PROVIDER_CONFIG.marketplaces, ...value?.marketplaces ?? {} }
+  };
+}
+function mergeWhiteLabelPages(value) {
+  const pages = { ...DEFAULT_PAGE_CONFIG };
+  for (const key of WHITE_LABEL_PAGE_KEYS) {
+    pages[key] = { ...DEFAULT_PAGE_CONFIG[key], ...value?.[key] ?? {} };
   }
-  return next({ ctx });
-});
+  return pages;
+}
+
+// server/whiteLabel.ts
+init_db();
+var BONATTO_LOGOS = {
+  icon: "/brand/palmito-2-circular.png",
+  wordmark: "/brand/palmito-logo-tipografica.png",
+  favicon: "/favicon.ico",
+  waiter: "/brand/bonatto-logo-driver.jpg"
+};
+function parseJson(value, fallback) {
+  if (!value) return fallback;
+  try {
+    const parsed = JSON.parse(value);
+    return parsed && typeof parsed === "object" ? parsed : fallback;
+  } catch {
+    return fallback;
+  }
+}
+function normalizeWhiteLabelDomain(value) {
+  if (!value) return null;
+  const withoutProtocol = value.trim().toLowerCase().replace(/^https?:\/\//, "");
+  const host = withoutProtocol.split("/")[0]?.split(":")[0]?.replace(/^www\./, "") ?? "";
+  return host || null;
+}
+function normalizeWhiteLabelSubdomain(value) {
+  if (!value) return null;
+  const normalized = value.trim().toLowerCase().replace(/[^a-z0-9-]/g, "").replace(/^-+|-+$/g, "");
+  return normalized || null;
+}
+function runtimeFromRows(store, config) {
+  const isBonatto = store.tenantKey === "bonatto";
+  const fallbackFeatures = isBonatto ? BONATTO_FEATURE_FLAGS : ESSENTIAL_FEATURE_FLAGS;
+  const storedFeatures = parseJson(config?.featureFlags, {});
+  const storedProviders = parseJson(config?.providerConfig, {});
+  const storedPages = parseJson(config?.pageConfig, {});
+  const storedContact = parseJson(config?.contactConfig, {});
+  return {
+    storeId: store.id,
+    storeSlug: store.slug,
+    tenantKey: store.tenantKey,
+    status: config?.status ?? (isBonatto ? store.active ? "active" : "inactive" : "setup_pending"),
+    plan: config?.plan ?? (isBonatto ? "enterprise" : "essential"),
+    domain: config?.domain ?? null,
+    subdomain: config?.subdomain ?? null,
+    brand: {
+      key: store.tenantKey,
+      name: config?.brandName ?? store.displayName ?? store.name,
+      shortName: config?.shortName ?? store.displayName ?? store.name,
+      tagline: config?.tagline ?? (isBonatto ? "Delivery premium com identidade pr\xF3pria" : "Seu delivery, do seu jeito"),
+      adminTitle: config?.adminTitle ?? `Painel ${store.displayName ?? store.name}`,
+      deliveryLabel: config?.deliveryLabel ?? `Entrega em ${store.city}`,
+      logos: {
+        icon: config?.logoUrl ?? (isBonatto ? BONATTO_LOGOS.icon : ""),
+        wordmark: config?.wordmarkUrl ?? (isBonatto ? BONATTO_LOGOS.wordmark : ""),
+        favicon: config?.faviconUrl ?? (isBonatto ? BONATTO_LOGOS.favicon : ""),
+        waiter: config?.waiterLogoUrl ?? config?.logoUrl ?? (isBonatto ? BONATTO_LOGOS.waiter : "")
+      },
+      colors: {
+        primary: config?.primaryColor ?? "#6E0D12",
+        primaryDark: config?.primaryDarkColor ?? "#450709",
+        accent: config?.accentColor ?? "#e05c5c",
+        background: config?.backgroundColor ?? "#fffaf8",
+        text: config?.textColor ?? "#211719"
+      }
+    },
+    features: isBonatto ? mergeWhiteLabelFeatures({ ...fallbackFeatures, ...storedFeatures }, true) : enforceTenantSafeFeatures(mergeWhiteLabelFeatures({ ...fallbackFeatures, ...storedFeatures }, false)),
+    providers: mergeWhiteLabelProviders({ ...DEFAULT_PROVIDER_CONFIG, ...storedProviders }),
+    pages: mergeWhiteLabelPages({ ...DEFAULT_PAGE_CONFIG, ...storedPages }),
+    contact: { ...DEFAULT_CONTACT_CONFIG, ...storedContact }
+  };
+}
+async function getTenantRootStore(db, store) {
+  const [configuredRoot] = await db.select({ store: stores }).from(stores).innerJoin(storeWhiteLabelConfigs, eq5(storeWhiteLabelConfigs.storeId, stores.id)).where(eq5(stores.tenantKey, store.tenantKey)).orderBy(stores.id).limit(1);
+  if (configuredRoot) return configuredRoot.store;
+  const [root] = await db.select().from(stores).where(eq5(stores.tenantKey, store.tenantKey)).orderBy(desc2(stores.isDefault), stores.id).limit(1);
+  return root ?? store;
+}
+async function getConfigForStore(db, storeId) {
+  const [config] = await db.select().from(storeWhiteLabelConfigs).where(eq5(storeWhiteLabelConfigs.storeId, storeId)).limit(1);
+  return config ?? null;
+}
+async function getWhiteLabelRuntimeByStoreId(storeId) {
+  const db = await getDb();
+  if (!db) return null;
+  const [store] = await db.select().from(stores).where(eq5(stores.id, storeId)).limit(1);
+  if (!store) return null;
+  const tenantRoot = await getTenantRootStore(db, store);
+  return runtimeFromRows(tenantRoot, await getConfigForStore(db, tenantRoot.id));
+}
+async function resolveWhiteLabelRuntime(input) {
+  const db = await getDb();
+  if (!db) return null;
+  const host = normalizeWhiteLabelDomain(input.host);
+  const slug = input.slug?.trim().toLowerCase() || null;
+  const subdomain = host?.split(".")[0] ?? null;
+  let matchedBy = "default";
+  let store;
+  let config = null;
+  if (slug) {
+    [store] = await db.select().from(stores).where(and4(eq5(stores.slug, slug), eq5(stores.active, true))).limit(1);
+    if (store) {
+      store = await getTenantRootStore(db, store);
+      config = await getConfigForStore(db, store.id);
+      if (store.tenantKey !== "bonatto" && !config || config && config.status !== "active") {
+        store = void 0;
+        config = null;
+      } else {
+        matchedBy = "slug";
+      }
+    }
+  }
+  if (!store && host && host !== "localhost" && host !== "127.0.0.1") {
+    const [tenantDomain] = await db.select({ store: stores, config: storeWhiteLabelConfigs }).from(tenantDomains).innerJoin(tenants, eq5(tenants.id, tenantDomains.tenantId)).innerJoin(stores, eq5(stores.tenantKey, tenants.tenantKey)).leftJoin(storeWhiteLabelConfigs, eq5(storeWhiteLabelConfigs.storeId, stores.id)).where(and4(
+      eq5(tenantDomains.hostname, host),
+      eq5(tenantDomains.status, "active"),
+      eq5(tenants.status, "active"),
+      eq5(stores.active, true)
+    )).orderBy(desc2(stores.isDefault), stores.id).limit(1);
+    if (tenantDomain) {
+      store = tenantDomain.store;
+      config = tenantDomain.config;
+      matchedBy = "domain";
+    }
+  }
+  if (!store && host && host !== "localhost" && host !== "127.0.0.1") {
+    const [row] = await db.select({ store: stores, config: storeWhiteLabelConfigs }).from(storeWhiteLabelConfigs).innerJoin(stores, eq5(storeWhiteLabelConfigs.storeId, stores.id)).where(and4(
+      eq5(stores.active, true),
+      eq5(storeWhiteLabelConfigs.status, "active"),
+      or3(
+        eq5(storeWhiteLabelConfigs.domain, host),
+        subdomain ? eq5(storeWhiteLabelConfigs.subdomain, subdomain) : eq5(storeWhiteLabelConfigs.subdomain, "")
+      )
+    )).limit(1);
+    if (row) {
+      store = row.store;
+      config = row.config;
+      matchedBy = row.config.domain === host ? "domain" : "subdomain";
+    }
+  }
+  if (!store) {
+    [store] = await db.select().from(stores).where(eq5(stores.active, true)).orderBy(desc2(stores.isDefault), stores.id).limit(1);
+  }
+  if (!store) return null;
+  store = await getTenantRootStore(db, store);
+  if (!config) config = await getConfigForStore(db, store.id);
+  return { matchedBy, runtime: runtimeFromRows(store, config) };
+}
+async function saveWhiteLabelRuntime(input) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  const [store] = await db.select().from(stores).where(eq5(stores.id, input.storeId)).limit(1);
+  if (!store) throw new Error("Store not found");
+  const tenantRoot = await getTenantRootStore(db, store);
+  const isBonatto = tenantRoot.tenantKey === "bonatto";
+  const domain = normalizeWhiteLabelDomain(input.domain);
+  const subdomain = normalizeWhiteLabelSubdomain(input.subdomain);
+  const features = isBonatto ? input.features : enforceTenantSafeFeatures(input.features);
+  const pages = isBonatto ? input.pages : { ...input.pages, club: { ...input.pages.club, enabled: false } };
+  const values = {
+    storeId: tenantRoot.id,
+    status: input.status,
+    plan: input.plan,
+    domain,
+    subdomain,
+    brandName: input.brand.name.trim(),
+    shortName: input.brand.shortName.trim(),
+    tagline: input.brand.tagline.trim() || null,
+    adminTitle: input.brand.adminTitle.trim() || null,
+    deliveryLabel: input.brand.deliveryLabel.trim() || null,
+    logoUrl: input.brand.logos.icon || null,
+    wordmarkUrl: input.brand.logos.wordmark || null,
+    faviconUrl: input.brand.logos.favicon || null,
+    waiterLogoUrl: input.brand.logos.waiter || null,
+    primaryColor: input.brand.colors.primary,
+    primaryDarkColor: input.brand.colors.primaryDark,
+    accentColor: input.brand.colors.accent,
+    backgroundColor: input.brand.colors.background,
+    textColor: input.brand.colors.text,
+    featureFlags: JSON.stringify(features),
+    providerConfig: JSON.stringify(input.providers),
+    pageConfig: JSON.stringify(pages),
+    contactConfig: JSON.stringify(input.contact)
+  };
+  await db.insert(storeWhiteLabelConfigs).values(values).onDuplicateKeyUpdate({ set: values });
+  return getWhiteLabelRuntimeByStoreId(store.id);
+}
+async function createDefaultWhiteLabelConfig(store) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  const tenantRoot = await getTenantRootStore(db, store);
+  if (tenantRoot.id !== store.id) return getWhiteLabelRuntimeByStoreId(store.id);
+  const runtime = runtimeFromRows(tenantRoot, null);
+  if (tenantRoot.tenantKey !== "bonatto") {
+    runtime.status = "setup_pending";
+  }
+  return saveWhiteLabelRuntime(runtime);
+}
+
+// server/routers/club.ts
+init_db();
+
+// server/storeUtils.ts
+init_schema();
+init_db();
+import { TRPCError as TRPCError3 } from "@trpc/server";
+import { and as and5, eq as eq6, inArray as inArray4 } from "drizzle-orm";
+async function resolveStoreId(user, requestedStoreId) {
+  if (user.role === "admin") {
+    return requestedStoreId;
+  }
+  if (user.role === "manager") {
+    const db = await getDb();
+    if (!db) {
+      throw new TRPCError3({ code: "INTERNAL_SERVER_ERROR", message: "DB indisponivel" });
+    }
+    const directRows = await db.select({ storeId: storeManagers.storeId }).from(storeManagers).where(eq6(storeManagers.userId, user.id));
+    const tenantRows = await db.select({ tenantKey: tenantMemberships.tenantKey }).from(tenantMemberships).where(and5(eq6(tenantMemberships.userId, user.id), eq6(tenantMemberships.active, true)));
+    const tenantStoreRows = tenantRows.length ? await db.select({ storeId: stores.id }).from(stores).where(and5(inArray4(stores.tenantKey, tenantRows.map((row) => row.tenantKey)), eq6(stores.active, true))) : [];
+    const allowedStoreIds = Array.from(/* @__PURE__ */ new Set([
+      ...directRows.map((row) => row.storeId),
+      ...tenantStoreRows.map((row) => row.storeId)
+    ]));
+    if (allowedStoreIds.length === 0) {
+      throw new TRPCError3({
+        code: "FORBIDDEN",
+        message: "Gerente nao esta associado a nenhuma loja. Contate o administrador."
+      });
+    }
+    if (requestedStoreId !== void 0) {
+      if (!allowedStoreIds.includes(requestedStoreId)) {
+        throw new TRPCError3({ code: "FORBIDDEN", message: "Loja fora do seu acesso." });
+      }
+      return requestedStoreId;
+    }
+    return allowedStoreIds[0];
+  }
+  throw new TRPCError3({ code: "FORBIDDEN", message: "Acesso negado" });
+}
+async function resolveRequiredStoreId(user, requestedStoreId) {
+  const storeId = await resolveStoreId(user, requestedStoreId);
+  if (!storeId) {
+    throw new TRPCError3({
+      code: "BAD_REQUEST",
+      message: "Selecione uma loja para concluir esta a\xE7\xE3o."
+    });
+  }
+  return storeId;
+}
+async function assertStoreEntityAccess(user, entityStoreId, requestedStoreId) {
+  if (user.role === "admin") {
+    if (requestedStoreId !== void 0 && entityStoreId !== requestedStoreId) {
+      throw new TRPCError3({ code: "FORBIDDEN", message: "Registro fora da loja selecionada." });
+    }
+    return requestedStoreId;
+  }
+  const scopedStoreId2 = await resolveStoreId(user, requestedStoreId ?? entityStoreId ?? void 0);
+  if (entityStoreId == null || entityStoreId !== scopedStoreId2) {
+    throw new TRPCError3({ code: "FORBIDDEN", message: "Registro fora da sua loja." });
+  }
+  return scopedStoreId2;
+}
+
+// server/routers/club.ts
 var clubPlanSchema = z2.object({
   id: z2.enum(["bonattao", "basico"]),
   name: z2.string().min(1).max(80),
@@ -7184,58 +9122,77 @@ var clubConfigSchema = z2.object({
 function ensureClubPlanIds(config) {
   return config.plans.map((plan) => plan.id);
 }
+async function assertClubStore(storeId) {
+  const tenant = await getWhiteLabelRuntimeByStoreId(storeId);
+  if (!tenant || tenant.status !== "active" || !tenant.features.club) {
+    throw new TRPCError4({ code: "PRECONDITION_FAILED", message: "O clube nao esta disponivel nesta loja." });
+  }
+  return tenant;
+}
+async function updateClubAccount(userId, storeId, data) {
+  const db = await getDb();
+  if (!db) throw new TRPCError4({ code: "INTERNAL_SERVER_ERROR" });
+  const account = await getTenantCustomerAccount(userId, storeId);
+  if (!account) throw new TRPCError4({ code: "NOT_FOUND", message: "Conta do cliente nao encontrada." });
+  await db.update(tenantCustomerAccounts).set(data).where(eq7(tenantCustomerAccounts.id, account.id));
+  const scope = await getTenantScope(storeId);
+  if (scope.tenantKey === "bonatto") {
+    await db.update(users).set(data).where(eq7(users.id, userId));
+  }
+  return { ...account, ...data };
+}
 var clubRouter = router({
-  getPlans: publicProcedure.query(async () => {
-    const config = await getClubConfig();
+  getPlans: publicProcedure.input(z2.object({ storeId: z2.number().int().positive() })).query(async ({ input }) => {
+    await assertClubStore(input.storeId);
+    const config = await getClubConfig(input.storeId);
     return config.plans;
   }),
-  getPublicConfig: publicProcedure.query(async () => {
-    return getClubConfig();
+  getPublicConfig: publicProcedure.input(z2.object({ storeId: z2.number().int().positive() })).query(async ({ input }) => {
+    await assertClubStore(input.storeId);
+    return getClubConfig(input.storeId);
   }),
-  getAdminConfig: adminProcedure2.query(async () => {
-    return getClubConfig();
-  }),
-  saveAdminConfig: adminProcedure2.input(clubConfigSchema).mutation(async ({ input }) => {
+  getAdminConfig: staffProcedure.input(z2.object({ storeId: z2.number().optional() })).query(async ({ input, ctx }) => getClubConfig(await resolveRequiredStoreId(ctx.user, input.storeId))),
+  saveAdminConfig: staffProcedure.input(clubConfigSchema.extend({ storeId: z2.number().optional() })).mutation(async ({ input, ctx }) => {
+    const storeId = await resolveRequiredStoreId(ctx.user, input.storeId);
     const ids = ensureClubPlanIds(input);
     if (!ids.includes("bonattao") || !ids.includes("basico")) {
-      throw new TRPCError3({ code: "BAD_REQUEST", message: "Os dois planos base precisam existir." });
+      throw new TRPCError4({ code: "BAD_REQUEST", message: "Os dois planos base precisam existir." });
     }
-    await saveClubConfig(input);
+    const { storeId: _storeId, ...config } = input;
+    await saveClubConfig(config, storeId);
     return { ok: true };
   }),
-  getMyPlan: protectedProcedure.query(async ({ ctx }) => {
-    const db = await getDb();
-    if (!db) throw new TRPCError3({ code: "INTERNAL_SERVER_ERROR" });
-    const userRows = await db.select().from(users).where(eq5(users.id, ctx.user.id)).limit(1);
-    if (!userRows[0]) return null;
-    const user = userRows[0];
-    if (!user.clubPlan || !user.clubStatus) return null;
-    const planDetails = await getClubPlanConfig(user.clubPlan);
+  getMyPlan: protectedProcedure.input(z2.object({ storeId: z2.number().int().positive() })).query(async ({ ctx, input }) => {
+    await assertClubStore(input.storeId);
+    const account = await getTenantCustomerAccount(ctx.user.id, input.storeId);
+    if (!account?.clubPlan || !account.clubStatus) return null;
+    const planDetails = await getClubPlanConfig(account.clubPlan, input.storeId);
     return {
-      plan: user.clubPlan,
-      status: user.clubStatus,
-      startDate: user.clubStartDate,
-      nextBillingDate: user.clubNextBillingDate,
-      freePizzaUsed: user.clubFreePizzaUsed,
-      freePizzaResetAt: user.clubFreePizzaResetAt,
+      plan: account.clubPlan,
+      status: account.clubStatus,
+      startDate: account.clubStartDate,
+      nextBillingDate: account.clubNextBillingDate,
+      freePizzaUsed: account.clubFreePizzaUsed,
+      freePizzaResetAt: account.clubFreePizzaResetAt,
       planDetails
     };
   }),
-  subscribe: protectedProcedure.input(z2.object({ plan: z2.enum(["bonattao", "basico"]) })).mutation(async ({ input, ctx }) => {
-    const planDetails = await getClubPlanConfig(input.plan);
+  subscribe: protectedProcedure.input(z2.object({ storeId: z2.number().int().positive(), plan: z2.enum(["bonattao", "basico"]) })).mutation(async ({ input, ctx }) => {
+    await assertClubStore(input.storeId);
+    const planDetails = await getClubPlanConfig(input.plan, input.storeId);
     if (!planDetails) {
-      throw new TRPCError3({ code: "BAD_REQUEST", message: "Plano de assinatura inv\xE1lido." });
+      throw new TRPCError4({ code: "BAD_REQUEST", message: "Plano de assinatura inv\xE1lido." });
     }
-    const paymentSettings = await getPaymentSettingsAdmin();
+    const paymentSettings = await getPaymentSettingsAdmin(input.storeId);
     if (!paymentSettings.availability.club.enabled) {
-      throw new TRPCError3({
+      throw new TRPCError4({
         code: "PRECONDITION_FAILED",
         message: "Os pagamentos do clube ainda n\xE3o foram configurados."
       });
     }
     const pixKey = paymentSettings.pixKey.trim();
     if (!pixKey) {
-      throw new TRPCError3({
+      throw new TRPCError4({
         code: "PRECONDITION_FAILED",
         message: "Configure a chave PIX na aba de pagamentos do admin."
       });
@@ -7250,8 +9207,11 @@ var clubRouter = router({
     );
     const pixQrCode = generatePixQrCodeUrl(pixCode);
     const db = await getDb();
-    if (!db) throw new TRPCError3({ code: "INTERNAL_SERVER_ERROR" });
+    if (!db) throw new TRPCError4({ code: "INTERNAL_SERVER_ERROR" });
+    const scope = await getTenantScope(input.storeId);
     const result = await db.insert(clubPayments).values({
+      tenantKey: scope.tenantKey,
+      storeId: input.storeId,
       userId: ctx.user.id,
       plan: input.plan,
       amount: planDetails.price.toFixed(2),
@@ -7263,7 +9223,7 @@ var clubRouter = router({
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       result.insertId ?? result[0]?.insertId ?? 0
     );
-    await db.update(users).set({ clubPlan: input.plan, clubStatus: "pending" }).where(eq5(users.id, ctx.user.id));
+    await updateClubAccount(ctx.user.id, input.storeId, { clubPlan: input.plan, clubStatus: "pending" });
     return {
       paymentId,
       pixCode,
@@ -7272,92 +9232,112 @@ var clubRouter = router({
       plan: planDetails
     };
   }),
-  checkPayment: protectedProcedure.input(z2.object({ paymentId: z2.number() })).query(async ({ input, ctx }) => {
+  checkPayment: protectedProcedure.input(z2.object({ paymentId: z2.number(), storeId: z2.number().int().positive() })).query(async ({ input, ctx }) => {
+    await assertClubStore(input.storeId);
     const db = await getDb();
-    if (!db) throw new TRPCError3({ code: "INTERNAL_SERVER_ERROR" });
-    const payment = await db.select().from(clubPayments).where(and4(eq5(clubPayments.id, input.paymentId), eq5(clubPayments.userId, ctx.user.id))).limit(1);
-    if (!payment[0]) throw new TRPCError3({ code: "NOT_FOUND" });
+    if (!db) throw new TRPCError4({ code: "INTERNAL_SERVER_ERROR" });
+    const payment = await db.select().from(clubPayments).where(and6(
+      eq7(clubPayments.id, input.paymentId),
+      eq7(clubPayments.userId, ctx.user.id),
+      eq7(clubPayments.storeId, input.storeId)
+    )).limit(1);
+    if (!payment[0]) throw new TRPCError4({ code: "NOT_FOUND" });
     return { status: payment[0].status };
   }),
-  confirmPayment: adminProcedure2.input(z2.object({ paymentId: z2.number() })).mutation(async ({ input }) => {
+  confirmPayment: staffProcedure.input(z2.object({ paymentId: z2.number(), storeId: z2.number().optional() })).mutation(async ({ input, ctx }) => {
     const db = await getDb();
-    if (!db) throw new TRPCError3({ code: "INTERNAL_SERVER_ERROR" });
-    const payment = await db.select().from(clubPayments).where(eq5(clubPayments.id, input.paymentId)).limit(1);
-    if (!payment[0]) throw new TRPCError3({ code: "NOT_FOUND" });
+    if (!db) throw new TRPCError4({ code: "INTERNAL_SERVER_ERROR" });
+    const payment = await db.select().from(clubPayments).where(eq7(clubPayments.id, input.paymentId)).limit(1);
+    if (!payment[0]) throw new TRPCError4({ code: "NOT_FOUND" });
+    await assertStoreEntityAccess(ctx.user, payment[0].storeId, input.storeId);
     const now = /* @__PURE__ */ new Date();
     const nextBilling = new Date(now);
     nextBilling.setMonth(nextBilling.getMonth() + 1);
-    await db.update(clubPayments).set({ status: "paid", paidAt: now }).where(eq5(clubPayments.id, input.paymentId));
-    await db.update(users).set({
+    await db.update(clubPayments).set({ status: "paid", paidAt: now }).where(eq7(clubPayments.id, input.paymentId));
+    await updateClubAccount(payment[0].userId, payment[0].storeId, {
+      clubPlan: payment[0].plan,
       clubStatus: "active",
       clubStartDate: now,
       clubNextBillingDate: nextBilling,
       clubFreePizzaUsed: false,
       clubFreePizzaResetAt: nextBilling
-    }).where(eq5(users.id, payment[0].userId));
-    const activatedUser = await db.select({ id: users.id, phone: users.phone }).from(users).where(eq5(users.id, payment[0].userId)).limit(1);
+    });
+    const activatedUser = await db.select({ id: users.id, phone: users.phone }).from(users).where(eq7(users.id, payment[0].userId)).limit(1);
     if (activatedUser[0]) {
-      fireJourneyTrigger("club_subscriber", activatedUser[0].id, activatedUser[0].phone ?? void 0).catch(
+      fireJourneyTrigger("club_subscriber", activatedUser[0].id, activatedUser[0].phone ?? void 0, payment[0].storeId).catch(
         (error) => console.error("[Club] club_subscriber trigger failed", error)
       );
     }
     return { ok: true };
   }),
-  cancelSubscription: protectedProcedure.mutation(async ({ ctx }) => {
+  cancelSubscription: protectedProcedure.input(z2.object({ storeId: z2.number().int().positive() })).mutation(async ({ ctx, input }) => {
+    await assertClubStore(input.storeId);
     const db = await getDb();
-    if (!db) throw new TRPCError3({ code: "INTERNAL_SERVER_ERROR" });
-    await db.update(users).set({
+    if (!db) throw new TRPCError4({ code: "INTERNAL_SERVER_ERROR" });
+    await updateClubAccount(ctx.user.id, input.storeId, {
       clubStatus: "cancelled",
       clubPlan: null,
       clubNextBillingDate: null
-    }).where(eq5(users.id, ctx.user.id));
+    });
     return { ok: true };
   }),
-  useFreePizza: protectedProcedure.mutation(async ({ ctx }) => {
+  useFreePizza: protectedProcedure.input(z2.object({ storeId: z2.number().int().positive() })).mutation(async ({ ctx, input }) => {
+    await assertClubStore(input.storeId);
     const db = await getDb();
-    if (!db) throw new TRPCError3({ code: "INTERNAL_SERVER_ERROR" });
-    const userRows = await db.select().from(users).where(eq5(users.id, ctx.user.id)).limit(1);
-    if (!userRows[0]) throw new TRPCError3({ code: "NOT_FOUND" });
-    const user = userRows[0];
-    if (user.clubStatus !== "active") {
-      throw new TRPCError3({ code: "FORBIDDEN", message: "Voc\xEA n\xE3o \xE9 membro ativo do clube." });
+    if (!db) throw new TRPCError4({ code: "INTERNAL_SERVER_ERROR" });
+    let account = await getTenantCustomerAccount(ctx.user.id, input.storeId);
+    if (!account) throw new TRPCError4({ code: "NOT_FOUND" });
+    if (account.clubStatus !== "active") {
+      throw new TRPCError4({ code: "FORBIDDEN", message: "Voc\xEA n\xE3o \xE9 membro ativo do clube." });
     }
-    const plan = await getClubPlanConfig(user.clubPlan);
+    const plan = await getClubPlanConfig(account.clubPlan, input.storeId);
     if (!plan?.freePizzaPerMonth) {
-      throw new TRPCError3({ code: "FORBIDDEN", message: "Seu plano n\xE3o inclui pizza gr\xE1tis por m\xEAs." });
+      throw new TRPCError4({ code: "FORBIDDEN", message: "Seu plano n\xE3o inclui pizza gr\xE1tis por m\xEAs." });
     }
     const now = /* @__PURE__ */ new Date();
-    if (user.clubFreePizzaUsed && user.clubFreePizzaResetAt && now > user.clubFreePizzaResetAt) {
+    if (account.clubFreePizzaUsed && account.clubFreePizzaResetAt && now > account.clubFreePizzaResetAt) {
       const nextReset = new Date(now.getFullYear(), now.getMonth() + 1, 1);
-      await db.update(users).set({ clubFreePizzaUsed: false, clubFreePizzaResetAt: nextReset }).where(and4(eq5(users.id, ctx.user.id), lte2(users.clubFreePizzaResetAt, now)));
+      await updateClubAccount(ctx.user.id, input.storeId, { clubFreePizzaUsed: false, clubFreePizzaResetAt: nextReset });
+      account = { ...account, clubFreePizzaUsed: false, clubFreePizzaResetAt: nextReset };
     }
-    const result = await db.update(users).set({ clubFreePizzaUsed: true }).where(and4(eq5(users.id, ctx.user.id), eq5(users.clubStatus, "active"), eq5(users.clubFreePizzaUsed, false)));
+    const result = await db.update(tenantCustomerAccounts).set({ clubFreePizzaUsed: true }).where(and6(
+      eq7(tenantCustomerAccounts.id, account.id),
+      eq7(tenantCustomerAccounts.clubStatus, "active"),
+      eq7(tenantCustomerAccounts.clubFreePizzaUsed, false)
+    ));
     const mutationResult = result;
     const affectedRows = mutationResult?.rowsAffected ?? mutationResult?.[0]?.affectedRows ?? 0;
     if (!affectedRows) {
-      throw new TRPCError3({ code: "BAD_REQUEST", message: "Voc\xEA j\xE1 usou sua pizza gr\xE1tis neste m\xEAs." });
+      throw new TRPCError4({ code: "BAD_REQUEST", message: "Voc\xEA j\xE1 usou sua pizza gr\xE1tis neste m\xEAs." });
+    }
+    const scope = await getTenantScope(input.storeId);
+    if (scope.tenantKey === "bonatto") {
+      await db.update(users).set({ clubFreePizzaUsed: true }).where(eq7(users.id, ctx.user.id));
     }
     return { ok: true };
   }),
-  getMembers: adminProcedure2.query(async () => {
+  getMembers: staffProcedure.input(z2.object({ storeId: z2.number().optional() })).query(async ({ input, ctx }) => {
     const db = await getDb();
     if (!db) return [];
-    const members = await db.select().from(users).where(isNotNull(users.clubPlan));
-    return members.map((user) => ({
+    const storeId = await resolveRequiredStoreId(ctx.user, input.storeId);
+    const scope = await getTenantScope(storeId);
+    const members = await db.select({ account: tenantCustomerAccounts, user: users }).from(tenantCustomerAccounts).innerJoin(users, eq7(tenantCustomerAccounts.userId, users.id)).where(and6(eq7(tenantCustomerAccounts.tenantKey, scope.tenantKey), isNotNull(tenantCustomerAccounts.clubPlan)));
+    return members.map(({ user, account }) => ({
       id: user.id,
       name: user.name,
       email: user.email,
       phone: user.phone,
-      clubPlan: user.clubPlan,
-      clubStatus: user.clubStatus,
-      clubStartDate: user.clubStartDate,
-      clubNextBillingDate: user.clubNextBillingDate,
-      clubFreePizzaUsed: user.clubFreePizzaUsed
+      clubPlan: account.clubPlan,
+      clubStatus: account.clubStatus,
+      clubStartDate: account.clubStartDate,
+      clubNextBillingDate: account.clubNextBillingDate,
+      clubFreePizzaUsed: account.clubFreePizzaUsed
     }));
   }),
-  getPendingPayments: adminProcedure2.query(async () => {
+  getPendingPayments: staffProcedure.input(z2.object({ storeId: z2.number().optional() })).query(async ({ input, ctx }) => {
     const db = await getDb();
     if (!db) return [];
+    const storeId = await resolveRequiredStoreId(ctx.user, input.storeId);
     return db.select({
       id: clubPayments.id,
       userId: clubPayments.userId,
@@ -7369,12 +9349,18 @@ var clubRouter = router({
       userName: users.name,
       userEmail: users.email,
       userPhone: users.phone
-    }).from(clubPayments).leftJoin(users, eq5(clubPayments.userId, users.id)).where(eq5(clubPayments.status, "pending"));
+    }).from(clubPayments).leftJoin(users, eq7(clubPayments.userId, users.id)).where(and6(eq7(clubPayments.status, "pending"), eq7(clubPayments.storeId, storeId)));
   }),
-  sendPromotion: adminProcedure2.input(z2.object({ message: z2.string().min(1).max(1e3) })).mutation(async ({ input }) => {
+  sendPromotion: staffProcedure.input(z2.object({ message: z2.string().min(1).max(1e3), storeId: z2.number().optional() })).mutation(async ({ input, ctx }) => {
     const db = await getDb();
-    if (!db) throw new TRPCError3({ code: "INTERNAL_SERVER_ERROR" });
-    const members = await db.select({ phone: users.phone, name: users.name }).from(users).where(and4(isNotNull(users.clubPlan), eq5(users.clubStatus, "active")));
+    if (!db) throw new TRPCError4({ code: "INTERNAL_SERVER_ERROR" });
+    const storeId = await resolveRequiredStoreId(ctx.user, input.storeId);
+    const scope = await getTenantScope(storeId);
+    const members = await db.select({ phone: users.phone, name: users.name }).from(tenantCustomerAccounts).innerJoin(users, eq7(tenantCustomerAccounts.userId, users.id)).where(and6(
+      eq7(tenantCustomerAccounts.tenantKey, scope.tenantKey),
+      isNotNull(tenantCustomerAccounts.clubPlan),
+      eq7(tenantCustomerAccounts.clubStatus, "active")
+    ));
     let sent = 0;
     let failed = 0;
     for (const member of members) {
@@ -7396,37 +9382,134 @@ ${input.message}`);
 import { z as z3 } from "zod";
 init_db();
 init_schema();
-import { eq as eq6, and as and5, desc as desc2 } from "drizzle-orm";
-import { TRPCError as TRPCError4 } from "@trpc/server";
+import { eq as eq8, and as and7, desc as desc3, inArray as inArray5, sql as sql3 } from "drizzle-orm";
+import { TRPCError as TRPCError5 } from "@trpc/server";
+var colorSchema = z3.string().regex(/^#[0-9a-fA-F]{6}$/, "Use uma cor hexadecimal com 6 d\xEDgitos");
+var assetUrlSchema = z3.string().max(2048).refine(
+  (value) => value === "" || value.startsWith("/") || /^https:\/\//i.test(value),
+  "Use uma URL HTTPS ou um caminho interno"
+);
+var pageSchema = z3.object({ enabled: z3.boolean(), title: z3.string().max(160), description: z3.string().max(300), heroImage: assetUrlSchema });
+var adminTabsSchema = z3.object({
+  dashboard: z3.boolean().optional(),
+  orders: z3.boolean().optional(),
+  menu: z3.boolean().optional(),
+  club: z3.boolean().optional(),
+  inventory: z3.boolean().optional(),
+  staff: z3.boolean().optional(),
+  dining: z3.boolean().optional(),
+  coupons: z3.boolean().optional(),
+  reports: z3.boolean().optional(),
+  network: z3.boolean().optional(),
+  distribution: z3.boolean().optional(),
+  promotions: z3.boolean().optional(),
+  raffles: z3.boolean().optional(),
+  upsells: z3.boolean().optional(),
+  users: z3.boolean().optional(),
+  drivers: z3.boolean().optional(),
+  marketplaces: z3.boolean().optional(),
+  payments: z3.boolean().optional(),
+  settings: z3.boolean().optional(),
+  stores: z3.boolean().optional(),
+  recovery: z3.boolean().optional()
+});
+var whiteLabelConfigSchema = z3.object({
+  storeId: z3.number().int().positive(),
+  status: z3.enum(["active", "inactive", "setup_pending"]),
+  plan: z3.enum(["essential", "pro", "enterprise", "custom"]),
+  domain: z3.string().max(191).nullable(),
+  subdomain: z3.string().max(100).nullable(),
+  brand: z3.object({
+    key: z3.string().max(100),
+    name: z3.string().min(2).max(200),
+    shortName: z3.string().min(1).max(100),
+    tagline: z3.string().max(240),
+    adminTitle: z3.string().max(200),
+    deliveryLabel: z3.string().max(200),
+    logos: z3.object({ icon: assetUrlSchema, wordmark: assetUrlSchema, favicon: assetUrlSchema, waiter: assetUrlSchema }),
+    colors: z3.object({ primary: colorSchema, primaryDark: colorSchema, accent: colorSchema, background: colorSchema, text: colorSchema })
+  }),
+  features: z3.object({
+    adminTabs: adminTabsSchema,
+    crm: z3.boolean(),
+    automations: z3.boolean(),
+    notifications: z3.boolean(),
+    deliveryZones: z3.boolean(),
+    salesDashboard: z3.boolean(),
+    waiterApp: z3.boolean(),
+    driverApp: z3.boolean(),
+    loyalty: z3.boolean(),
+    club: z3.boolean(),
+    inventory: z3.boolean(),
+    diningRoom: z3.boolean(),
+    marketplaces: z3.boolean(),
+    auditTrail: z3.boolean(),
+    healthPanel: z3.boolean(),
+    globalSearch: z3.boolean()
+  }),
+  providers: z3.object({
+    auth: z3.object({ google: z3.boolean(), apple: z3.boolean(), facebook: z3.boolean(), instagram: z3.boolean() }),
+    maps: z3.object({ provider: z3.enum(["openstreetmap", "google"]) }),
+    push: z3.object({ provider: z3.enum(["vapid", "none"]), enabled: z3.boolean() }),
+    email: z3.object({ provider: z3.enum(["resend", "smtp", "none"]), enabled: z3.boolean() }),
+    payments: z3.object({ pix: z3.boolean(), card: z3.boolean(), cash: z3.boolean(), provider: z3.enum(["manual", "stripe", "asaas"]) }),
+    marketplaces: z3.object({ ifood: z3.boolean(), aiqfome: z3.boolean(), rappi: z3.boolean(), deliveryMuch: z3.boolean() })
+  }),
+  pages: z3.object({
+    home: pageSchema,
+    menu: pageSchema,
+    checkout: pageSchema,
+    orders: pageSchema,
+    profile: pageSchema,
+    club: pageSchema,
+    tracking: pageSchema,
+    driver: pageSchema,
+    waiter: pageSchema
+  }),
+  contact: z3.object({ supportEmail: z3.string().max(320), supportPhone: z3.string().max(30), whatsapp: z3.string().max(30), instagram: z3.string().max(120) })
+});
 var storesRouter = router({
-  list: publicProcedure.query(async () => {
+  list: publicProcedure.input(z3.object({ host: z3.string().max(255).optional(), slug: z3.string().max(100).optional() }).optional()).query(async ({ input }) => {
     const db = await getDb();
     if (!db) return [];
-    return db.select({
+    const resolved = await resolveWhiteLabelRuntime({ host: input?.host, slug: input?.slug });
+    if (!resolved) return [];
+    const tenantStores = await db.select({
       id: stores.id,
       name: stores.name,
       slug: stores.slug,
       city: stores.city,
       address: stores.address,
       phone: stores.phone,
-      isDefault: stores.isDefault
-    }).from(stores).where(eq6(stores.active, true)).orderBy(desc2(stores.isDefault), stores.city);
+      isDefault: stores.isDefault,
+      tenantKey: stores.tenantKey
+    }).from(stores).where(and7(eq8(stores.active, true), eq8(stores.tenantKey, resolved.runtime.tenantKey))).orderBy(desc3(stores.isDefault), stores.city);
+    const counts = tenantStores.length ? await db.select({ storeId: products.storeId, count: sql3`COUNT(*)` }).from(products).where(and7(inArray5(products.storeId, tenantStores.map((store) => store.id)), eq8(products.active, true))).groupBy(products.storeId) : [];
+    const countByStore = new Map(counts.map((row) => [row.storeId, Number(row.count)]));
+    return tenantStores.map((store) => ({ ...store, productCount: countByStore.get(store.id) ?? 0, hasCatalog: (countByStore.get(store.id) ?? 0) > 0 }));
+  }),
+  resolveTenant: publicProcedure.input(z3.object({ host: z3.string().max(255).optional(), slug: z3.string().max(100).optional() }).optional()).query(async ({ input }) => {
+    const resolved = await resolveWhiteLabelRuntime({ host: input?.host, slug: input?.slug });
+    if (!resolved) throw new TRPCError5({ code: "NOT_FOUND", message: "Estabelecimento n\xE3o encontrado" });
+    return resolved;
   }),
   getBySlug: publicProcedure.input(z3.object({ slug: z3.string() })).query(async ({ input }) => {
     const db = await getDb();
-    if (!db) throw new TRPCError4({ code: "INTERNAL_SERVER_ERROR" });
-    const [store] = await db.select().from(stores).where(and5(eq6(stores.slug, input.slug), eq6(stores.active, true))).limit(1);
-    if (!store) throw new TRPCError4({ code: "NOT_FOUND", message: "Loja nao encontrada" });
+    if (!db) throw new TRPCError5({ code: "INTERNAL_SERVER_ERROR" });
+    const [store] = await db.select().from(stores).where(and7(eq8(stores.slug, input.slug), eq8(stores.active, true))).limit(1);
+    if (!store) throw new TRPCError5({ code: "NOT_FOUND", message: "Loja n\xE3o encontrada" });
     return store;
   }),
   listAll: adminProcedure.query(async () => {
     const db = await getDb();
     if (!db) return [];
-    return db.select().from(stores).orderBy(desc2(stores.isDefault), stores.city);
+    return db.select().from(stores).orderBy(desc3(stores.isDefault), stores.city);
   }),
   create: adminProcedure.input(z3.object({
+    creationType: z3.enum(["brand", "unit"]).default("brand"),
     name: z3.string().min(2).max(200),
     slug: z3.string().min(2).max(100).regex(/^[a-z0-9-]+$/, "Slug deve conter apenas letras minusculas, numeros e hifens"),
+    tenantKey: z3.string().min(2).max(100).regex(/^[a-z0-9-]+$/).optional(),
     city: z3.string().min(2).max(100),
     address: z3.string().max(500).optional(),
     phone: z3.string().max(20).optional(),
@@ -7434,11 +9517,23 @@ var storesRouter = router({
     isDefault: z3.boolean().default(false)
   })).mutation(async ({ input }) => {
     const db = await getDb();
-    if (!db) throw new TRPCError4({ code: "INTERNAL_SERVER_ERROR" });
+    if (!db) throw new TRPCError5({ code: "INTERNAL_SERVER_ERROR" });
+    const tenantKey = input.creationType === "unit" ? input.tenantKey : input.slug;
+    if (!tenantKey) {
+      throw new TRPCError5({ code: "BAD_REQUEST", message: "Selecione a marca da nova unidade." });
+    }
+    const tenantStores = await db.select({ id: stores.id }).from(stores).where(eq8(stores.tenantKey, tenantKey)).limit(1);
+    if (input.creationType === "unit" && tenantStores.length === 0) {
+      throw new TRPCError5({ code: "NOT_FOUND", message: "Marca n\xE3o encontrada." });
+    }
+    if (input.creationType === "brand" && tenantStores.length > 0) {
+      throw new TRPCError5({ code: "CONFLICT", message: "Ja existe uma marca com este identificador." });
+    }
     if (input.isDefault) {
-      await db.update(stores).set({ isDefault: false });
+      await db.update(stores).set({ isDefault: false }).where(eq8(stores.tenantKey, tenantKey));
     }
     const [result] = await db.insert(stores).values({
+      tenantKey,
       name: input.name,
       slug: input.slug,
       city: input.city,
@@ -7447,7 +9542,10 @@ var storesRouter = router({
       active: input.active,
       isDefault: input.isDefault
     });
-    return { id: result.insertId, ...input };
+    const id = Number(result.insertId);
+    const [createdStore] = await db.select().from(stores).where(eq8(stores.id, id)).limit(1);
+    if (createdStore) await createDefaultWhiteLabelConfig(createdStore);
+    return { id, ...input, tenantKey };
   }),
   update: adminProcedure.input(z3.object({
     id: z3.number(),
@@ -7467,58 +9565,83 @@ var storesRouter = router({
     nfceEnabled: z3.boolean().optional()
   })).mutation(async ({ input }) => {
     const db = await getDb();
-    if (!db) throw new TRPCError4({ code: "INTERNAL_SERVER_ERROR" });
+    if (!db) throw new TRPCError5({ code: "INTERNAL_SERVER_ERROR" });
     const { id, ...data } = input;
     if (data.isDefault) {
-      await db.update(stores).set({ isDefault: false });
+      const [currentStore] = await db.select({ tenantKey: stores.tenantKey }).from(stores).where(eq8(stores.id, id)).limit(1);
+      if (!currentStore) throw new TRPCError5({ code: "NOT_FOUND", message: "Loja n\xE3o encontrada" });
+      await db.update(stores).set({ isDefault: false }).where(eq8(stores.tenantKey, currentStore.tenantKey));
     }
-    await db.update(stores).set(data).where(eq6(stores.id, id));
+    await db.update(stores).set(data).where(eq8(stores.id, id));
     return { success: true };
   }),
   delete: adminProcedure.input(z3.object({ id: z3.number() })).mutation(async ({ input }) => {
     const db = await getDb();
-    if (!db) throw new TRPCError4({ code: "INTERNAL_SERVER_ERROR" });
-    const [store] = await db.select().from(stores).where(eq6(stores.id, input.id)).limit(1);
-    if (!store) throw new TRPCError4({ code: "NOT_FOUND", message: "Loja nao encontrada" });
+    if (!db) throw new TRPCError5({ code: "INTERNAL_SERVER_ERROR" });
+    const [store] = await db.select().from(stores).where(eq8(stores.id, input.id)).limit(1);
+    if (!store) throw new TRPCError5({ code: "NOT_FOUND", message: "Loja n\xE3o encontrada" });
     if (store.isDefault) {
-      throw new TRPCError4({ code: "BAD_REQUEST", message: "Defina outra loja padrao antes de desativar esta unidade." });
+      throw new TRPCError5({ code: "BAD_REQUEST", message: "Defina outra loja padr\xE3o antes de desativar esta unidade." });
     }
-    await db.update(stores).set({ active: false }).where(eq6(stores.id, input.id));
-    await db.update(staffMembers).set({ active: false }).where(eq6(staffMembers.storeId, input.id));
-    await db.update(drivers).set({ active: false }).where(eq6(drivers.storeId, input.id));
-    await db.update(diningTables).set({ active: false, status: "free" }).where(eq6(diningTables.storeId, input.id));
+    await db.update(stores).set({ active: false }).where(eq8(stores.id, input.id));
+    await db.update(staffMembers).set({ active: false }).where(eq8(staffMembers.storeId, input.id));
+    await db.update(drivers).set({ active: false }).where(eq8(drivers.storeId, input.id));
+    await db.update(diningTables).set({ active: false, status: "free" }).where(eq8(diningTables.storeId, input.id));
     return { success: true };
   }),
   addManager: adminProcedure.input(z3.object({
     storeId: z3.number(),
-    userId: z3.number()
+    userId: z3.number(),
+    scope: z3.enum(["store", "tenant"]).default("store")
   })).mutation(async ({ input }) => {
     const db = await getDb();
-    if (!db) throw new TRPCError4({ code: "INTERNAL_SERVER_ERROR" });
-    const [user] = await db.select().from(users).where(eq6(users.id, input.userId)).limit(1);
-    if (!user) throw new TRPCError4({ code: "NOT_FOUND", message: "Usuario nao encontrado" });
+    if (!db) throw new TRPCError5({ code: "INTERNAL_SERVER_ERROR" });
+    const [user] = await db.select().from(users).where(eq8(users.id, input.userId)).limit(1);
+    if (!user) throw new TRPCError5({ code: "NOT_FOUND", message: "Usu\xE1rio n\xE3o encontrado" });
     if (user.role === "user") {
-      await db.update(users).set({ role: "manager" }).where(eq6(users.id, input.userId));
+      await db.update(users).set({ role: "manager" }).where(eq8(users.id, input.userId));
     }
-    try {
+    if (input.scope === "tenant") {
+      const [store] = await db.select({ tenantKey: stores.tenantKey }).from(stores).where(eq8(stores.id, input.storeId)).limit(1);
+      if (!store) throw new TRPCError5({ code: "NOT_FOUND", message: "Loja n\xE3o encontrada" });
+      await db.insert(tenantMemberships).values({
+        tenantKey: store.tenantKey,
+        userId: input.userId,
+        role: "admin",
+        active: true
+      }).onDuplicateKeyUpdate({ set: { role: "admin", active: true } });
+    } else {
       await db.insert(storeManagers).values({
         storeId: input.storeId,
         userId: input.userId
-      });
-    } catch {
+      }).onDuplicateKeyUpdate({ set: { storeId: input.storeId } });
     }
     return { success: true };
   }),
   removeManager: adminProcedure.input(z3.object({
     storeId: z3.number(),
-    userId: z3.number()
+    userId: z3.number(),
+    scope: z3.enum(["store", "tenant"]).default("store")
   })).mutation(async ({ input }) => {
     const db = await getDb();
-    if (!db) throw new TRPCError4({ code: "INTERNAL_SERVER_ERROR" });
-    await db.delete(storeManagers).where(and5(eq6(storeManagers.storeId, input.storeId), eq6(storeManagers.userId, input.userId)));
-    const remaining = await db.select().from(storeManagers).where(eq6(storeManagers.userId, input.userId)).limit(1);
-    if (remaining.length === 0) {
-      await db.update(users).set({ role: "user" }).where(eq6(users.id, input.userId));
+    if (!db) throw new TRPCError5({ code: "INTERNAL_SERVER_ERROR" });
+    if (input.scope === "tenant") {
+      const [store] = await db.select({ tenantKey: stores.tenantKey }).from(stores).where(eq8(stores.id, input.storeId)).limit(1);
+      if (store) {
+        await db.delete(tenantMemberships).where(and7(
+          eq8(tenantMemberships.tenantKey, store.tenantKey),
+          eq8(tenantMemberships.userId, input.userId)
+        ));
+      }
+    } else {
+      await db.delete(storeManagers).where(and7(eq8(storeManagers.storeId, input.storeId), eq8(storeManagers.userId, input.userId)));
+    }
+    const [remainingStore, remainingTenant] = await Promise.all([
+      db.select().from(storeManagers).where(eq8(storeManagers.userId, input.userId)).limit(1),
+      db.select().from(tenantMemberships).where(and7(eq8(tenantMemberships.userId, input.userId), eq8(tenantMemberships.active, true))).limit(1)
+    ]);
+    if (remainingStore.length === 0 && remainingTenant.length === 0) {
+      await db.update(users).set({ role: "user" }).where(eq8(users.id, input.userId));
     }
     return { success: true };
   }),
@@ -7534,36 +9657,2205 @@ var storesRouter = router({
       userEmail: users.email,
       userPhone: users.phone,
       userRole: users.role
-    }).from(storeManagers).innerJoin(users, eq6(storeManagers.userId, users.id)).where(eq6(storeManagers.storeId, input.storeId));
+    }).from(storeManagers).innerJoin(users, eq8(storeManagers.userId, users.id)).where(eq8(storeManagers.storeId, input.storeId));
+  }),
+  getTenantManagers: adminProcedure.input(z3.object({ storeId: z3.number() })).query(async ({ input }) => {
+    const db = await getDb();
+    if (!db) return [];
+    const [store] = await db.select({ tenantKey: stores.tenantKey }).from(stores).where(eq8(stores.id, input.storeId)).limit(1);
+    if (!store) return [];
+    return db.select({
+      id: tenantMemberships.id,
+      userId: tenantMemberships.userId,
+      tenantKey: tenantMemberships.tenantKey,
+      membershipRole: tenantMemberships.role,
+      createdAt: tenantMemberships.createdAt,
+      userName: users.name,
+      userEmail: users.email,
+      userPhone: users.phone,
+      userRole: users.role
+    }).from(tenantMemberships).innerJoin(users, eq8(tenantMemberships.userId, users.id)).where(and7(eq8(tenantMemberships.tenantKey, store.tenantKey), eq8(tenantMemberships.active, true)));
   }),
   findUserByEmail: adminProcedure.input(z3.object({ email: z3.string().email() })).query(async ({ input }) => {
     const db = await getDb();
     if (!db) return null;
-    const [user] = await db.select({ id: users.id, name: users.name, email: users.email, role: users.role }).from(users).where(eq6(users.email, input.email)).limit(1);
+    const [user] = await db.select({ id: users.id, name: users.name, email: users.email, role: users.role }).from(users).where(eq8(users.email, input.email)).limit(1);
     return user ?? null;
   }),
-  myStore: staffProcedure.query(async ({ ctx }) => {
+  whiteLabelConfig: staffProcedure.input(z3.object({ storeId: z3.number().int().positive() })).query(async ({ input, ctx }) => {
+    await assertStoreEntityAccess(ctx.user, input.storeId, input.storeId);
+    const config = await getWhiteLabelRuntimeByStoreId(input.storeId);
+    if (!config) throw new TRPCError5({ code: "NOT_FOUND", message: "Loja n\xE3o encontrada" });
+    return config;
+  }),
+  saveWhiteLabelConfig: staffProcedure.input(whiteLabelConfigSchema).mutation(async ({ input, ctx }) => {
+    await assertStoreEntityAccess(ctx.user, input.storeId, input.storeId);
+    try {
+      if (ctx.isOwner) return await saveWhiteLabelRuntime(input);
+      const current = await getWhiteLabelRuntimeByStoreId(input.storeId);
+      if (!current) throw new TRPCError5({ code: "NOT_FOUND", message: "Loja n\xE3o encontrada" });
+      return await saveWhiteLabelRuntime({
+        ...input,
+        status: current.status,
+        plan: current.plan,
+        domain: current.domain,
+        subdomain: current.subdomain,
+        features: current.features,
+        providers: current.providers,
+        brand: { ...input.brand, key: current.brand.key }
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "N\xE3o foi poss\xEDvel salvar a configura\xE7\xE3o";
+      if (/duplicate/i.test(message)) {
+        throw new TRPCError5({ code: "CONFLICT", message: "Dom\xEDnio ou subdom\xEDnio j\xE1 est\xE1 em uso por outra loja." });
+      }
+      throw error;
+    }
+  }),
+  uploadBrandAsset: staffProcedure.input(z3.object({
+    storeId: z3.number().int().positive(),
+    kind: z3.enum(["logo", "wordmark", "favicon", "waiter"]),
+    base64: z3.string().max(43e5),
+    mimeType: z3.enum(["image/jpeg", "image/png", "image/webp", "image/gif"])
+  })).mutation(async ({ input, ctx }) => {
+    await assertStoreEntityAccess(ctx.user, input.storeId, input.storeId);
+    const [{ storagePutAdapter: storagePut2 }, { compressToWebP: compressToWebP2 }] = await Promise.all([
+      Promise.resolve().then(() => (init_storage2(), storage_exports2)),
+      Promise.resolve().then(() => (init_imageUtils(), imageUtils_exports))
+    ]);
+    const rawBuffer = Buffer.from(input.base64, "base64");
+    const maxWidth = input.kind === "favicon" ? 512 : 1600;
+    const { buffer, mimeType, ext } = await compressToWebP2(rawBuffer, 86, maxWidth);
+    const key = `stores/${input.storeId}/brand/${input.kind}-${Date.now()}.${ext}`;
+    return storagePut2(key, buffer, mimeType);
+  }),
+  myStores: staffProcedure.query(async ({ ctx }) => {
     if (ctx.isOwner) return null;
     const db = await getDb();
-    if (!db) return null;
-    const [row] = await db.select({
+    if (!db) return [];
+    const directRows = await db.select({
       id: stores.id,
       name: stores.name,
       slug: stores.slug,
       city: stores.city,
       address: stores.address,
       phone: stores.phone
-    }).from(storeManagers).innerJoin(stores, eq6(storeManagers.storeId, stores.id)).where(eq6(storeManagers.userId, ctx.user.id)).limit(1);
-    return row ?? null;
+    }).from(storeManagers).innerJoin(stores, eq8(storeManagers.storeId, stores.id)).where(and7(eq8(storeManagers.userId, ctx.user.id), eq8(stores.active, true)));
+    const memberships = await db.select({ tenantKey: tenantMemberships.tenantKey }).from(tenantMemberships).where(and7(eq8(tenantMemberships.userId, ctx.user.id), eq8(tenantMemberships.active, true)));
+    const tenantRows = memberships.length ? await db.select({
+      id: stores.id,
+      name: stores.name,
+      slug: stores.slug,
+      city: stores.city,
+      address: stores.address,
+      phone: stores.phone
+    }).from(stores).where(and7(inArray5(stores.tenantKey, memberships.map((row) => row.tenantKey)), eq8(stores.active, true))) : [];
+    return Array.from(new Map([...directRows, ...tenantRows].map((store) => [store.id, store])).values());
+  }),
+  myStore: staffProcedure.query(async ({ ctx }) => {
+    if (ctx.isOwner) return null;
+    const db = await getDb();
+    if (!db) return null;
+    const [row] = await db.select({ id: stores.id, name: stores.name, slug: stores.slug, city: stores.city, address: stores.address, phone: stores.phone }).from(storeManagers).innerJoin(stores, eq8(storeManagers.storeId, stores.id)).where(eq8(storeManagers.userId, ctx.user.id)).limit(1);
+    if (row) return row;
+    const [membership] = await db.select({ tenantKey: tenantMemberships.tenantKey }).from(tenantMemberships).where(and7(eq8(tenantMemberships.userId, ctx.user.id), eq8(tenantMemberships.active, true))).limit(1);
+    if (!membership) return null;
+    const [tenantStore] = await db.select({ id: stores.id, name: stores.name, slug: stores.slug, city: stores.city, address: stores.address, phone: stores.phone }).from(stores).where(and7(eq8(stores.tenantKey, membership.tenantKey), eq8(stores.active, true))).orderBy(desc3(stores.isDefault), stores.id).limit(1);
+    return tenantStore ?? null;
+  })
+});
+
+// server/routers/platform.ts
+init_schema();
+init_db();
+import { TRPCError as TRPCError6 } from "@trpc/server";
+import { and as and8, asc, desc as desc4, eq as eq10, inArray as inArray6, sql as sql4 } from "drizzle-orm";
+import { nanoid } from "nanoid";
+import { z as z4 } from "zod";
+
+// server/tenantAudit.ts
+init_schema();
+init_db();
+import { eq as eq9 } from "drizzle-orm";
+var SENSITIVE_KEY = /password|secret|token|credential|authorization|cookie|api[-_]?key/i;
+function sanitizeAuditValue(value, depth = 0) {
+  if (depth > 4) return "[truncated]";
+  if (Array.isArray(value)) return value.slice(0, 50).map((item) => sanitizeAuditValue(item, depth + 1));
+  if (!value || typeof value !== "object") return value;
+  return Object.fromEntries(
+    Object.entries(value).slice(0, 100).map(([key, item]) => [key, SENSITIVE_KEY.test(key) ? "[redacted]" : sanitizeAuditValue(item, depth + 1)])
+  );
+}
+async function recordTenantAudit(input) {
+  const db = await getDb();
+  if (!db) return false;
+  let tenantId = input.tenantId;
+  if (!tenantId && input.storeId) {
+    const [store] = await db.select({ tenantKey: stores.tenantKey }).from(stores).where(eq9(stores.id, input.storeId)).limit(1);
+    if (store) {
+      const [tenant] = await db.select({ id: tenants.id }).from(tenants).where(eq9(tenants.tenantKey, store.tenantKey)).limit(1);
+      tenantId = tenant?.id;
+    }
+  }
+  if (!tenantId) return false;
+  await db.insert(tenantAuditLogs).values({
+    tenantId,
+    storeId: input.storeId ?? null,
+    actorUserId: input.actorUserId ?? null,
+    action: input.action.slice(0, 120),
+    resourceType: input.resourceType.slice(0, 80),
+    resourceId: input.resourceId == null ? null : String(input.resourceId).slice(0, 96),
+    requestId: input.requestId?.slice(0, 96) ?? null,
+    ipAddress: input.ipAddress?.slice(0, 64) ?? null,
+    metadata: input.metadata ? JSON.stringify(sanitizeAuditValue(input.metadata)) : null
+  });
+  return true;
+}
+
+// server/routers/platform.ts
+var storeInput = z4.object({ storeId: z4.number().int().positive() });
+var groupKind = z4.enum(["single", "multiple", "flavor", "size", "edge"]);
+async function requireDb() {
+  const db = await getDb();
+  if (!db) throw new TRPCError6({ code: "INTERNAL_SERVER_ERROR", message: "Banco de dados indispon\xEDvel." });
+  return db;
+}
+async function scopedStoreId(user, storeId) {
+  return resolveRequiredStoreId(user, storeId);
+}
+function parseObject(value) {
+  try {
+    const parsed = JSON.parse(value);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+var platformRouter = router({
+  tenancy: router({
+    plans: platformAdminProcedure.query(async () => {
+      const rows = await (await requireDb()).select().from(tenantPlans).orderBy(asc(tenantPlans.monthlyPrice), asc(tenantPlans.id));
+      return rows.map((plan) => ({ ...plan, entitlements: parseObject(plan.entitlements), limits: parseObject(plan.limits) }));
+    }),
+    overview: platformAdminProcedure.query(async ({ ctx }) => {
+      if (ctx.user.role !== "admin") throw new TRPCError6({ code: "FORBIDDEN", message: "Acesso exclusivo da administra\xE7\xE3o da plataforma." });
+      const db = await requireDb();
+      const tenantRows = await db.select().from(tenants).orderBy(asc(tenants.displayName));
+      const domains = await db.select().from(tenantDomains).orderBy(asc(tenantDomains.hostname));
+      const planRows = await db.select().from(tenantPlans).orderBy(asc(tenantPlans.monthlyPrice), asc(tenantPlans.id));
+      const plans = planRows.map((plan) => ({
+        ...plan,
+        entitlements: parseObject(plan.entitlements),
+        limits: parseObject(plan.limits)
+      }));
+      const subscriptions = await db.select().from(tenantSubscriptions);
+      const storeRows = await db.select({ id: stores.id, tenantKey: stores.tenantKey, name: stores.name, active: stores.active }).from(stores);
+      return tenantRows.map((tenant) => ({
+        ...tenant,
+        domains: domains.filter((domain) => domain.tenantId === tenant.id),
+        stores: storeRows.filter((store) => store.tenantKey === tenant.tenantKey),
+        subscription: subscriptions.find((subscription) => subscription.tenantId === tenant.id) ?? null,
+        plans
+      }));
+    }),
+    saveTenant: platformAdminProcedure.input(z4.object({
+      id: z4.number().int().positive().optional(),
+      tenantKey: z4.string().trim().min(3).max(100).regex(/^[a-z0-9][a-z0-9-]+[a-z0-9]$/),
+      legalName: z4.string().trim().min(2).max(200),
+      displayName: z4.string().trim().min(2).max(200),
+      document: z4.string().trim().max(32).optional(),
+      status: z4.enum(["setup_pending", "active", "suspended", "cancelled"]),
+      planId: z4.number().int().positive().optional()
+    })).mutation(async ({ ctx, input }) => {
+      if (ctx.user.role !== "admin") throw new TRPCError6({ code: "FORBIDDEN" });
+      const db = await requireDb();
+      const values = { tenantKey: input.tenantKey, legalName: input.legalName, displayName: input.displayName, document: input.document ?? null, status: input.status };
+      let tenantId = input.id;
+      if (tenantId) {
+        await db.update(tenants).set(values).where(eq10(tenants.id, tenantId));
+      } else {
+        const [result] = await db.insert(tenants).values({ ...values, ownerUserId: ctx.user.id });
+        tenantId = Number(result.insertId);
+      }
+      if (!tenantId) throw new TRPCError6({ code: "INTERNAL_SERVER_ERROR", message: "N\xE3o foi poss\xEDvel salvar a empresa." });
+      if (input.planId) await db.insert(tenantSubscriptions).values({ tenantId, planId: input.planId, status: "trialing" }).onDuplicateKeyUpdate({ set: { planId: input.planId, updatedAt: /* @__PURE__ */ new Date() } });
+      await recordTenantAudit({ tenantId, actorUserId: ctx.user.id, action: input.id ? "tenant.updated" : "tenant.created", resourceType: "tenant", resourceId: tenantId, metadata: { status: input.status, planId: input.planId ?? null } });
+      return { id: tenantId };
+    }),
+    addDomain: platformAdminProcedure.input(z4.object({ tenantId: z4.number().int().positive(), hostname: z4.string().trim().min(4).max(255), kind: z4.enum(["platform_subdomain", "custom_domain"]) })).mutation(async ({ ctx, input }) => {
+      if (ctx.user.role !== "admin") throw new TRPCError6({ code: "FORBIDDEN" });
+      const hostname = input.hostname.toLowerCase().replace(/^https?:\/\//, "").split("/")[0].replace(/^www\./, "").replace(/:\d+$/, "");
+      if (!/^[a-z0-9.-]+\.[a-z]{2,}$/i.test(hostname)) throw new TRPCError6({ code: "BAD_REQUEST", message: "Dom\xEDnio inv\xE1lido." });
+      const db = await requireDb();
+      const verificationToken = `bonatto-verify-${nanoid(32)}`;
+      const [result] = await db.insert(tenantDomains).values({ tenantId: input.tenantId, hostname, kind: input.kind, verificationToken });
+      const domainId = Number(result.insertId);
+      await recordTenantAudit({ tenantId: input.tenantId, actorUserId: ctx.user.id, action: "domain.created", resourceType: "tenant_domain", resourceId: domainId, metadata: { hostname, kind: input.kind } });
+      return { id: domainId, hostname, verificationToken, dns: { type: "TXT", name: `_bonatto-verification.${hostname}`, value: verificationToken } };
+    }),
+    setDomainStatus: platformAdminProcedure.input(z4.object({ tenantId: z4.number().int().positive(), domainId: z4.number().int().positive(), status: z4.enum(["pending", "verifying", "verified", "active", "failed", "disabled"]), error: z4.string().max(1e3).optional() })).mutation(async ({ ctx, input }) => {
+      if (ctx.user.role !== "admin") throw new TRPCError6({ code: "FORBIDDEN" });
+      const db = await requireDb();
+      const now = /* @__PURE__ */ new Date();
+      await db.update(tenantDomains).set({ status: input.status, verifiedAt: input.status === "verified" || input.status === "active" ? now : void 0, activatedAt: input.status === "active" ? now : void 0, lastError: input.error ?? null }).where(and8(eq10(tenantDomains.id, input.domainId), eq10(tenantDomains.tenantId, input.tenantId)));
+      await recordTenantAudit({ tenantId: input.tenantId, actorUserId: ctx.user.id, action: "domain.status_changed", resourceType: "tenant_domain", resourceId: input.domainId, metadata: { status: input.status } });
+      return { ok: true };
+    }),
+    savePlan: platformAdminProcedure.input(z4.object({
+      id: z4.number().int().positive().optional(),
+      code: z4.string().trim().min(2).max(64).regex(/^[a-z0-9][a-z0-9_-]+$/),
+      name: z4.string().trim().min(2).max(120),
+      monthlyPrice: z4.number().min(0).max(1e6),
+      entitlements: z4.record(z4.string().min(1).max(80), z4.boolean()),
+      limits: z4.record(z4.string().min(1).max(80), z4.number().int().min(-1).max(1e8)),
+      active: z4.boolean()
+    })).mutation(async ({ ctx, input }) => {
+      const db = await requireDb();
+      const values = {
+        code: input.code,
+        name: input.name,
+        monthlyPrice: input.monthlyPrice.toFixed(2),
+        entitlements: JSON.stringify(input.entitlements),
+        limits: JSON.stringify(input.limits),
+        active: input.active
+      };
+      let planId = input.id;
+      if (planId) {
+        await db.update(tenantPlans).set(values).where(eq10(tenantPlans.id, planId));
+      } else {
+        const [result] = await db.insert(tenantPlans).values(values).onDuplicateKeyUpdate({ set: { ...values, updatedAt: /* @__PURE__ */ new Date() } });
+        planId = Number(result.insertId ?? 0);
+        if (!planId) {
+          const [existing] = await db.select({ id: tenantPlans.id }).from(tenantPlans).where(eq10(tenantPlans.code, input.code)).limit(1);
+          planId = existing?.id;
+        }
+      }
+      if (!planId) throw new TRPCError6({ code: "INTERNAL_SERVER_ERROR", message: "N\xE3o foi poss\xEDvel salvar o plano." });
+      return { id: planId, changedBy: ctx.user.id };
+    }),
+    setSubscription: platformAdminProcedure.input(z4.object({
+      tenantId: z4.number().int().positive(),
+      planId: z4.number().int().positive(),
+      status: z4.enum(["trialing", "active", "past_due", "suspended", "cancelled"]),
+      trialDays: z4.number().int().min(0).max(365).default(0),
+      graceDays: z4.number().int().min(0).max(90).default(0)
+    })).mutation(async ({ ctx, input }) => {
+      const db = await requireDb();
+      const [planRows, tenantRows] = await Promise.all([
+        db.select({ id: tenantPlans.id }).from(tenantPlans).where(eq10(tenantPlans.id, input.planId)).limit(1),
+        db.select({ id: tenants.id }).from(tenants).where(eq10(tenants.id, input.tenantId)).limit(1)
+      ]);
+      if (!planRows[0] || !tenantRows[0]) throw new TRPCError6({ code: "NOT_FOUND", message: "Empresa ou plano n\xE3o encontrado." });
+      const now = Date.now();
+      const trialEndsAt = input.trialDays ? new Date(now + input.trialDays * 864e5) : null;
+      const graceEndsAt = input.graceDays ? new Date(now + input.graceDays * 864e5) : null;
+      await db.insert(tenantSubscriptions).values({ tenantId: input.tenantId, planId: input.planId, status: input.status, trialEndsAt, graceEndsAt }).onDuplicateKeyUpdate({ set: { planId: input.planId, status: input.status, trialEndsAt, graceEndsAt, updatedAt: /* @__PURE__ */ new Date() } });
+      await recordTenantAudit({ tenantId: input.tenantId, actorUserId: ctx.user.id, action: "subscription.updated", resourceType: "tenant_subscription", resourceId: input.tenantId, metadata: { planId: input.planId, status: input.status, trialDays: input.trialDays, graceDays: input.graceDays } });
+      return { ok: true };
+    }),
+    audit: platformAdminProcedure.input(z4.object({ tenantId: z4.number().int().positive(), limit: z4.number().int().min(1).max(200).default(50) })).query(async ({ ctx, input }) => {
+      if (ctx.user.role !== "admin") throw new TRPCError6({ code: "FORBIDDEN" });
+      return (await requireDb()).select().from(tenantAuditLogs).where(eq10(tenantAuditLogs.tenantId, input.tenantId)).orderBy(desc4(tenantAuditLogs.createdAt)).limit(input.limit);
+    })
+  }),
+  commerce: router({
+    configuration: publicProcedure.input(z4.object({ storeId: z4.number().int().positive(), productId: z4.number().int().positive() })).query(async ({ input }) => {
+      const db = await requireDb();
+      const [product] = await db.select().from(products).where(and8(eq10(products.id, input.productId), eq10(products.storeId, input.storeId), eq10(products.active, true))).limit(1);
+      if (!product) throw new TRPCError6({ code: "NOT_FOUND", message: "Produto n\xE3o encontrado nesta loja." });
+      const groups = await db.select().from(productOptionGroups).where(and8(eq10(productOptionGroups.storeId, input.storeId), eq10(productOptionGroups.productId, input.productId), eq10(productOptionGroups.active, true))).orderBy(asc(productOptionGroups.sortOrder), asc(productOptionGroups.id));
+      const options = groups.length ? await db.select().from(productOptions).where(and8(eq10(productOptions.storeId, input.storeId), inArray6(productOptions.groupId, groups.map((group) => group.id)), eq10(productOptions.active, true))).orderBy(asc(productOptions.sortOrder), asc(productOptions.id)) : [];
+      const [combo] = await db.select().from(productCombos).where(and8(eq10(productCombos.storeId, input.storeId), eq10(productCombos.productId, input.productId), eq10(productCombos.active, true))).limit(1);
+      const comboGroupRows = combo ? await db.select().from(comboGroups).where(and8(eq10(comboGroups.storeId, input.storeId), eq10(comboGroups.comboId, combo.id))).orderBy(asc(comboGroups.sortOrder)) : [];
+      const comboItems = comboGroupRows.length ? await db.select({ item: comboGroupItems, product: products }).from(comboGroupItems).innerJoin(products, eq10(products.id, comboGroupItems.productId)).where(and8(eq10(comboGroupItems.storeId, input.storeId), inArray6(comboGroupItems.groupId, comboGroupRows.map((group) => group.id)), eq10(comboGroupItems.active, true))) : [];
+      return {
+        product,
+        groups: groups.map((group) => ({ ...group, options: options.filter((option) => option.groupId === group.id) })),
+        combo: combo ? { ...combo, groups: comboGroupRows.map((group) => ({ ...group, items: comboItems.filter((row) => row.item.groupId === group.id) })) } : null
+      };
+    }),
+    adminConfiguration: staffProcedure.input(z4.object({ storeId: z4.number().int().positive(), productId: z4.number().int().positive() })).query(async ({ ctx, input }) => {
+      await scopedStoreId(ctx.user, input.storeId);
+      const db = await requireDb();
+      const groups = await db.select().from(productOptionGroups).where(and8(eq10(productOptionGroups.storeId, input.storeId), eq10(productOptionGroups.productId, input.productId))).orderBy(asc(productOptionGroups.sortOrder));
+      const options = groups.length ? await db.select().from(productOptions).where(and8(eq10(productOptions.storeId, input.storeId), inArray6(productOptions.groupId, groups.map((group) => group.id)))).orderBy(asc(productOptions.sortOrder)) : [];
+      return groups.map((group) => ({ ...group, options: options.filter((option) => option.groupId === group.id) }));
+    }),
+    saveGroup: staffProcedure.input(z4.object({
+      id: z4.number().int().positive().optional(),
+      storeId: z4.number().int().positive(),
+      productId: z4.number().int().positive(),
+      name: z4.string().min(1).max(120),
+      kind: groupKind.default("multiple"),
+      required: z4.boolean().default(false),
+      minSelections: z4.number().int().min(0).default(0),
+      maxSelections: z4.number().int().min(1).max(20).default(1),
+      sortOrder: z4.number().int().default(0),
+      active: z4.boolean().default(true)
+    })).mutation(async ({ ctx, input }) => {
+      await scopedStoreId(ctx.user, input.storeId);
+      if (input.minSelections > input.maxSelections) throw new TRPCError6({ code: "BAD_REQUEST", message: "O m\xEDnimo n\xE3o pode superar o m\xE1ximo." });
+      const db = await requireDb();
+      const data = { storeId: input.storeId, productId: input.productId, name: input.name, kind: input.kind, required: input.required, minSelections: input.minSelections, maxSelections: input.maxSelections, sortOrder: input.sortOrder, active: input.active };
+      if (input.id) {
+        await db.update(productOptionGroups).set(data).where(and8(eq10(productOptionGroups.id, input.id), eq10(productOptionGroups.storeId, input.storeId)));
+        return { id: input.id };
+      }
+      const [result] = await db.insert(productOptionGroups).values(data);
+      return { id: Number(result.insertId ?? 0) };
+    }),
+    saveOption: staffProcedure.input(z4.object({
+      id: z4.number().int().positive().optional(),
+      storeId: z4.number().int().positive(),
+      groupId: z4.number().int().positive(),
+      name: z4.string().min(1).max(160),
+      description: z4.string().max(500).optional(),
+      priceDelta: z4.number().min(0).default(0),
+      linkedProductId: z4.number().int().positive().optional(),
+      ingredientId: z4.number().int().positive().optional(),
+      ingredientQuantity: z4.number().positive().optional(),
+      imageUrl: z4.string().max(2e3).optional(),
+      sortOrder: z4.number().int().default(0),
+      active: z4.boolean().default(true)
+    })).mutation(async ({ ctx, input }) => {
+      await scopedStoreId(ctx.user, input.storeId);
+      const db = await requireDb();
+      const [group] = await db.select().from(productOptionGroups).where(and8(eq10(productOptionGroups.id, input.groupId), eq10(productOptionGroups.storeId, input.storeId))).limit(1);
+      if (!group) throw new TRPCError6({ code: "NOT_FOUND", message: "Grupo de op\xE7\xF5es n\xE3o encontrado." });
+      const data = { storeId: input.storeId, groupId: input.groupId, name: input.name, description: input.description ?? null, priceDelta: input.priceDelta.toFixed(2), linkedProductId: input.linkedProductId ?? null, ingredientId: input.ingredientId ?? null, ingredientQuantity: input.ingredientQuantity?.toFixed(3) ?? null, imageUrl: input.imageUrl ?? null, sortOrder: input.sortOrder, active: input.active };
+      if (input.id) {
+        await db.update(productOptions).set(data).where(and8(eq10(productOptions.id, input.id), eq10(productOptions.storeId, input.storeId)));
+        return { id: input.id };
+      }
+      const [result] = await db.insert(productOptions).values(data);
+      return { id: Number(result.insertId ?? 0) };
+    })
+  }),
+  operations: router({
+    board: staffProcedure.input(storeInput).query(async ({ ctx, input }) => {
+      await scopedStoreId(ctx.user, input.storeId);
+      const db = await requireDb();
+      const activeOrders = await db.select().from(orders).where(and8(eq10(orders.storeId, input.storeId), inArray6(orders.status, ["pending", "confirmed", "preparing"]))).orderBy(asc(orders.createdAt)).limit(500);
+      if (activeOrders.length) {
+        await db.insert(kitchenTickets).values(activeOrders.map((order) => ({ storeId: input.storeId, orderId: order.id, status: order.status === "preparing" ? "preparing" : "queued", startedAt: order.preparingAt, promisedAt: order.predictedReadyAt }))).onDuplicateKeyUpdate({ set: { updatedAt: /* @__PURE__ */ new Date() } });
+      }
+      const tickets = await db.select().from(kitchenTickets).where(and8(eq10(kitchenTickets.storeId, input.storeId), inArray6(kitchenTickets.status, ["queued", "preparing", "ready"]))).orderBy(asc(kitchenTickets.createdAt));
+      const orderIds = tickets.map((ticket) => ticket.orderId);
+      const ticketOrders = orderIds.length ? await db.select().from(orders).where(inArray6(orders.id, orderIds)) : [];
+      const items = orderIds.length ? await db.select().from(orderItems).where(inArray6(orderItems.orderId, orderIds)) : [];
+      const now = Date.now();
+      return tickets.map((ticket) => {
+        const order = ticketOrders.find((row) => row.id === ticket.orderId);
+        const elapsedMinutes = Math.max(0, Math.floor((now - new Date(ticket.createdAt).getTime()) / 6e4));
+        const promised = ticket.promisedAt ? new Date(ticket.promisedAt).getTime() : new Date(ticket.createdAt).getTime() + 40 * 6e4;
+        return { ...ticket, order, items: items.filter((item) => item.orderId === ticket.orderId), elapsedMinutes, delayed: now > promised, slaRemainingMinutes: Math.ceil((promised - now) / 6e4) };
+      });
+    }),
+    transitionTicket: staffProcedure.input(z4.object({ storeId: z4.number().int().positive(), ticketId: z4.number().int().positive(), status: z4.enum(["queued", "preparing", "ready", "completed", "cancelled"]), priority: z4.enum(["normal", "high", "urgent"]).optional() })).mutation(async ({ ctx, input }) => {
+      await scopedStoreId(ctx.user, input.storeId);
+      const db = await requireDb();
+      const [ticket] = await db.select().from(kitchenTickets).where(and8(eq10(kitchenTickets.id, input.ticketId), eq10(kitchenTickets.storeId, input.storeId))).limit(1);
+      if (!ticket) throw new TRPCError6({ code: "NOT_FOUND", message: "Ticket de cozinha n\xE3o encontrado." });
+      const now = /* @__PURE__ */ new Date();
+      await db.update(kitchenTickets).set({ status: input.status, priority: input.priority ?? ticket.priority, startedAt: input.status === "preparing" ? ticket.startedAt ?? now : ticket.startedAt, readyAt: input.status === "ready" ? now : ticket.readyAt, completedAt: input.status === "completed" ? now : ticket.completedAt }).where(eq10(kitchenTickets.id, ticket.id));
+      if (input.status === "preparing") await db.update(orders).set({ status: "preparing", preparingAt: now }).where(and8(eq10(orders.id, ticket.orderId), eq10(orders.storeId, input.storeId)));
+      if (input.status === "ready") await db.update(orders).set({ readyAt: now }).where(and8(eq10(orders.id, ticket.orderId), eq10(orders.storeId, input.storeId)));
+      if (input.status === "cancelled") await db.update(orders).set({ status: "cancelled", cancelledAt: now }).where(and8(eq10(orders.id, ticket.orderId), eq10(orders.storeId, input.storeId)));
+      return { ok: true };
+    }),
+    stockRisk: staffProcedure.input(storeInput).query(async ({ ctx, input }) => {
+      await scopedStoreId(ctx.user, input.storeId);
+      const db = await requireDb();
+      const rows = await db.select().from(ingredients).where(eq10(ingredients.storeId, input.storeId)).orderBy(asc(ingredients.currentStock));
+      return rows.map((ingredient) => {
+        const current = Number(ingredient.currentStock);
+        const minimum = Number(ingredient.minimumStock);
+        return { ...ingredient, currentStockNumber: current, minStockNumber: minimum, critical: current <= minimum, suggestedPurchase: Math.max(0, minimum * 2 - current) };
+      });
+    })
+  }),
+  growth: router({
+    settings: staffProcedure.input(storeInput).query(async ({ ctx, input }) => {
+      await scopedStoreId(ctx.user, input.storeId);
+      const db = await requireDb();
+      const [settings] = await db.select().from(growthSettings).where(eq10(growthSettings.storeId, input.storeId)).limit(1);
+      return settings ?? { storeId: input.storeId, cashbackPercent: "0", pointsPerReal: "1", referralReferrerPoints: 100, referralReferredPoints: 50, npsEnabled: true, config: null };
+    }),
+    saveSettings: staffProcedure.input(z4.object({ storeId: z4.number().int().positive(), cashbackPercent: z4.number().min(0).max(30), pointsPerReal: z4.number().min(0).max(100), referralReferrerPoints: z4.number().int().min(0), referralReferredPoints: z4.number().int().min(0), npsEnabled: z4.boolean() })).mutation(async ({ ctx, input }) => {
+      await scopedStoreId(ctx.user, input.storeId);
+      const db = await requireDb();
+      await db.insert(growthSettings).values({ storeId: input.storeId, cashbackPercent: input.cashbackPercent.toFixed(2), pointsPerReal: input.pointsPerReal.toFixed(3), referralReferrerPoints: input.referralReferrerPoints, referralReferredPoints: input.referralReferredPoints, npsEnabled: input.npsEnabled }).onDuplicateKeyUpdate({ set: { cashbackPercent: input.cashbackPercent.toFixed(2), pointsPerReal: input.pointsPerReal.toFixed(3), referralReferrerPoints: input.referralReferrerPoints, referralReferredPoints: input.referralReferredPoints, npsEnabled: input.npsEnabled, updatedAt: /* @__PURE__ */ new Date() } });
+      return { ok: true };
+    }),
+    rewards: publicProcedure.input(storeInput).query(async ({ input }) => (await requireDb()).select().from(rewardCatalog).where(and8(eq10(rewardCatalog.storeId, input.storeId), eq10(rewardCatalog.active, true))).orderBy(asc(rewardCatalog.pointsCost))),
+    createReward: staffProcedure.input(z4.object({ storeId: z4.number().int().positive(), name: z4.string().min(1).max(160), description: z4.string().optional(), rewardType: z4.enum(["discount", "product", "free_delivery", "cashback"]), pointsCost: z4.number().int().min(0), value: z4.number().min(0), productId: z4.number().int().positive().optional() })).mutation(async ({ ctx, input }) => {
+      await scopedStoreId(ctx.user, input.storeId);
+      const db = await requireDb();
+      const [result] = await db.insert(rewardCatalog).values({ ...input, description: input.description ?? null, productId: input.productId ?? null, value: input.value.toFixed(2) });
+      return { id: Number(result.insertId ?? 0) };
+    }),
+    updateReward: staffProcedure.input(z4.object({
+      storeId: z4.number().int().positive(),
+      id: z4.number().int().positive(),
+      active: z4.boolean().optional(),
+      name: z4.string().min(1).max(160).optional(),
+      description: z4.string().max(500).nullable().optional(),
+      pointsCost: z4.number().int().min(0).optional(),
+      value: z4.number().min(0).optional()
+    })).mutation(async ({ ctx, input }) => {
+      await scopedStoreId(ctx.user, input.storeId);
+      const { id, storeId, value, ...changes } = input;
+      await (await requireDb()).update(rewardCatalog).set({
+        ...changes,
+        ...value !== void 0 ? { value: value.toFixed(2) } : {}
+      }).where(and8(eq10(rewardCatalog.id, id), eq10(rewardCatalog.storeId, storeId)));
+      return { ok: true };
+    }),
+    submitNps: protectedProcedure.input(z4.object({ storeId: z4.number().int().positive(), orderId: z4.number().int().positive(), score: z4.number().int().min(0).max(10), comment: z4.string().max(2e3).optional() })).mutation(async ({ ctx, input }) => {
+      const db = await requireDb();
+      const [order] = await db.select().from(orders).where(and8(eq10(orders.id, input.orderId), eq10(orders.storeId, input.storeId), eq10(orders.userId, ctx.user.id), eq10(orders.status, "delivered"))).limit(1);
+      if (!order) throw new TRPCError6({ code: "FORBIDDEN", message: "Pedido entregue n\xE3o encontrado para esta conta." });
+      await db.insert(npsResponses).values({ ...input, userId: ctx.user.id, comment: input.comment ?? null }).onDuplicateKeyUpdate({ set: { score: input.score, comment: input.comment ?? null } });
+      return { ok: true };
+    }),
+    myReferral: protectedProcedure.input(storeInput).mutation(async ({ ctx, input }) => {
+      const db = await requireDb();
+      const [existing] = await db.select().from(referrals).where(and8(eq10(referrals.storeId, input.storeId), eq10(referrals.referrerUserId, ctx.user.id), eq10(referrals.status, "pending"))).limit(1);
+      if (existing) return existing;
+      const code = `IND${ctx.user.id}${nanoid(6)}`.toUpperCase();
+      const [result] = await db.insert(referrals).values({ storeId: input.storeId, referrerUserId: ctx.user.id, code });
+      return { id: Number(result.insertId ?? 0), storeId: input.storeId, referrerUserId: ctx.user.id, code, status: "pending" };
+    })
+  }),
+  integrations: router({
+    health: staffProcedure.input(storeInput).query(async ({ ctx, input }) => {
+      await scopedStoreId(ctx.user, input.storeId);
+      const connections = await (await requireDb()).select().from(integrationConnections).where(eq10(integrationConnections.storeId, input.storeId)).orderBy(asc(integrationConnections.provider));
+      return { connections, healthy: connections.filter((item) => item.status === "connected").length, degraded: connections.filter((item) => item.status === "degraded" || item.status === "error").length, disconnected: connections.filter((item) => item.status === "disconnected").length };
+    }),
+    saveConnection: staffProcedure.input(z4.object({ storeId: z4.number().int().positive(), provider: z4.string().min(2).max(64), status: z4.enum(["disconnected", "connecting", "connected", "degraded", "error"]), config: z4.record(z4.string(), z4.unknown()).optional(), credentialsRef: z4.string().max(191).optional() })).mutation(async ({ ctx, input }) => {
+      await scopedStoreId(ctx.user, input.storeId);
+      const db = await requireDb();
+      const now = /* @__PURE__ */ new Date();
+      const data = { storeId: input.storeId, provider: input.provider, status: input.status, config: input.config ? JSON.stringify(input.config) : null, credentialsRef: input.credentialsRef ?? null, lastSuccessAt: input.status === "connected" ? now : null, lastFailureAt: input.status === "error" ? now : null };
+      await db.insert(integrationConnections).values(data).onDuplicateKeyUpdate({ set: { status: data.status, config: data.config, credentialsRef: data.credentialsRef, lastSuccessAt: data.lastSuccessAt, lastFailureAt: data.lastFailureAt, updatedAt: now } });
+      return { ok: true };
+    })
+  }),
+  intelligence: router({
+    dashboard: staffProcedure.input(storeInput).query(async ({ ctx, input }) => {
+      await scopedStoreId(ctx.user, input.storeId);
+      const db = await requireDb();
+      const [demandResult] = await db.execute(sql4`SELECT DAYOFWEEK(createdAt) weekday, HOUR(createdAt) hour, COUNT(*) orders, ROUND(SUM(total),2) revenue FROM orders WHERE storeId = ${input.storeId} AND status <> 'cancelled' AND createdAt >= DATE_SUB(NOW(), INTERVAL 90 DAY) GROUP BY DAYOFWEEK(createdAt), HOUR(createdAt) ORDER BY orders DESC LIMIT 24`);
+      const [productResult] = await db.execute(sql4`SELECT oi.productId, oi.productName, SUM(oi.quantity) quantity, ROUND(SUM(oi.subtotal),2) revenue, SUM(CASE WHEN o.status='cancelled' THEN oi.quantity ELSE 0 END) cancelledQuantity FROM order_items oi INNER JOIN orders o ON o.id=oi.orderId WHERE o.storeId=${input.storeId} AND o.createdAt >= DATE_SUB(NOW(), INTERVAL 90 DAY) GROUP BY oi.productId, oi.productName ORDER BY revenue DESC LIMIT 50`);
+      const [summaryResult] = await db.execute(sql4`SELECT COUNT(*) totalOrders, ROUND(COALESCE(SUM(total),0),2) revenue, ROUND(COALESCE(AVG(total),0),2) averageTicket, SUM(status='cancelled') cancelledOrders, ROUND(COALESCE(AVG(TIMESTAMPDIFF(MINUTE, confirmedAt, readyAt)),0),1) averageKitchenMinutes FROM orders WHERE storeId=${input.storeId} AND createdAt >= DATE_SUB(NOW(), INTERVAL 30 DAY)`);
+      const suggestions = await db.select().from(intelligenceSuggestions).where(and8(eq10(intelligenceSuggestions.storeId, input.storeId), eq10(intelligenceSuggestions.status, "new"))).orderBy(desc4(intelligenceSuggestions.createdAt)).limit(20);
+      return {
+        demand: demandResult,
+        products: productResult,
+        summary: summaryResult[0] ?? {},
+        suggestions
+      };
+    }),
+    generateSuggestions: staffProcedure.input(storeInput).mutation(async ({ ctx, input }) => {
+      await scopedStoreId(ctx.user, input.storeId);
+      const db = await requireDb();
+      const [peakRows] = await db.execute(sql4`SELECT DAYOFWEEK(createdAt) weekday, HOUR(createdAt) hour, COUNT(*) count FROM orders WHERE storeId=${input.storeId} AND status <> 'cancelled' AND createdAt >= DATE_SUB(NOW(), INTERVAL 60 DAY) GROUP BY DAYOFWEEK(createdAt), HOUR(createdAt) ORDER BY count DESC LIMIT 1`);
+      const [riskRows] = await db.execute(sql4`SELECT name, currentStock, minimumStock FROM ingredients WHERE storeId=${input.storeId} AND currentStock <= minimumStock ORDER BY (minimumStock-currentStock) DESC LIMIT 5`);
+      const peak = peakRows[0];
+      const risks = riskRows;
+      const generated = [
+        peak ? { kind: "demand", title: "Preparar opera\xE7\xE3o para o pr\xF3ximo pico", description: `O maior pico recente ocorreu no dia ${peak.weekday}, \xE0s ${peak.hour}h, com ${peak.count} ${Number(peak.count) === 1 ? "pedido" : "pedidos"}. Antecipe massa, embalagem e equipe.`, confidence: "82.00", payload: JSON.stringify(peak) } : null,
+        risks.length ? { kind: "purchase", title: "Reposi\xE7\xE3o priorit\xE1ria de estoque", description: `${risks.length} ingredientes est\xE3o no n\xEDvel m\xEDnimo ou abaixo. Gere uma compra antes do pr\xF3ximo pico.`, confidence: "95.00", payload: JSON.stringify(risks) } : null
+      ].filter(Boolean);
+      if (generated.length) {
+        const generatedKinds = generated.map((item) => item.kind);
+        await db.update(intelligenceSuggestions).set({ status: "dismissed", updatedAt: /* @__PURE__ */ new Date() }).where(and8(eq10(intelligenceSuggestions.storeId, input.storeId), eq10(intelligenceSuggestions.status, "new"), inArray6(intelligenceSuggestions.kind, generatedKinds)));
+        await db.insert(intelligenceSuggestions).values(generated.map((item) => ({ ...item, storeId: input.storeId })));
+      }
+      return { created: generated.length };
+    }),
+    updateSuggestion: staffProcedure.input(z4.object({ storeId: z4.number().int().positive(), id: z4.number().int().positive(), status: z4.enum(["accepted", "dismissed", "applied"]) })).mutation(async ({ ctx, input }) => {
+      await scopedStoreId(ctx.user, input.storeId);
+      await (await requireDb()).update(intelligenceSuggestions).set({ status: input.status }).where(and8(eq10(intelligenceSuggestions.id, input.id), eq10(intelligenceSuggestions.storeId, input.storeId)));
+      return { ok: true };
+    })
+  })
+});
+
+// server/routers/siteStudio.ts
+init_schema();
+import { TRPCError as TRPCError7 } from "@trpc/server";
+import { and as and9, desc as desc5, eq as eq11, inArray as inArray7, sql as sql5 } from "drizzle-orm";
+import { z as z5 } from "zod";
+
+// shared/siteBuilder.ts
+var SITE_PAGE_KEYS = ["home", "menu", "club", "landing"];
+var SITE_BLOCK_TYPES = ["hero", "quickLinks", "promotions", "categories", "featuredProducts", "coupons", "club", "testimonials", "location", "cta"];
+var DEFAULT_SITE_THEME = {
+  primary: "#e51b23",
+  accent: "#ffca28",
+  dark: "#171210",
+  surface: "#f8f3ee",
+  text: "#211b18",
+  headingFont: "brand",
+  bodyFont: "brand",
+  buttonStyle: "pill",
+  contentWidth: "standard"
+};
+function createSiteBlock(type, id = `${type}-${Date.now()}`) {
+  const defaults = {
+    hero: { eyebrow: "Pizza n\xE3o. Bonatto!", title: "Sabor que chega at\xE9 voc\xEA", description: "Escolha seus favoritos e pe\xE7a em poucos toques.", buttonLabel: "Ver card\xE1pio", buttonHref: "/cardapio", imageUrl: "" },
+    quickLinks: { title: "Encontre r\xE1pido" },
+    promotions: { title: "Promo\xE7\xF5es", limit: 6 },
+    categories: { title: "Categorias", limit: 8 },
+    featuredProducts: { title: "Mais pedidos", limit: 8 },
+    coupons: { title: "Cupons para aproveitar", limit: 6 },
+    club: { title: "Recompensas do Clube", description: "Seus pontos valem sabor." },
+    testimonials: { title: "Quem prova, recomenda", quote: "Experi\xEAncia incr\xEDvel, pedido r\xE1pido e comida deliciosa.", author: "Cliente da casa" },
+    location: { title: "Onde estamos", showHours: true, address: "Configure o endere\xE7o da sua loja" },
+    cta: { title: "Pronto para pedir?", description: "Monte seu pedido agora.", buttonLabel: "Fazer pedido", buttonHref: "/cardapio" }
+  };
+  return {
+    id,
+    type,
+    visible: true,
+    props: defaults[type],
+    style: { background: "transparent", color: "inherit", spacing: "normal", radius: "large" },
+    responsive: { desktop: {}, tablet: {}, mobile: {} }
+  };
+}
+var DEFAULT_HOME_DOCUMENT = {
+  schemaVersion: 1,
+  theme: DEFAULT_SITE_THEME,
+  blocks: ["hero", "quickLinks", "promotions", "categories", "featuredProducts", "coupons", "club", "testimonials", "cta"].map((type, index2) => createSiteBlock(type, `${type}-${index2 + 1}`))
+};
+function parseSiteDocument(value) {
+  if (!value || typeof value !== "object") return DEFAULT_HOME_DOCUMENT;
+  const candidate = value;
+  if (candidate.schemaVersion !== 1 || !Array.isArray(candidate.blocks)) return DEFAULT_HOME_DOCUMENT;
+  const blocks = candidate.blocks.filter((block) => Boolean(block && SITE_BLOCK_TYPES.includes(block.type) && typeof block.id === "string")).map((block) => ({
+    ...block,
+    style: {
+      background: block.style?.background ?? "transparent",
+      color: block.style?.color ?? "inherit",
+      spacing: block.style?.spacing ?? "normal",
+      radius: block.style?.radius ?? "large"
+    },
+    responsive: {
+      desktop: block.responsive?.desktop ?? {},
+      tablet: block.responsive?.tablet ?? {},
+      mobile: block.responsive?.mobile ?? {}
+    }
+  }));
+  const theme = candidate.theme && typeof candidate.theme === "object" ? { ...DEFAULT_SITE_THEME, ...candidate.theme } : DEFAULT_SITE_THEME;
+  return { schemaVersion: 1, theme, blocks };
+}
+
+// server/routers/siteStudio.ts
+init_db();
+function parseStoredDocument(content) {
+  try {
+    return parseSiteDocument(JSON.parse(content));
+  } catch {
+    return DEFAULT_HOME_DOCUMENT;
+  }
+}
+var pageKeySchema = z5.enum(SITE_PAGE_KEYS);
+var styleSchema = z5.object({
+  background: z5.string().max(40),
+  color: z5.string().max(40),
+  spacing: z5.enum(["compact", "normal", "wide"]),
+  radius: z5.enum(["none", "medium", "large"])
+});
+var responsiveSettingSchema = z5.object({
+  spacing: z5.enum(["compact", "normal", "wide"]).optional(),
+  hidden: z5.boolean().optional()
+});
+var themeSchema = z5.object({
+  primary: z5.string().max(40),
+  accent: z5.string().max(40),
+  dark: z5.string().max(40),
+  surface: z5.string().max(40),
+  text: z5.string().max(40),
+  headingFont: z5.enum(["brand", "modern", "classic"]),
+  bodyFont: z5.enum(["brand", "modern", "friendly"]),
+  buttonStyle: z5.enum(["pill", "rounded", "square"]),
+  contentWidth: z5.enum(["compact", "standard", "wide"])
+});
+var documentSchema = z5.object({
+  schemaVersion: z5.literal(1),
+  theme: themeSchema,
+  blocks: z5.array(z5.object({
+    id: z5.string().min(1).max(100),
+    type: z5.enum(SITE_BLOCK_TYPES),
+    visible: z5.boolean(),
+    props: z5.record(z5.string(), z5.union([z5.string().max(4e3), z5.number(), z5.boolean()])),
+    style: styleSchema,
+    responsive: z5.object({ desktop: responsiveSettingSchema.optional(), tablet: responsiveSettingSchema.optional(), mobile: responsiveSettingSchema.optional() }).optional()
+  })).max(80)
+});
+async function requireDb2() {
+  const db = await getDb();
+  if (!db) throw new TRPCError7({ code: "INTERNAL_SERVER_ERROR", message: "Banco de dados indispon\xEDvel." });
+  return db;
+}
+async function requireSiteAccess(user, storeId, write = false) {
+  const db = await requireDb2();
+  const [store] = await db.select({ id: stores.id, tenantKey: stores.tenantKey }).from(stores).where(eq11(stores.id, storeId)).limit(1);
+  if (!store) throw new TRPCError7({ code: "NOT_FOUND", message: "Loja n\xE3o encontrada." });
+  if (user.role === "admin") return store;
+  const [direct, membership] = await Promise.all([
+    db.select({ id: storeManagers.id }).from(storeManagers).where(and9(eq11(storeManagers.storeId, storeId), eq11(storeManagers.userId, user.id))).limit(1),
+    db.select({ role: tenantMemberships.role }).from(tenantMemberships).where(and9(eq11(tenantMemberships.tenantKey, store.tenantKey), eq11(tenantMemberships.userId, user.id), eq11(tenantMemberships.active, true))).limit(1)
+  ]);
+  const role = membership[0]?.role;
+  const allowed = direct.length > 0 || role === "owner" || role === "admin" || role === "site_editor" || !write && role === "marketing";
+  if (!allowed) throw new TRPCError7({ code: "FORBIDDEN", message: "Voc\xEA n\xE3o tem acesso ao Studio desta marca." });
+  return store;
+}
+async function ensurePage(storeId, pageKey, userId) {
+  const db = await requireDb2();
+  const [existing] = await db.select().from(tenantSitePages).where(and9(eq11(tenantSitePages.storeId, storeId), eq11(tenantSitePages.pageKey, pageKey))).limit(1);
+  if (existing) return existing;
+  const content = JSON.stringify(DEFAULT_HOME_DOCUMENT);
+  const [result] = await db.insert(tenantSitePages).values({ storeId, pageKey, title: pageKey === "home" ? "P\xE1gina inicial" : pageKey, draftContent: content, updatedByUserId: userId });
+  const id = Number(result.insertId);
+  const [created] = await db.select().from(tenantSitePages).where(eq11(tenantSitePages.id, id)).limit(1);
+  if (!created) throw new TRPCError7({ code: "INTERNAL_SERVER_ERROR", message: "N\xE3o foi poss\xEDvel criar a p\xE1gina." });
+  return created;
+}
+var siteStudioRouter = router({
+  mySites: protectedProcedure.query(async ({ ctx }) => {
+    const db = await requireDb2();
+    if (ctx.user.role === "admin") return db.select({ id: stores.id, name: stores.name, slug: stores.slug, tenantKey: stores.tenantKey }).from(stores).where(eq11(stores.active, true));
+    const [memberships, direct] = await Promise.all([
+      db.select({ tenantKey: tenantMemberships.tenantKey, membershipRole: tenantMemberships.role }).from(tenantMemberships).where(and9(eq11(tenantMemberships.userId, ctx.user.id), eq11(tenantMemberships.active, true))),
+      db.select({ storeId: storeManagers.storeId }).from(storeManagers).where(eq11(storeManagers.userId, ctx.user.id))
+    ]);
+    const tenantKeys = memberships.filter((item) => ["owner", "admin", "site_editor", "marketing"].includes(item.membershipRole)).map((item) => item.tenantKey);
+    const clauses = [direct.length ? inArray7(stores.id, direct.map((item) => item.storeId)) : void 0, tenantKeys.length ? inArray7(stores.tenantKey, tenantKeys) : void 0].filter(Boolean);
+    if (!clauses.length) return [];
+    const rows = await db.select({ id: stores.id, name: stores.name, slug: stores.slug, tenantKey: stores.tenantKey }).from(stores).where(clauses.length === 1 ? clauses[0] : sql5`(${clauses[0]} OR ${clauses[1]})`);
+    return rows;
+  }),
+  workspace: protectedProcedure.input(z5.object({ storeId: z5.number().int().positive(), pageKey: pageKeySchema })).query(async ({ ctx, input }) => {
+    await requireSiteAccess(ctx.user, input.storeId);
+    const page = await ensurePage(input.storeId, input.pageKey, ctx.user.id);
+    const versions = await (await requireDb2()).select().from(tenantSitePageVersions).where(eq11(tenantSitePageVersions.pageId, page.id)).orderBy(desc5(tenantSitePageVersions.versionNumber)).limit(30);
+    return { ...page, draft: parseStoredDocument(page.draftContent), versions };
+  }),
+  published: publicProcedure.input(z5.object({ storeId: z5.number().int().positive(), pageKey: pageKeySchema })).query(async ({ input }) => {
+    const db = await requireDb2();
+    const [page] = await db.select().from(tenantSitePages).where(and9(eq11(tenantSitePages.storeId, input.storeId), eq11(tenantSitePages.pageKey, input.pageKey))).limit(1);
+    if (!page?.publishedVersionId) return null;
+    const [version] = await db.select().from(tenantSitePageVersions).where(and9(eq11(tenantSitePageVersions.id, page.publishedVersionId), eq11(tenantSitePageVersions.pageId, page.id))).limit(1);
+    return version ? { pageId: page.id, versionId: version.id, document: parseStoredDocument(version.content) } : null;
+  }),
+  saveDraft: protectedProcedure.input(z5.object({ storeId: z5.number().int().positive(), pageKey: pageKeySchema, title: z5.string().min(1).max(160), document: documentSchema })).mutation(async ({ ctx, input }) => {
+    await requireSiteAccess(ctx.user, input.storeId, true);
+    const page = await ensurePage(input.storeId, input.pageKey, ctx.user.id);
+    await (await requireDb2()).update(tenantSitePages).set({ title: input.title, draftContent: JSON.stringify(input.document), updatedByUserId: ctx.user.id, updatedAt: /* @__PURE__ */ new Date() }).where(eq11(tenantSitePages.id, page.id));
+    await recordTenantAudit({ storeId: input.storeId, actorUserId: ctx.user.id, action: "site.draft_saved", resourceType: "site_page", resourceId: page.id, metadata: { pageKey: input.pageKey, blockCount: input.document.blocks.length } });
+    return { ok: true, updatedAt: /* @__PURE__ */ new Date() };
+  }),
+  publish: protectedProcedure.input(z5.object({ storeId: z5.number().int().positive(), pageKey: pageKeySchema, note: z5.string().max(240).optional() })).mutation(async ({ ctx, input }) => {
+    await requireSiteAccess(ctx.user, input.storeId, true);
+    const db = await requireDb2();
+    const page = await ensurePage(input.storeId, input.pageKey, ctx.user.id);
+    const [maxRow] = await db.select({ value: sql5`COALESCE(MAX(${tenantSitePageVersions.versionNumber}), 0)` }).from(tenantSitePageVersions).where(eq11(tenantSitePageVersions.pageId, page.id));
+    const versionNumber = Number(maxRow?.value ?? 0) + 1;
+    const [result] = await db.insert(tenantSitePageVersions).values({ pageId: page.id, versionNumber, content: page.draftContent, note: input.note ?? null, createdByUserId: ctx.user.id });
+    const versionId = Number(result.insertId);
+    await db.update(tenantSitePages).set({ publishedVersionId: versionId, updatedByUserId: ctx.user.id }).where(eq11(tenantSitePages.id, page.id));
+    await recordTenantAudit({ storeId: input.storeId, actorUserId: ctx.user.id, action: "site.published", resourceType: "site_page", resourceId: page.id, metadata: { pageKey: input.pageKey, versionId, versionNumber } });
+    return { ok: true, versionId, versionNumber };
+  }),
+  restore: protectedProcedure.input(z5.object({ storeId: z5.number().int().positive(), pageKey: pageKeySchema, versionId: z5.number().int().positive() })).mutation(async ({ ctx, input }) => {
+    await requireSiteAccess(ctx.user, input.storeId, true);
+    const db = await requireDb2();
+    const page = await ensurePage(input.storeId, input.pageKey, ctx.user.id);
+    const [version] = await db.select().from(tenantSitePageVersions).where(and9(eq11(tenantSitePageVersions.id, input.versionId), eq11(tenantSitePageVersions.pageId, page.id))).limit(1);
+    if (!version) throw new TRPCError7({ code: "NOT_FOUND", message: "Vers\xE3o n\xE3o encontrada." });
+    await db.update(tenantSitePages).set({ draftContent: version.content, updatedByUserId: ctx.user.id }).where(eq11(tenantSitePages.id, page.id));
+    await recordTenantAudit({ storeId: input.storeId, actorUserId: ctx.user.id, action: "site.version_restored", resourceType: "site_page", resourceId: page.id, metadata: { pageKey: input.pageKey, versionId: input.versionId } });
+    return { ok: true };
+  }),
+  grantEditor: adminProcedure.input(z5.object({ storeId: z5.number().int().positive(), email: z5.string().email(), role: z5.enum(["site_editor", "marketing"]) })).mutation(async ({ ctx, input }) => {
+    const db = await requireDb2();
+    const [store] = await db.select({ tenantKey: stores.tenantKey }).from(stores).where(eq11(stores.id, input.storeId)).limit(1);
+    const [user] = await db.select({ id: users.id }).from(users).where(eq11(users.email, input.email)).limit(1);
+    if (!store || !user) throw new TRPCError7({ code: "NOT_FOUND", message: "Loja ou usu\xE1rio n\xE3o encontrado." });
+    await db.insert(tenantMemberships).values({ tenantKey: store.tenantKey, userId: user.id, role: input.role, active: true }).onDuplicateKeyUpdate({ set: { role: input.role, active: true, updatedAt: /* @__PURE__ */ new Date() } });
+    await recordTenantAudit({ storeId: input.storeId, actorUserId: ctx.user.id, action: "site.editor_granted", resourceType: "tenant_membership", resourceId: user.id, metadata: { role: input.role, email: input.email } });
+    return { ok: true, grantedBy: ctx.user.id };
+  })
+});
+
+// server/routers/rewards.ts
+import { z as z6 } from "zod";
+
+// server/services/rewards.ts
+init_schema();
+init_db();
+import { randomBytes } from "node:crypto";
+import { TRPCError as TRPCError8 } from "@trpc/server";
+import { and as and10, asc as asc2, desc as desc6, eq as eq12, gt as gt2, inArray as inArray8, isNull as isNull3, or as or4, sql as sql6 } from "drizzle-orm";
+function validateRewardRules(input, current) {
+  const rewardType = input.rewardType ?? current?.rewardType;
+  const productId = input.productId !== void 0 ? input.productId : current?.productId;
+  const value = input.value !== void 0 ? input.value : Number(current?.value ?? 0);
+  const startsAt = input.startsAt !== void 0 ? input.startsAt : current?.startsAt;
+  const expiresAt = input.expiresAt !== void 0 ? input.expiresAt : current?.expiresAt;
+  const stock = input.stock !== void 0 ? input.stock : current?.stock;
+  if (rewardType === "product" && !productId) {
+    throw new TRPCError8({ code: "BAD_REQUEST", message: "Selecione o produto entregue por esta recompensa." });
+  }
+  if ((rewardType === "discount" || rewardType === "cashback") && Number(value) <= 0) {
+    throw new TRPCError8({ code: "BAD_REQUEST", message: "Informe um valor de benef\xEDcio maior que zero." });
+  }
+  if (startsAt && expiresAt && startsAt >= expiresAt) {
+    throw new TRPCError8({ code: "BAD_REQUEST", message: "A expira\xE7\xE3o deve ser posterior \xE0 data de in\xEDcio." });
+  }
+  if (stock !== null && stock !== void 0 && current && stock < current.totalRedemptions) {
+    throw new TRPCError8({ code: "BAD_REQUEST", message: "O estoque n\xE3o pode ser menor que a quantidade j\xE1 resgatada." });
+  }
+}
+function duplicateError(error) {
+  const message = error instanceof Error ? error.message : String(error);
+  return /duplicate|ER_DUP_ENTRY/i.test(message);
+}
+function requireDatabase(database) {
+  if (!database) {
+    throw new TRPCError8({ code: "INTERNAL_SERVER_ERROR", message: "Banco de dados indispon\xEDvel." });
+  }
+}
+function maskRewardCoupon(code) {
+  if (code.length <= 6) return `${code.slice(0, 2)}\u2022\u2022\u2022\u2022`;
+  return `${code.slice(0, 4)}\u2022\u2022\u2022\u2022${code.slice(-2)}`;
+}
+function normalizeRewardCouponCode(code) {
+  const normalized = code.trim().toUpperCase().replace(/\s+/g, "-");
+  if (!/^[A-Z0-9-]{4,64}$/.test(normalized)) {
+    throw new TRPCError8({
+      code: "BAD_REQUEST",
+      message: "Cada c\xF3digo deve ter de 4 a 64 caracteres e usar apenas letras, n\xFAmeros ou h\xEDfen."
+    });
+  }
+  return normalized;
+}
+function normalizeRewardCouponBatch(inputCodes) {
+  const normalized = inputCodes.map(normalizeRewardCouponCode);
+  const seen = /* @__PURE__ */ new Set();
+  const duplicates = /* @__PURE__ */ new Set();
+  for (const code of normalized) {
+    if (seen.has(code)) duplicates.add(code);
+    seen.add(code);
+  }
+  if (duplicates.size > 0) {
+    throw new TRPCError8({
+      code: "CONFLICT",
+      message: `C\xF3digos repetidos no arquivo: ${[...duplicates].slice(0, 5).join(", ")}${duplicates.size > 5 ? "..." : ""}`
+    });
+  }
+  return normalized;
+}
+function resolveRewardAvailability(input, now = /* @__PURE__ */ new Date()) {
+  if (!input.active || input.archivedAt) return "inactive";
+  if (input.startsAt && input.startsAt > now) return "upcoming";
+  if (input.expiresAt && input.expiresAt <= now) return "expired";
+  if (input.stock !== null && input.totalRedemptions >= input.stock) return "sold_out";
+  if (input.availableCoupons <= 0) return "sold_out";
+  if (input.maxRedemptionsPerUser !== null && (input.userRedemptions ?? 0) >= input.maxRedemptionsPerUser) {
+    return "limit_reached";
+  }
+  if (input.balance !== void 0 && input.balance < input.pointsCost) return "insufficient_points";
+  return "available";
+}
+async function couponStatsByReward(storeId) {
+  const db = await getDb();
+  requireDatabase(db);
+  const [rows, availableRows] = await Promise.all([
+    db.select({
+      rewardId: rewardCoupons.rewardId,
+      status: rewardCoupons.status,
+      total: sql6`COUNT(*)`
+    }).from(rewardCoupons).where(eq12(rewardCoupons.storeId, storeId)).groupBy(rewardCoupons.rewardId, rewardCoupons.status),
+    db.select({ rewardId: rewardCoupons.rewardId, total: sql6`COUNT(*)` }).from(rewardCoupons).where(and10(
+      eq12(rewardCoupons.storeId, storeId),
+      eq12(rewardCoupons.status, "available"),
+      or4(isNull3(rewardCoupons.expiresAt), gt2(rewardCoupons.expiresAt, /* @__PURE__ */ new Date()))
+    )).groupBy(rewardCoupons.rewardId)
+  ]);
+  const stats = /* @__PURE__ */ new Map();
+  for (const row of rows) {
+    const current = stats.get(row.rewardId) ?? {};
+    current[row.status] = Number(row.total);
+    stats.set(row.rewardId, current);
+  }
+  for (const row of availableRows) {
+    const current = stats.get(row.rewardId) ?? {};
+    current.available = Number(row.total);
+    stats.set(row.rewardId, current);
+  }
+  return stats;
+}
+async function listRewards(storeId, userId) {
+  const db = await getDb();
+  requireDatabase(db);
+  const now = /* @__PURE__ */ new Date();
+  const [rows, couponStats, balance, userCounts] = await Promise.all([
+    db.select().from(rewardCatalog).where(and10(
+      eq12(rewardCatalog.storeId, storeId),
+      eq12(rewardCatalog.active, true),
+      isNull3(rewardCatalog.archivedAt)
+    )).orderBy(desc6(rewardCatalog.featured), asc2(rewardCatalog.sortOrder), asc2(rewardCatalog.pointsCost)),
+    couponStatsByReward(storeId),
+    userId ? getUserLoyaltyPoints(userId, storeId) : Promise.resolve(void 0),
+    userId ? db.select({ rewardId: rewardRedemptions.rewardId, total: sql6`COUNT(*)` }).from(rewardRedemptions).where(and10(
+      eq12(rewardRedemptions.storeId, storeId),
+      eq12(rewardRedemptions.userId, userId),
+      eq12(rewardRedemptions.status, "completed")
+    )).groupBy(rewardRedemptions.rewardId) : Promise.resolve([])
+  ]);
+  const userCountMap = new Map(userCounts.map((item) => [item.rewardId, Number(item.total)]));
+  return rows.map((reward) => {
+    const stats = couponStats.get(reward.id) ?? {};
+    const availableCoupons = Number(stats.available ?? 0);
+    const userRedemptions = userCountMap.get(reward.id) ?? 0;
+    return {
+      ...reward,
+      availableCoupons,
+      userRedemptions,
+      balance: balance ?? null,
+      availability: resolveRewardAvailability({
+        ...reward,
+        balance,
+        userRedemptions,
+        availableCoupons
+      }, now)
+    };
+  });
+}
+async function getRewardDetail(storeId, rewardId, userId) {
+  const rewards = await listRewards(storeId, userId);
+  return rewards.find((reward) => reward.id === rewardId) ?? null;
+}
+async function listRewardsForAdmin(storeId) {
+  const db = await getDb();
+  requireDatabase(db);
+  const [rows, stats] = await Promise.all([
+    db.select().from(rewardCatalog).where(eq12(rewardCatalog.storeId, storeId)).orderBy(asc2(rewardCatalog.archivedAt), asc2(rewardCatalog.sortOrder), desc6(rewardCatalog.createdAt)),
+    couponStatsByReward(storeId)
+  ]);
+  return rows.map((reward) => ({
+    ...reward,
+    couponStats: {
+      available: Number(stats.get(reward.id)?.available ?? 0),
+      reserved: Number(stats.get(reward.id)?.reserved ?? 0),
+      redeemed: Number(stats.get(reward.id)?.redeemed ?? 0),
+      used: Number(stats.get(reward.id)?.used ?? 0),
+      expired: Number(stats.get(reward.id)?.expired ?? 0),
+      cancelled: Number(stats.get(reward.id)?.cancelled ?? 0)
+    }
+  }));
+}
+async function createReward(storeId, input) {
+  const db = await getDb();
+  requireDatabase(db);
+  validateRewardRules(input);
+  const [result] = await db.insert(rewardCatalog).values({
+    storeId,
+    name: input.name,
+    description: input.description ?? null,
+    rewardType: input.rewardType,
+    pointsCost: input.pointsCost,
+    value: input.value.toFixed(2),
+    productId: input.productId ?? null,
+    category: input.category ?? null,
+    icon: input.icon ?? null,
+    imageUrl: input.imageUrl ?? null,
+    badgeText: input.badgeText ?? null,
+    buttonText: input.buttonText?.trim() || "Resgatar",
+    stock: input.stock ?? null,
+    maxRedemptionsPerUser: input.maxRedemptionsPerUser ?? null,
+    active: input.active ?? true,
+    featured: input.featured ?? false,
+    sortOrder: input.sortOrder ?? 0,
+    startsAt: input.startsAt ?? null,
+    expiresAt: input.expiresAt ?? null
+  });
+  return Number(result.insertId ?? 0);
+}
+async function updateReward(storeId, rewardId, input) {
+  const db = await getDb();
+  requireDatabase(db);
+  const [current] = await db.select().from(rewardCatalog).where(and10(eq12(rewardCatalog.id, rewardId), eq12(rewardCatalog.storeId, storeId))).limit(1);
+  if (!current) throw new TRPCError8({ code: "NOT_FOUND", message: "Recompensa n\xE3o encontrada." });
+  validateRewardRules(input, current);
+  const { value, buttonText, ...otherChanges } = input;
+  const changes = {
+    ...otherChanges,
+    ...value !== void 0 ? { value: value.toFixed(2) } : {},
+    ...buttonText !== void 0 ? { buttonText: buttonText?.trim() || "Resgatar" } : {},
+    updatedAt: /* @__PURE__ */ new Date()
+  };
+  await db.update(rewardCatalog).set(changes).where(eq12(rewardCatalog.id, rewardId));
+  return current;
+}
+async function archiveReward(storeId, rewardId) {
+  const db = await getDb();
+  requireDatabase(db);
+  const [current] = await db.select().from(rewardCatalog).where(and10(eq12(rewardCatalog.id, rewardId), eq12(rewardCatalog.storeId, storeId))).limit(1);
+  if (!current) throw new TRPCError8({ code: "NOT_FOUND", message: "Recompensa n\xE3o encontrada." });
+  await db.update(rewardCatalog).set({ active: false, archivedAt: /* @__PURE__ */ new Date(), updatedAt: /* @__PURE__ */ new Date() }).where(eq12(rewardCatalog.id, rewardId));
+  return current;
+}
+async function addRewardCoupons(input) {
+  const db = await getDb();
+  requireDatabase(db);
+  const codes = normalizeRewardCouponBatch(input.codes);
+  if (!codes.length) throw new TRPCError8({ code: "BAD_REQUEST", message: "Informe pelo menos um c\xF3digo." });
+  if (codes.length > 1e3) throw new TRPCError8({ code: "BAD_REQUEST", message: "Importe no m\xE1ximo 1.000 c\xF3digos por vez." });
+  return db.transaction(async (tx) => {
+    const [reward] = await tx.select({ id: rewardCatalog.id }).from(rewardCatalog).where(and10(eq12(rewardCatalog.id, input.rewardId), eq12(rewardCatalog.storeId, input.storeId))).limit(1);
+    if (!reward) throw new TRPCError8({ code: "NOT_FOUND", message: "Recompensa n\xE3o encontrada." });
+    const [existingRewardCodes, existingOrderCoupons] = await Promise.all([
+      tx.select({ code: rewardCoupons.code }).from(rewardCoupons).where(and10(eq12(rewardCoupons.storeId, input.storeId), inArray8(rewardCoupons.code, codes))),
+      tx.select({ code: coupons.code }).from(coupons).where(and10(eq12(coupons.storeId, input.storeId), inArray8(coupons.code, codes)))
+    ]);
+    const duplicateCodes = Array.from(/* @__PURE__ */ new Set([
+      ...existingRewardCodes.map((item) => item.code),
+      ...existingOrderCoupons.map((item) => item.code)
+    ]));
+    if (duplicateCodes.length) {
+      throw new TRPCError8({
+        code: "CONFLICT",
+        message: `C\xF3digos duplicados: ${duplicateCodes.slice(0, 5).join(", ")}${duplicateCodes.length > 5 ? "..." : ""}`
+      });
+    }
+    await tx.insert(rewardCoupons).values(codes.map((code) => ({
+      storeId: input.storeId,
+      rewardId: input.rewardId,
+      code,
+      expiresAt: input.expiresAt ?? null
+    })));
+    return { inserted: codes.length };
+  });
+}
+async function generateRewardCoupons(input) {
+  const prefix = input.prefix.trim().toUpperCase().replace(/[^A-Z0-9-]/g, "").slice(0, 24);
+  const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  const codes = /* @__PURE__ */ new Set();
+  while (codes.size < input.quantity) {
+    const bytes = randomBytes(input.codeLength);
+    let suffix = "";
+    for (let index2 = 0; index2 < input.codeLength; index2 += 1) {
+      suffix += alphabet[bytes[index2] % alphabet.length];
+    }
+    codes.add(`${prefix}${suffix}`);
+  }
+  await addRewardCoupons({ ...input, codes: [...codes] });
+  return { inserted: codes.size };
+}
+async function listRewardCoupons(storeId, rewardId) {
+  const db = await getDb();
+  requireDatabase(db);
+  const rows = await db.select({
+    id: rewardCoupons.id,
+    code: rewardCoupons.code,
+    status: rewardCoupons.status,
+    assignedUserId: rewardCoupons.assignedUserId,
+    userName: users.name,
+    userEmail: users.email,
+    redemptionId: rewardCoupons.redemptionId,
+    reservedAt: rewardCoupons.reservedAt,
+    redeemedAt: rewardCoupons.redeemedAt,
+    usedAt: rewardCoupons.usedAt,
+    expiresAt: rewardCoupons.expiresAt,
+    createdAt: rewardCoupons.createdAt
+  }).from(rewardCoupons).leftJoin(users, eq12(users.id, rewardCoupons.assignedUserId)).where(and10(eq12(rewardCoupons.storeId, storeId), eq12(rewardCoupons.rewardId, rewardId))).orderBy(desc6(rewardCoupons.createdAt));
+  return rows.map((row) => ({ ...row, maskedCode: maskRewardCoupon(row.code), code: void 0 }));
+}
+async function revealRewardCoupon(storeId, couponId) {
+  const db = await getDb();
+  requireDatabase(db);
+  const [coupon] = await db.select({ id: rewardCoupons.id, code: rewardCoupons.code, rewardId: rewardCoupons.rewardId }).from(rewardCoupons).where(and10(eq12(rewardCoupons.storeId, storeId), eq12(rewardCoupons.id, couponId))).limit(1);
+  if (!coupon) throw new TRPCError8({ code: "NOT_FOUND", message: "Cupom n\xE3o encontrado." });
+  return coupon;
+}
+async function redemptionResult(redemptionId, userId) {
+  const db = await getDb();
+  requireDatabase(db);
+  const [row] = await db.select({
+    id: rewardRedemptions.id,
+    rewardId: rewardRedemptions.rewardId,
+    rewardName: rewardCatalog.name,
+    rewardDescription: rewardCatalog.description,
+    couponId: rewardRedemptions.couponId,
+    couponCode: rewardCoupons.code,
+    pointsSpent: rewardRedemptions.pointsSpent,
+    status: rewardRedemptions.status,
+    redeemedAt: rewardRedemptions.redeemedAt,
+    expiresAt: rewardRedemptions.expiresAt
+  }).from(rewardRedemptions).innerJoin(rewardCatalog, eq12(rewardCatalog.id, rewardRedemptions.rewardId)).leftJoin(rewardCoupons, eq12(rewardCoupons.id, rewardRedemptions.couponId)).where(and10(eq12(rewardRedemptions.id, redemptionId), eq12(rewardRedemptions.userId, userId))).limit(1);
+  if (!row) throw new TRPCError8({ code: "NOT_FOUND", message: "Resgate n\xE3o encontrado." });
+  return row;
+}
+async function redeemReward(input) {
+  const db = await getDb();
+  requireDatabase(db);
+  const scope = await getTenantScope(input.storeId);
+  await getTenantCustomerAccount(input.userId, input.storeId);
+  const [existing] = await db.select({ id: rewardRedemptions.id }).from(rewardRedemptions).where(and10(
+    eq12(rewardRedemptions.storeId, input.storeId),
+    eq12(rewardRedemptions.userId, input.userId),
+    eq12(rewardRedemptions.idempotencyKey, input.idempotencyKey)
+  )).limit(1);
+  if (existing) return { ...await redemptionResult(existing.id, input.userId), idempotent: true };
+  try {
+    const redemptionId = await db.transaction(async (tx) => {
+      const now = /* @__PURE__ */ new Date();
+      const [reward] = await tx.select().from(rewardCatalog).where(and10(eq12(rewardCatalog.id, input.rewardId), eq12(rewardCatalog.storeId, input.storeId))).limit(1).for("update");
+      if (!reward || reward.archivedAt || !reward.active) {
+        throw new TRPCError8({ code: "PRECONDITION_FAILED", message: "Recompensa indispon\xEDvel." });
+      }
+      if (reward.startsAt && reward.startsAt > now) {
+        throw new TRPCError8({ code: "PRECONDITION_FAILED", message: "Esta recompensa ainda n\xE3o come\xE7ou." });
+      }
+      if (reward.expiresAt && reward.expiresAt <= now) {
+        throw new TRPCError8({ code: "PRECONDITION_FAILED", message: "Esta recompensa expirou." });
+      }
+      if (reward.stock !== null && reward.totalRedemptions >= reward.stock) {
+        throw new TRPCError8({ code: "PRECONDITION_FAILED", message: "Recompensa esgotada." });
+      }
+      const [account] = await tx.select().from(tenantCustomerAccounts).where(and10(eq12(tenantCustomerAccounts.tenantKey, scope.tenantKey), eq12(tenantCustomerAccounts.userId, input.userId))).limit(1).for("update");
+      if (!account || account.loyaltyPoints < reward.pointsCost) {
+        throw new TRPCError8({
+          code: "PRECONDITION_FAILED",
+          message: `Saldo insuficiente. S\xE3o necess\xE1rios ${reward.pointsCost} pontos.`
+        });
+      }
+      if (reward.maxRedemptionsPerUser !== null) {
+        const [countRow] = await tx.select({ total: sql6`COUNT(*)` }).from(rewardRedemptions).where(and10(
+          eq12(rewardRedemptions.storeId, input.storeId),
+          eq12(rewardRedemptions.rewardId, reward.id),
+          eq12(rewardRedemptions.userId, input.userId),
+          eq12(rewardRedemptions.status, "completed")
+        ));
+        if (Number(countRow?.total ?? 0) >= reward.maxRedemptionsPerUser) {
+          throw new TRPCError8({ code: "PRECONDITION_FAILED", message: "Limite de resgates atingido." });
+        }
+      }
+      const [coupon] = await tx.select().from(rewardCoupons).where(and10(
+        eq12(rewardCoupons.storeId, input.storeId),
+        eq12(rewardCoupons.rewardId, reward.id),
+        eq12(rewardCoupons.status, "available"),
+        or4(isNull3(rewardCoupons.expiresAt), gt2(rewardCoupons.expiresAt, now))
+      )).orderBy(asc2(rewardCoupons.id)).limit(1).for("update");
+      if (!coupon) {
+        throw new TRPCError8({ code: "PRECONDITION_FAILED", message: "N\xE3o h\xE1 cupons dispon\xEDveis para esta recompensa." });
+      }
+      const balanceBefore = account.loyaltyPoints;
+      const balanceAfter = balanceBefore - reward.pointsCost;
+      const [insertResult] = await tx.insert(rewardRedemptions).values({
+        storeId: input.storeId,
+        rewardId: reward.id,
+        userId: input.userId,
+        pointsSpent: reward.pointsCost,
+        status: "pending",
+        idempotencyKey: input.idempotencyKey,
+        expiresAt: coupon.expiresAt ?? reward.expiresAt ?? null
+      });
+      const redemptionId2 = Number(insertResult.insertId ?? 0);
+      if (!redemptionId2) throw new Error("Falha ao criar o resgate.");
+      await tx.update(tenantCustomerAccounts).set({ loyaltyPoints: balanceAfter }).where(eq12(tenantCustomerAccounts.id, account.id));
+      if (scope.tenantKey === "bonatto") {
+        await tx.update(users).set({ loyaltyPoints: balanceAfter }).where(eq12(users.id, input.userId));
+      }
+      await tx.insert(loyaltyTransactions).values({
+        tenantKey: scope.tenantKey,
+        storeId: input.storeId,
+        userId: input.userId,
+        type: "redeem",
+        points: -reward.pointsCost,
+        description: `Resgate: ${reward.name}`,
+        balanceBefore,
+        balanceAfter
+      });
+      await tx.update(rewardCoupons).set({
+        status: "redeemed",
+        assignedUserId: input.userId,
+        redemptionId: redemptionId2,
+        reservedAt: now,
+        redeemedAt: now
+      }).where(and10(eq12(rewardCoupons.id, coupon.id), eq12(rewardCoupons.status, "available")));
+      await tx.update(rewardRedemptions).set({ couponId: coupon.id, status: "completed" }).where(eq12(rewardRedemptions.id, redemptionId2));
+      await tx.update(rewardCatalog).set({
+        totalRedemptions: sql6`${rewardCatalog.totalRedemptions} + 1`,
+        updatedAt: now
+      }).where(eq12(rewardCatalog.id, reward.id));
+      return redemptionId2;
+    });
+    return { ...await redemptionResult(redemptionId, input.userId), idempotent: false };
+  } catch (error) {
+    if (duplicateError(error)) {
+      const [duplicate] = await db.select({ id: rewardRedemptions.id }).from(rewardRedemptions).where(and10(
+        eq12(rewardRedemptions.storeId, input.storeId),
+        eq12(rewardRedemptions.userId, input.userId),
+        eq12(rewardRedemptions.idempotencyKey, input.idempotencyKey)
+      )).limit(1);
+      if (duplicate) return { ...await redemptionResult(duplicate.id, input.userId), idempotent: true };
+    }
+    throw error;
+  }
+}
+async function listMyRedemptions(storeId, userId) {
+  const db = await getDb();
+  requireDatabase(db);
+  return db.select({
+    id: rewardRedemptions.id,
+    rewardId: rewardRedemptions.rewardId,
+    rewardName: rewardCatalog.name,
+    rewardDescription: rewardCatalog.description,
+    rewardType: rewardCatalog.rewardType,
+    couponCode: rewardCoupons.code,
+    couponStatus: rewardCoupons.status,
+    pointsSpent: rewardRedemptions.pointsSpent,
+    status: rewardRedemptions.status,
+    redeemedAt: rewardRedemptions.redeemedAt,
+    expiresAt: rewardRedemptions.expiresAt,
+    usedAt: rewardCoupons.usedAt
+  }).from(rewardRedemptions).innerJoin(rewardCatalog, eq12(rewardCatalog.id, rewardRedemptions.rewardId)).leftJoin(rewardCoupons, eq12(rewardCoupons.id, rewardRedemptions.couponId)).where(and10(eq12(rewardRedemptions.storeId, storeId), eq12(rewardRedemptions.userId, userId))).orderBy(desc6(rewardRedemptions.createdAt));
+}
+async function getMyRewardsOverview(storeId, userId) {
+  const [rewards, redemptions, balance] = await Promise.all([
+    listRewards(storeId, userId),
+    listMyRedemptions(storeId, userId),
+    getUserLoyaltyPoints(userId, storeId)
+  ]);
+  return { rewards, redemptions, balance };
+}
+async function rewardCouponContext(storeId, userId, code) {
+  const db = await getDb();
+  requireDatabase(db);
+  const normalized = normalizeRewardCouponCode(code);
+  const [row] = await db.select({
+    coupon: rewardCoupons,
+    redemption: rewardRedemptions,
+    reward: rewardCatalog
+  }).from(rewardCoupons).innerJoin(rewardRedemptions, eq12(rewardRedemptions.id, rewardCoupons.redemptionId)).innerJoin(rewardCatalog, eq12(rewardCatalog.id, rewardCoupons.rewardId)).where(and10(
+    eq12(rewardCoupons.storeId, storeId),
+    eq12(rewardCoupons.code, normalized),
+    eq12(rewardCoupons.assignedUserId, userId)
+  )).limit(1);
+  if (!row) throw new TRPCError8({ code: "NOT_FOUND", message: "Cupom de recompensa n\xE3o encontrado." });
+  const now = /* @__PURE__ */ new Date();
+  if (row.coupon.status !== "redeemed" || row.redemption.status !== "completed") {
+    throw new TRPCError8({ code: "PRECONDITION_FAILED", message: "Cupom indispon\xEDvel ou j\xE1 utilizado." });
+  }
+  if (row.coupon.expiresAt && row.coupon.expiresAt <= now || row.redemption.expiresAt && row.redemption.expiresAt <= now) {
+    throw new TRPCError8({ code: "PRECONDITION_FAILED", message: "Cupom expirado." });
+  }
+  return row;
+}
+function calculateRewardBenefit(input) {
+  const value = Number(input.value);
+  let discount = 0;
+  let freeDelivery = false;
+  if (input.rewardType === "free_delivery") {
+    freeDelivery = true;
+  } else if (input.rewardType === "product") {
+    if (!input.productId) {
+      throw new TRPCError8({ code: "PRECONDITION_FAILED", message: "Produto da recompensa n\xE3o configurado." });
+    }
+    const eligible = input.items.filter((item) => item.productId === input.productId);
+    if (!eligible.length) {
+      throw new TRPCError8({ code: "PRECONDITION_FAILED", message: "Adicione o produto da recompensa ao pedido." });
+    }
+    const eligibleTotal = eligible.reduce((sum, item) => sum + Number(item.productPrice) * item.quantity, 0);
+    discount = Math.min(eligibleTotal, value > 0 ? value : eligibleTotal);
+  } else {
+    discount = Math.min(input.subtotal, Math.max(0, value));
+  }
+  return {
+    couponId: input.couponId,
+    redemptionId: input.redemptionId,
+    rewardId: input.rewardId,
+    rewardType: input.rewardType,
+    discount,
+    freeDelivery,
+    description: input.rewardName
+  };
+}
+function rewardBenefit(row, subtotal, items) {
+  return calculateRewardBenefit({
+    couponId: row.coupon.id,
+    redemptionId: row.redemption.id,
+    rewardId: row.reward.id,
+    rewardType: row.reward.rewardType,
+    rewardName: row.reward.name,
+    value: row.reward.value,
+    productId: row.reward.productId,
+    subtotal,
+    items
+  });
+}
+async function validateRewardCoupon(input) {
+  const row = await rewardCouponContext(input.storeId, input.userId, input.code);
+  return rewardBenefit(row, input.subtotal, input.items ?? []);
+}
+async function consumeRewardCoupon(input) {
+  const db = await getDb();
+  requireDatabase(db);
+  const normalized = normalizeRewardCouponCode(input.code);
+  return db.transaction(async (tx) => {
+    const [coupon] = await tx.select().from(rewardCoupons).where(and10(
+      eq12(rewardCoupons.storeId, input.storeId),
+      eq12(rewardCoupons.code, normalized),
+      eq12(rewardCoupons.assignedUserId, input.userId)
+    )).limit(1).for("update");
+    if (!coupon || coupon.status !== "redeemed" || !coupon.redemptionId) {
+      throw new TRPCError8({ code: "PRECONDITION_FAILED", message: "Cupom indispon\xEDvel ou j\xE1 utilizado." });
+    }
+    const now = /* @__PURE__ */ new Date();
+    if (coupon.expiresAt && coupon.expiresAt <= now) {
+      throw new TRPCError8({ code: "PRECONDITION_FAILED", message: "Cupom expirado." });
+    }
+    const [redemption] = await tx.select().from(rewardRedemptions).where(and10(eq12(rewardRedemptions.id, coupon.redemptionId), eq12(rewardRedemptions.userId, input.userId))).limit(1).for("update");
+    if (!redemption || redemption.status !== "completed") {
+      throw new TRPCError8({ code: "PRECONDITION_FAILED", message: "Resgate inv\xE1lido." });
+    }
+    await tx.insert(rewardCouponUsages).values({
+      storeId: input.storeId,
+      couponId: coupon.id,
+      redemptionId: redemption.id,
+      userId: input.userId,
+      orderId: input.orderId
+    });
+    await tx.update(rewardCoupons).set({ status: "used", usedAt: now }).where(eq12(rewardCoupons.id, coupon.id));
+    return { couponId: coupon.id, redemptionId: redemption.id };
+  });
+}
+async function listRewardRedemptionsForAdmin(storeId, rewardId) {
+  const db = await getDb();
+  requireDatabase(db);
+  const rows = await db.select({
+    id: rewardRedemptions.id,
+    rewardId: rewardRedemptions.rewardId,
+    rewardName: rewardCatalog.name,
+    userId: rewardRedemptions.userId,
+    userName: users.name,
+    userEmail: users.email,
+    couponId: rewardRedemptions.couponId,
+    couponCode: rewardCoupons.code,
+    couponStatus: rewardCoupons.status,
+    pointsSpent: rewardRedemptions.pointsSpent,
+    status: rewardRedemptions.status,
+    redeemedAt: rewardRedemptions.redeemedAt,
+    expiresAt: rewardRedemptions.expiresAt,
+    cancelledAt: rewardRedemptions.cancelledAt,
+    cancellationReason: rewardRedemptions.cancellationReason
+  }).from(rewardRedemptions).innerJoin(rewardCatalog, eq12(rewardCatalog.id, rewardRedemptions.rewardId)).innerJoin(users, eq12(users.id, rewardRedemptions.userId)).leftJoin(rewardCoupons, eq12(rewardCoupons.id, rewardRedemptions.couponId)).where(and10(
+    eq12(rewardRedemptions.storeId, storeId),
+    rewardId ? eq12(rewardRedemptions.rewardId, rewardId) : void 0
+  )).orderBy(desc6(rewardRedemptions.createdAt));
+  return rows.map((row) => ({ ...row, couponCode: row.couponCode ? maskRewardCoupon(row.couponCode) : null }));
+}
+async function cancelRewardRedemption(input) {
+  const db = await getDb();
+  requireDatabase(db);
+  const scope = await getTenantScope(input.storeId);
+  return db.transaction(async (tx) => {
+    const [redemption] = await tx.select().from(rewardRedemptions).where(and10(eq12(rewardRedemptions.id, input.redemptionId), eq12(rewardRedemptions.storeId, input.storeId))).limit(1).for("update");
+    if (!redemption) throw new TRPCError8({ code: "NOT_FOUND", message: "Resgate n\xE3o encontrado." });
+    if (redemption.status === "cancelled" || redemption.status === "refunded") return { alreadyCancelled: true };
+    if (redemption.status !== "completed") {
+      throw new TRPCError8({ code: "PRECONDITION_FAILED", message: "Este resgate n\xE3o pode ser cancelado." });
+    }
+    if (redemption.couponId) {
+      const [usage] = await tx.select({ id: rewardCouponUsages.id }).from(rewardCouponUsages).where(eq12(rewardCouponUsages.couponId, redemption.couponId)).limit(1);
+      if (usage) throw new TRPCError8({ code: "PRECONDITION_FAILED", message: "Cupom j\xE1 utilizado em um pedido." });
+    }
+    const [account] = await tx.select().from(tenantCustomerAccounts).where(and10(eq12(tenantCustomerAccounts.tenantKey, scope.tenantKey), eq12(tenantCustomerAccounts.userId, redemption.userId))).limit(1).for("update");
+    if (!account) throw new TRPCError8({ code: "INTERNAL_SERVER_ERROR", message: "Conta de pontos n\xE3o encontrada." });
+    const balanceBefore = account.loyaltyPoints;
+    const balanceAfter = balanceBefore + redemption.pointsSpent;
+    await tx.update(tenantCustomerAccounts).set({ loyaltyPoints: balanceAfter }).where(eq12(tenantCustomerAccounts.id, account.id));
+    if (scope.tenantKey === "bonatto") {
+      await tx.update(users).set({ loyaltyPoints: balanceAfter }).where(eq12(users.id, redemption.userId));
+    }
+    await tx.insert(loyaltyTransactions).values({
+      tenantKey: scope.tenantKey,
+      storeId: input.storeId,
+      userId: redemption.userId,
+      type: "refund",
+      points: redemption.pointsSpent,
+      description: `Estorno do resgate #${redemption.id}`,
+      balanceBefore,
+      balanceAfter
+    });
+    await tx.update(rewardRedemptions).set({
+      status: "cancelled",
+      cancelledAt: /* @__PURE__ */ new Date(),
+      cancellationReason: input.reason
+    }).where(eq12(rewardRedemptions.id, redemption.id));
+    if (redemption.couponId) {
+      await tx.update(rewardCoupons).set({ status: "cancelled" }).where(eq12(rewardCoupons.id, redemption.couponId));
+    }
+    return { alreadyCancelled: false, refundedPoints: redemption.pointsSpent, balanceAfter };
+  });
+}
+
+// server/routers/rewards.ts
+var storeInput2 = z6.object({ storeId: z6.number().int().positive() });
+var nullableText = (max) => z6.string().trim().max(max).nullable().optional();
+var rewardDataSchema = z6.object({
+  name: z6.string().trim().min(2).max(160),
+  description: nullableText(1e3),
+  rewardType: z6.enum(["discount", "product", "free_delivery", "cashback"]),
+  pointsCost: z6.number().int().min(1).max(1e6),
+  value: z6.number().min(0).max(1e5),
+  productId: z6.number().int().positive().nullable().optional(),
+  category: nullableText(80),
+  icon: nullableText(64),
+  imageUrl: z6.string().trim().max(2e3).refine(
+    (value) => value.startsWith("/") || /^https?:\/\//i.test(value),
+    "Use uma URL http(s) ou um caminho iniciado por /."
+  ).nullable().optional(),
+  badgeText: nullableText(64),
+  buttonText: nullableText(64),
+  stock: z6.number().int().min(0).max(1e6).nullable().optional(),
+  maxRedemptionsPerUser: z6.number().int().min(1).max(1e4).nullable().optional(),
+  active: z6.boolean().optional(),
+  featured: z6.boolean().optional(),
+  sortOrder: z6.number().int().min(-1e4).max(1e4).optional(),
+  startsAt: z6.date().nullable().optional(),
+  expiresAt: z6.date().nullable().optional()
+});
+var rewardsRouter = router({
+  list: publicProcedure.input(storeInput2).query(({ input }) => listRewards(input.storeId)),
+  detail: publicProcedure.input(storeInput2.extend({ rewardId: z6.number().int().positive() })).query(({ input }) => getRewardDetail(input.storeId, input.rewardId)),
+  myOverview: protectedProcedure.input(storeInput2).query(({ ctx, input }) => getMyRewardsOverview(input.storeId, ctx.user.id)),
+  myRedemptions: protectedProcedure.input(storeInput2).query(({ ctx, input }) => listMyRedemptions(input.storeId, ctx.user.id)),
+  redeem: protectedProcedure.input(storeInput2.extend({
+    rewardId: z6.number().int().positive(),
+    idempotencyKey: z6.string().trim().min(16).max(96).regex(/^[A-Za-z0-9_-]+$/)
+  })).mutation(({ ctx, input }) => redeemReward({ ...input, userId: ctx.user.id })),
+  validateCoupon: protectedProcedure.input(storeInput2.extend({
+    code: z6.string().trim().min(4).max(64),
+    subtotal: z6.number().min(0).max(1e6),
+    items: z6.array(z6.object({
+      productId: z6.number().int().positive(),
+      productPrice: z6.union([z6.string(), z6.number()]),
+      quantity: z6.number().int().min(1).max(99)
+    })).max(50).optional()
+  })).query(({ ctx, input }) => validateRewardCoupon({ ...input, userId: ctx.user.id })),
+  admin: router({
+    list: staffProcedure.input(storeInput2).query(async ({ ctx, input }) => {
+      const storeId = await resolveRequiredStoreId(ctx.user, input.storeId);
+      return listRewardsForAdmin(storeId);
+    }),
+    create: staffProcedure.input(storeInput2.extend(rewardDataSchema.shape)).mutation(async ({ ctx, input }) => {
+      const storeId = await resolveRequiredStoreId(ctx.user, input.storeId);
+      const { storeId: _storeId, ...data } = input;
+      const rewardId = await createReward(storeId, data);
+      await recordTenantAudit({
+        storeId,
+        actorUserId: ctx.user.id,
+        action: "reward.created",
+        resourceType: "reward",
+        resourceId: rewardId,
+        metadata: { newData: data }
+      });
+      return { id: rewardId };
+    }),
+    update: staffProcedure.input(storeInput2.extend({
+      rewardId: z6.number().int().positive(),
+      ...rewardDataSchema.partial().shape
+    })).mutation(async ({ ctx, input }) => {
+      const storeId = await resolveRequiredStoreId(ctx.user, input.storeId);
+      const { storeId: _storeId, rewardId, ...changes } = input;
+      const previous = await updateReward(storeId, rewardId, changes);
+      await recordTenantAudit({
+        storeId,
+        actorUserId: ctx.user.id,
+        action: "reward.updated",
+        resourceType: "reward",
+        resourceId: rewardId,
+        metadata: { previousData: previous, newData: changes }
+      });
+      return { ok: true };
+    }),
+    archive: staffProcedure.input(storeInput2.extend({ rewardId: z6.number().int().positive() })).mutation(async ({ ctx, input }) => {
+      const storeId = await resolveRequiredStoreId(ctx.user, input.storeId);
+      const previous = await archiveReward(storeId, input.rewardId);
+      await recordTenantAudit({
+        storeId,
+        actorUserId: ctx.user.id,
+        action: "reward.archived",
+        resourceType: "reward",
+        resourceId: input.rewardId,
+        metadata: { previousData: previous }
+      });
+      return { ok: true };
+    }),
+    addCoupons: staffProcedure.input(storeInput2.extend({
+      rewardId: z6.number().int().positive(),
+      codes: z6.array(z6.string().min(4).max(64)).min(1).max(1e3),
+      expiresAt: z6.date().nullable().optional()
+    })).mutation(async ({ ctx, input }) => {
+      const storeId = await resolveRequiredStoreId(ctx.user, input.storeId);
+      const result = await addRewardCoupons({ ...input, storeId });
+      await recordTenantAudit({
+        storeId,
+        actorUserId: ctx.user.id,
+        action: "reward.coupons_imported",
+        resourceType: "reward",
+        resourceId: input.rewardId,
+        metadata: { count: result.inserted }
+      });
+      return result;
+    }),
+    generateCoupons: staffProcedure.input(storeInput2.extend({
+      rewardId: z6.number().int().positive(),
+      prefix: z6.string().trim().max(24).default("CLUBE-"),
+      quantity: z6.number().int().min(1).max(1e3),
+      codeLength: z6.number().int().min(4).max(24),
+      expiresAt: z6.date().nullable().optional()
+    })).mutation(async ({ ctx, input }) => {
+      const storeId = await resolveRequiredStoreId(ctx.user, input.storeId);
+      const result = await generateRewardCoupons({ ...input, storeId });
+      await recordTenantAudit({
+        storeId,
+        actorUserId: ctx.user.id,
+        action: "reward.coupons_generated",
+        resourceType: "reward",
+        resourceId: input.rewardId,
+        metadata: { count: result.inserted, prefix: input.prefix, codeLength: input.codeLength }
+      });
+      return result;
+    }),
+    coupons: staffProcedure.input(storeInput2.extend({ rewardId: z6.number().int().positive() })).query(async ({ ctx, input }) => {
+      const storeId = await resolveRequiredStoreId(ctx.user, input.storeId);
+      return listRewardCoupons(storeId, input.rewardId);
+    }),
+    revealCoupon: staffProcedure.input(storeInput2.extend({ couponId: z6.number().int().positive() })).mutation(async ({ ctx, input }) => {
+      const storeId = await resolveRequiredStoreId(ctx.user, input.storeId);
+      const coupon = await revealRewardCoupon(storeId, input.couponId);
+      await recordTenantAudit({
+        storeId,
+        actorUserId: ctx.user.id,
+        action: "reward.coupon_revealed",
+        resourceType: "reward_coupon",
+        resourceId: input.couponId,
+        metadata: { rewardId: coupon.rewardId }
+      });
+      return { code: coupon.code };
+    }),
+    exportCoupons: staffProcedure.input(storeInput2.extend({ rewardId: z6.number().int().positive() })).mutation(async ({ ctx, input }) => {
+      const storeId = await resolveRequiredStoreId(ctx.user, input.storeId);
+      const maskedRows = await listRewardCoupons(storeId, input.rewardId);
+      const rows = await Promise.all(maskedRows.map(async (row) => ({
+        ...row,
+        code: (await revealRewardCoupon(storeId, row.id)).code
+      })));
+      await recordTenantAudit({
+        storeId,
+        actorUserId: ctx.user.id,
+        action: "reward.coupons_exported",
+        resourceType: "reward",
+        resourceId: input.rewardId,
+        metadata: { count: rows.length }
+      });
+      return rows;
+    }),
+    redemptions: staffProcedure.input(storeInput2.extend({ rewardId: z6.number().int().positive().optional() })).query(async ({ ctx, input }) => {
+      const storeId = await resolveRequiredStoreId(ctx.user, input.storeId);
+      return listRewardRedemptionsForAdmin(storeId, input.rewardId);
+    }),
+    cancelRedemption: staffProcedure.input(storeInput2.extend({
+      redemptionId: z6.number().int().positive(),
+      reason: z6.string().trim().min(5).max(500)
+    })).mutation(async ({ ctx, input }) => {
+      const storeId = await resolveRequiredStoreId(ctx.user, input.storeId);
+      const result = await cancelRewardRedemption({ ...input, storeId });
+      await recordTenantAudit({
+        storeId,
+        actorUserId: ctx.user.id,
+        action: "reward.redemption_cancelled",
+        resourceType: "reward_redemption",
+        resourceId: input.redemptionId,
+        metadata: { reason: input.reason, ...result }
+      });
+      return result;
+    })
+  })
+});
+
+// server/routers/catalog.ts
+import { z as z7 } from "zod";
+import { and as and12, eq as eq14, inArray as inArray10, sql as sql7 } from "drizzle-orm";
+import { TRPCError as TRPCError10 } from "@trpc/server";
+
+// server/domains/catalog/pricing.ts
+var roundMoney = (value) => Math.round((value + Number.EPSILON) * 100) / 100;
+function parseMinutes(value) {
+  if (!value || !/^\d{2}:\d{2}$/.test(value)) return null;
+  const [hours, minutes] = value.split(":").map(Number);
+  if (hours > 23 || minutes > 59) return null;
+  return hours * 60 + minutes;
+}
+function matchesTimeWindow(rule, now) {
+  const start = parseMinutes(rule.startTime);
+  const end = parseMinutes(rule.endTime);
+  if (start === null || end === null) return true;
+  const current = now.getHours() * 60 + now.getMinutes();
+  return start <= end ? current >= start && current <= end : current >= start || current <= end;
+}
+function isConfiguredProductAvailable(product, selection) {
+  if (!product.active) return false;
+  const now = selection.now ?? /* @__PURE__ */ new Date();
+  const rules = product.availability.filter((rule) => rule.active);
+  if (rules.length === 0) return true;
+  return rules.some((rule) => {
+    if (rule.channel !== "all" && rule.channel !== selection.channel) return false;
+    if (rule.weekday != null && rule.weekday !== now.getDay()) return false;
+    if (rule.startsAt && now < rule.startsAt) return false;
+    if (rule.expiresAt && now > rule.expiresAt) return false;
+    if (rule.pausedUntil && now < rule.pausedUntil) return false;
+    if (rule.stockLimit != null && rule.stockLimit <= 0) return false;
+    return matchesTimeWindow(rule, now);
+  });
+}
+function activePromotionPrice(price, promotionalPrice, startsAt, endsAt, now) {
+  if (promotionalPrice == null) return price;
+  if (startsAt && now < startsAt) return price;
+  if (endsAt && now > endsAt) return price;
+  return promotionalPrice;
+}
+function calculateConfiguredProductPrice(product, selection) {
+  const errors = [];
+  const breakdown = [];
+  const now = selection.now ?? /* @__PURE__ */ new Date();
+  const quantity = Number.isInteger(selection.quantity) ? selection.quantity : 0;
+  if (!product.active) errors.push("Produto inativo.");
+  if (product.storeId <= 0) errors.push("Produto sem loja v\xE1lida.");
+  if (quantity < product.minQuantity || quantity > product.maxQuantity) {
+    errors.push(`Quantidade deve ficar entre ${product.minQuantity} e ${product.maxQuantity}.`);
+  }
+  if (!isConfiguredProductAvailable(product, selection)) errors.push("Produto indispon\xEDvel neste hor\xE1rio ou canal.");
+  const safeBasePrice = Math.max(0, product.basePrice);
+  if (product.basePrice < 0) errors.push("Pre\xE7o-base inv\xE1lido.");
+  if (product.pricingEngine === "legacy_v1") {
+    const total = roundMoney(safeBasePrice * Math.max(0, quantity));
+    return {
+      basePrice: safeBasePrice,
+      sizePrice: 0,
+      flavorsPrice: 0,
+      modifiersPrice: 0,
+      comboAdditionalPrice: 0,
+      upsellsPrice: 0,
+      discounts: 0,
+      fees: 0,
+      unitTotal: safeBasePrice,
+      total,
+      breakdown: [{ kind: "base", label: product.name, amount: safeBasePrice }],
+      validationErrors: errors
+    };
+  }
+  let selectedSize = selection.sizeId == null ? null : product.sizes.find((size) => size.id === selection.sizeId);
+  if (selection.sizeId != null && (!selectedSize || !selectedSize.active)) {
+    errors.push("Tamanho inexistente ou inativo.");
+    selectedSize = null;
+  }
+  if (product.sizes.some((size) => size.active) && !selectedSize) errors.push("Escolha um tamanho.");
+  const resolvedSizePrice = selectedSize ? activePromotionPrice(selectedSize.price, selectedSize.promotionalPrice, selectedSize.promotionStartsAt, selectedSize.promotionEndsAt, now) : safeBasePrice;
+  if (resolvedSizePrice < 0) errors.push("Pre\xE7o do tamanho inv\xE1lido.");
+  const basePrice = safeBasePrice;
+  const sizePrice = roundMoney(resolvedSizePrice - safeBasePrice);
+  breakdown.push({ kind: "base", label: product.name, amount: basePrice });
+  if (selectedSize) breakdown.push({ kind: "size", label: selectedSize.name, amount: sizePrice });
+  const rawFlavorIds = selection.flavorIds ?? [];
+  const uniqueFlavorIds = Array.from(new Set(rawFlavorIds));
+  const flavorSettings = product.flavorSettings;
+  let flavorsPrice = 0;
+  const selectedFlavors = uniqueFlavorIds.map((id) => product.flavors.find((flavor) => flavor.id === id)).filter((flavor) => Boolean(flavor));
+  if (flavorSettings?.enabled) {
+    if (!flavorSettings.allowRepeatedFlavors && uniqueFlavorIds.length !== rawFlavorIds.length) errors.push("Sabores repetidos n\xE3o s\xE3o permitidos.");
+    if (selectedFlavors.length !== uniqueFlavorIds.length || selectedFlavors.some((flavor) => !flavor.active)) errors.push("Um ou mais sabores est\xE3o indispon\xEDveis.");
+    const minimum = selectedSize?.minFlavors ?? 1;
+    const maximum = selectedSize?.maxFlavors ?? 1;
+    if (rawFlavorIds.length < minimum) errors.push(`Escolha pelo menos ${minimum} sabor(es).`);
+    if (rawFlavorIds.length > maximum) errors.push(`Escolha no m\xE1ximo ${maximum} sabor(es).`);
+    const flavorTotals = selectedFlavors.map((flavor) => selectedSize ? flavor.pricesBySize[selectedSize.id] : void 0);
+    if (flavorTotals.some((price) => price == null || price < 0)) errors.push("Um ou mais sabores n\xE3o possuem pre\xE7o para o tamanho escolhido.");
+    const validPrices = flavorTotals.filter((price) => typeof price === "number" && price >= 0);
+    if (validPrices.length > 0) {
+      const highest = Math.max(...validPrices);
+      const average = validPrices.reduce((sum, value) => sum + value, 0) / validPrices.length;
+      const targetPrice = flavorSettings.pricingRule === "highest_price" ? highest : flavorSettings.pricingRule === "average_price" || flavorSettings.pricingRule === "proportional_price" ? average : flavorSettings.pricingRule === "base_plus_difference" ? resolvedSizePrice + Math.max(0, highest - resolvedSizePrice) : resolvedSizePrice;
+      flavorsPrice = roundMoney(Math.max(0, targetPrice - resolvedSizePrice));
+      if (flavorsPrice > 0) breakdown.push({ kind: "flavor", label: "Composi\xE7\xE3o de sabores", amount: flavorsPrice });
+    }
+  } else if (rawFlavorIds.length > 0) {
+    errors.push("Este produto n\xE3o aceita m\xFAltiplos sabores.");
+  }
+  let modifiersPrice = 0;
+  const requestedModifiers = selection.modifiers ?? [];
+  for (const group of product.modifierGroups.filter((item) => item.active)) {
+    const groupSelections = requestedModifiers.filter((item) => item.groupId === group.id);
+    const selectedUnits = groupSelections.reduce((sum, item) => sum + item.quantity, 0);
+    const minimum = group.required ? Math.max(1, group.minSelections) : group.minSelections;
+    if (selectedUnits < minimum) errors.push(`${group.name}: escolha pelo menos ${minimum}.`);
+    if (selectedUnits > group.maxSelections) errors.push(`${group.name}: escolha no m\xE1ximo ${group.maxSelections}.`);
+    const pricedUnits = [];
+    for (const requested of groupSelections) {
+      const option = group.options.find((item) => item.id === requested.optionId);
+      if (!option || !option.active || requested.quantity < 1) {
+        errors.push(`${group.name}: op\xE7\xE3o inv\xE1lida.`);
+        continue;
+      }
+      if ((!group.allowRepeatedOptions || !option.allowRepeat) && requested.quantity > 1) errors.push(`${option.name}: repeti\xE7\xE3o n\xE3o permitida.`);
+      const sizeRule = selectedSize ? option.sizeRules?.find((rule) => rule.sizeId === selectedSize.id) : void 0;
+      if (sizeRule && !sizeRule.enabled) {
+        errors.push(`${option.name}: indispon\xEDvel para ${selectedSize?.name}.`);
+        continue;
+      }
+      const maximum = sizeRule?.maxQuantityOverride ?? option.maxQuantity;
+      if (requested.quantity > maximum) errors.push(`${option.name}: quantidade m\xE1xima ${maximum}.`);
+      const unitPrice = sizeRule?.priceOverride ?? option.price;
+      if (unitPrice < 0) {
+        errors.push(`${option.name}: pre\xE7o inv\xE1lido.`);
+        continue;
+      }
+      for (let index2 = 0; index2 < requested.quantity; index2 += 1) pricedUnits.push({ name: option.name, price: unitPrice });
+    }
+    pricedUnits.sort((left, right) => left.price - right.price);
+    const chargeableUnits = pricedUnits.slice(Math.min(group.freeSelections, pricedUnits.length));
+    for (const unit of chargeableUnits) {
+      modifiersPrice = roundMoney(modifiersPrice + unit.price);
+      breakdown.push({ kind: "modifier", label: `${group.name}: ${unit.name}`, amount: unit.price, quantity: 1 });
+    }
+  }
+  if (requestedModifiers.some((item) => !product.modifierGroups.some((group) => group.id === item.groupId && group.active))) {
+    errors.push("Foi enviado um grupo de adicionais inexistente.");
+  }
+  let comboAdditionalPrice = 0;
+  const requestedCombos = selection.combos ?? [];
+  for (const group of product.comboGroups.filter((item) => item.active)) {
+    const groupSelections = requestedCombos.filter((item) => item.groupId === group.id);
+    const selectedUnits = groupSelections.reduce((sum, item) => sum + item.quantity, 0);
+    const minimum = group.required ? Math.max(1, group.minSelections) : group.minSelections;
+    if (selectedUnits < minimum) errors.push(`${group.name}: combo incompleto.`);
+    if (selectedUnits > group.maxSelections) errors.push(`${group.name}: limite do combo excedido.`);
+    for (const requested of groupSelections) {
+      const item = group.items.find((candidate) => candidate.id === requested.itemId);
+      if (!item || !item.active || requested.quantity < 1) {
+        errors.push(`${group.name}: item de combo inv\xE1lido.`);
+        continue;
+      }
+      comboAdditionalPrice = roundMoney(comboAdditionalPrice + item.price * requested.quantity);
+      if (item.price > 0) breakdown.push({ kind: "combo", label: group.name, amount: item.price * requested.quantity, quantity: requested.quantity });
+    }
+  }
+  let upsellsPrice = 0;
+  for (const requested of selection.upsells ?? []) {
+    const offer = product.upsellOffers.find((item) => item.productId === requested.productId && item.active);
+    if (!offer || requested.quantity < 1) {
+      errors.push("Upsell inexistente ou inativo.");
+      continue;
+    }
+    upsellsPrice = roundMoney(upsellsPrice + offer.price * requested.quantity);
+    breakdown.push({ kind: "upsell", label: offer.name, amount: offer.price * requested.quantity, quantity: requested.quantity });
+  }
+  const unitTotal = roundMoney(basePrice + sizePrice + flavorsPrice + modifiersPrice + comboAdditionalPrice + upsellsPrice);
+  return {
+    basePrice,
+    sizePrice,
+    flavorsPrice,
+    modifiersPrice,
+    comboAdditionalPrice,
+    upsellsPrice,
+    discounts: 0,
+    fees: 0,
+    unitTotal,
+    total: roundMoney(unitTotal * Math.max(0, quantity)),
+    breakdown,
+    validationErrors: Array.from(new Set(errors))
+  };
+}
+function createOrderItemConfigurationSnapshot(product, selection, pricing) {
+  const size = selection.sizeId == null ? null : product.sizes.find((item) => item.id === selection.sizeId) ?? null;
+  return {
+    version: 2,
+    productId: product.id,
+    productName: product.name,
+    size: size ? { id: size.id, name: size.name, price: size.promotionalPrice ?? size.price } : null,
+    flavors: (selection.flavorIds ?? []).flatMap((id) => {
+      const flavor = product.flavors.find((item) => item.id === id);
+      if (!flavor) return [];
+      return [{ id: flavor.id, name: flavor.name, price: size ? flavor.pricesBySize[size.id] ?? 0 : 0 }];
+    }),
+    modifiers: (selection.modifiers ?? []).flatMap((selected) => {
+      const group = product.modifierGroups.find((item) => item.id === selected.groupId);
+      const option = group?.options.find((item) => item.id === selected.optionId);
+      if (!group || !option) return [];
+      const rule = size ? option.sizeRules?.find((item) => item.sizeId === size.id) : void 0;
+      const unitPrice = rule?.priceOverride ?? option.price;
+      return [{ groupId: group.id, groupName: group.name, optionId: option.id, optionName: option.name, quantity: selected.quantity, unitPrice, totalPrice: roundMoney(unitPrice * selected.quantity) }];
+    }),
+    combos: (selection.combos ?? []).flatMap((selected) => {
+      const group = product.comboGroups.find((item2) => item2.id === selected.groupId);
+      const item = group?.items.find((candidate) => candidate.id === selected.itemId);
+      if (!group || !item) return [];
+      return [{ groupId: group.id, groupName: group.name, itemId: item.id, productId: item.productId, quantity: selected.quantity, unitPrice: item.price, totalPrice: roundMoney(item.price * selected.quantity) }];
+    }),
+    upsells: (selection.upsells ?? []).flatMap((selected) => {
+      const offer = product.upsellOffers.find((item) => item.productId === selected.productId);
+      if (!offer) return [];
+      return [{ productId: offer.productId, name: offer.name, quantity: selected.quantity, unitPrice: offer.price, totalPrice: roundMoney(offer.price * selected.quantity) }];
+    }),
+    removedIngredients: selection.removedIngredients ?? [],
+    pricing
+  };
+}
+
+// server/domains/catalog/repository.ts
+init_schema();
+init_db();
+import { TRPCError as TRPCError9 } from "@trpc/server";
+import { and as and11, asc as asc3, eq as eq13, inArray as inArray9, isNull as isNull4, or as or5 } from "drizzle-orm";
+async function getConfiguredCatalogProduct(input) {
+  const db = await getDb();
+  if (!db) throw new TRPCError9({ code: "INTERNAL_SERVER_ERROR", message: "Banco de dados indispon\xEDvel." });
+  const productConditions = [eq13(products.id, input.productId), eq13(products.storeId, input.storeId)];
+  if (!input.includeInactive) productConditions.push(eq13(products.active, true));
+  const [product] = await db.select().from(products).where(and11(...productConditions)).limit(1);
+  if (!product) throw new TRPCError9({ code: "NOT_FOUND", message: "Produto n\xE3o encontrado nesta loja." });
+  const [sizes, groups, flavorSettingsRows, flavors, availability, comboRows, upsellRows] = await Promise.all([
+    db.select().from(productSizes).where(and11(eq13(productSizes.storeId, input.storeId), eq13(productSizes.productId, input.productId))).orderBy(asc3(productSizes.sortOrder), asc3(productSizes.id)),
+    db.select().from(productOptionGroups).where(and11(eq13(productOptionGroups.storeId, input.storeId), eq13(productOptionGroups.productId, input.productId))).orderBy(asc3(productOptionGroups.sortOrder), asc3(productOptionGroups.id)),
+    db.select().from(multiFlavorSettings).where(and11(eq13(multiFlavorSettings.storeId, input.storeId), eq13(multiFlavorSettings.productId, input.productId))).limit(1),
+    db.select().from(productFlavors).where(and11(eq13(productFlavors.storeId, input.storeId), eq13(productFlavors.productId, input.productId))).orderBy(asc3(productFlavors.sortOrder), asc3(productFlavors.id)),
+    db.select().from(productAvailability).where(and11(eq13(productAvailability.storeId, input.storeId), eq13(productAvailability.productId, input.productId))),
+    db.select().from(productCombos).where(and11(eq13(productCombos.storeId, input.storeId), eq13(productCombos.productId, input.productId))).limit(1),
+    db.select().from(upsells).where(and11(
+      eq13(upsells.storeId, input.storeId),
+      or5(eq13(upsells.triggerProductId, input.productId), isNull4(upsells.triggerProductId)),
+      input.includeInactive ? void 0 : eq13(upsells.active, true)
+    ))
+  ]);
+  const options = groups.length ? await db.select().from(productOptions).where(and11(eq13(productOptions.storeId, input.storeId), inArray9(productOptions.groupId, groups.map((group) => group.id)))).orderBy(asc3(productOptions.sortOrder), asc3(productOptions.id)) : [];
+  const sizeRules = options.length ? await db.select().from(modifierSizeRules).where(and11(eq13(modifierSizeRules.storeId, input.storeId), inArray9(modifierSizeRules.modifierOptionId, options.map((option) => option.id)))) : [];
+  const flavorPrices = flavors.length ? await db.select().from(flavorSizePrices).where(and11(eq13(flavorSizePrices.storeId, input.storeId), inArray9(flavorSizePrices.flavorId, flavors.map((flavor) => flavor.id)))) : [];
+  const combo = comboRows[0];
+  const comboGroupRows = combo ? await db.select().from(comboGroups).where(and11(eq13(comboGroups.storeId, input.storeId), eq13(comboGroups.comboId, combo.id))).orderBy(asc3(comboGroups.sortOrder), asc3(comboGroups.id)) : [];
+  const comboItems = comboGroupRows.length ? await db.select().from(comboGroupItems).where(and11(eq13(comboGroupItems.storeId, input.storeId), inArray9(comboGroupItems.groupId, comboGroupRows.map((group) => group.id)))) : [];
+  const suggestedProductIds = Array.from(new Set(upsellRows.map((upsell) => upsell.suggestedProductId)));
+  const suggestedProducts = suggestedProductIds.length ? await db.select().from(products).where(and11(eq13(products.storeId, input.storeId), inArray9(products.id, suggestedProductIds))) : [];
+  return {
+    id: product.id,
+    storeId: product.storeId,
+    name: product.name,
+    basePrice: Number(product.price),
+    productType: product.productType,
+    pricingEngine: product.pricingEngine,
+    active: product.active,
+    minQuantity: product.minQuantity,
+    maxQuantity: product.maxQuantity,
+    sizes: sizes.map((size) => ({
+      id: size.id,
+      name: size.name,
+      price: Number(size.price),
+      promotionalPrice: size.promotionalPrice == null ? null : Number(size.promotionalPrice),
+      promotionStartsAt: size.promotionStartsAt,
+      promotionEndsAt: size.promotionEndsAt,
+      minFlavors: size.minFlavors,
+      maxFlavors: size.maxFlavors,
+      maxAddons: size.maxAddons,
+      active: size.active
+    })),
+    modifierGroups: groups.map((group) => ({
+      id: group.id,
+      name: group.name,
+      required: group.required,
+      minSelections: group.minSelections,
+      maxSelections: group.maxSelections,
+      freeSelections: group.freeSelections,
+      allowRepeatedOptions: group.allowRepeatedOptions,
+      active: group.active,
+      options: options.filter((option) => option.groupId === group.id).map((option) => ({
+        id: option.id,
+        name: option.name,
+        price: Number(option.priceDelta),
+        active: option.active,
+        maxQuantity: option.maxQuantity,
+        allowRepeat: option.allowRepeat,
+        sizeRules: sizeRules.filter((rule) => rule.modifierOptionId === option.id).map((rule) => ({
+          sizeId: rule.productSizeId,
+          enabled: rule.enabled,
+          priceOverride: rule.priceOverride == null ? null : Number(rule.priceOverride),
+          maxQuantityOverride: rule.maxQuantityOverride
+        }))
+      }))
+    })),
+    flavors: flavors.map((flavor) => ({
+      id: flavor.id,
+      name: flavor.name,
+      active: flavor.active,
+      pricesBySize: Object.fromEntries(flavorPrices.filter((price) => price.flavorId === flavor.id && price.active).map((price) => [price.productSizeId, Number(price.price)]))
+    })),
+    flavorSettings: flavorSettingsRows[0] ? {
+      enabled: flavorSettingsRows[0].enabled,
+      pricingRule: flavorSettingsRows[0].pricingRule,
+      allowRepeatedFlavors: flavorSettingsRows[0].allowRepeatedFlavors
+    } : null,
+    comboGroups: comboGroupRows.map((group) => ({
+      id: group.id,
+      name: group.name,
+      required: group.required,
+      minSelections: group.minSelections,
+      maxSelections: group.maxSelections,
+      active: group.active,
+      items: comboItems.filter((item) => item.groupId === group.id).map((item) => ({
+        id: item.id,
+        productId: item.productId,
+        sizeId: item.sizeId,
+        price: Number(item.priceDelta),
+        active: item.active
+      }))
+    })),
+    upsellOffers: upsellRows.flatMap((upsell) => {
+      const suggested = suggestedProducts.find((candidate) => candidate.id === upsell.suggestedProductId);
+      if (!suggested || !input.includeInactive && !suggested.active) return [];
+      const base = Number(suggested.price);
+      const discount = Math.min(100, Math.max(0, upsell.discountPercent ?? 0));
+      return [{ productId: suggested.id, name: suggested.name, price: Math.round(base * (1 - discount / 100) * 100) / 100, active: upsell.active && suggested.active }];
+    }),
+    availability: availability.map((rule) => ({
+      weekday: rule.weekday,
+      startTime: rule.startTime,
+      endTime: rule.endTime,
+      startsAt: rule.startsAt,
+      expiresAt: rule.expiresAt,
+      channel: rule.channel,
+      stockLimit: rule.stockLimit,
+      pausedUntil: rule.pausedUntil,
+      active: rule.active
+    }))
+  };
+}
+
+// server/routers/catalog.ts
+init_db();
+init_schema();
+var selectionSchema = z7.object({
+  quantity: z7.number().int().min(1).max(999),
+  sizeId: z7.number().int().positive().optional().nullable(),
+  flavorIds: z7.array(z7.number().int().positive()).max(12).optional(),
+  modifiers: z7.array(z7.object({
+    groupId: z7.number().int().positive(),
+    optionId: z7.number().int().positive(),
+    quantity: z7.number().int().min(1).max(99)
+  })).max(100).optional(),
+  combos: z7.array(z7.object({
+    groupId: z7.number().int().positive(),
+    itemId: z7.number().int().positive(),
+    quantity: z7.number().int().min(1).max(99)
+  })).max(100).optional(),
+  upsells: z7.array(z7.object({
+    productId: z7.number().int().positive(),
+    quantity: z7.number().int().min(1).max(99)
+  })).max(20).optional(),
+  removedIngredients: z7.array(z7.string().trim().min(1).max(120)).max(50).optional(),
+  channel: z7.enum(["delivery", "pickup", "dine_in", "counter"])
+});
+var catalogOrderConfigurationSchema = selectionSchema.omit({ quantity: true, channel: true });
+var moneySchema = z7.string().regex(/^\d+(\.\d{1,2})?$/, "Informe um valor valido");
+var editorProductSchema = z7.object({
+  storeId: z7.number().int().positive(),
+  productId: z7.number().int().positive().optional(),
+  categoryId: z7.number().int().positive(),
+  name: z7.string().trim().min(2).max(200),
+  shortDescription: z7.string().trim().max(320).optional().nullable(),
+  description: z7.string().trim().max(2e3).optional().nullable(),
+  price: moneySchema,
+  imageUrl: z7.string().trim().max(2048).optional().nullable(),
+  sku: z7.string().trim().max(128).optional().nullable(),
+  productType: z7.enum(["simple", "sizes", "buildable", "multi_flavor", "combo"]),
+  editorialStatus: z7.enum(["draft", "published"]),
+  preparationTime: z7.number().int().min(0).max(600).optional().nullable(),
+  minQuantity: z7.number().int().min(1).max(999).default(1),
+  maxQuantity: z7.number().int().min(1).max(999).default(99),
+  couponEligible: z7.boolean().default(true),
+  pointsEligible: z7.boolean().default(true),
+  featured: z7.boolean().default(false),
+  sizes: z7.array(z7.object({
+    name: z7.string().trim().min(1).max(120),
+    price: moneySchema,
+    promotionalPrice: moneySchema.optional().nullable(),
+    serves: z7.number().int().min(1).max(50).optional().nullable(),
+    minFlavors: z7.number().int().min(1).max(12).optional().nullable(),
+    maxFlavors: z7.number().int().min(1).max(12).optional().nullable()
+  })).max(20).default([]),
+  modifierGroups: z7.array(z7.object({
+    name: z7.string().trim().min(1).max(120),
+    required: z7.boolean().default(false),
+    minSelections: z7.number().int().min(0).max(50).default(0),
+    maxSelections: z7.number().int().min(1).max(50).default(1),
+    freeSelections: z7.number().int().min(0).max(50).default(0),
+    options: z7.array(z7.object({
+      name: z7.string().trim().min(1).max(160),
+      price: moneySchema,
+      maxQuantity: z7.number().int().min(1).max(99).default(1)
+    })).min(1).max(100)
+  })).max(30).default([]),
+  flavorSettings: z7.object({
+    enabled: z7.boolean(),
+    pricingRule: z7.enum(["highest_price", "average_price", "proportional_price", "size_fixed_price", "base_plus_difference"]),
+    allowRepeatedFlavors: z7.boolean().default(false)
+  }).optional().nullable(),
+  flavors: z7.array(z7.object({
+    name: z7.string().trim().min(1).max(160),
+    prices: z7.array(moneySchema).max(20)
+  })).max(100).default([])
+}).superRefine((value, ctx) => {
+  if (value.maxQuantity < value.minQuantity) {
+    ctx.addIssue({ code: "custom", path: ["maxQuantity"], message: "A quantidade maxima deve ser maior que a minima" });
+  }
+  if (["sizes", "multi_flavor"].includes(value.productType) && value.sizes.length === 0) {
+    ctx.addIssue({ code: "custom", path: ["sizes"], message: "Cadastre pelo menos um tamanho" });
+  }
+  if (value.productType === "multi_flavor" && value.flavors.length < 2) {
+    ctx.addIssue({ code: "custom", path: ["flavors"], message: "Cadastre pelo menos dois sabores" });
+  }
+  value.modifierGroups.forEach((group, index2) => {
+    if (group.maxSelections < group.minSelections) {
+      ctx.addIssue({ code: "custom", path: ["modifierGroups", index2, "maxSelections"], message: "O maximo deve ser maior que o minimo" });
+    }
+  });
+});
+var catalogRouter = router({
+  configuration: publicProcedure.input(z7.object({ storeId: z7.number().int().positive(), productId: z7.number().int().positive() })).query(({ input }) => getConfiguredCatalogProduct(input)),
+  calculatePrice: publicProcedure.input(z7.object({
+    storeId: z7.number().int().positive(),
+    productId: z7.number().int().positive(),
+    selection: selectionSchema
+  })).mutation(async ({ input }) => {
+    const product = await getConfiguredCatalogProduct({ storeId: input.storeId, productId: input.productId });
+    return calculateConfiguredProductPrice(product, input.selection);
+  }),
+  adminConfiguration: staffProcedure.input(z7.object({ storeId: z7.number().int().positive(), productId: z7.number().int().positive() })).query(async ({ ctx, input }) => {
+    const storeId = await resolveRequiredStoreId(ctx.user, input.storeId);
+    return getConfiguredCatalogProduct({ storeId, productId: input.productId, includeInactive: true });
+  }),
+  adminPreview: staffProcedure.input(z7.object({
+    storeId: z7.number().int().positive(),
+    productId: z7.number().int().positive(),
+    selection: selectionSchema
+  })).mutation(async ({ ctx, input }) => {
+    const storeId = await resolveRequiredStoreId(ctx.user, input.storeId);
+    const product = await getConfiguredCatalogProduct({ storeId, productId: input.productId, includeInactive: true });
+    const pricing = calculateConfiguredProductPrice(product, input.selection);
+    return {
+      pricing,
+      snapshot: createOrderItemConfigurationSnapshot(product, input.selection, pricing)
+    };
+  }),
+  saveProduct: staffProcedure.input(editorProductSchema).mutation(async ({ ctx, input }) => {
+    const storeId = await resolveRequiredStoreId(ctx.user, input.storeId);
+    const db = await getDb();
+    if (!db) throw new TRPCError10({ code: "INTERNAL_SERVER_ERROR", message: "Banco de dados indisponivel" });
+    return db.transaction(async (tx) => {
+      const [category] = await tx.select({ id: categories.id }).from(categories).where(and12(eq14(categories.id, input.categoryId), eq14(categories.storeId, storeId), eq14(categories.active, true))).limit(1);
+      if (!category) throw new TRPCError10({ code: "BAD_REQUEST", message: "Selecione uma categoria ativa desta loja" });
+      let productId = input.productId;
+      if (productId) {
+        const [existing] = await tx.select({ id: products.id }).from(products).where(and12(eq14(products.id, productId), eq14(products.storeId, storeId))).limit(1);
+        if (!existing) throw new TRPCError10({ code: "NOT_FOUND", message: "Produto nao encontrado nesta loja" });
+      }
+      const productData = {
+        storeId,
+        categoryId: input.categoryId,
+        name: input.name,
+        shortDescription: input.shortDescription || null,
+        description: input.description || null,
+        price: input.price,
+        imageUrl: input.imageUrl || null,
+        sku: input.sku || null,
+        productType: input.productType,
+        pricingEngine: input.productType === "simple" ? "legacy_v1" : "configured_v2",
+        editorialStatus: input.editorialStatus,
+        preparationTime: input.preparationTime ?? null,
+        minQuantity: input.minQuantity,
+        maxQuantity: input.maxQuantity,
+        couponEligible: input.couponEligible,
+        pointsEligible: input.pointsEligible,
+        featured: input.featured,
+        active: input.editorialStatus === "published",
+        publishedAt: input.editorialStatus === "published" ? /* @__PURE__ */ new Date() : null
+      };
+      if (productId) {
+        await tx.update(products).set({ ...productData, version: sql7`${products.version} + 1` }).where(and12(eq14(products.id, productId), eq14(products.storeId, storeId)));
+      } else {
+        const inserted = await tx.insert(products).values(productData).$returningId();
+        productId = inserted[0]?.id;
+      }
+      if (!productId) throw new TRPCError10({ code: "INTERNAL_SERVER_ERROR", message: "Nao foi possivel identificar o produto salvo" });
+      const previousGroups = await tx.select({ id: productOptionGroups.id }).from(productOptionGroups).where(and12(eq14(productOptionGroups.storeId, storeId), eq14(productOptionGroups.productId, productId)));
+      const previousGroupIds = previousGroups.map((group) => group.id);
+      if (previousGroupIds.length) {
+        const previousOptions = await tx.select({ id: productOptions.id }).from(productOptions).where(and12(eq14(productOptions.storeId, storeId), inArray10(productOptions.groupId, previousGroupIds)));
+        const previousOptionIds = previousOptions.map((option) => option.id);
+        if (previousOptionIds.length) await tx.delete(modifierSizeRules).where(and12(eq14(modifierSizeRules.storeId, storeId), inArray10(modifierSizeRules.modifierOptionId, previousOptionIds)));
+        await tx.delete(productOptions).where(and12(eq14(productOptions.storeId, storeId), inArray10(productOptions.groupId, previousGroupIds)));
+        await tx.delete(productOptionGroups).where(and12(eq14(productOptionGroups.storeId, storeId), eq14(productOptionGroups.productId, productId)));
+      }
+      const previousFlavors = await tx.select({ id: productFlavors.id }).from(productFlavors).where(and12(eq14(productFlavors.storeId, storeId), eq14(productFlavors.productId, productId)));
+      const previousFlavorIds = previousFlavors.map((flavor) => flavor.id);
+      if (previousFlavorIds.length) await tx.delete(flavorSizePrices).where(and12(eq14(flavorSizePrices.storeId, storeId), inArray10(flavorSizePrices.flavorId, previousFlavorIds)));
+      await tx.delete(productFlavors).where(and12(eq14(productFlavors.storeId, storeId), eq14(productFlavors.productId, productId)));
+      await tx.delete(multiFlavorSettings).where(and12(eq14(multiFlavorSettings.storeId, storeId), eq14(multiFlavorSettings.productId, productId)));
+      await tx.delete(productSizes).where(and12(eq14(productSizes.storeId, storeId), eq14(productSizes.productId, productId)));
+      const sizeIds = [];
+      for (const [index2, size] of input.sizes.entries()) {
+        const inserted = await tx.insert(productSizes).values({
+          storeId,
+          productId,
+          name: size.name,
+          price: size.price,
+          promotionalPrice: size.promotionalPrice || null,
+          serves: size.serves ?? null,
+          minFlavors: size.minFlavors ?? null,
+          maxFlavors: size.maxFlavors ?? null,
+          sortOrder: index2,
+          active: true
+        }).$returningId();
+        if (inserted[0]?.id) sizeIds.push(inserted[0].id);
+      }
+      for (const [groupIndex, group] of input.modifierGroups.entries()) {
+        const insertedGroup = await tx.insert(productOptionGroups).values({
+          storeId,
+          productId,
+          name: group.name,
+          kind: group.maxSelections === 1 ? "single" : "multiple",
+          required: group.required,
+          minSelections: group.required ? Math.max(1, group.minSelections) : group.minSelections,
+          maxSelections: group.maxSelections,
+          freeSelections: group.freeSelections,
+          sortOrder: groupIndex,
+          active: true
+        }).$returningId();
+        const groupId = insertedGroup[0]?.id;
+        if (!groupId) continue;
+        await tx.insert(productOptions).values(group.options.map((option, optionIndex) => ({
+          storeId,
+          groupId,
+          name: option.name,
+          priceDelta: option.price,
+          maxQuantity: option.maxQuantity,
+          allowRepeat: option.maxQuantity > 1,
+          sortOrder: optionIndex,
+          active: true
+        })));
+      }
+      if (input.productType === "multi_flavor" && input.flavorSettings) {
+        await tx.insert(multiFlavorSettings).values({ storeId, productId, ...input.flavorSettings, visualDivisions: true });
+        for (const [flavorIndex, flavor] of input.flavors.entries()) {
+          const insertedFlavor = await tx.insert(productFlavors).values({ storeId, productId, name: flavor.name, sortOrder: flavorIndex, active: true }).$returningId();
+          const flavorId = insertedFlavor[0]?.id;
+          if (!flavorId) continue;
+          const prices = flavor.prices.map((price, sizeIndex) => sizeIds[sizeIndex] ? {
+            storeId,
+            flavorId,
+            productSizeId: sizeIds[sizeIndex],
+            price,
+            active: true
+          } : null).filter((value) => Boolean(value));
+          if (prices.length) await tx.insert(flavorSizePrices).values(prices);
+        }
+      }
+      return { id: productId, status: input.editorialStatus };
+    });
   })
 });
 
 // server/routers.ts
 init_push();
-import { z as z7 } from "zod";
+import { z as z11 } from "zod";
 init_db();
 init_timezone();
 init_db();
+
+// server/_core/oauth.ts
+import crypto3 from "node:crypto";
+import {
+  createRemoteJWKSet,
+  EncryptJWT,
+  importPKCS8,
+  jwtDecrypt,
+  jwtVerify as jwtVerify2,
+  SignJWT as SignJWT2
+} from "jose";
+init_db();
+
+// server/_core/cookies.ts
+function isSecureRequest(req) {
+  if (req.protocol === "https") return true;
+  const forwardedProto = req.headers["x-forwarded-proto"];
+  if (!forwardedProto) return false;
+  const protoList = Array.isArray(forwardedProto) ? forwardedProto : forwardedProto.split(",");
+  return protoList.some((proto) => proto.trim().toLowerCase() === "https");
+}
+function getSessionCookieOptions(req) {
+  const secure = isSecureRequest(req);
+  return {
+    httpOnly: true,
+    path: "/",
+    // SameSite=None requires Secure=true; fall back to lax for HTTP (dev)
+    sameSite: secure ? "none" : "lax",
+    secure
+  };
+}
+
+// server/_core/oauth.ts
+init_env();
+
+// server/_core/oauthCrypto.ts
+import crypto2 from "node:crypto";
+var TOKEN_FORMAT_VERSION = "v1";
+function deriveKey(secret) {
+  if (!secret) {
+    throw new Error("OAUTH_ENCRYPTION_KEY is required to store social tokens");
+  }
+  return crypto2.createHash("sha256").update(`bonatto:oauth:${secret}`, "utf8").digest();
+}
+function encryptOAuthToken(value, secret) {
+  if (!value) return null;
+  const iv = crypto2.randomBytes(12);
+  const cipher = crypto2.createCipheriv("aes-256-gcm", deriveKey(secret), iv);
+  const ciphertext = Buffer.concat([cipher.update(value, "utf8"), cipher.final()]);
+  const tag = cipher.getAuthTag();
+  return [TOKEN_FORMAT_VERSION, iv.toString("base64url"), tag.toString("base64url"), ciphertext.toString("base64url")].join(".");
+}
+function decryptOAuthToken(value, secret) {
+  if (!value) return null;
+  const [version, ivValue, tagValue, ciphertextValue] = value.split(".");
+  if (version !== TOKEN_FORMAT_VERSION || !ivValue || !tagValue || !ciphertextValue) {
+    throw new Error("Invalid encrypted OAuth token");
+  }
+  const decipher = crypto2.createDecipheriv(
+    "aes-256-gcm",
+    deriveKey(secret),
+    Buffer.from(ivValue, "base64url")
+  );
+  decipher.setAuthTag(Buffer.from(tagValue, "base64url"));
+  return Buffer.concat([
+    decipher.update(Buffer.from(ciphertextValue, "base64url")),
+    decipher.final()
+  ]).toString("utf8");
+}
 
 // shared/_core/errors.ts
 var HttpError = class extends Error {
@@ -7796,33 +12088,501 @@ var SDKServer = class {
 };
 var sdk = new SDKServer();
 
-// server/_core/cookies.ts
-function isSecureRequest(req) {
-  if (req.protocol === "https") return true;
-  const forwardedProto = req.headers["x-forwarded-proto"];
-  if (!forwardedProto) return false;
-  const protoList = Array.isArray(forwardedProto) ? forwardedProto : forwardedProto.split(",");
-  return protoList.some((proto) => proto.trim().toLowerCase() === "https");
+// server/_core/oauth.ts
+var OAUTH_CONSENT_VERSION = "2026-08-01";
+var GOOGLE_AUTH_ENDPOINT = "https://accounts.google.com/o/oauth2/v2/auth";
+var GOOGLE_TOKEN_ENDPOINT = "https://oauth2.googleapis.com/token";
+var GOOGLE_USERINFO_ENDPOINT = "https://openidconnect.googleapis.com/v1/userinfo";
+var GOOGLE_JWKS = createRemoteJWKSet(new URL("https://www.googleapis.com/oauth2/v3/certs"));
+var APPLE_AUTH_ENDPOINT = "https://appleid.apple.com/auth/authorize";
+var APPLE_TOKEN_ENDPOINT = "https://appleid.apple.com/auth/token";
+var APPLE_REVOKE_ENDPOINT = "https://appleid.apple.com/auth/revoke";
+var APPLE_JWKS = createRemoteJWKSet(new URL("https://appleid.apple.com/auth/keys"));
+var INSTAGRAM_AUTH_ENDPOINT = "https://www.instagram.com/oauth/authorize";
+var INSTAGRAM_TOKEN_ENDPOINT = "https://api.instagram.com/oauth/access_token";
+function getQueryParam(req, key) {
+  const queryValue = req.query[key];
+  if (typeof queryValue === "string") return queryValue;
+  const bodyValue = req.body?.[key];
+  return typeof bodyValue === "string" ? bodyValue : void 0;
 }
-function getSessionCookieOptions(req) {
-  const secure = isSecureRequest(req);
+function getProvider2(value) {
+  return value === "google" || value === "facebook" || value === "apple" || value === "instagram" ? value : void 0;
+}
+function getStateSecret() {
+  const secret = ENV.cookieSecret || "bonatto-oauth-state-dev-secret";
+  return crypto3.createHash("sha256").update(`bonatto:oauth-state:${secret}`).digest();
+}
+function buildBaseAppUrl(req) {
+  return (ENV.publicAppUrl || `${req.protocol}://${req.get("host") ?? ""}`).replace(/\/+$/, "");
+}
+function buildCallbackUrl(req) {
+  return `${buildBaseAppUrl(req)}/api/oauth/callback`;
+}
+function sanitizeReturnPath(value) {
+  if (!value || !value.startsWith("/") || value.startsWith("//")) return "/";
+  return value;
+}
+function randomBase64Url(size = 32) {
+  return crypto3.randomBytes(size).toString("base64url");
+}
+function createPkceChallenge(verifier) {
+  return crypto3.createHash("sha256").update(verifier).digest("base64url");
+}
+async function encryptOAuthState(payload) {
+  return new EncryptJWT(payload).setProtectedHeader({ alg: "dir", enc: "A256GCM", typ: "JWT" }).setIssuedAt().setExpirationTime("10m").encrypt(getStateSecret());
+}
+async function parseOAuthState(state) {
+  try {
+    const { payload } = await jwtDecrypt(state, getStateSecret(), {
+      keyManagementAlgorithms: ["dir"],
+      contentEncryptionAlgorithms: ["A256GCM"]
+    });
+    const provider = getProvider2(payload.provider);
+    const redirectUri = typeof payload.redirectUri === "string" ? payload.redirectUri : "";
+    if (!provider || !redirectUri) throw new Error("Invalid OAuth state");
+    return {
+      provider,
+      redirectUri,
+      returnPath: sanitizeReturnPath(typeof payload.returnPath === "string" ? payload.returnPath : "/"),
+      mode: payload.mode === "connect" ? "connect" : "login",
+      connectUserId: typeof payload.connectUserId === "number" ? payload.connectUserId : void 0,
+      codeVerifier: typeof payload.codeVerifier === "string" ? payload.codeVerifier : void 0,
+      nonce: typeof payload.nonce === "string" ? payload.nonce : void 0,
+      consentVersion: typeof payload.consentVersion === "string" ? payload.consentVersion : void 0
+    };
+  } catch {
+    try {
+      const { payload } = await jwtVerify2(state, getStateSecret(), { algorithms: ["HS256"] });
+      const redirectUri = typeof payload.redirectUri === "string" ? payload.redirectUri : "";
+      if (!redirectUri) throw new Error("Invalid OAuth state");
+      return {
+        provider: getProvider2(payload.provider) ?? "google",
+        redirectUri,
+        returnPath: sanitizeReturnPath(typeof payload.returnPath === "string" ? payload.returnPath : "/"),
+        mode: "login"
+      };
+    } catch {
+      const decoded = Buffer.from(state, "base64").toString("utf8");
+      const [redirectUri = "", returnPath = "/"] = decoded.split("|");
+      if (!redirectUri) throw new Error("Invalid OAuth state");
+      return { provider: "google", redirectUri, returnPath: sanitizeReturnPath(returnPath), mode: "login" };
+    }
+  }
+}
+function isSocialProviderConfigured(provider) {
+  const secureRuntime = !ENV.isProduction || ENV.cookieSecret.length >= 32 && ENV.oauthEncryptionKey.length >= 32;
+  if (!secureRuntime) return false;
+  if (provider === "google") return Boolean(ENV.googleClientId && ENV.googleClientSecret);
+  if (provider === "facebook") return Boolean(ENV.facebookAppId && ENV.facebookAppSecret);
+  if (provider === "apple") {
+    return Boolean(ENV.appleClientId && ENV.appleTeamId && ENV.appleKeyId && ENV.applePrivateKey);
+  }
+  return Boolean(ENV.instagramAppId && ENV.instagramAppSecret);
+}
+function getSocialProviderConfiguration() {
   return {
-    httpOnly: true,
-    path: "/",
-    // SameSite=None requires Secure=true; fall back to lax for HTTP (dev)
-    sameSite: secure ? "none" : "lax",
-    secure
+    google: isSocialProviderConfigured("google"),
+    facebook: isSocialProviderConfigured("facebook"),
+    apple: isSocialProviderConfigured("apple"),
+    instagram: isSocialProviderConfigured("instagram")
   };
+}
+async function buildAuthorizationUrl(provider, state, redirectUri, codeVerifier, nonce) {
+  if (provider === "google") {
+    const url2 = new URL(GOOGLE_AUTH_ENDPOINT);
+    url2.search = new URLSearchParams({
+      client_id: ENV.googleClientId,
+      redirect_uri: redirectUri,
+      response_type: "code",
+      scope: "openid email profile",
+      state,
+      nonce,
+      code_challenge: createPkceChallenge(codeVerifier),
+      code_challenge_method: "S256",
+      prompt: "select_account"
+    }).toString();
+    return url2;
+  }
+  if (provider === "facebook") {
+    const url2 = new URL(`https://www.facebook.com/${ENV.metaGraphApiVersion}/dialog/oauth`);
+    url2.search = new URLSearchParams({
+      client_id: ENV.facebookAppId,
+      redirect_uri: redirectUri,
+      response_type: "code",
+      scope: "public_profile,email",
+      state
+    }).toString();
+    return url2;
+  }
+  if (provider === "apple") {
+    const url2 = new URL(APPLE_AUTH_ENDPOINT);
+    url2.search = new URLSearchParams({
+      client_id: ENV.appleClientId,
+      redirect_uri: redirectUri,
+      response_type: "code id_token",
+      response_mode: "form_post",
+      scope: "name email",
+      state,
+      nonce
+    }).toString();
+    return url2;
+  }
+  const url = new URL(INSTAGRAM_AUTH_ENDPOINT);
+  url.search = new URLSearchParams({
+    client_id: ENV.instagramAppId,
+    redirect_uri: redirectUri,
+    response_type: "code",
+    scope: "instagram_business_basic",
+    state
+  }).toString();
+  return url;
+}
+async function createAppleClientSecret() {
+  const privateKey = ENV.applePrivateKey.replace(/\\n/g, "\n");
+  const key = await importPKCS8(privateKey, "ES256");
+  return new SignJWT2({}).setProtectedHeader({ alg: "ES256", kid: ENV.appleKeyId }).setIssuer(ENV.appleTeamId).setSubject(ENV.appleClientId).setAudience("https://appleid.apple.com").setIssuedAt().setExpirationTime("5m").sign(key);
+}
+async function exchangeCode(provider, code, state) {
+  if (provider === "google") {
+    const body2 = new URLSearchParams({
+      client_id: ENV.googleClientId,
+      client_secret: ENV.googleClientSecret,
+      code,
+      grant_type: "authorization_code",
+      redirect_uri: state.redirectUri
+    });
+    if (state.codeVerifier) body2.set("code_verifier", state.codeVerifier);
+    const response2 = await fetch(GOOGLE_TOKEN_ENDPOINT, { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: body2 });
+    if (!response2.ok) throw new Error(`Google token exchange failed (${response2.status})`);
+    const value2 = await response2.json();
+    return { accessToken: value2.access_token, refreshToken: value2.refresh_token, expiresIn: value2.expires_in, idToken: value2.id_token, scope: value2.scope };
+  }
+  if (provider === "facebook") {
+    const url = new URL(`https://graph.facebook.com/${ENV.metaGraphApiVersion}/oauth/access_token`);
+    url.search = new URLSearchParams({ client_id: ENV.facebookAppId, client_secret: ENV.facebookAppSecret, redirect_uri: state.redirectUri, code }).toString();
+    const response2 = await fetch(url);
+    if (!response2.ok) throw new Error(`Facebook token exchange failed (${response2.status})`);
+    const value2 = await response2.json();
+    return { accessToken: value2.access_token, expiresIn: value2.expires_in, scope: "public_profile,email" };
+  }
+  if (provider === "apple") {
+    const body2 = new URLSearchParams({
+      client_id: ENV.appleClientId,
+      client_secret: await createAppleClientSecret(),
+      code,
+      grant_type: "authorization_code",
+      redirect_uri: state.redirectUri
+    });
+    const response2 = await fetch(APPLE_TOKEN_ENDPOINT, { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: body2 });
+    if (!response2.ok) throw new Error(`Apple token exchange failed (${response2.status})`);
+    const value2 = await response2.json();
+    return { accessToken: value2.access_token, refreshToken: value2.refresh_token, expiresIn: value2.expires_in, idToken: value2.id_token, scope: "name email" };
+  }
+  const body = new URLSearchParams({
+    client_id: ENV.instagramAppId,
+    client_secret: ENV.instagramAppSecret,
+    grant_type: "authorization_code",
+    redirect_uri: state.redirectUri,
+    code
+  });
+  const response = await fetch(INSTAGRAM_TOKEN_ENDPOINT, { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body });
+  if (!response.ok) throw new Error(`Instagram token exchange failed (${response.status})`);
+  const value = await response.json();
+  return { accessToken: value.access_token, scope: value.permissions?.join(" ") ?? "instagram_business_basic" };
+}
+async function fetchGoogleProfile(tokens, nonce) {
+  if (!tokens.idToken) throw new Error("Google identity token missing");
+  await jwtVerify2(tokens.idToken, GOOGLE_JWKS, {
+    issuer: ["https://accounts.google.com", "accounts.google.com"],
+    audience: ENV.googleClientId,
+    ...nonce ? { requiredClaims: ["nonce"] } : {}
+  }).then(({ payload }) => {
+    if (nonce && payload.nonce !== nonce) throw new Error("Google nonce mismatch");
+  });
+  const response = await fetch(GOOGLE_USERINFO_ENDPOINT, { headers: { Authorization: `Bearer ${tokens.accessToken}` } });
+  if (!response.ok) throw new Error(`Google userinfo failed (${response.status})`);
+  const raw = await response.json();
+  return {
+    providerUserId: String(raw.sub ?? ""),
+    name: typeof raw.name === "string" ? raw.name : void 0,
+    firstName: typeof raw.given_name === "string" ? raw.given_name : void 0,
+    lastName: typeof raw.family_name === "string" ? raw.family_name : void 0,
+    email: typeof raw.email === "string" ? raw.email.toLowerCase() : void 0,
+    emailVerified: raw.email_verified === true,
+    avatarUrl: typeof raw.picture === "string" ? raw.picture : void 0,
+    raw
+  };
+}
+async function fetchFacebookProfile(tokens) {
+  const debugUrl = new URL(`https://graph.facebook.com/${ENV.metaGraphApiVersion}/debug_token`);
+  debugUrl.search = new URLSearchParams({ input_token: tokens.accessToken, access_token: `${ENV.facebookAppId}|${ENV.facebookAppSecret}` }).toString();
+  const debugResponse = await fetch(debugUrl);
+  const debug = await debugResponse.json();
+  if (!debugResponse.ok || !debug.data?.is_valid || debug.data.app_id !== ENV.facebookAppId) {
+    throw new Error("Facebook access token validation failed");
+  }
+  const profileUrl = new URL(`https://graph.facebook.com/${ENV.metaGraphApiVersion}/me`);
+  profileUrl.search = new URLSearchParams({ fields: "id,name,first_name,last_name,email,picture.type(large)", access_token: tokens.accessToken }).toString();
+  const response = await fetch(profileUrl);
+  if (!response.ok) throw new Error(`Facebook userinfo failed (${response.status})`);
+  const raw = await response.json();
+  if (String(raw.id ?? "") !== debug.data.user_id) throw new Error("Facebook user id mismatch");
+  return {
+    providerUserId: String(raw.id ?? ""),
+    name: typeof raw.name === "string" ? raw.name : void 0,
+    firstName: typeof raw.first_name === "string" ? raw.first_name : void 0,
+    lastName: typeof raw.last_name === "string" ? raw.last_name : void 0,
+    email: typeof raw.email === "string" ? raw.email.toLowerCase() : void 0,
+    emailVerified: false,
+    avatarUrl: typeof raw.picture?.data?.url === "string" ? raw.picture.data.url : void 0,
+    raw
+  };
+}
+async function fetchAppleProfile(tokens, nonce, callbackUser) {
+  if (!tokens.idToken) throw new Error("Apple identity token missing");
+  const { payload } = await jwtVerify2(tokens.idToken, APPLE_JWKS, {
+    issuer: "https://appleid.apple.com",
+    audience: ENV.appleClientId
+  });
+  if (nonce && payload.nonce !== nonce) throw new Error("Apple nonce mismatch");
+  let supplied = {};
+  if (callbackUser) {
+    try {
+      supplied = JSON.parse(callbackUser);
+    } catch {
+      supplied = {};
+    }
+  }
+  const firstName = supplied.name?.firstName;
+  const lastName = supplied.name?.lastName;
+  const email = typeof payload.email === "string" ? payload.email.toLowerCase() : supplied.email?.toLowerCase();
+  return {
+    providerUserId: String(payload.sub ?? ""),
+    name: [firstName, lastName].filter(Boolean).join(" ") || void 0,
+    firstName,
+    lastName,
+    email,
+    emailVerified: payload.email_verified === true || payload.email_verified === "true",
+    raw: { sub: payload.sub, email, email_verified: payload.email_verified, is_private_email: payload.is_private_email, name: supplied.name }
+  };
+}
+async function fetchInstagramProfile(tokens) {
+  const url = new URL("https://graph.instagram.com/me");
+  url.search = new URLSearchParams({ fields: "user_id,username,name,account_type,profile_picture_url", access_token: tokens.accessToken }).toString();
+  const response = await fetch(url);
+  if (!response.ok) throw new Error(`Instagram userinfo failed (${response.status})`);
+  const raw = await response.json();
+  const accountType = typeof raw.account_type === "string" ? raw.account_type.toUpperCase() : "";
+  if (accountType !== "BUSINESS" && accountType !== "CREATOR") {
+    throw new Error("Instagram professional account required");
+  }
+  return {
+    providerUserId: String(raw.user_id ?? raw.id ?? ""),
+    name: typeof raw.name === "string" ? raw.name : void 0,
+    username: typeof raw.username === "string" ? raw.username : void 0,
+    avatarUrl: typeof raw.profile_picture_url === "string" ? raw.profile_picture_url : void 0,
+    accountType,
+    emailVerified: false,
+    raw
+  };
+}
+async function fetchProfile(provider, tokens, state, req) {
+  if (provider === "google") return fetchGoogleProfile(tokens, state.nonce);
+  if (provider === "facebook") return fetchFacebookProfile(tokens);
+  if (provider === "apple") return fetchAppleProfile(tokens, state.nonce, req ? getQueryParam(req, "user") : void 0);
+  return fetchInstagramProfile(tokens);
+}
+async function resolveUser(req, state, provider, profile) {
+  if (!profile.providerUserId) throw new Error("Provider user id missing");
+  if (state.mode === "connect") {
+    const sessionUser = await sdk.authenticateRequest(req);
+    if (!state.connectUserId || sessionUser.id !== state.connectUserId) throw new Error("OAuth connection session mismatch");
+    const owner = await getUserByAuthProvider(provider, profile.providerUserId);
+    if (owner && owner.id !== sessionUser.id) throw new Error("Social account already linked to another user");
+    return { user: sessionUser, isNew: false };
+  }
+  let user = await getUserByAuthProvider(provider, profile.providerUserId);
+  let isNew = false;
+  if (!user && profile.email && profile.emailVerified) user = await getUserByEmail(profile.email);
+  if (!user) {
+    const openId = `${provider}:${profile.providerUserId}`;
+    await upsertUser({
+      openId,
+      name: profile.name ?? profile.username ?? "Cliente Bonatto",
+      email: profile.email ?? null,
+      loginMethod: provider,
+      lastSignedIn: /* @__PURE__ */ new Date()
+    });
+    user = await getUserByOpenId(openId);
+    isNew = true;
+  }
+  if (!user) throw new Error("Failed to resolve social user");
+  return { user, isNew };
+}
+async function persistSocialAccount(userId, provider, profile, tokens, state, requestContext) {
+  const user = await getUserById(userId);
+  if (!user) throw new Error("User not found");
+  const existingAccount = await getCustomerAuthProvider(userId, provider);
+  await updateUserSocialProfile(userId, {
+    name: !user.name && profile.name ? profile.name : void 0,
+    firstName: !user.firstName && profile.firstName ? profile.firstName : void 0,
+    lastName: !user.lastName && profile.lastName ? profile.lastName : void 0,
+    email: !user.email && profile.email && profile.emailVerified ? profile.email : void 0,
+    username: !user.username && profile.username ? profile.username : void 0,
+    avatarUrl: !user.avatarUrl && profile.avatarUrl ? profile.avatarUrl : void 0,
+    loginMethod: state.mode === "login" ? provider : void 0,
+    emailVerified: profile.emailVerified || user.emailVerified,
+    profileCompleted: Boolean(user.name || profile.name) && Boolean(user.email || profile.email),
+    lastSignedIn: /* @__PURE__ */ new Date()
+  });
+  await linkCustomerAuthProvider({
+    userId,
+    provider,
+    providerUserId: profile.providerUserId,
+    providerEmail: profile.email ?? null,
+    providerUsername: profile.username ?? null,
+    displayName: profile.name ?? null,
+    avatarUrl: profile.avatarUrl ?? null,
+    accountType: profile.accountType ?? null,
+    accessTokenEncrypted: encryptOAuthToken(tokens.accessToken, ENV.oauthEncryptionKey),
+    refreshTokenEncrypted: tokens.refreshToken ? encryptOAuthToken(tokens.refreshToken, ENV.oauthEncryptionKey) : existingAccount?.refreshTokenEncrypted ?? null,
+    tokenExpiresAt: tokens.expiresIn ? new Date(Date.now() + tokens.expiresIn * 1e3) : existingAccount?.tokenExpiresAt ?? null,
+    grantedScopes: tokens.scope?.split(/[ ,]+/).filter(Boolean) ?? [],
+    rawProfileJson: JSON.stringify(profile.raw),
+    isPrimary: state.mode === "login" && (user.loginMethod === provider || !user.loginMethod),
+    consentVersion: state.consentVersion ?? OAUTH_CONSENT_VERSION,
+    consentedAt: /* @__PURE__ */ new Date(),
+    lastSyncedAt: /* @__PURE__ */ new Date()
+  });
+  if (state.redirectUri) {
+    await recordUserConsent({
+      userId,
+      kind: "social_sync",
+      version: state.consentVersion ?? OAUTH_CONSENT_VERSION,
+      ipAddress: requestContext?.ipAddress ?? null,
+      userAgent: requestContext?.userAgent ?? null
+    });
+  }
+}
+async function finalizeLogin(req, res, openId, name, returnPath) {
+  const sessionToken = await sdk.createSessionToken(openId, { name, expiresInMs: DEFAULT_SESSION_MS });
+  res.cookie(COOKIE_NAME, sessionToken, { ...getSessionCookieOptions(req), maxAge: DEFAULT_SESSION_MS });
+  res.redirect(302, sanitizeReturnPath(returnPath));
+}
+function callbackError(res, state, error) {
+  const message = error instanceof Error ? error.message : "OAuth failed";
+  const code = message === "Instagram professional account required" ? "instagram_professional_required" : "oauth_failed";
+  const path = state?.mode === "connect" ? "/minha-conta?tab=perfil" : "/login";
+  const separator = path.includes("?") ? "&" : "?";
+  res.redirect(302, `${path}${separator}oauthError=${encodeURIComponent(code)}`);
+}
+async function handleOAuthCallback(req, res) {
+  const code = getQueryParam(req, "code");
+  const stateValue = getQueryParam(req, "state");
+  if (!code || !stateValue) return res.status(400).json({ error: "code and state are required" });
+  let state;
+  try {
+    state = await parseOAuthState(stateValue);
+    const provider = state.provider;
+    if (!provider || state.redirectUri !== buildCallbackUrl(req)) throw new Error("Invalid OAuth redirect target");
+    const tokens = await exchangeCode(provider, code, state);
+    const profile = await fetchProfile(provider, tokens, state, req);
+    const { user, isNew } = await resolveUser(req, state, provider, profile);
+    await persistSocialAccount(user.id, provider, profile, tokens, state, {
+      ipAddress: req.ip ?? null,
+      userAgent: req.get("user-agent") ?? null
+    });
+    await recordAuthEvent({
+      userId: user.id,
+      provider,
+      event: state.mode === "connect" ? "provider_connected" : "login_success",
+      ipAddress: req.ip ?? null,
+      userAgent: req.get("user-agent") ?? null
+    });
+    if (isNew) fireJourneyTrigger("new_user", user.id, user.phone ?? void 0).catch(console.error);
+    if (state.mode === "connect") return res.redirect(302, `${state.returnPath}${state.returnPath.includes("?") ? "&" : "?"}oauthConnected=${provider}`);
+    const refreshed = await getUserById(user.id);
+    return finalizeLogin(req, res, refreshed?.openId ?? user.openId, refreshed?.name ?? "Cliente Bonatto", state.returnPath);
+  } catch (error) {
+    console.error("[OAuth] Callback failed", error);
+    await recordAuthEvent({ provider: state?.provider, event: "login_failure", ipAddress: req.ip ?? null, userAgent: req.get("user-agent") ?? null }).catch(console.error);
+    return callbackError(res, state, error);
+  }
+}
+async function syncSocialProvider(userId, provider) {
+  if (provider === "apple") throw new Error("Apple profile requires reconnection");
+  const account = await getCustomerAuthProvider(userId, provider);
+  if (!account?.accessTokenEncrypted) throw new Error("Social connection has no reusable token");
+  let accessToken = decryptOAuthToken(account.accessTokenEncrypted, ENV.oauthEncryptionKey);
+  const refreshToken = decryptOAuthToken(account.refreshTokenEncrypted, ENV.oauthEncryptionKey) ?? void 0;
+  if (!accessToken) throw new Error("Social connection token unavailable");
+  let refreshedExpiresIn;
+  if (provider === "google" && account.tokenExpiresAt && account.tokenExpiresAt.getTime() <= Date.now() + 6e4) {
+    if (!refreshToken) throw new Error("Google reconnection required");
+    const body = new URLSearchParams({ client_id: ENV.googleClientId, client_secret: ENV.googleClientSecret, grant_type: "refresh_token", refresh_token: refreshToken });
+    const response = await fetch(GOOGLE_TOKEN_ENDPOINT, { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body });
+    if (!response.ok) throw new Error("Google token refresh failed");
+    const refreshed = await response.json();
+    accessToken = refreshed.access_token;
+    refreshedExpiresIn = refreshed.expires_in;
+  } else if (account.tokenExpiresAt && account.tokenExpiresAt.getTime() <= Date.now()) {
+    throw new Error("Social provider reconnection required");
+  }
+  const tokens = { accessToken, refreshToken, expiresIn: refreshedExpiresIn, scope: account.grantedScopes ? JSON.parse(account.grantedScopes).join(" ") : void 0 };
+  const profile = await fetchProfile(provider, tokens, { provider, redirectUri: "", returnPath: "/", mode: "connect" });
+  await persistSocialAccount(userId, provider, profile, tokens, { provider, redirectUri: "", returnPath: "/", mode: "connect", consentVersion: account.consentVersion ?? OAUTH_CONSENT_VERSION });
+  await recordAuthEvent({ userId, provider, event: "profile_synced" });
+  return profile;
+}
+async function revokeSocialProvider(provider, accessTokenEncrypted, refreshTokenEncrypted) {
+  const accessToken = decryptOAuthToken(accessTokenEncrypted, ENV.oauthEncryptionKey);
+  const refreshToken = decryptOAuthToken(refreshTokenEncrypted, ENV.oauthEncryptionKey);
+  if (!accessToken && !refreshToken) return;
+  if (provider === "google") {
+    const body = new URLSearchParams({ token: refreshToken ?? accessToken ?? "" });
+    await fetch("https://oauth2.googleapis.com/revoke", { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body });
+  } else if (provider === "facebook") {
+    await fetch(`https://graph.facebook.com/${ENV.metaGraphApiVersion}/me/permissions?access_token=${encodeURIComponent(accessToken ?? "")}`, { method: "DELETE" });
+  } else if (provider === "apple") {
+    const body = new URLSearchParams({ client_id: ENV.appleClientId, client_secret: await createAppleClientSecret(), token: refreshToken ?? accessToken ?? "", token_type_hint: refreshToken ? "refresh_token" : "access_token" });
+    await fetch(APPLE_REVOKE_ENDPOINT, { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body });
+  }
+}
+function registerOAuthRoutes(app) {
+  const startHandler = async (req, res, forcedProvider) => {
+    const provider = forcedProvider ?? getProvider2(req.params.provider);
+    if (!provider || !isSocialProviderConfigured(provider)) return res.status(503).json({ error: "OAuth provider is not configured" });
+    const mode = getQueryParam(req, "mode") === "connect" ? "connect" : "login";
+    if (provider === "instagram" && mode !== "connect") return res.status(400).json({ error: "Instagram is available only as a professional account connection" });
+    try {
+      const connectUser = mode === "connect" ? await sdk.authenticateRequest(req) : null;
+      const redirectUri = buildCallbackUrl(req);
+      const returnPath = sanitizeReturnPath(getQueryParam(req, "returnTo") ?? (mode === "connect" ? "/minha-conta?tab=perfil" : "/"));
+      const codeVerifier = randomBase64Url(48);
+      const nonce = randomBase64Url(24);
+      const state = await encryptOAuthState({ provider, redirectUri, returnPath, mode, connectUserId: connectUser?.id, codeVerifier, nonce, consentVersion: OAUTH_CONSENT_VERSION });
+      const url = await buildAuthorizationUrl(provider, state, redirectUri, codeVerifier, nonce);
+      return res.redirect(302, url.toString());
+    } catch (error) {
+      console.error(`[OAuth] ${provider} start failed`, error);
+      return res.status(mode === "connect" ? 401 : 500).json({ error: "OAuth start failed" });
+    }
+  };
+  app.get("/api/oauth/google/start", (req, res) => startHandler(req, res, "google"));
+  app.get("/api/oauth/:provider/start", (req, res) => startHandler(req, res));
+  app.get("/api/oauth/callback", handleOAuthCallback);
+  app.post("/api/oauth/callback", handleOAuthCallback);
 }
 
 // server/_core/systemRouter.ts
 init_notification();
-import { z as z4 } from "zod";
+import { z as z8 } from "zod";
 
 // server/dailyReport.ts
 init_db();
 init_schema();
-import { and as and6, gte as gte3, lt as lt2 } from "drizzle-orm";
+import { and as and13, gte as gte3, lt as lt2 } from "drizzle-orm";
 function getBrasiliaDateRange() {
   const now = /* @__PURE__ */ new Date();
   const brasiliaOffset = -3 * 60;
@@ -7847,7 +12607,7 @@ async function getDailySalesData() {
     total: orders.total,
     createdAt: orders.createdAt
   }).from(orders).where(
-    and6(
+    and13(
       gte3(orders.createdAt, start),
       lt2(orders.createdAt, end)
     )
@@ -7934,11 +12694,15 @@ async function sendDailyReport() {
 
 // server/_core/systemRouter.ts
 init_db();
-import { sql as sql4 } from "drizzle-orm";
+import { sql as sql9 } from "drizzle-orm";
 var systemRouter = router({
+  socialAuthConfig: publicProcedure.query(() => ({
+    providers: getSocialProviderConfiguration(),
+    instagramProfessionalOnly: true
+  })),
   health: publicProcedure.input(
-    z4.object({
-      timestamp: z4.number().min(0, "timestamp cannot be negative")
+    z8.object({
+      timestamp: z8.number().min(0, "timestamp cannot be negative")
     })
   ).query(async () => {
     const startedAt = Date.now();
@@ -7946,7 +12710,7 @@ var systemRouter = router({
     try {
       const db = await getDb();
       if (db) {
-        await db.execute(sql4`SELECT 1`);
+        await db.execute(sql9`SELECT 1`);
         database = "ok";
       }
     } catch {
@@ -7967,9 +12731,9 @@ var systemRouter = router({
     };
   }),
   notifyOwner: adminProcedure.input(
-    z4.object({
-      title: z4.string().min(1, "title is required"),
-      content: z4.string().min(1, "content is required")
+    z8.object({
+      title: z8.string().min(1, "title is required"),
+      content: z8.string().min(1, "content is required")
     })
   ).mutation(async ({ input }) => {
     const delivered = await notifyOwner(input);
@@ -7983,45 +12747,6 @@ var systemRouter = router({
     return { success: true };
   })
 });
-
-// server/storeUtils.ts
-init_schema();
-init_db();
-import { TRPCError as TRPCError5 } from "@trpc/server";
-import { eq as eq8 } from "drizzle-orm";
-async function resolveStoreId(user, requestedStoreId) {
-  if (user.role === "admin") {
-    return requestedStoreId;
-  }
-  if (user.role === "manager") {
-    const db = await getDb();
-    if (!db) {
-      throw new TRPCError5({ code: "INTERNAL_SERVER_ERROR", message: "DB indisponivel" });
-    }
-    const [row] = await db.select({ storeId: storeManagers.storeId }).from(storeManagers).where(eq8(storeManagers.userId, user.id)).limit(1);
-    if (!row) {
-      throw new TRPCError5({
-        code: "FORBIDDEN",
-        message: "Gerente nao esta associado a nenhuma loja. Contate o administrador."
-      });
-    }
-    return row.storeId;
-  }
-  throw new TRPCError5({ code: "FORBIDDEN", message: "Acesso negado" });
-}
-async function assertStoreEntityAccess(user, entityStoreId, requestedStoreId) {
-  const scopedStoreId = await resolveStoreId(user, requestedStoreId);
-  if (user.role === "admin") {
-    if (requestedStoreId !== void 0 && entityStoreId !== requestedStoreId) {
-      throw new TRPCError5({ code: "FORBIDDEN", message: "Registro fora da loja selecionada." });
-    }
-    return scopedStoreId;
-  }
-  if (entityStoreId == null || entityStoreId !== scopedStoreId) {
-    throw new TRPCError5({ code: "FORBIDDEN", message: "Registro fora da sua loja." });
-  }
-  return scopedStoreId;
-}
 
 // server/stripe.ts
 init_db();
@@ -8263,7 +12988,7 @@ async function createPaymentIntent(amountInReais, currency = "brl", metadata) {
 // server/ifood.ts
 init_schema();
 init_db();
-import { and as and7, eq as eq9, sql as sql5 } from "drizzle-orm";
+import { and as and14, eq as eq16, sql as sql10 } from "drizzle-orm";
 var IFOOD_BASE_URL = "https://merchant-api.ifood.com.br";
 var IFOOD_SOURCE = "ifood";
 var IFOOD_STATUS_MAP = {
@@ -8348,13 +13073,13 @@ function getConfiguredAggregationIds() {
 }
 async function hasColumn2(db, tableName, columnName) {
   const query = `SHOW COLUMNS FROM \`${tableName}\` LIKE '${columnName}'`;
-  const result = await db.execute(sql5.raw(query));
+  const result = await db.execute(sql10.raw(query));
   const rows = result[0];
   return rows.length > 0;
 }
 async function hasIndex2(db, tableName, indexName) {
   const query = `SHOW INDEX FROM \`${tableName}\` WHERE Key_name = '${indexName}'`;
-  const result = await db.execute(sql5.raw(query));
+  const result = await db.execute(sql10.raw(query));
   const rows = result[0];
   return rows.length > 0;
 }
@@ -8364,32 +13089,32 @@ async function ensureIfoodSyncSchema(db) {
   }
   ensureSchemaPromise = (async () => {
     if (!await hasColumn2(db, "categories", "externalSource")) {
-      await db.execute(sql5.raw("ALTER TABLE `categories` ADD `externalSource` varchar(32), ADD `externalMerchantId` varchar(128), ADD `externalId` varchar(128)"));
+      await db.execute(sql10.raw("ALTER TABLE `categories` ADD `externalSource` varchar(32), ADD `externalMerchantId` varchar(128), ADD `externalId` varchar(128)"));
     }
     if (!await hasIndex2(db, "categories", "categories_external_uq")) {
-      await db.execute(sql5.raw("CREATE UNIQUE INDEX `categories_external_uq` ON `categories` (`externalSource`,`externalMerchantId`,`externalId`)"));
+      await db.execute(sql10.raw("CREATE UNIQUE INDEX `categories_external_uq` ON `categories` (`externalSource`,`externalMerchantId`,`externalId`)"));
     }
     if (!await hasColumn2(db, "products", "externalSource")) {
       await db.execute(
-        sql5.raw(
+        sql10.raw(
           "ALTER TABLE `products` ADD `externalSource` varchar(32), ADD `externalMerchantId` varchar(128), ADD `externalId` varchar(128), ADD `externalCode` varchar(128)"
         )
       );
     }
     if (!await hasIndex2(db, "products", "products_external_uq")) {
-      await db.execute(sql5.raw("CREATE UNIQUE INDEX `products_external_uq` ON `products` (`externalSource`,`externalMerchantId`,`externalId`)"));
+      await db.execute(sql10.raw("CREATE UNIQUE INDEX `products_external_uq` ON `products` (`externalSource`,`externalMerchantId`,`externalId`)"));
     }
     if (!await hasColumn2(db, "coupons", "externalSource")) {
-      await db.execute(sql5.raw("ALTER TABLE `coupons` ADD `externalSource` varchar(32), ADD `externalMerchantId` varchar(128), ADD `externalId` varchar(128)"));
+      await db.execute(sql10.raw("ALTER TABLE `coupons` ADD `externalSource` varchar(32), ADD `externalMerchantId` varchar(128), ADD `externalId` varchar(128)"));
     }
     if (!await hasIndex2(db, "coupons", "coupons_external_uq")) {
-      await db.execute(sql5.raw("CREATE UNIQUE INDEX `coupons_external_uq` ON `coupons` (`externalSource`,`externalMerchantId`,`externalId`)"));
+      await db.execute(sql10.raw("CREATE UNIQUE INDEX `coupons_external_uq` ON `coupons` (`externalSource`,`externalMerchantId`,`externalId`)"));
     }
     if (!await hasColumn2(db, "promotions", "externalSource")) {
-      await db.execute(sql5.raw("ALTER TABLE `promotions` ADD `externalSource` varchar(32), ADD `externalMerchantId` varchar(128), ADD `externalId` varchar(128)"));
+      await db.execute(sql10.raw("ALTER TABLE `promotions` ADD `externalSource` varchar(32), ADD `externalMerchantId` varchar(128), ADD `externalId` varchar(128)"));
     }
     if (!await hasIndex2(db, "promotions", "promotions_external_uq")) {
-      await db.execute(sql5.raw("CREATE UNIQUE INDEX `promotions_external_uq` ON `promotions` (`externalSource`,`externalMerchantId`,`externalId`)"));
+      await db.execute(sql10.raw("CREATE UNIQUE INDEX `promotions_external_uq` ON `promotions` (`externalSource`,`externalMerchantId`,`externalId`)"));
     }
   })().catch((error) => {
     ensureSchemaPromise = null;
@@ -8496,10 +13221,10 @@ async function syncIfoodCatalog(selectedMerchantId) {
       if (!remoteCategory?.id) continue;
       seenCategoryIds.add(remoteCategory.id);
       const existingCategory = await db.select().from(categories).where(
-        and7(
-          eq9(categories.externalSource, IFOOD_SOURCE),
-          eq9(categories.externalMerchantId, merchantId),
-          eq9(categories.externalId, remoteCategory.id)
+        and14(
+          eq16(categories.externalSource, IFOOD_SOURCE),
+          eq16(categories.externalMerchantId, merchantId),
+          eq16(categories.externalId, remoteCategory.id)
         )
       ).limit(1);
       const categoryPayload = {
@@ -8521,7 +13246,7 @@ async function syncIfoodCatalog(selectedMerchantId) {
           active: categoryPayload.active,
           sortOrder: categoryPayload.sortOrder,
           updatedAt: /* @__PURE__ */ new Date()
-        }).where(eq9(categories.id, categoryId));
+        }).where(eq16(categories.id, categoryId));
         categoriesUpdated += 1;
       } else {
         const inserted = await db.insert(categories).values(categoryPayload).$returningId();
@@ -8534,10 +13259,10 @@ async function syncIfoodCatalog(selectedMerchantId) {
         if (!remoteItem?.id) continue;
         seenProductIds.add(remoteItem.id);
         const existingProduct = await db.select().from(products).where(
-          and7(
-            eq9(products.externalSource, IFOOD_SOURCE),
-            eq9(products.externalMerchantId, merchantId),
-            eq9(products.externalId, remoteItem.id)
+          and14(
+            eq16(products.externalSource, IFOOD_SOURCE),
+            eq16(products.externalMerchantId, merchantId),
+            eq16(products.externalId, remoteItem.id)
           )
         ).limit(1);
         const productPayload = {
@@ -8565,7 +13290,7 @@ async function syncIfoodCatalog(selectedMerchantId) {
             sortOrder: productPayload.sortOrder,
             externalCode: productPayload.externalCode,
             updatedAt: /* @__PURE__ */ new Date()
-          }).where(eq9(products.id, existingProduct[0].id));
+          }).where(eq16(products.id, existingProduct[0].id));
           productsUpdated += 1;
         } else {
           await db.insert(products).values(productPayload);
@@ -8573,19 +13298,19 @@ async function syncIfoodCatalog(selectedMerchantId) {
         }
       }
     }
-    const existingMerchantCategories = await db.select({ id: categories.id, externalId: categories.externalId }).from(categories).where(and7(eq9(categories.externalSource, IFOOD_SOURCE), eq9(categories.externalMerchantId, merchantId)));
+    const existingMerchantCategories = await db.select({ id: categories.id, externalId: categories.externalId }).from(categories).where(and14(eq16(categories.externalSource, IFOOD_SOURCE), eq16(categories.externalMerchantId, merchantId)));
     let categoriesDeactivated = 0;
     for (const localCategory of existingMerchantCategories) {
       if (localCategory.externalId && !seenCategoryIds.has(localCategory.externalId)) {
-        await db.update(categories).set({ active: false, updatedAt: /* @__PURE__ */ new Date() }).where(eq9(categories.id, localCategory.id));
+        await db.update(categories).set({ active: false, updatedAt: /* @__PURE__ */ new Date() }).where(eq16(categories.id, localCategory.id));
         categoriesDeactivated += 1;
       }
     }
-    const existingMerchantProducts = await db.select({ id: products.id, externalId: products.externalId }).from(products).where(and7(eq9(products.externalSource, IFOOD_SOURCE), eq9(products.externalMerchantId, merchantId)));
+    const existingMerchantProducts = await db.select({ id: products.id, externalId: products.externalId }).from(products).where(and14(eq16(products.externalSource, IFOOD_SOURCE), eq16(products.externalMerchantId, merchantId)));
     let productsDeactivated = 0;
     for (const localProduct of existingMerchantProducts) {
       if (localProduct.externalId && !seenProductIds.has(localProduct.externalId)) {
-        await db.update(products).set({ active: false, updatedAt: /* @__PURE__ */ new Date() }).where(eq9(products.id, localProduct.id));
+        await db.update(products).set({ active: false, updatedAt: /* @__PURE__ */ new Date() }).where(eq16(products.id, localProduct.id));
         productsDeactivated += 1;
       }
     }
@@ -8633,10 +13358,10 @@ async function syncIfoodPromotions(input) {
         const item = items[index2];
         const externalId = `${aggregationId}:${item.itemId ?? item.ean ?? item.sku ?? index2}`;
         const existing = await db.select().from(promotions).where(
-          and7(
-            eq9(promotions.externalSource, IFOOD_SOURCE),
-            eq9(promotions.externalMerchantId, merchant.id),
-            eq9(promotions.externalId, externalId)
+          and14(
+            eq16(promotions.externalSource, IFOOD_SOURCE),
+            eq16(promotions.externalMerchantId, merchant.id),
+            eq16(promotions.externalId, externalId)
           )
         ).limit(1);
         const startsAt = parseDate(item.initialDate);
@@ -8665,7 +13390,7 @@ async function syncIfoodPromotions(input) {
             startsAt: payload.startsAt,
             endsAt: payload.endsAt,
             updatedAt: /* @__PURE__ */ new Date()
-          }).where(eq9(promotions.id, existing[0].id));
+          }).where(eq16(promotions.id, existing[0].id));
           promotionsUpdated += 1;
         } else {
           await db.insert(promotions).values(payload);
@@ -8722,12 +13447,12 @@ async function processEvent(db, event) {
     await db.update(orders).set({
       status: newStatus,
       updatedAt: /* @__PURE__ */ new Date()
-    }).where(eq9(orders.ifoodOrderId, ifoodOrderId));
+    }).where(eq16(orders.ifoodOrderId, ifoodOrderId));
     console.log(`[iFood] Pedido ${ifoodOrderId} -> ${newStatus}`);
   }
 }
 async function handleNewOrder(db, ifoodOrderId) {
-  const existing = await db.select({ id: orders.id }).from(orders).where(eq9(orders.ifoodOrderId, ifoodOrderId)).limit(1);
+  const existing = await db.select({ id: orders.id }).from(orders).where(eq16(orders.ifoodOrderId, ifoodOrderId)).limit(1);
   if (existing.length > 0) {
     console.log(`[iFood] Pedido ${ifoodOrderId} ja existe, ignorando`);
     return;
@@ -8794,8 +13519,8 @@ async function cancelIfoodOrder(ifoodOrderId, reason) {
 
 // server/marketplaces.ts
 init_db();
-import { z as z5 } from "zod";
-var marketplaceProviderIdSchema = z5.enum([
+import { z as z9 } from "zod";
+var marketplaceProviderIdSchema = z9.enum([
   "ifood",
   "uber_eats",
   "rappi",
@@ -8807,13 +13532,13 @@ var marketplaceProviderIdSchema = z5.enum([
   "glovo",
   "foodpanda"
 ]);
-var marketplaceConfigSchema = z5.object({
-  enabled: z5.boolean().default(false),
-  merchantId: z5.string().trim().max(120).optional().default(""),
-  externalStoreId: z5.string().trim().max(120).optional().default(""),
-  regionHint: z5.string().trim().max(120).optional().default(""),
-  aggregationIds: z5.array(z5.string().trim().min(1).max(120)).max(20).optional().default([]),
-  notes: z5.string().trim().max(500).optional().default("")
+var marketplaceConfigSchema = z9.object({
+  enabled: z9.boolean().default(false),
+  merchantId: z9.string().trim().max(120).optional().default(""),
+  externalStoreId: z9.string().trim().max(120).optional().default(""),
+  regionHint: z9.string().trim().max(120).optional().default(""),
+  aggregationIds: z9.array(z9.string().trim().min(1).max(120)).max(20).optional().default([]),
+  notes: z9.string().trim().max(500).optional().default("")
 });
 var MARKETPLACE_SETTINGS_KEY = "marketplaceConfigs";
 var PROVIDERS = [
@@ -9090,9 +13815,9 @@ async function pullMarketplaceOrders(providerId) {
 // server/ifoodIntegration.ts
 init_db();
 init_runtimeSchema();
-import { TRPCError as TRPCError6 } from "@trpc/server";
-import { sql as sql6 } from "drizzle-orm";
-import crypto2 from "crypto";
+import { TRPCError as TRPCError11 } from "@trpc/server";
+import { sql as sql11 } from "drizzle-orm";
+import crypto4 from "crypto";
 function asRows(result) {
   return result[0] ?? [];
 }
@@ -9166,13 +13891,13 @@ function mapLog(row) {
     createdAt: toIso(row.created_at) ?? (/* @__PURE__ */ new Date()).toISOString()
   };
 }
-async function requireDb() {
+async function requireDb3() {
   const db = await getDb();
-  if (!db) throw new TRPCError6({ code: "INTERNAL_SERVER_ERROR", message: "Database indisponivel." });
+  if (!db) throw new TRPCError11({ code: "INTERNAL_SERVER_ERROR", message: "Database indisponivel." });
   return db;
 }
 async function getDefaultStoreId(db) {
-  const rows = asRows(await db.execute(sql6.raw(`
+  const rows = asRows(await db.execute(sql11.raw(`
     SELECT id
     FROM stores
     WHERE active = true
@@ -9182,13 +13907,13 @@ async function getDefaultStoreId(db) {
   return Number(rows[0]?.id ?? 0);
 }
 async function resolveIntegrationRestaurantId(requestedStoreId) {
-  const db = await requireDb();
+  const db = await requireDb3();
   return requestedStoreId ?? await getDefaultStoreId(db);
 }
 async function ensureIfoodIntegrationSchema() {
   if (!shouldRunRuntimeSchemaMigrations()) return;
-  const db = await requireDb();
-  await db.execute(sql6.raw(`
+  const db = await requireDb3();
+  await db.execute(sql11.raw(`
     CREATE TABLE IF NOT EXISTS ifood_integrations (
       id int NOT NULL AUTO_INCREMENT,
       restaurant_id int NOT NULL,
@@ -9206,7 +13931,7 @@ async function ensureIfoodIntegrationSchema() {
       KEY ifood_integrations_status_idx (status)
     )
   `));
-  const syncColumn = asRows(await db.execute(sql6`
+  const syncColumn = asRows(await db.execute(sql11`
     SELECT COUNT(*) AS count
     FROM INFORMATION_SCHEMA.COLUMNS
     WHERE TABLE_SCHEMA = DATABASE()
@@ -9214,9 +13939,9 @@ async function ensureIfoodIntegrationSchema() {
       AND COLUMN_NAME = 'last_sync_at'
   `));
   if (Number(syncColumn[0]?.count ?? 0) === 0) {
-    await db.execute(sql6.raw("ALTER TABLE ifood_integrations ADD COLUMN last_sync_at timestamp NULL AFTER last_connected_at"));
+    await db.execute(sql11.raw("ALTER TABLE ifood_integrations ADD COLUMN last_sync_at timestamp NULL AFTER last_connected_at"));
   }
-  await db.execute(sql6.raw(`
+  await db.execute(sql11.raw(`
     CREATE TABLE IF NOT EXISTS external_orders (
       id int NOT NULL AUTO_INCREMENT,
       restaurant_id int NOT NULL,
@@ -9236,7 +13961,7 @@ async function ensureIfoodIntegrationSchema() {
       KEY external_orders_created_idx (created_at)
     )
   `));
-  await db.execute(sql6.raw(`
+  await db.execute(sql11.raw(`
     CREATE TABLE IF NOT EXISTS ifood_logs (
       id int NOT NULL AUTO_INCREMENT,
       restaurant_id int NOT NULL,
@@ -9253,8 +13978,8 @@ async function ensureIfoodIntegrationSchema() {
 var IfoodLogService = class {
   async list(restaurantId) {
     await ensureIfoodIntegrationSchema();
-    const db = await requireDb();
-    const rows = asRows(await db.execute(sql6`
+    const db = await requireDb3();
+    const rows = asRows(await db.execute(sql11`
       SELECT id, restaurant_id, action, message, payload, created_at
       FROM ifood_logs
       WHERE restaurant_id = ${restaurantId}
@@ -9264,8 +13989,8 @@ var IfoodLogService = class {
     return rows.map(mapLog);
   }
   async create(restaurantId, action, message, payload) {
-    const db = await requireDb();
-    await db.execute(sql6`
+    const db = await requireDb3();
+    await db.execute(sql11`
       INSERT INTO ifood_logs (restaurant_id, action, message, payload)
       VALUES (${restaurantId}, ${action}, ${message}, ${JSON.stringify(payload ?? {})})
     `);
@@ -9277,8 +14002,8 @@ var IfoodIntegrationService = class {
   }
   async getStatus(restaurantId) {
     await ensureIfoodIntegrationSchema();
-    const db = await requireDb();
-    const rows = asRows(await db.execute(sql6`
+    const db = await requireDb3();
+    const rows = asRows(await db.execute(sql11`
       SELECT *
       FROM ifood_integrations
       WHERE restaurant_id = ${restaurantId}
@@ -9288,8 +14013,8 @@ var IfoodIntegrationService = class {
   }
   async connect(restaurantId) {
     await ensureIfoodIntegrationSchema();
-    const db = await requireDb();
-    await db.execute(sql6`
+    const db = await requireDb3();
+    await db.execute(sql11`
       INSERT INTO ifood_integrations
         (restaurant_id, merchant_id, merchant_name, status, mode, last_connected_at, last_sync_at, last_error)
       VALUES
@@ -9311,8 +14036,8 @@ var IfoodIntegrationService = class {
   }
   async disconnect(restaurantId) {
     await ensureIfoodIntegrationSchema();
-    const db = await requireDb();
-    await db.execute(sql6`
+    const db = await requireDb3();
+    await db.execute(sql11`
       INSERT INTO ifood_integrations (restaurant_id, status, mode)
       VALUES (${restaurantId}, 'disconnected', 'mock')
       ON DUPLICATE KEY UPDATE status = 'disconnected'
@@ -9327,8 +14052,8 @@ var IfoodOrderService = class {
   }
   async list(restaurantId) {
     await ensureIfoodIntegrationSchema();
-    const db = await requireDb();
-    const rows = asRows(await db.execute(sql6`
+    const db = await requireDb3();
+    const rows = asRows(await db.execute(sql11`
       SELECT *
       FROM external_orders
       WHERE restaurant_id = ${restaurantId}
@@ -9340,9 +14065,9 @@ var IfoodOrderService = class {
   }
   async createMockOrder(restaurantId) {
     await ensureIfoodIntegrationSchema();
-    const db = await requireDb();
+    const db = await requireDb3();
     const displayId = String(1e3 + Math.floor(Math.random() * 8999));
-    const externalOrderId = `mock-ifood-${crypto2.randomUUID()}`;
+    const externalOrderId = `mock-ifood-${crypto4.randomUUID()}`;
     const payload = {
       id: externalOrderId,
       displayId,
@@ -9386,14 +14111,14 @@ var IfoodOrderService = class {
       notes: "Pedido de teste gerado pelo modo simulado Bonatto.",
       createdAt: (/* @__PURE__ */ new Date()).toISOString()
     };
-    await db.execute(sql6`
+    await db.execute(sql11`
       INSERT INTO external_orders
         (restaurant_id, channel, external_order_id, display_id, status, customer_name, total_amount, payload)
       VALUES
         (${restaurantId}, 'ifood', ${externalOrderId}, ${displayId}, 'novo', 'Cliente iFood Teste', '89.80', ${JSON.stringify(payload)})
     `);
-    await db.execute(sql6`UPDATE ifood_integrations SET last_sync_at = CURRENT_TIMESTAMP WHERE restaurant_id = ${restaurantId} LIMIT 1`);
-    const rows = asRows(await db.execute(sql6`SELECT LAST_INSERT_ID() AS id`));
+    await db.execute(sql11`UPDATE ifood_integrations SET last_sync_at = CURRENT_TIMESTAMP WHERE restaurant_id = ${restaurantId} LIMIT 1`);
+    const rows = asRows(await db.execute(sql11`SELECT LAST_INSERT_ID() AS id`));
     const order = await this.getById(Number(rows[0]?.id), restaurantId);
     await this.logs.create(restaurantId, "order.generated", `Pedido teste iFood #${displayId} gerado.`, {
       orderId: order.id,
@@ -9403,9 +14128,9 @@ var IfoodOrderService = class {
   }
   async updateStatus(orderId, restaurantId, status) {
     await ensureIfoodIntegrationSchema();
-    const db = await requireDb();
+    const db = await requireDb3();
     const current = await this.getById(orderId, restaurantId);
-    await db.execute(sql6`
+    await db.execute(sql11`
       UPDATE external_orders
       SET status = ${status}
       WHERE id = ${orderId}
@@ -9413,7 +14138,7 @@ var IfoodOrderService = class {
         AND channel = 'ifood'
       LIMIT 1
     `);
-    await db.execute(sql6`UPDATE ifood_integrations SET last_sync_at = CURRENT_TIMESTAMP WHERE restaurant_id = ${restaurantId} LIMIT 1`);
+    await db.execute(sql11`UPDATE ifood_integrations SET last_sync_at = CURRENT_TIMESTAMP WHERE restaurant_id = ${restaurantId} LIMIT 1`);
     const order = await this.getById(orderId, restaurantId);
     await this.logs.create(restaurantId, `order.${status}`, this.statusLogMessage(order, current.status, status), {
       orderId,
@@ -9425,8 +14150,8 @@ var IfoodOrderService = class {
   }
   async getById(orderId, restaurantId) {
     await ensureIfoodIntegrationSchema();
-    const db = await requireDb();
-    const rows = asRows(await db.execute(sql6`
+    const db = await requireDb3();
+    const rows = asRows(await db.execute(sql11`
       SELECT *
       FROM external_orders
       WHERE id = ${orderId}
@@ -9434,7 +14159,7 @@ var IfoodOrderService = class {
         AND channel = 'ifood'
       LIMIT 1
     `));
-    if (!rows[0]) throw new TRPCError6({ code: "NOT_FOUND", message: "Pedido iFood n\xE3o encontrado." });
+    if (!rows[0]) throw new TRPCError11({ code: "NOT_FOUND", message: "Pedido iFood n\xE3o encontrado." });
     return mapOrder(rows[0]);
   }
   statusLogMessage(order, _from, to) {
@@ -9485,7 +14210,7 @@ var IfoodMockService = class {
 };
 var ProductionIfoodProvider = class {
   notReady() {
-    throw new TRPCError6({
+    throw new TRPCError11({
       code: "PRECONDITION_FAILED",
       message: "Integra\xE7\xE3o iFood em produ\xE7\xE3o ainda n\xE3o est\xE1 habilitada. Use IFOOD_MODE=mock."
     });
@@ -9531,8 +14256,8 @@ async function listIfoodIntegrationLogs(restaurantId) {
 // server/restaurantNetwork.ts
 init_db();
 init_runtimeSchema();
-import { sql as sql7 } from "drizzle-orm";
-import { z as z6 } from "zod";
+import { sql as sql12 } from "drizzle-orm";
+import { z as z10 } from "zod";
 function toSqlDate(date) {
   return date.toISOString().slice(0, 19).replace("T", " ");
 }
@@ -9541,11 +14266,11 @@ function money(value) {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 async function executeRows(db, query) {
-  const result = await db.execute(sql7.raw(query));
+  const result = await db.execute(sql12.raw(query));
   return result[0] ?? [];
 }
 async function hasColumn3(db, tableName, columnName) {
-  const result = await db.execute(sql7`
+  const result = await db.execute(sql12`
     SELECT COUNT(*) AS count
     FROM INFORMATION_SCHEMA.COLUMNS
     WHERE TABLE_SCHEMA = DATABASE()
@@ -9559,7 +14284,7 @@ async function ensureRestaurantNetworkSchema() {
   if (!shouldRunRuntimeSchemaMigrations()) return;
   const db = await getDb();
   if (!db) throw new Error("Database unavailable");
-  await db.execute(sql7.raw(`
+  await db.execute(sql12.raw(`
     CREATE TABLE IF NOT EXISTS distribution_products (
       id int NOT NULL AUTO_INCREMENT,
       name varchar(180) NOT NULL,
@@ -9580,7 +14305,7 @@ async function ensureRestaurantNetworkSchema() {
       KEY distribution_products_name_idx (name)
     )
   `));
-  await db.execute(sql7.raw(`
+  await db.execute(sql12.raw(`
     CREATE TABLE IF NOT EXISTS distribution_stock (
       id int NOT NULL AUTO_INCREMENT,
       ingredientId int NOT NULL,
@@ -9593,7 +14318,7 @@ async function ensureRestaurantNetworkSchema() {
       KEY distribution_stock_low_idx (quantity, minimumStock)
     )
   `));
-  await db.execute(sql7.raw(`
+  await db.execute(sql12.raw(`
     CREATE TABLE IF NOT EXISTS store_supply_orders (
       id int NOT NULL AUTO_INCREMENT,
       storeId int NOT NULL,
@@ -9613,7 +14338,7 @@ async function ensureRestaurantNetworkSchema() {
       KEY store_supply_orders_created_idx (createdAt)
     )
   `));
-  await db.execute(sql7.raw(`
+  await db.execute(sql12.raw(`
     CREATE TABLE IF NOT EXISTS store_supply_order_items (
       id int NOT NULL AUTO_INCREMENT,
       supplyOrderId int NOT NULL,
@@ -9629,10 +14354,10 @@ async function ensureRestaurantNetworkSchema() {
     )
   `));
   if (!await hasColumn3(db, "store_supply_order_items", "distributionProductId")) {
-    await db.execute(sql7.raw("ALTER TABLE store_supply_order_items ADD COLUMN distributionProductId int NULL AFTER supplyOrderId"));
-    await db.execute(sql7.raw("ALTER TABLE store_supply_order_items ADD KEY supply_items_distribution_product_idx (distributionProductId)"));
+    await db.execute(sql12.raw("ALTER TABLE store_supply_order_items ADD COLUMN distributionProductId int NULL AFTER supplyOrderId"));
+    await db.execute(sql12.raw("ALTER TABLE store_supply_order_items ADD KEY supply_items_distribution_product_idx (distributionProductId)"));
   }
-  await db.execute(sql7.raw(`
+  await db.execute(sql12.raw(`
     CREATE TABLE IF NOT EXISTS network_expenses (
       id int NOT NULL AUTO_INCREMENT,
       storeId int,
@@ -9653,7 +14378,7 @@ async function ensureRestaurantNetworkSchema() {
       KEY network_expenses_status_idx (status)
     )
   `));
-  await db.execute(sql7.raw(`
+  await db.execute(sql12.raw(`
     CREATE TABLE IF NOT EXISTS network_financial_fees (
       id int NOT NULL AUTO_INCREMENT,
       storeId int,
@@ -9673,7 +14398,7 @@ async function ensureRestaurantNetworkSchema() {
       KEY network_fees_category_idx (category)
     )
   `));
-  await db.execute(sql7.raw(`
+  await db.execute(sql12.raw(`
     CREATE TABLE IF NOT EXISTS network_monthly_closings (
       id int NOT NULL AUTO_INCREMENT,
       storeId int,
@@ -9697,7 +14422,7 @@ async function ensureRestaurantNetworkSchema() {
       KEY network_closings_status_idx (status)
     )
   `));
-  await db.execute(sql7.raw(`
+  await db.execute(sql12.raw(`
     CREATE TABLE IF NOT EXISTS network_audit_logs (
       id int NOT NULL AUTO_INCREMENT,
       actorUserId int,
@@ -9719,36 +14444,36 @@ async function audit(input) {
   const db = await getDb();
   if (!db) return;
   await ensureRestaurantNetworkSchema();
-  await db.execute(sql7`
+  await db.execute(sql12`
     INSERT INTO network_audit_logs (actorUserId, storeId, action, entityType, entityId, metadata)
     VALUES (${input.actorUserId ?? null}, ${input.storeId ?? null}, ${input.action}, ${input.entityType}, ${input.entityId ?? null}, ${JSON.stringify(input.metadata ?? {})})
   `);
 }
-var supplyOrderItemSchema = z6.object({
-  productId: z6.number().int().positive(),
-  quantityRequested: z6.string().regex(/^\d+(\.\d{1,3})?$/),
-  quantityApproved: z6.string().regex(/^\d+(\.\d{1,3})?$/).optional()
+var supplyOrderItemSchema = z10.object({
+  productId: z10.number().int().positive(),
+  quantityRequested: z10.string().regex(/^\d+(\.\d{1,3})?$/),
+  quantityApproved: z10.string().regex(/^\d+(\.\d{1,3})?$/).optional()
 });
-var createSupplyOrderSchema = z6.object({
-  storeId: z6.number().int().positive(),
-  notes: z6.string().max(5e3).optional(),
-  submit: z6.boolean().optional(),
-  items: z6.array(supplyOrderItemSchema).min(1).max(100)
+var createSupplyOrderSchema = z10.object({
+  storeId: z10.number().int().positive(),
+  notes: z10.string().max(5e3).optional(),
+  submit: z10.boolean().optional(),
+  items: z10.array(supplyOrderItemSchema).min(1).max(100)
 });
-var distributionProductSchema = z6.object({
-  name: z6.string().min(1).max(180),
-  category: z6.string().max(120).optional(),
-  unit: z6.enum(["g", "kg", "ml", "l", "unit", "pack", "slice", "portion"]),
-  availableQuantity: z6.string().regex(/^\d+(\.\d{1,3})?$/),
-  minimumQuantity: z6.string().regex(/^\d+(\.\d{1,3})?$/).optional(),
-  minOrderQuantity: z6.string().regex(/^\d+(\.\d{1,3})?$/).optional(),
-  maxOrderQuantity: z6.string().regex(/^\d+(\.\d{1,3})?$/).optional(),
-  unitCost: z6.string().regex(/^\d+(\.\d{1,4})?$/),
-  active: z6.boolean().optional(),
-  notes: z6.string().max(5e3).optional()
+var distributionProductSchema = z10.object({
+  name: z10.string().min(1).max(180),
+  category: z10.string().max(120).optional(),
+  unit: z10.enum(["g", "kg", "ml", "l", "unit", "pack", "slice", "portion"]),
+  availableQuantity: z10.string().regex(/^\d+(\.\d{1,3})?$/),
+  minimumQuantity: z10.string().regex(/^\d+(\.\d{1,3})?$/).optional(),
+  minOrderQuantity: z10.string().regex(/^\d+(\.\d{1,3})?$/).optional(),
+  maxOrderQuantity: z10.string().regex(/^\d+(\.\d{1,3})?$/).optional(),
+  unitCost: z10.string().regex(/^\d+(\.\d{1,4})?$/),
+  active: z10.boolean().optional(),
+  notes: z10.string().max(5e3).optional()
 });
 var updateDistributionProductSchema = distributionProductSchema.partial().extend({
-  id: z6.number().int().positive()
+  id: z10.number().int().positive()
 });
 async function listDistributionProducts(opts) {
   await ensureRestaurantNetworkSchema();
@@ -9767,7 +14492,7 @@ async function createDistributionProduct(input, actorUserId) {
   await ensureRestaurantNetworkSchema();
   const db = await getDb();
   if (!db) throw new Error("Database unavailable");
-  const result = await db.execute(sql7`
+  const result = await db.execute(sql12`
     INSERT INTO distribution_products
       (name, category, unit, availableQuantity, minimumQuantity, minOrderQuantity, maxOrderQuantity, unitCost, active, notes)
     VALUES
@@ -9782,20 +14507,20 @@ async function updateDistributionProduct(input, actorUserId) {
   const db = await getDb();
   if (!db) throw new Error("Database unavailable");
   const fields = [];
-  if (input.name !== void 0) fields.push(sql7`name = ${input.name}`);
-  if (input.category !== void 0) fields.push(sql7`category = ${input.category || null}`);
-  if (input.unit !== void 0) fields.push(sql7`unit = ${input.unit}`);
-  if (input.availableQuantity !== void 0) fields.push(sql7`availableQuantity = ${input.availableQuantity}`);
-  if (input.minimumQuantity !== void 0) fields.push(sql7`minimumQuantity = ${input.minimumQuantity}`);
-  if (input.minOrderQuantity !== void 0) fields.push(sql7`minOrderQuantity = ${input.minOrderQuantity}`);
-  if (input.maxOrderQuantity !== void 0) fields.push(sql7`maxOrderQuantity = ${input.maxOrderQuantity || null}`);
-  if (input.unitCost !== void 0) fields.push(sql7`unitCost = ${input.unitCost}`);
-  if (input.active !== void 0) fields.push(sql7`active = ${input.active}`);
-  if (input.notes !== void 0) fields.push(sql7`notes = ${input.notes || null}`);
+  if (input.name !== void 0) fields.push(sql12`name = ${input.name}`);
+  if (input.category !== void 0) fields.push(sql12`category = ${input.category || null}`);
+  if (input.unit !== void 0) fields.push(sql12`unit = ${input.unit}`);
+  if (input.availableQuantity !== void 0) fields.push(sql12`availableQuantity = ${input.availableQuantity}`);
+  if (input.minimumQuantity !== void 0) fields.push(sql12`minimumQuantity = ${input.minimumQuantity}`);
+  if (input.minOrderQuantity !== void 0) fields.push(sql12`minOrderQuantity = ${input.minOrderQuantity}`);
+  if (input.maxOrderQuantity !== void 0) fields.push(sql12`maxOrderQuantity = ${input.maxOrderQuantity || null}`);
+  if (input.unitCost !== void 0) fields.push(sql12`unitCost = ${input.unitCost}`);
+  if (input.active !== void 0) fields.push(sql12`active = ${input.active}`);
+  if (input.notes !== void 0) fields.push(sql12`notes = ${input.notes || null}`);
   if (fields.length === 0) return { ok: true };
-  await db.execute(sql7`
+  await db.execute(sql12`
     UPDATE distribution_products
-    SET ${sql7.join(fields, sql7`, `)}
+    SET ${sql12.join(fields, sql12`, `)}
     WHERE id = ${input.id}
   `);
   await audit({ actorUserId, action: "distribution_product.update", entityType: "distribution_product", entityId: input.id, metadata: input });
@@ -9864,7 +14589,7 @@ async function createSupplyOrder(input, actorUserId) {
     return sum + requested * money(product.unitCost);
   }, 0);
   const status = input.submit ? "submitted" : "draft";
-  const result = await db.execute(sql7`
+  const result = await db.execute(sql12`
     INSERT INTO store_supply_orders (storeId, requestedByUserId, status, estimatedCost, notes)
     VALUES (${input.storeId}, ${actorUserId}, ${status}, ${estimatedCost.toFixed(2)}, ${input.notes ?? null})
   `);
@@ -9873,7 +14598,7 @@ async function createSupplyOrder(input, actorUserId) {
     const product = productById.get(item.productId);
     if (!product) continue;
     const approved = item.quantityApproved ?? item.quantityRequested;
-    await db.execute(sql7`
+    await db.execute(sql12`
       INSERT INTO store_supply_order_items
         (supplyOrderId, distributionProductId, ingredientId, productName, unit, quantityRequested, quantityApproved, unitCost)
       VALUES
@@ -9883,10 +14608,10 @@ async function createSupplyOrder(input, actorUserId) {
   await audit({ actorUserId, storeId: input.storeId, action: "supply_order.create", entityType: "store_supply_order", entityId: orderId, metadata: { status } });
   return { id: orderId };
 }
-var updateSupplyOrderStatusSchema = z6.object({
-  id: z6.number().int().positive(),
-  status: z6.enum(["submitted", "in_review", "approved", "picking", "shipped", "received", "rejected", "cancelled"]),
-  notes: z6.string().max(5e3).optional()
+var updateSupplyOrderStatusSchema = z10.object({
+  id: z10.number().int().positive(),
+  status: z10.enum(["submitted", "in_review", "approved", "picking", "shipped", "received", "rejected", "cancelled"]),
+  notes: z10.string().max(5e3).optional()
 });
 async function updateSupplyOrderStatus(input, actorUserId) {
   await ensureRestaurantNetworkSchema();
@@ -9895,25 +14620,25 @@ async function updateSupplyOrderStatus(input, actorUserId) {
   const details = await getSupplyOrderDetails(input.id);
   if (!details) throw new Error("Pedido ao CD nao encontrado");
   if (input.status === "shipped") {
-    await db.execute(sql7`
+    await db.execute(sql12`
       UPDATE store_supply_orders
       SET status = ${input.status}, reviewedByUserId = ${actorUserId}, notes = COALESCE(${input.notes ?? null}, notes), shippedAt = CURRENT_TIMESTAMP
       WHERE id = ${input.id}
     `);
   } else if (input.status === "received") {
-    await db.execute(sql7`
+    await db.execute(sql12`
       UPDATE store_supply_orders
       SET status = ${input.status}, reviewedByUserId = ${actorUserId}, notes = COALESCE(${input.notes ?? null}, notes), receivedAt = CURRENT_TIMESTAMP
       WHERE id = ${input.id}
     `);
   } else if (["approved", "rejected", "cancelled", "in_review"].includes(input.status)) {
-    await db.execute(sql7`
+    await db.execute(sql12`
       UPDATE store_supply_orders
       SET status = ${input.status}, reviewedByUserId = ${actorUserId}, notes = COALESCE(${input.notes ?? null}, notes), reviewedAt = CURRENT_TIMESTAMP
       WHERE id = ${input.id}
     `);
   } else {
-    await db.execute(sql7`
+    await db.execute(sql12`
       UPDATE store_supply_orders
       SET status = ${input.status}, reviewedByUserId = ${actorUserId}, notes = COALESCE(${input.notes ?? null}, notes)
       WHERE id = ${input.id}
@@ -9924,7 +14649,7 @@ async function updateSupplyOrderStatus(input, actorUserId) {
       const quantity = Number(item.quantityApproved ?? item.quantityRequested ?? 0);
       const productId = Number(item.distributionProductId ?? item.ingredientId);
       if (quantity <= 0 || productId <= 0) continue;
-      await db.execute(sql7.raw(`
+      await db.execute(sql12.raw(`
         UPDATE distribution_products
         SET availableQuantity = GREATEST(CAST(availableQuantity AS DECIMAL(12,3)) - ${quantity}, 0)
         WHERE id = ${productId}
@@ -9939,7 +14664,7 @@ async function updateSupplyOrderStatus(input, actorUserId) {
       const productName = String(item.productName ?? item.distributionProductName ?? "Produto CD");
       const unit = String(item.unit ?? "unit");
       const unitCost = money(item.unitCost).toFixed(4);
-      const existingIngredientResult = await db.execute(sql7`
+      const existingIngredientResult = await db.execute(sql12`
         SELECT id, currentStock
         FROM ingredients
         WHERE storeId = ${storeId}
@@ -9950,18 +14675,18 @@ async function updateSupplyOrderStatus(input, actorUserId) {
       const existingIngredient = existingIngredientResult[0] ?? [];
       let ingredientId = Number(existingIngredient[0]?.id ?? 0);
       if (!ingredientId) {
-        const inserted = await db.execute(sql7`
+        const inserted = await db.execute(sql12`
           INSERT INTO ingredients (storeId, name, category, unit, currentStock, minimumStock, unitCost, supplier, notes, active)
           VALUES (${storeId}, ${productName}, ${"CD"}, ${unit}, ${"0.000"}, ${"0.000"}, ${unitCost}, ${"Centro de Distribui\xE7\xE3o"}, ${`Criado automaticamente no recebimento do pedido ao CD #${input.id}`}, ${true})
         `);
         ingredientId = Number(inserted[0]?.insertId ?? 0);
       }
-      await db.execute(sql7`
+      await db.execute(sql12`
         UPDATE ingredients
         SET currentStock = CAST(currentStock AS DECIMAL(12,3)) + ${quantity}, unitCost = ${unitCost}
         WHERE id = ${ingredientId}
       `);
-      await db.execute(sql7`
+      await db.execute(sql12`
         INSERT INTO inventory_movements
           (ingredientId, storeId, movementType, quantityDelta, previousStock, nextStock, reason, performedByUserId)
         SELECT id, ${storeId}, 'entry', ${quantity.toFixed(3)},
@@ -9977,23 +14702,23 @@ async function updateSupplyOrderStatus(input, actorUserId) {
   await audit({ actorUserId, storeId: Number(details.storeId), action: `supply_order.${input.status}`, entityType: "store_supply_order", entityId: input.id, metadata: { notes: input.notes } });
   return { ok: true };
 }
-var createExpenseSchema = z6.object({
-  storeId: z6.number().int().positive().optional(),
-  category: z6.string().min(1).max(120),
-  description: z6.string().min(1).max(255),
-  amount: z6.string().regex(/^\d+(\.\d{1,2})?$/),
-  paymentMethod: z6.string().max(80).optional(),
-  status: z6.enum(["pending", "paid", "cancelled"]).optional(),
-  expenseDate: z6.date(),
-  receiptUrl: z6.string().url().optional(),
-  notes: z6.string().max(5e3).optional()
+var createExpenseSchema = z10.object({
+  storeId: z10.number().int().positive().optional(),
+  category: z10.string().min(1).max(120),
+  description: z10.string().min(1).max(255),
+  amount: z10.string().regex(/^\d+(\.\d{1,2})?$/),
+  paymentMethod: z10.string().max(80).optional(),
+  status: z10.enum(["pending", "paid", "cancelled"]).optional(),
+  expenseDate: z10.date(),
+  receiptUrl: z10.string().url().optional(),
+  notes: z10.string().max(5e3).optional()
 });
-async function createExpense(input, actorUserId, scopedStoreId) {
+async function createExpense(input, actorUserId, scopedStoreId2) {
   await ensureRestaurantNetworkSchema();
   const db = await getDb();
   if (!db) throw new Error("Database unavailable");
-  const storeId = scopedStoreId ?? input.storeId ?? null;
-  const result = await db.execute(sql7`
+  const storeId = scopedStoreId2 ?? input.storeId ?? null;
+  const result = await db.execute(sql12`
     INSERT INTO network_expenses
       (storeId, category, description, amount, paymentMethod, status, expenseDate, receiptUrl, createdByUserId, notes)
     VALUES
@@ -10003,23 +14728,23 @@ async function createExpense(input, actorUserId, scopedStoreId) {
   await audit({ actorUserId, storeId, action: "expense.create", entityType: "network_expense", entityId: id, metadata: input });
   return { id };
 }
-var createFinancialFeeSchema = z6.object({
-  storeId: z6.number().int().positive().optional(),
-  name: z6.string().min(1).max(160),
-  category: z6.string().min(1).max(120),
-  calculationType: z6.enum(["fixed", "percentage"]).default("fixed"),
-  rate: z6.string().regex(/^\d+(\.\d{1,4})?$/).optional(),
-  amount: z6.string().regex(/^\d+(\.\d{1,2})?$/),
-  periodStart: z6.date(),
-  periodEnd: z6.date(),
-  notes: z6.string().max(5e3).optional()
+var createFinancialFeeSchema = z10.object({
+  storeId: z10.number().int().positive().optional(),
+  name: z10.string().min(1).max(160),
+  category: z10.string().min(1).max(120),
+  calculationType: z10.enum(["fixed", "percentage"]).default("fixed"),
+  rate: z10.string().regex(/^\d+(\.\d{1,4})?$/).optional(),
+  amount: z10.string().regex(/^\d+(\.\d{1,2})?$/),
+  periodStart: z10.date(),
+  periodEnd: z10.date(),
+  notes: z10.string().max(5e3).optional()
 });
-async function createFinancialFee(input, actorUserId, scopedStoreId) {
+async function createFinancialFee(input, actorUserId, scopedStoreId2) {
   await ensureRestaurantNetworkSchema();
   const db = await getDb();
   if (!db) throw new Error("Database unavailable");
-  const storeId = scopedStoreId ?? input.storeId ?? null;
-  const result = await db.execute(sql7`
+  const storeId = scopedStoreId2 ?? input.storeId ?? null;
+  const result = await db.execute(sql12`
     INSERT INTO network_financial_fees
       (storeId, name, category, calculationType, rate, amount, periodStart, periodEnd, notes, createdByUserId)
     VALUES
@@ -10100,24 +14825,24 @@ async function getFinancialOverview(opts) {
     supplyOrders
   };
 }
-var createMonthlyClosingSchema = z6.object({
-  storeId: z6.number().int().positive().optional(),
-  year: z6.number().int().min(2020).max(2100),
-  month: z6.number().int().min(1).max(12),
-  status: z6.enum(["open", "in_review", "closed", "reopened"]).default("in_review"),
-  notes: z6.string().max(5e3).optional()
+var createMonthlyClosingSchema = z10.object({
+  storeId: z10.number().int().positive().optional(),
+  year: z10.number().int().min(2020).max(2100),
+  month: z10.number().int().min(1).max(12),
+  status: z10.enum(["open", "in_review", "closed", "reopened"]).default("in_review"),
+  notes: z10.string().max(5e3).optional()
 });
-async function upsertMonthlyClosing(input, actorUserId, scopedStoreId) {
+async function upsertMonthlyClosing(input, actorUserId, scopedStoreId2) {
   await ensureRestaurantNetworkSchema();
   const db = await getDb();
   if (!db) throw new Error("Database unavailable");
-  const storeId = scopedStoreId ?? input.storeId ?? null;
+  const storeId = scopedStoreId2 ?? input.storeId ?? null;
   const start = new Date(input.year, input.month - 1, 1);
   const end = new Date(input.year, input.month, 0, 23, 59, 59);
   const overview = await getFinancialOverview({ storeId: storeId ?? void 0, startDate: start, endDate: end });
   const totals = overview.totals;
   const closedAt = input.status === "closed" ? "CURRENT_TIMESTAMP" : "NULL";
-  await db.execute(sql7.raw(`
+  await db.execute(sql12.raw(`
     INSERT INTO network_monthly_closings
       (storeId, year, month, status, revenueTotal, expenseTotal, feeTotal, supplyCostTotal, netResult, marginPercent, notes, closedByUserId, closedAt)
     VALUES
@@ -10173,7 +14898,7 @@ async function listAuditLogs(opts) {
 // server/focusnfe.ts
 init_db();
 init_schema();
-import { eq as eq10 } from "drizzle-orm";
+import { eq as eq17 } from "drizzle-orm";
 function getFocusNfeBaseUrl() {
   const env = process.env.FOCUS_NFE_ENV || "homologacao";
   return env === "producao" ? "https://api.focusnfe.com.br" : "https://homologacao.focusnfe.com.br";
@@ -10195,10 +14920,10 @@ function mapPaymentMethod(method) {
 async function emitirNfce(orderId) {
   const db = await getDb();
   if (!db) return { success: false, error: "DB indispon\xEDvel" };
-  const [orderRow] = await db.select().from(orders).where(eq10(orders.id, orderId));
+  const [orderRow] = await db.select().from(orders).where(eq17(orders.id, orderId));
   if (!orderRow) return { success: false, error: "Pedido n\xE3o encontrado" };
-  const items = await db.select().from(orderItems).where(eq10(orderItems.orderId, orderId));
-  const storeRow = orderRow.storeId ? (await db.select().from(stores).where(eq10(stores.id, orderRow.storeId)))[0] : null;
+  const items = await db.select().from(orderItems).where(eq17(orderItems.orderId, orderId));
+  const storeRow = orderRow.storeId ? (await db.select().from(stores).where(eq17(stores.id, orderRow.storeId)))[0] : null;
   if (!storeRow?.nfceEnabled) {
     return { success: false, error: "NFC-e n\xE3o habilitada para esta loja" };
   }
@@ -10270,7 +14995,7 @@ async function emitirNfce(orderId) {
         nfceKey: data.chave_nfe,
         nfceStatus: "authorized",
         nfceUrl: data.url_danfe || data.caminho_danfe
-      }).where(eq10(orders.id, orderId));
+      }).where(eq17(orders.id, orderId));
       return {
         success: true,
         chave: data.chave_nfe,
@@ -10278,7 +15003,7 @@ async function emitirNfce(orderId) {
       };
     }
     const errorMsg = data.mensagem_sefaz || (Array.isArray(data.erros) ? data.erros.map((e) => e.mensagem).join("; ") : null) || `Status: ${data.status}`;
-    await db.update(orders).set({ nfceStatus: "error" }).where(eq10(orders.id, orderId));
+    await db.update(orders).set({ nfceStatus: "error" }).where(eq17(orders.id, orderId));
     return { success: false, error: errorMsg };
   } catch (err) {
     console.error("[FocusNFe] Erro ao emitir NFC-e:", err);
@@ -10288,9 +15013,9 @@ async function emitirNfce(orderId) {
 async function cancelarNfce(orderId, justificativa) {
   const db = await getDb();
   if (!db) return { success: false, error: "DB indispon\xEDvel" };
-  const [orderRow] = await db.select().from(orders).where(eq10(orders.id, orderId));
+  const [orderRow] = await db.select().from(orders).where(eq17(orders.id, orderId));
   if (!orderRow?.nfceKey) return { success: false, error: "NFC-e n\xE3o emitida para este pedido" };
-  const storeRow = orderRow.storeId ? (await db.select().from(stores).where(eq10(stores.id, orderRow.storeId)))[0] : null;
+  const storeRow = orderRow.storeId ? (await db.select().from(stores).where(eq17(stores.id, orderRow.storeId)))[0] : null;
   if (!storeRow?.focusNfeToken) return { success: false, error: "Token Focus NFe n\xE3o configurado" };
   const referencia = `bonatto_${orderId}`;
   const baseUrl = getFocusNfeBaseUrl();
@@ -10306,7 +15031,7 @@ async function cancelarNfce(orderId, justificativa) {
     });
     const data = await response.json();
     if (data.status === "cancelado") {
-      await db.update(orders).set({ nfceStatus: "cancelled" }).where(eq10(orders.id, orderId));
+      await db.update(orders).set({ nfceStatus: "cancelled" }).where(eq17(orders.id, orderId));
       return { success: true };
     }
     return { success: false, error: data.mensagem_sefaz || "Erro ao cancelar NFC-e" };
@@ -10317,7 +15042,7 @@ async function cancelarNfce(orderId, justificativa) {
 
 // server/routers.ts
 import bcrypt from "bcryptjs";
-import crypto3 from "crypto";
+import crypto5 from "crypto";
 
 // server/_core/mailer.ts
 init_env();
@@ -10453,7 +15178,7 @@ async function sendWelcomeEmail(to, name) {
 // server/orderLifecycle.ts
 init_schema();
 init_db();
-import { and as and8, eq as eq11, sql as sql8 } from "drizzle-orm";
+import { and as and15, eq as eq18, sql as sql13 } from "drizzle-orm";
 var STAGE_BY_STATUS = {
   pending: "created",
   confirmed: "confirmed",
@@ -10496,9 +15221,9 @@ async function computePredictionWindow(order) {
   const peakExtraMinutes = parseIntegerSetting(settings.peakExtraMinutes, 10);
   const queueExtraPerOrder = parseIntegerSetting(settings.orderVolumeExtraMinutesPerOrder, 3);
   const activeRows = await db.select({ id: orders.id }).from(orders).where(
-    and8(
-      order.storeId ? eq11(orders.storeId, order.storeId) : void 0,
-      sql8`${orders.status} IN ('pending', 'confirmed', 'preparing', 'out_for_delivery')`
+    and15(
+      order.storeId ? eq18(orders.storeId, order.storeId) : void 0,
+      sql13`${orders.status} IN ('pending', 'confirmed', 'preparing', 'out_for_delivery')`
     )
   );
   const queuePressure = Math.max(0, activeRows.length - 1);
@@ -10536,7 +15261,7 @@ async function computePredictionWindow(order) {
 async function syncCustomerMetricsForScope(userId, scopeStoreId) {
   const db = await getDb();
   if (!db) return;
-  const rows = await db.execute(sql8`
+  const rows = await db.execute(sql13`
     SELECT
       MIN(CASE WHEN status = 'delivered' THEN createdAt END) AS firstOrderAt,
       MAX(createdAt) AS lastOrderAt,
@@ -10596,7 +15321,7 @@ async function syncCustomerMetricsForScope(userId, scopeStoreId) {
   const totalSpent = Number(stats.totalSpent ?? 0);
   const averageTicket = Number(stats.averageTicket ?? 0);
   const firstOrderCount = deliveredOrders > 0 ? 1 : 0;
-  const existing = await db.select({ id: customerMetrics.id }).from(customerMetrics).where(and8(eq11(customerMetrics.userId, userId), eq11(customerMetrics.storeId, scopeStoreId))).limit(1);
+  const existing = await db.select({ id: customerMetrics.id }).from(customerMetrics).where(and15(eq18(customerMetrics.userId, userId), eq18(customerMetrics.storeId, scopeStoreId))).limit(1);
   const payload = {
     userId,
     storeId: scopeStoreId,
@@ -10614,7 +15339,7 @@ async function syncCustomerMetricsForScope(userId, scopeStoreId) {
     favoriteProductName: stats.favoriteProductName ?? null
   };
   if (existing.length > 0) {
-    await db.update(customerMetrics).set(payload).where(eq11(customerMetrics.id, existing[0].id));
+    await db.update(customerMetrics).set(payload).where(eq18(customerMetrics.id, existing[0].id));
     return;
   }
   await db.insert(customerMetrics).values(payload);
@@ -10677,7 +15402,7 @@ async function bootstrapOrderLifecycle(orderId, opts) {
     if (!db) return;
     const order = await getOrderById(orderId);
     if (!order) return;
-    const existingCreatedLog = await db.select({ id: orderStageLogs.id }).from(orderStageLogs).where(and8(eq11(orderStageLogs.orderId, orderId), eq11(orderStageLogs.stage, "created"))).limit(1);
+    const existingCreatedLog = await db.select({ id: orderStageLogs.id }).from(orderStageLogs).where(and15(eq18(orderStageLogs.orderId, orderId), eq18(orderStageLogs.stage, "created"))).limit(1);
     if (existingCreatedLog.length === 0) {
       await db.insert(orderStageLogs).values({
         orderId,
@@ -10722,7 +15447,7 @@ async function bootstrapOrderLifecycle(orderId, opts) {
           predictionLabel: prediction.predictionLabel,
           predictedReadyAt: readyAt,
           predictedDeliveredAt: deliveredAt
-        }).where(eq11(orders.id, orderId));
+        }).where(eq18(orders.id, orderId));
       }
     }
     if (!opts?.skipCustomerMetrics) {
@@ -10746,7 +15471,7 @@ async function applyOrderStatusLifecycle(orderId, previousStatus, nextStatus, op
     if (nextStatus === "delivered") patch.deliveredAt = now;
     if (nextStatus === "cancelled") patch.cancelledAt = now;
     if (Object.keys(patch).length > 0) {
-      await db.update(orders).set(patch).where(eq11(orders.id, orderId));
+      await db.update(orders).set(patch).where(eq18(orders.id, orderId));
     }
     await db.insert(orderStageLogs).values({
       orderId,
@@ -10783,29 +15508,40 @@ async function applyOrderStatusLifecycle(orderId, previousStatus, nextStatus, op
 // server/routers.ts
 init_db();
 var notifyOwner3 = (payload) => notifyOwnerAdapter({ title: payload.title, body: payload.content });
-var adminProcedure3 = protectedProcedure.use(({ ctx, next }) => {
+var adminProcedure2 = protectedProcedure.use(({ ctx, next }) => {
   if (ctx.user.role !== "admin") {
-    throw new TRPCError7({ code: "FORBIDDEN", message: "Acesso restrito a administradores" });
+    throw new TRPCError12({ code: "FORBIDDEN", message: "Acesso restrito a administradores" });
   }
   return next({ ctx });
 });
-async function assertPaymentMethodEnabled(paymentMethod) {
-  const publicPaymentSettings = await getPaymentSettingsPublic();
+async function assertPaymentMethodEnabled(paymentMethod, storeId) {
+  const publicPaymentSettings = await getPaymentSettingsPublic(storeId);
   const orderConfig = publicPaymentSettings.config.orders;
+  const tenant = storeId ? await getWhiteLabelRuntimeByStoreId(storeId) : null;
+  if (tenant && tenant.status !== "active") {
+    throw new TRPCError12({ code: "PRECONDITION_FAILED", message: "Esta loja nao esta disponivel para pagamentos." });
+  }
+  if (tenant) {
+    const tenantPayments = tenant.providers.payments;
+    const providerEnabled = paymentMethod === "pix" ? tenantPayments.pix : paymentMethod === "cash" ? tenantPayments.cash : tenantPayments.card;
+    if (!providerEnabled) {
+      throw new TRPCError12({ code: "PRECONDITION_FAILED", message: "Este metodo de pagamento nao esta habilitado para a loja." });
+    }
+  }
   if ((paymentMethod === "credit_card" || paymentMethod === "debit_card") && !orderConfig.cardEnabled) {
-    throw new TRPCError7({
+    throw new TRPCError12({
       code: "PRECONDITION_FAILED",
       message: "Pagamentos por cart\xE3o est\xE3o desativados no momento."
     });
   }
   if (paymentMethod === "pix" && !orderConfig.pixEnabled) {
-    throw new TRPCError7({
+    throw new TRPCError12({
       code: "PRECONDITION_FAILED",
       message: "Pagamentos via PIX est\xE3o desativados no momento."
     });
   }
   if (paymentMethod === "cash" && !orderConfig.cashEnabled) {
-    throw new TRPCError7({
+    throw new TRPCError12({
       code: "PRECONDITION_FAILED",
       message: "Pagamentos em dinheiro est\xE3o desativados no momento."
     });
@@ -10924,7 +15660,7 @@ function normalizePhone(raw) {
   return raw.replace(/\D+/g, "");
 }
 function hashOtpCode(code) {
-  return crypto3.createHash("sha256").update(code).digest("hex");
+  return crypto5.createHash("sha256").update(code).digest("hex");
 }
 function getPizzaCategoryIds(categories2) {
   return new Set(
@@ -10963,47 +15699,75 @@ var appRouter = router({
       ctx.res.clearCookie(COOKIE_NAME, { ...cookieOptions, maxAge: -1 });
       return { success: true };
     }),
-    registerEmail: publicProcedure.input(z7.object({
-      name: z7.string().min(2, "Nome deve ter pelo menos 2 caracteres"),
-      email: z7.string().email("E-mail inv\xE1lido"),
-      password: z7.string().min(6, "Senha deve ter pelo menos 6 caracteres")
+    registerEmail: publicProcedure.input(z11.object({
+      name: z11.string().min(2, "Nome deve ter pelo menos 2 caracteres"),
+      email: z11.string().email("E-mail inv\xE1lido"),
+      password: z11.string().min(6, "Senha deve ter pelo menos 6 caracteres"),
+      acceptTerms: z11.literal(true, "Aceite os Termos de Uso e a Pol\xEDtica de Privacidade"),
+      consentVersion: z11.string().min(1).max(32).default("2026-08-01")
     })).mutation(async ({ input, ctx }) => {
-      const existing = await getUserByEmail(input.email);
+      const email = input.email.trim().toLowerCase();
+      const existing = await getUserByEmail(email);
       if (existing) {
-        throw new TRPCError7({ code: "CONFLICT", message: "Este e-mail j\xE1 est\xE1 cadastrado" });
+        throw new TRPCError12({ code: "CONFLICT", message: "Este e-mail j\xE1 est\xE1 cadastrado" });
       }
       const passwordHash = await bcrypt.hash(input.password, 12);
-      const openId = `email_${crypto3.randomBytes(16).toString("hex")}`;
-      await createEmailUser({ openId, name: input.name, email: input.email, passwordHash });
-      sendWelcomeEmail(input.email, input.name).catch(console.error);
-      const sessionToken = await sdk.createSessionToken(openId, { name: input.name, expiresInMs: DEFAULT_SESSION_MS });
+      const openId = `email_${crypto5.randomBytes(16).toString("hex")}`;
+      const name = input.name.trim();
+      await createEmailUser({ openId, name, email, passwordHash });
+      const user = await getUserByEmail(email);
+      if (!user) throw new TRPCError12({ code: "INTERNAL_SERVER_ERROR", message: "N\xE3o foi poss\xEDvel criar a conta" });
+      await linkCustomerAuthProvider({
+        userId: user.id,
+        provider: "email",
+        providerUserId: email,
+        providerEmail: email,
+        displayName: name,
+        isPrimary: true,
+        consentVersion: input.consentVersion,
+        consentedAt: /* @__PURE__ */ new Date()
+      });
+      await Promise.all([
+        recordUserConsent({ userId: user.id, kind: "terms", version: input.consentVersion, ipAddress: ctx.req.ip ?? null, userAgent: ctx.req.get("user-agent") ?? null }),
+        recordUserConsent({ userId: user.id, kind: "privacy", version: input.consentVersion, ipAddress: ctx.req.ip ?? null, userAgent: ctx.req.get("user-agent") ?? null }),
+        recordAuthEvent({ userId: user.id, provider: "email", event: "login_success", ipAddress: ctx.req.ip ?? null, userAgent: ctx.req.get("user-agent") ?? null })
+      ]);
+      sendWelcomeEmail(email, name).catch(console.error);
+      const sessionToken = await sdk.createSessionToken(openId, { name, expiresInMs: DEFAULT_SESSION_MS });
       const cookieOptions = getSessionCookieOptions(ctx.req);
       ctx.res.cookie(COOKIE_NAME, sessionToken, { ...cookieOptions, maxAge: DEFAULT_SESSION_MS });
       return { success: true };
     }),
-    loginEmail: publicProcedure.input(z7.object({
-      email: z7.string().email("E-mail inv\xE1lido"),
-      password: z7.string().min(1)
+    loginEmail: publicProcedure.input(z11.object({
+      email: z11.string().email("E-mail inv\xE1lido"),
+      password: z11.string().min(1)
     })).mutation(async ({ input, ctx }) => {
-      const user = await getUserByEmail(input.email);
+      const email = input.email.trim().toLowerCase();
+      const user = await getUserByEmail(email);
       if (!user || !user.passwordHash) {
-        throw new TRPCError7({ code: "UNAUTHORIZED", message: "E-mail ou senha incorretos" });
+        await recordAuthEvent({ provider: "email", event: "login_failure", ipAddress: ctx.req.ip ?? null, userAgent: ctx.req.get("user-agent") ?? null });
+        throw new TRPCError12({ code: "UNAUTHORIZED", message: "E-mail ou senha incorretos" });
       }
       const valid = await bcrypt.compare(input.password, user.passwordHash);
       if (!valid) {
-        throw new TRPCError7({ code: "UNAUTHORIZED", message: "E-mail ou senha incorretos" });
+        await recordAuthEvent({ userId: user.id, provider: "email", event: "login_failure", ipAddress: ctx.req.ip ?? null, userAgent: ctx.req.get("user-agent") ?? null });
+        throw new TRPCError12({ code: "UNAUTHORIZED", message: "E-mail ou senha incorretos" });
       }
+      await Promise.all([
+        markUserLogin(user.id, "email"),
+        recordAuthEvent({ userId: user.id, provider: "email", event: "login_success", ipAddress: ctx.req.ip ?? null, userAgent: ctx.req.get("user-agent") ?? null })
+      ]);
       const sessionToken = await sdk.createSessionToken(user.openId, { name: user.name ?? "", expiresInMs: DEFAULT_SESSION_MS });
       const cookieOptions = getSessionCookieOptions(ctx.req);
       ctx.res.cookie(COOKIE_NAME, sessionToken, { ...cookieOptions, maxAge: DEFAULT_SESSION_MS });
       return { success: true };
     }),
-    forgotPassword: publicProcedure.input(z7.object({
-      email: z7.string().email("E-mail inv\xE1lido")
+    forgotPassword: publicProcedure.input(z11.object({
+      email: z11.string().email("E-mail inv\xE1lido")
     })).mutation(async ({ input, ctx }) => {
       const user = await getUserByEmail(input.email);
       if (!user) return { success: true, emailSent: false };
-      const token = crypto3.randomBytes(32).toString("hex");
+      const token = crypto5.randomBytes(32).toString("hex");
       const expiresAt = new Date(Date.now() + 60 * 60 * 1e3);
       await saveResetToken(input.email, token, expiresAt);
       const configured = (process.env.PUBLIC_APP_URL ?? "").replace(/\/+$/, "");
@@ -11011,7 +15775,7 @@ var appRouter = router({
       if (!origin) {
         if (process.env.NODE_ENV === "production") {
           console.error("[forgotPassword] PUBLIC_APP_URL n\xE3o configurado em produ\xE7\xE3o.");
-          throw new TRPCError7({ code: "INTERNAL_SERVER_ERROR", message: "Servidor n\xE3o configurado para envio de e-mail." });
+          throw new TRPCError12({ code: "INTERNAL_SERVER_ERROR", message: "Servidor n\xE3o configurado para envio de e-mail." });
         }
         origin = `${ctx.req.protocol}://${ctx.req.get("host") ?? "localhost"}`;
       }
@@ -11025,16 +15789,16 @@ var appRouter = router({
       }
       return { success: true, emailSent };
     }),
-    resetPassword: publicProcedure.input(z7.object({
-      token: z7.string().min(1),
-      password: z7.string().min(6, "Senha deve ter pelo menos 6 caracteres")
+    resetPassword: publicProcedure.input(z11.object({
+      token: z11.string().min(1),
+      password: z11.string().min(6, "Senha deve ter pelo menos 6 caracteres")
     })).mutation(async ({ input, ctx }) => {
       const user = await getUserByResetToken(input.token);
       if (!user || !user.resetTokenExpiresAt) {
-        throw new TRPCError7({ code: "BAD_REQUEST", message: "Token inv\xE1lido ou expirado" });
+        throw new TRPCError12({ code: "BAD_REQUEST", message: "Token inv\xE1lido ou expirado" });
       }
       if (/* @__PURE__ */ new Date() > user.resetTokenExpiresAt) {
-        throw new TRPCError7({ code: "BAD_REQUEST", message: "Token expirado. Solicite um novo link." });
+        throw new TRPCError12({ code: "BAD_REQUEST", message: "Token expirado. Solicite um novo link." });
       }
       const passwordHash = await bcrypt.hash(input.password, 12);
       await updateUserPasswordHash(user.openId, passwordHash);
@@ -11044,17 +15808,17 @@ var appRouter = router({
       ctx.res.cookie(COOKIE_NAME, sessionToken, { ...cookieOptions, maxAge: DEFAULT_SESSION_MS });
       return { success: true };
     }),
-    requestPhoneOtp: publicProcedure.input(z7.object({
-      phone: z7.string().min(10, "Telefone inv\xE1lido"),
-      purpose: z7.enum(["login", "verify_phone"]).optional()
+    requestPhoneOtp: publicProcedure.input(z11.object({
+      phone: z11.string().min(10, "Telefone inv\xE1lido"),
+      purpose: z11.enum(["login", "verify_phone"]).optional()
     })).mutation(async ({ input, ctx }) => {
       const phone = normalizePhone(input.phone);
       if (phone.length < 10) {
-        throw new TRPCError7({ code: "BAD_REQUEST", message: "Telefone inv\xE1lido" });
+        throw new TRPCError12({ code: "BAD_REQUEST", message: "Telefone inv\xE1lido" });
       }
       const recentRequests = await countRecentOtpRequests(phone, 10);
       if (recentRequests >= 5) {
-        throw new TRPCError7({ code: "TOO_MANY_REQUESTS", message: "Muitas tentativas. Aguarde alguns minutos." });
+        throw new TRPCError12({ code: "TOO_MANY_REQUESTS", message: "Muitas tentativas. Aguarde alguns minutos." });
       }
       const existingUser = await getUserByPhone(phone);
       const code = String(Math.floor(1e5 + Math.random() * 9e5));
@@ -11084,35 +15848,35 @@ var appRouter = router({
         previewCode: process.env.NODE_ENV === "production" ? void 0 : code
       };
     }),
-    verifyPhoneOtp: publicProcedure.input(z7.object({
-      phone: z7.string().min(10, "Telefone inv\xE1lido"),
-      code: z7.string().length(6, "C\xF3digo inv\xE1lido"),
-      purpose: z7.enum(["login", "verify_phone"]).optional(),
-      name: z7.string().min(2).optional()
+    verifyPhoneOtp: publicProcedure.input(z11.object({
+      phone: z11.string().min(10, "Telefone inv\xE1lido"),
+      code: z11.string().length(6, "C\xF3digo inv\xE1lido"),
+      purpose: z11.enum(["login", "verify_phone"]).optional(),
+      name: z11.string().min(2).optional()
     })).mutation(async ({ input, ctx }) => {
       const phone = normalizePhone(input.phone);
       const otp = await getLatestOtpCode(phone, input.purpose ?? "login");
       if (!otp || otp.consumedAt || new Date(otp.expiresAt).getTime() < Date.now()) {
-        throw new TRPCError7({ code: "BAD_REQUEST", message: "C\xF3digo expirado ou inv\xE1lido" });
+        throw new TRPCError12({ code: "BAD_REQUEST", message: "C\xF3digo expirado ou inv\xE1lido" });
       }
       if ((otp.attempts ?? 0) >= 5) {
-        throw new TRPCError7({ code: "TOO_MANY_REQUESTS", message: "C\xF3digo bloqueado por excesso de tentativas" });
+        throw new TRPCError12({ code: "TOO_MANY_REQUESTS", message: "C\xF3digo bloqueado por excesso de tentativas" });
       }
       if (otp.codeHash !== hashOtpCode(input.code)) {
         await incrementOtpAttempts(otp.id);
-        throw new TRPCError7({ code: "UNAUTHORIZED", message: "C\xF3digo incorreto" });
+        throw new TRPCError12({ code: "UNAUTHORIZED", message: "C\xF3digo incorreto" });
       }
       await consumeOtpCode(otp.id);
       let user = await getUserByPhone(phone);
       if (!user) {
         user = await createPhoneUser({
-          openId: `phone_${phone}_${crypto3.randomBytes(8).toString("hex")}`,
+          openId: `phone_${phone}_${crypto5.randomBytes(8).toString("hex")}`,
           name: input.name ?? "Cliente Bonatto",
           phone
         });
       }
       if (!user) {
-        throw new TRPCError7({ code: "INTERNAL_SERVER_ERROR", message: "Falha ao criar usu\xE1rio por telefone" });
+        throw new TRPCError12({ code: "INTERNAL_SERVER_ERROR", message: "Falha ao criar usu\xE1rio por telefone" });
       }
       await linkCustomerAuthProvider({
         userId: user.id,
@@ -11128,40 +15892,131 @@ var appRouter = router({
       const cookieOptions = getSessionCookieOptions(ctx.req);
       ctx.res.cookie(COOKIE_NAME, sessionToken, { ...cookieOptions, maxAge: DEFAULT_SESSION_MS });
       return { success: true };
+    }),
+    socialAccounts: protectedProcedure.query(async ({ ctx }) => {
+      const [accounts, user] = await Promise.all([
+        getCustomerAuthProviders(ctx.user.id),
+        getUserById(ctx.user.id)
+      ]);
+      const safeAccounts = accounts.map((account) => ({
+        id: account.id,
+        provider: account.provider,
+        providerEmail: account.providerEmail,
+        providerUsername: account.providerUsername,
+        displayName: account.displayName,
+        avatarUrl: account.avatarUrl,
+        accountType: account.accountType,
+        isPrimary: account.isPrimary,
+        grantedScopes: account.grantedScopes ? JSON.parse(account.grantedScopes) : [],
+        connectedAt: account.linkedAt,
+        lastSyncedAt: account.lastSyncedAt
+      }));
+      if (user?.passwordHash && !safeAccounts.some((account) => account.provider === "email")) {
+        safeAccounts.unshift({
+          id: 0,
+          provider: "email",
+          providerEmail: user.email,
+          providerUsername: null,
+          displayName: user.name,
+          avatarUrl: null,
+          accountType: null,
+          isPrimary: user.loginMethod === "email",
+          grantedScopes: [],
+          connectedAt: user.createdAt,
+          lastSyncedAt: user.lastSignedIn
+        });
+      }
+      return safeAccounts;
+    }),
+    syncSocialAccount: protectedProcedure.input(z11.object({ provider: z11.enum(["google", "facebook", "apple", "instagram"]) })).mutation(async ({ ctx, input }) => {
+      try {
+        await syncSocialProvider(ctx.user.id, input.provider);
+        return { success: true };
+      } catch (error) {
+        console.error("[auth.syncSocialAccount] failed", error);
+        throw new TRPCError12({ code: "BAD_REQUEST", message: "N\xE3o foi poss\xEDvel sincronizar esta conta. Reconecte o provedor e tente novamente." });
+      }
+    }),
+    disconnectSocialAccount: protectedProcedure.input(z11.object({ provider: z11.enum(["google", "facebook", "apple", "instagram"]) })).mutation(async ({ ctx, input }) => {
+      const [account, accounts, user] = await Promise.all([
+        getCustomerAuthProvider(ctx.user.id, input.provider),
+        getCustomerAuthProviders(ctx.user.id),
+        getUserById(ctx.user.id)
+      ]);
+      if (!account) throw new TRPCError12({ code: "NOT_FOUND", message: "Conex\xE3o social n\xE3o encontrada" });
+      const alternativeLoginMethods = accounts.filter((item) => item.provider !== input.provider && item.provider !== "instagram").length + (user?.passwordHash ? 1 : 0);
+      if (input.provider !== "instagram" && alternativeLoginMethods === 0) {
+        throw new TRPCError12({ code: "PRECONDITION_FAILED", message: "Cadastre uma senha ou conecte outro provedor antes de remover seu \xFAnico acesso." });
+      }
+      await revokeSocialProvider(input.provider, account.accessTokenEncrypted, account.refreshTokenEncrypted).catch((error) => {
+        console.warn("[auth.disconnectSocialAccount] remote revoke failed", error);
+      });
+      await Promise.all([
+        disconnectCustomerAuthProvider(ctx.user.id, input.provider),
+        recordAuthEvent({ userId: ctx.user.id, provider: input.provider, event: "provider_disconnected", ipAddress: ctx.req.ip ?? null, userAgent: ctx.req.get("user-agent") ?? null })
+      ]);
+      return { success: true };
+    }),
+    deleteAccount: protectedProcedure.input(z11.object({ confirmation: z11.literal("EXCLUIR"), password: z11.string().optional() })).mutation(async ({ ctx, input }) => {
+      const user = await getUserById(ctx.user.id);
+      if (!user) throw new TRPCError12({ code: "NOT_FOUND" });
+      if (user.passwordHash) {
+        if (!input.password || !await bcrypt.compare(input.password, user.passwordHash)) {
+          throw new TRPCError12({ code: "UNAUTHORIZED", message: "Confirme sua senha para excluir a conta." });
+        }
+      }
+      const accounts = await getCustomerAuthProviders(user.id);
+      await Promise.all(accounts.filter((account) => account.provider === "google" || account.provider === "facebook" || account.provider === "apple" || account.provider === "instagram").map((account) => revokeSocialProvider(account.provider, account.accessTokenEncrypted, account.refreshTokenEncrypted).catch(console.warn)));
+      await recordAuthEvent({ userId: user.id, event: "account_deleted", ipAddress: ctx.req.ip ?? null, userAgent: ctx.req.get("user-agent") ?? null });
+      await anonymizeUserAccount(user.id);
+      const cookieOptions = getSessionCookieOptions(ctx.req);
+      ctx.res.clearCookie(COOKIE_NAME, { ...cookieOptions, maxAge: -1 });
+      return { success: true };
     })
   }),
   // --- CATEGORIES -------------------------------------------------------------
   categories: router({
-    list: publicProcedure.input(z7.object({ activeOnly: z7.boolean().optional() }).optional()).query(({ input }) => getCategories(input?.activeOnly ?? true)),
-    listAll: staffProcedure.query(() => getCategories(false)),
+    list: publicProcedure.input(z11.object({ activeOnly: z11.boolean().optional(), storeId: z11.number().optional() }).optional()).query(({ input }) => getCategories({ activeOnly: input?.activeOnly ?? true, storeId: input?.storeId })),
+    listAll: staffProcedure.input(z11.object({ storeId: z11.number().optional() }).optional()).query(async ({ input, ctx }) => {
+      const storeId = await resolveStoreId(ctx.user, input?.storeId);
+      return getCategories({ activeOnly: false, storeId });
+    }),
     create: staffProcedure.input(
-      z7.object({
-        name: z7.string().min(1),
-        slug: z7.string().min(1),
-        description: z7.string().optional(),
-        imageUrl: z7.string().max(2048).optional(),
-        icon: z7.string().max(64).optional(),
-        sortOrder: z7.number().optional()
+      z11.object({
+        name: z11.string().min(1),
+        slug: z11.string().min(1),
+        description: z11.string().optional(),
+        imageUrl: z11.string().max(2048).optional(),
+        icon: z11.string().max(64).optional(),
+        sortOrder: z11.number().optional(),
+        storeId: z11.number().optional()
       })
-    ).mutation(({ input }) => createCategory({ ...input, active: true })),
+    ).mutation(async ({ input, ctx }) => {
+      const storeId = await resolveStoreId(ctx.user, input.storeId);
+      return createCategory({ ...input, storeId: storeId ?? 0, active: true });
+    }),
     update: staffProcedure.input(
-      z7.object({
-        id: z7.number(),
-        name: z7.string().optional(),
-        description: z7.string().optional(),
-        imageUrl: z7.string().max(2048).optional(),
-        icon: z7.string().max(64).optional(),
-        sortOrder: z7.number().optional(),
-        active: z7.boolean().optional()
+      z11.object({
+        id: z11.number(),
+        name: z11.string().optional(),
+        description: z11.string().optional(),
+        imageUrl: z11.string().max(2048).optional(),
+        icon: z11.string().max(64).optional(),
+        sortOrder: z11.number().optional(),
+        active: z11.boolean().optional(),
+        storeId: z11.number().optional()
       })
-    ).mutation(({ input }) => {
-      const { id, ...data } = input;
+    ).mutation(async ({ input, ctx }) => {
+      const category = await getCategoryById(input.id);
+      if (!category) throw new TRPCError12({ code: "NOT_FOUND", message: "Categoria n\xE3o encontrada." });
+      await assertStoreEntityAccess(ctx.user, category.storeId, input.storeId);
+      const { id, storeId: _storeId, ...data } = input;
       return updateCategory(id, data);
     }),
-    uploadImage: staffProcedure.input(z7.object({
-      base64: z7.string().max(43e5),
-      mimeType: z7.enum(["image/jpeg", "image/png", "image/webp", "image/gif"]),
-      fileName: z7.string().max(255).optional()
+    uploadImage: staffProcedure.input(z11.object({
+      base64: z11.string().max(43e5),
+      mimeType: z11.enum(["image/jpeg", "image/png", "image/webp", "image/gif"]),
+      fileName: z11.string().max(255).optional()
     })).mutation(async ({ input }) => {
       const { storagePutAdapter: storagePut2 } = await Promise.resolve().then(() => (init_storage2(), storage_exports2));
       const { compressToWebP: compressToWebP2 } = await Promise.resolve().then(() => (init_imageUtils(), imageUtils_exports));
@@ -11172,69 +16027,76 @@ var appRouter = router({
       console.log(`[upload] categoria comprimida ${reductionPct}% -> WebP`);
       return { url };
     }),
-    delete: staffProcedure.input(z7.object({ id: z7.number() })).mutation(({ input }) => deleteCategory(input.id))
+    delete: staffProcedure.input(z11.object({ id: z11.number(), storeId: z11.number().optional() })).mutation(async ({ input, ctx }) => {
+      const category = await getCategoryById(input.id);
+      if (!category) throw new TRPCError12({ code: "NOT_FOUND", message: "Categoria n\xE3o encontrada." });
+      await assertStoreEntityAccess(ctx.user, category.storeId, input.storeId);
+      return deleteCategory(input.id);
+    })
   }),
   // --- PRODUCTS ---------------------------------------------------------------
   products: router({
-    list: publicProcedure.input(z7.object({ categoryId: z7.number().optional(), storeId: z7.number().optional() }).optional()).query(({ input }) => getProducts({ categoryId: input?.categoryId, storeId: input?.storeId, activeOnly: true })),
-    listAll: staffProcedure.input(z7.object({ storeId: z7.number().optional() }).optional()).query(async ({ input, ctx }) => {
+    list: publicProcedure.input(z11.object({ categoryId: z11.number().optional(), storeId: z11.number().optional() }).optional()).query(({ input }) => getProducts({ categoryId: input?.categoryId, storeId: input?.storeId, activeOnly: true })),
+    listAll: staffProcedure.input(z11.object({ storeId: z11.number().optional() }).optional()).query(async ({ input, ctx }) => {
       const storeId = await resolveStoreId(ctx.user, input?.storeId);
       return getProducts({ activeOnly: false, storeId });
     }),
-    byId: publicProcedure.input(z7.object({ id: z7.number() })).query(({ input }) => getProductById(input.id)),
-    byIds: publicProcedure.input(z7.object({ ids: z7.array(z7.number()).max(100) })).query(({ input }) => getProductsByIds(Array.from(new Set(input.ids)))),
+    byId: publicProcedure.input(z11.object({ id: z11.number() })).query(({ input }) => getProductById(input.id)),
+    byIds: publicProcedure.input(z11.object({ ids: z11.array(z11.number()).max(100) })).query(({ input }) => getProductsByIds(Array.from(new Set(input.ids)))),
     create: staffProcedure.input(
-      z7.object({
-        categoryId: z7.number(),
-        name: z7.string().min(1).max(200),
-        description: z7.string().max(2e3).optional(),
-        price: z7.string().regex(/^\d+(\.\d{1,2})?$/, "Pre\xE7o inv\xE1lido"),
-        imageUrl: z7.string().max(2048).optional(),
-        featured: z7.boolean().optional(),
-        sortOrder: z7.number().int().optional(),
-        storeId: z7.number().optional()
+      z11.object({
+        categoryId: z11.number(),
+        name: z11.string().min(1).max(200),
+        description: z11.string().max(2e3).optional(),
+        price: z11.string().regex(/^\d+(\.\d{1,2})?$/, "Pre\xE7o inv\xE1lido"),
+        imageUrl: z11.string().max(2048).optional(),
+        featured: z11.boolean().optional(),
+        sortOrder: z11.number().int().optional(),
+        storeId: z11.number().optional()
       })
     ).mutation(async ({ input, ctx }) => {
-      const storeId = await resolveStoreId(ctx.user, input.storeId);
-      return createProduct({ ...input, storeId: storeId ?? null, active: true, featured: input.featured ?? false });
+      const storeId = await resolveRequiredStoreId(ctx.user, input.storeId);
+      return createProduct({ ...input, storeId, active: true, featured: input.featured ?? false });
     }),
     update: staffProcedure.input(
-      z7.object({
-        id: z7.number(),
-        categoryId: z7.number().optional(),
-        name: z7.string().min(1).max(200).optional(),
-        description: z7.string().max(2e3).optional(),
-        price: z7.string().regex(/^\d+(\.\d{1,2})?$/, "Pre\xE7o inv\xE1lido").optional(),
-        imageUrl: z7.string().max(2048).optional(),
-        featured: z7.boolean().optional(),
-        active: z7.boolean().optional(),
-        sortOrder: z7.number().int().optional(),
-        storeId: z7.number().optional()
+      z11.object({
+        id: z11.number(),
+        categoryId: z11.number().optional(),
+        name: z11.string().min(1).max(200).optional(),
+        description: z11.string().max(2e3).optional(),
+        price: z11.string().regex(/^\d+(\.\d{1,2})?$/, "Pre\xE7o inv\xE1lido").optional(),
+        imageUrl: z11.string().max(2048).optional(),
+        featured: z11.boolean().optional(),
+        active: z11.boolean().optional(),
+        sortOrder: z11.number().int().optional(),
+        storeId: z11.number().optional()
       })
     ).mutation(async ({ input, ctx }) => {
       const product = await getProductById(input.id);
-      if (!product) throw new TRPCError7({ code: "NOT_FOUND", message: "Produto nao encontrado." });
+      if (!product) throw new TRPCError12({ code: "NOT_FOUND", message: "Produto nao encontrado." });
       await assertStoreEntityAccess(ctx.user, product.storeId, input.storeId);
       const { id, storeId: _storeId, ...data } = input;
       return updateProduct(id, data);
     }),
-    delete: staffProcedure.input(z7.object({ id: z7.number(), storeId: z7.number().optional() })).mutation(async ({ input, ctx }) => {
+    delete: staffProcedure.input(z11.object({ id: z11.number(), storeId: z11.number().optional() })).mutation(async ({ input, ctx }) => {
       const product = await getProductById(input.id);
-      if (!product) throw new TRPCError7({ code: "NOT_FOUND", message: "Produto nao encontrado." });
+      if (!product) throw new TRPCError12({ code: "NOT_FOUND", message: "Produto nao encontrado." });
       await assertStoreEntityAccess(ctx.user, product.storeId, input.storeId);
       return deleteProduct(input.id);
     }),
-    uploadImage: staffProcedure.input(z7.object({
-      base64: z7.string().max(43e5),
+    uploadImage: staffProcedure.input(z11.object({
+      storeId: z11.number().optional(),
+      base64: z11.string().max(43e5),
       // keep below Vercel request-size limits
-      mimeType: z7.enum(["image/jpeg", "image/png", "image/webp", "image/gif"]),
-      fileName: z7.string().max(255).optional()
+      mimeType: z11.enum(["image/jpeg", "image/png", "image/webp", "image/gif"]),
+      fileName: z11.string().max(255).optional()
     })).mutation(async ({ input, ctx }) => {
+      const storeId = await resolveRequiredStoreId(ctx.user, input.storeId);
       const { storagePutAdapter: storagePut2 } = await Promise.resolve().then(() => (init_storage2(), storage_exports2));
       const { compressToWebP: compressToWebP2 } = await Promise.resolve().then(() => (init_imageUtils(), imageUtils_exports));
       const rawBuffer = Buffer.from(input.base64, "base64");
       const { buffer, mimeType, ext, reductionPct } = await compressToWebP2(rawBuffer, 82, 1200);
-      const key = `products/product-${Date.now()}.${ext}`;
+      const key = `stores/${storeId}/products/product-${Date.now()}.${ext}`;
       const { url } = await storagePut2(key, buffer, mimeType);
       console.log(`[upload] produto comprimido ${reductionPct}% \u2192 WebP`);
       return { url };
@@ -11242,17 +16104,41 @@ var appRouter = router({
   }),
   // --- COUPONS ----------------------------------------------------------------
   coupons: router({
-    validate: publicProcedure.input(z7.object({ code: z7.string(), orderTotal: z7.number() })).mutation(async ({ input, ctx }) => {
-      const coupon = await getCouponByCode(input.code);
-      if (!coupon) throw new TRPCError7({ code: "NOT_FOUND", message: "Cupom n\xE3o encontrado" });
-      if (!coupon.active) throw new TRPCError7({ code: "BAD_REQUEST", message: "Cupom inativo" });
+    validate: publicProcedure.input(z11.object({
+      code: z11.string(),
+      orderTotal: z11.number(),
+      storeId: z11.number().optional(),
+      items: z11.array(z11.object({
+        productId: z11.number().int().positive(),
+        productPrice: z11.union([z11.string(), z11.number()]),
+        quantity: z11.number().int().min(1).max(99)
+      })).max(50).optional()
+    })).mutation(async ({ input, ctx }) => {
+      const coupon = await getCouponByCode(input.code, input.storeId);
+      if (!coupon && ctx.user && input.storeId) {
+        const rewardBenefit2 = await validateRewardCoupon({
+          storeId: input.storeId,
+          userId: ctx.user.id,
+          code: input.code,
+          subtotal: input.orderTotal,
+          items: input.items
+        });
+        return {
+          valid: true,
+          discount: rewardBenefit2.discount,
+          coupon: { code: input.code.toUpperCase(), rewardCoupon: true },
+          rewardBenefit: rewardBenefit2
+        };
+      }
+      if (!coupon) throw new TRPCError12({ code: "NOT_FOUND", message: "Cupom n\xE3o encontrado" });
+      if (!coupon.active) throw new TRPCError12({ code: "BAD_REQUEST", message: "Cupom inativo" });
       if (coupon.expiresAt && /* @__PURE__ */ new Date() > coupon.expiresAt)
-        throw new TRPCError7({ code: "BAD_REQUEST", message: "Cupom expirado" });
+        throw new TRPCError12({ code: "BAD_REQUEST", message: "Cupom expirado" });
       if (coupon.maxUses && coupon.usedCount >= coupon.maxUses)
-        throw new TRPCError7({ code: "BAD_REQUEST", message: "Cupom esgotado" });
+        throw new TRPCError12({ code: "BAD_REQUEST", message: "Cupom esgotado" });
       const minOrder = parseFloat(coupon.minOrderValue ?? "0");
       if (input.orderTotal < minOrder)
-        throw new TRPCError7({
+        throw new TRPCError12({
           code: "BAD_REQUEST",
           message: `Pedido m\xEDnimo de R$ ${minOrder.toFixed(2)} para este cupom`
         });
@@ -11264,24 +16150,36 @@ var appRouter = router({
       }
       return { valid: true, discount: Math.min(discount, input.orderTotal), coupon };
     }),
-    list: staffProcedure.query(() => getAllCoupons()),
+    list: staffProcedure.input(z11.object({ storeId: z11.number().optional() }).optional()).query(async ({ input, ctx }) => {
+      const storeId = await resolveStoreId(ctx.user, input?.storeId);
+      return getAllCoupons(storeId);
+    }),
     // Public endpoint: returns only active global coupons (no userId) for display in customer panel
-    listActive: protectedProcedure.query(
-      () => getAllCoupons().then(
+    listActive: protectedProcedure.input(z11.object({ storeId: z11.number().optional() }).optional()).query(
+      ({ input }) => getAllCoupons(input?.storeId).then(
         (coupons2) => coupons2.filter((c) => c.active && !c.userId && (!c.expiresAt || /* @__PURE__ */ new Date() < c.expiresAt))
       )
     ),
+    listPublic: publicProcedure.input(z11.object({ storeId: z11.number().optional() }).optional()).query(
+      ({ input }) => getAllCoupons(input?.storeId).then(
+        (coupons2) => coupons2.filter(
+          (coupon) => coupon.active && !coupon.userId && (!coupon.expiresAt || /* @__PURE__ */ new Date() < coupon.expiresAt) && (!coupon.maxUses || coupon.usedCount < coupon.maxUses)
+        )
+      )
+    ),
     create: staffProcedure.input(
-      z7.object({
-        code: z7.string().min(1),
-        discountType: z7.enum(["percentage", "fixed"]),
-        discountValue: z7.string(),
-        minOrderValue: z7.string().optional(),
-        maxUses: z7.number().optional(),
-        expiresAt: z7.date().optional()
+      z11.object({
+        code: z11.string().min(1),
+        discountType: z11.enum(["percentage", "fixed"]),
+        discountValue: z11.string(),
+        minOrderValue: z11.string().optional(),
+        maxUses: z11.number().optional(),
+        expiresAt: z11.date().optional(),
+        storeId: z11.number().optional()
       })
     ).mutation(async ({ input, ctx }) => {
-      const result = await createCoupon({ ...input, active: true, usedCount: 0 });
+      const storeId = await resolveRequiredStoreId(ctx.user, input.storeId);
+      const result = await createCoupon({ ...input, storeId, active: true, usedCount: 0 });
       const discountText = input.discountType === "percentage" ? `${input.discountValue}% de desconto` : `R$ ${parseFloat(input.discountValue).toFixed(2)} de desconto`;
       await createClientAlert({
         type: "coupon",
@@ -11289,27 +16187,32 @@ var appRouter = router({
         message: `Use o cupom **${input.code}** e ganhe ${discountText} no seu pedido.`,
         icon: "\u{1F389}",
         url: "/cardapio",
+        storeId,
         expiresAt: input.expiresAt
       });
       return result;
     }),
-    update: staffProcedure.input(z7.object({
-      id: z7.number(),
-      active: z7.boolean().optional(),
-      maxUses: z7.number().int().min(0).optional(),
-      discountType: z7.enum(["percentage", "fixed"]).optional(),
-      discountValue: z7.string().regex(/^\d+(\.\d{1,2})?$/, "Valor inv\xE1lido").optional(),
-      minOrderValue: z7.string().regex(/^\d+(\.\d{1,2})?$/, "Valor inv\xE1lido").optional(),
-      expiresAt: z7.date().nullable().optional()
-    })).mutation(({ input }) => {
-      const { id, ...data } = input;
+    update: staffProcedure.input(z11.object({
+      id: z11.number(),
+      active: z11.boolean().optional(),
+      maxUses: z11.number().int().min(0).optional(),
+      discountType: z11.enum(["percentage", "fixed"]).optional(),
+      discountValue: z11.string().regex(/^\d+(\.\d{1,2})?$/, "Valor inv\xE1lido").optional(),
+      minOrderValue: z11.string().regex(/^\d+(\.\d{1,2})?$/, "Valor inv\xE1lido").optional(),
+      expiresAt: z11.date().nullable().optional(),
+      storeId: z11.number().optional()
+    })).mutation(async ({ input, ctx }) => {
+      const coupon = await getCouponById(input.id);
+      if (!coupon) throw new TRPCError12({ code: "NOT_FOUND", message: "Cupom n\xE3o encontrado." });
+      await assertStoreEntityAccess(ctx.user, coupon.storeId, input.storeId);
+      const { id, storeId: _storeId, ...data } = input;
       return updateCoupon(id, data);
     }),
     // Public: returns the home popup coupon only if it has been provisioned by an admin.
     // Nenhum side-effect aqui — cupons devem ser criados via seed/admin, não em leitura pública.
-    getHomePopupCoupon: publicProcedure.query(async () => {
+    getHomePopupCoupon: publicProcedure.input(z11.object({ storeId: z11.number().optional() }).optional()).query(async ({ input }) => {
       const POPUP_CODE = "BONATTO10";
-      const coupon = await getCouponByCode(POPUP_CODE);
+      const coupon = await getCouponByCode(POPUP_CODE, input?.storeId);
       if (!coupon || !coupon.active) return null;
       if (coupon.expiresAt && /* @__PURE__ */ new Date() > coupon.expiresAt) return null;
       return {
@@ -11323,37 +16226,50 @@ var appRouter = router({
   // --- ORDERS -----------------------------------------------------------------
   orders: router({
     create: protectedProcedure.input(
-      z7.object({
-        customerName: z7.string().min(1).max(200),
-        customerEmail: z7.string().email().max(320).optional(),
-        customerPhone: z7.string().trim().max(30).refine((v) => {
+      z11.object({
+        storeId: z11.number().int().positive().optional(),
+        customerName: z11.string().min(1).max(200),
+        customerEmail: z11.string().email().max(320).optional(),
+        customerPhone: z11.string().trim().max(30).refine((v) => {
           const digits = v.replace(/\D/g, "");
           return digits.length >= 10 && digits.length <= 15;
         }, { message: "Telefone inv\xE1lido. Informe DDD + n\xFAmero (10 a 15 d\xEDgitos)." }).optional(),
-        deliveryAddress: z7.string().min(1).max(500),
-        deliveryCity: z7.string().max(100).optional(),
-        deliveryCep: z7.string().regex(/^\d{5}-?\d{3}$/, "CEP inv\xE1lido").optional(),
-        deliveryNeighborhood: z7.string().max(100).optional(),
-        deliveryComplement: z7.string().max(200).optional(),
-        paymentMethod: z7.enum(["credit_card", "debit_card", "pix", "cash"]),
-        couponCode: z7.string().max(50).optional(),
-        pointsToRedeem: z7.number().int().min(0).max(5e3).optional(),
-        notes: z7.string().max(1e3).optional(),
+        deliveryAddress: z11.string().min(1).max(500),
+        deliveryCity: z11.string().max(100).optional(),
+        deliveryCep: z11.string().regex(/^\d{5}-?\d{3}$/, "CEP inv\xE1lido").optional(),
+        deliveryNeighborhood: z11.string().max(100).optional(),
+        deliveryComplement: z11.string().max(200).optional(),
+        paymentMethod: z11.enum(["credit_card", "debit_card", "pix", "cash"]),
+        couponCode: z11.string().max(50).optional(),
+        pointsToRedeem: z11.number().int().min(0).max(5e3).optional(),
+        notes: z11.string().max(1e3).optional(),
         // deliveryFeeOverride foi removido: taxa sempre calculada server-side a partir
         // do CEP/bairro para evitar manipulação do valor pelo cliente.
-        items: z7.array(
-          z7.object({
-            productId: z7.number().int().positive(),
-            productName: z7.string().max(200),
-            productPrice: z7.string().regex(/^\d+(\.\d{1,2})?$/, "Pre\xE7o inv\xE1lido"),
-            quantity: z7.number().int().min(1).max(99),
-            notes: z7.string().max(500).optional()
+        items: z11.array(
+          z11.object({
+            productId: z11.number().int().positive(),
+            productName: z11.string().max(200),
+            productPrice: z11.string().regex(/^\d+(\.\d{1,2})?$/, "Pre\xE7o inv\xE1lido"),
+            quantity: z11.number().int().min(1).max(99),
+            notes: z11.string().max(500).optional(),
+            configuration: catalogOrderConfigurationSchema.optional()
           })
         ).min(1, "O pedido precisa ter pelo menos 1 item.").max(50, "Pedido excede o n\xFAmero m\xE1ximo de itens.")
       })
     ).mutation(async ({ input, ctx }) => {
-      const dbSettings = await getAllStoreSettings();
-      await assertPaymentMethodEnabled(input.paymentMethod);
+      const tenantStore = input.storeId ? await getWhiteLabelRuntimeByStoreId(input.storeId) : null;
+      if (input.storeId) {
+        if (!tenantStore || tenantStore.status !== "active") {
+          throw new TRPCError12({ code: "PRECONDITION_FAILED", message: "Esta loja n\xE3o est\xE1 dispon\xEDvel para pedidos." });
+        }
+      }
+      const clubFeatureEnabled = tenantStore?.features.club ?? true;
+      const loyaltyFeatureEnabled = tenantStore?.features.loyalty ?? true;
+      if ((input.pointsToRedeem ?? 0) > 0 && !loyaltyFeatureEnabled) {
+        throw new TRPCError12({ code: "PRECONDITION_FAILED", message: "O programa de fidelidade nao esta disponivel nesta loja." });
+      }
+      const dbSettings = await getAllStoreSettings(input.storeId);
+      await assertPaymentMethodEnabled(input.paymentMethod, input.storeId);
       const now = /* @__PURE__ */ new Date();
       const brFormatter = new Intl.DateTimeFormat("pt-BR", {
         timeZone: "America/Sao_Paulo",
@@ -11401,7 +16317,7 @@ var appRouter = router({
         storeOpen = nowMin >= oh * 60 + om && nowMin < ch * 60 + cm;
       }
       if (!storeOpen) {
-        throw new TRPCError7({
+        throw new TRPCError12({
           code: "PRECONDITION_FAILED",
           message: "A pizzaria est\xE1 fechada no momento. Tente novamente durante o hor\xE1rio de funcionamento."
         });
@@ -11442,7 +16358,7 @@ var appRouter = router({
         ];
         const deliveryPrefixes = dbSettings.deliveryCepPrefixes ? JSON.parse(dbSettings.deliveryCepPrefixes) : defaultPrefixes;
         if (cleanCep.length === 8 && !deliveryPrefixes.includes(cleanCep.substring(0, 5))) {
-          throw new TRPCError7({
+          throw new TRPCError12({
             code: "BAD_REQUEST",
             message: "Infelizmente n\xE3o entregamos nesse CEP ainda. Entre em contato pelo WhatsApp."
           });
@@ -11454,10 +16370,46 @@ var appRouter = router({
       const resolvedItems = [];
       for (const item of input.items) {
         const product = productMap.get(item.productId);
-        if (!product || !product.active) {
-          throw new TRPCError7({ code: "BAD_REQUEST", message: `Produto "${item.productName}" n\xE3o encontrado ou indispon\xEDvel.` });
+        if (!product || !product.active || input.storeId !== void 0 && product.storeId !== input.storeId) {
+          throw new TRPCError12({ code: "BAD_REQUEST", message: `Produto "${item.productName}" n\xE3o encontrado ou indispon\xEDvel.` });
         }
-        resolvedItems.push({ productId: item.productId, productName: product.name, productPrice: product.price, quantity: item.quantity, notes: item.notes ?? null });
+        if (product.pricingEngine === "configured_v2" || item.configuration) {
+          const configuredProduct = await getConfiguredCatalogProduct({ storeId: product.storeId, productId: product.id });
+          const selection = {
+            ...item.configuration,
+            quantity: item.quantity,
+            channel: input.deliveryCep ? "delivery" : "pickup"
+          };
+          const pricing = calculateConfiguredProductPrice(configuredProduct, selection);
+          if (pricing.validationErrors.length > 0) {
+            throw new TRPCError12({
+              code: "BAD_REQUEST",
+              message: `${product.name}: ${pricing.validationErrors.join(" ")}`
+            });
+          }
+          const snapshot = createOrderItemConfigurationSnapshot(configuredProduct, selection, pricing);
+          resolvedItems.push({
+            productId: item.productId,
+            productName: product.name,
+            productPrice: pricing.unitTotal.toFixed(2),
+            quantity: item.quantity,
+            notes: item.notes ?? null,
+            snapshotVersion: 2,
+            configurationSnapshot: JSON.stringify(snapshot),
+            pricingBreakdown: JSON.stringify(pricing.breakdown)
+          });
+        } else {
+          resolvedItems.push({
+            productId: item.productId,
+            productName: product.name,
+            productPrice: product.price,
+            quantity: item.quantity,
+            notes: item.notes ?? null,
+            snapshotVersion: 1,
+            configurationSnapshot: null,
+            pricingBreakdown: null
+          });
+        }
       }
       const subtotal = resolvedItems.reduce(
         (sum, item) => sum + parseFloat(item.productPrice) * item.quantity,
@@ -11465,67 +16417,102 @@ var appRouter = router({
       );
       let discountAmount = 0;
       let couponToApply;
+      let rewardCouponBenefit = null;
       if (input.couponCode) {
-        couponToApply = await getCouponByCode(input.couponCode);
-        if (!couponToApply) {
-          throw new TRPCError7({ code: "BAD_REQUEST", message: "Cupom inv\xE1lido ou expirado." });
+        if (input.storeId) {
+          try {
+            rewardCouponBenefit = await validateRewardCoupon({
+              storeId: input.storeId,
+              userId: ctx.user.id,
+              code: input.couponCode,
+              subtotal,
+              items: resolvedItems
+            });
+          } catch (error) {
+            if (!(error instanceof TRPCError12) || error.code !== "NOT_FOUND") throw error;
+          }
         }
-        if (!couponToApply.active) {
-          throw new TRPCError7({ code: "BAD_REQUEST", message: "Cupom inativo." });
-        }
-        if (couponToApply.expiresAt && /* @__PURE__ */ new Date() > couponToApply.expiresAt) {
-          throw new TRPCError7({ code: "BAD_REQUEST", message: "Cupom expirado." });
-        }
-        if (couponToApply.userId != null && couponToApply.userId !== ctx.user.id) {
-          throw new TRPCError7({ code: "FORBIDDEN", message: "Este cupom \xE9 exclusivo de outro usu\xE1rio." });
-        }
-        const minOrder = parseFloat(couponToApply.minOrderValue ?? "0");
-        if (subtotal < minOrder) {
-          throw new TRPCError7({
-            code: "BAD_REQUEST",
-            message: `Pedido m\xEDnimo de R$ ${minOrder.toFixed(2)} para este cupom.`
-          });
-        }
-        if (couponToApply.discountType === "percentage") {
-          discountAmount = subtotal * parseFloat(couponToApply.discountValue) / 100;
+        if (rewardCouponBenefit) {
+          discountAmount = rewardCouponBenefit.discount;
         } else {
-          discountAmount = parseFloat(couponToApply.discountValue);
+          couponToApply = await getCouponByCode(input.couponCode, input.storeId);
+          if (!couponToApply) {
+            throw new TRPCError12({ code: "BAD_REQUEST", message: "Cupom inv\xE1lido ou expirado." });
+          }
+          if (!couponToApply.active) {
+            throw new TRPCError12({ code: "BAD_REQUEST", message: "Cupom inativo." });
+          }
+          if (couponToApply.expiresAt && /* @__PURE__ */ new Date() > couponToApply.expiresAt) {
+            throw new TRPCError12({ code: "BAD_REQUEST", message: "Cupom expirado." });
+          }
+          if (couponToApply.userId != null && couponToApply.userId !== ctx.user.id) {
+            throw new TRPCError12({ code: "FORBIDDEN", message: "Este cupom \xE9 exclusivo de outro usu\xE1rio." });
+          }
+          const minOrder = parseFloat(couponToApply.minOrderValue ?? "0");
+          if (subtotal < minOrder) {
+            throw new TRPCError12({
+              code: "BAD_REQUEST",
+              message: `Pedido m\xEDnimo de R$ ${minOrder.toFixed(2)} para este cupom.`
+            });
+          }
+          if (couponToApply.discountType === "percentage") {
+            discountAmount = subtotal * parseFloat(couponToApply.discountValue) / 100;
+          } else {
+            discountAmount = parseFloat(couponToApply.discountValue);
+          }
         }
       }
       const db = await getDb();
       if (!db) {
-        throw new TRPCError7({ code: "INTERNAL_SERVER_ERROR", message: "Banco de dados indispon\xEDvel." });
+        throw new TRPCError12({ code: "INTERNAL_SERVER_ERROR", message: "Banco de dados indispon\xEDvel." });
       }
       let clubDiscountAmount = 0;
       let clubFreeDelivery = false;
       let clubFreePizzaDiscount = 0;
       let reservedFreePizza = false;
-      const userForClub = await getUserById(ctx.user.id);
+      const userForClub = clubFeatureEnabled ? await getTenantCustomerAccount(ctx.user.id, input.storeId) : null;
+      const mirrorLegacyFreePizza = async (used, resetAt) => {
+        if (tenantStore?.tenantKey !== "bonatto") return;
+        await db.update(users).set({
+          clubFreePizzaUsed: used,
+          ...resetAt !== void 0 ? { clubFreePizzaResetAt: resetAt } : {}
+        }).where(eq19(users.id, ctx.user.id));
+      };
       const reserveFreePizzaBenefit = async () => {
-        const result = await db.update(users).set({ clubFreePizzaUsed: true }).where(and9(eq12(users.id, ctx.user.id), eq12(users.clubStatus, "active"), eq12(users.clubFreePizzaUsed, false)));
+        if (!userForClub) return false;
+        const result = await db.update(tenantCustomerAccounts).set({ clubFreePizzaUsed: true }).where(and16(
+          eq19(tenantCustomerAccounts.id, userForClub.id),
+          eq19(tenantCustomerAccounts.clubStatus, "active"),
+          eq19(tenantCustomerAccounts.clubFreePizzaUsed, false)
+        ));
         const mutationResult = result;
         const affectedRows = mutationResult?.rowsAffected ?? mutationResult?.[0]?.affectedRows ?? 0;
         reservedFreePizza = affectedRows > 0;
+        if (reservedFreePizza) await mirrorLegacyFreePizza(true);
         return reservedFreePizza;
       };
       const releaseFreePizzaBenefit = async () => {
         if (!reservedFreePizza) return;
         reservedFreePizza = false;
-        await db.update(users).set({ clubFreePizzaUsed: false }).where(eq12(users.id, ctx.user.id));
+        if (userForClub) {
+          await db.update(tenantCustomerAccounts).set({ clubFreePizzaUsed: false }).where(eq19(tenantCustomerAccounts.id, userForClub.id));
+        }
+        await mirrorLegacyFreePizza(false);
       };
       if (userForClub && userForClub.clubStatus === "active" && userForClub.clubPlan) {
-        const planConfig = await getClubPlanConfig(userForClub.clubPlan);
+        const planConfig = await getClubPlanConfig(userForClub.clubPlan, input.storeId);
         if (planConfig) {
           clubFreeDelivery = planConfig.freeDelivery;
           let freePizzaAlreadyUsed = Boolean(userForClub.clubFreePizzaUsed);
           const now2 = /* @__PURE__ */ new Date();
           if (freePizzaAlreadyUsed && userForClub.clubFreePizzaResetAt && now2 > userForClub.clubFreePizzaResetAt) {
             const nextReset = new Date(now2.getFullYear(), now2.getMonth() + 1, 1);
-            await db.update(users).set({ clubFreePizzaUsed: false, clubFreePizzaResetAt: nextReset }).where(and9(eq12(users.id, ctx.user.id), lte3(users.clubFreePizzaResetAt, now2)));
+            await db.update(tenantCustomerAccounts).set({ clubFreePizzaUsed: false, clubFreePizzaResetAt: nextReset }).where(and16(eq19(tenantCustomerAccounts.id, userForClub.id), lte3(tenantCustomerAccounts.clubFreePizzaResetAt, now2)));
+            await mirrorLegacyFreePizza(false, nextReset);
             freePizzaAlreadyUsed = false;
           }
           if (planConfig.freePizzaPerMonth && !freePizzaAlreadyUsed) {
-            const pizzaCategoryIds = getPizzaCategoryIds(await getCategories());
+            const pizzaCategoryIds = getPizzaCategoryIds(await getCategories({ storeId: input.storeId }));
             const candidateFreePizzaDiscount = getFreePizzaDiscountForCart(input.items, productMap, pizzaCategoryIds);
             if (candidateFreePizzaDiscount > 0 && await reserveFreePizzaBenefit()) {
               clubFreePizzaDiscount = candidateFreePizzaDiscount;
@@ -11542,7 +16529,7 @@ var appRouter = router({
       let rawDeliveryFee = 0;
       if (input.deliveryCep || input.deliveryNeighborhood) {
         if (input.deliveryNeighborhood) {
-          const zone = await getDeliveryZoneByNeighborhood(input.deliveryNeighborhood);
+          const zone = await getDeliveryZoneByNeighborhood(input.deliveryNeighborhood, input.storeId);
           if (zone) rawDeliveryFee = parseFloat(zone.deliveryFee);
           else {
             const feeStr = dbSettings.deliveryFee;
@@ -11553,9 +16540,9 @@ var appRouter = router({
           rawDeliveryFee = feeStr ? parseFloat(feeStr) : 0;
         }
       }
-      const deliveryFee = clubFreeDelivery ? 0 : rawDeliveryFee;
+      const deliveryFee = clubFreeDelivery || rewardCouponBenefit?.freeDelivery ? 0 : rawDeliveryFee;
       if (input.pointsToRedeem && input.pointsToRedeem >= 50) {
-        const userBalance = await getUserLoyaltyPoints(ctx.user.id);
+        const userBalance = await getUserLoyaltyPoints(ctx.user.id, input.storeId);
         const payableBeforePoints = Math.max(0, subtotal - discountAmount + deliveryFee);
         const maxPointsByTotal = Math.floor(payableBeforePoints / POINTS_TO_BRL);
         const pts = Math.min(input.pointsToRedeem, userBalance, maxPointsByTotal);
@@ -11569,13 +16556,13 @@ var appRouter = router({
       const minOrderValue = minOrderValueStr ? parseFloat(minOrderValueStr) : 0;
       const totalBeforeCheck = Math.max(0, subtotal - discountAmount + deliveryFee);
       if (minOrderValue > 0 && subtotal - discountAmount < minOrderValue) {
-        throw new TRPCError7({
+        throw new TRPCError12({
           code: "BAD_REQUEST",
           message: `Valor m\xEDnimo do pedido \xE9 R$ ${minOrderValue.toFixed(2).replace(".", ",")}. Adicione mais itens ao carrinho.`
         });
       }
       const total = totalBeforeCheck;
-      const routedStore = await pickStoreForDeliveryAddress({
+      const routedStore = input.storeId ? { storeId: input.storeId, reason: "tenant_domain" } : await pickStoreForDeliveryAddress({
         deliveryAddress: input.deliveryAddress,
         deliveryNeighborhood: input.deliveryNeighborhood ?? null,
         deliveryCity: input.deliveryCity ?? null,
@@ -11608,6 +16595,9 @@ var appRouter = router({
         productPrice: item.productPrice,
         quantity: item.quantity,
         notes: item.notes ?? null,
+        snapshotVersion: item.snapshotVersion,
+        configurationSnapshot: item.configurationSnapshot,
+        pricingBreakdown: item.pricingBreakdown,
         subtotal: (parseFloat(item.productPrice) * item.quantity).toFixed(2)
       }));
       let orderId;
@@ -11627,7 +16617,8 @@ var appRouter = router({
             ctx.user.id,
             pointsUsed,
             orderId,
-            `-${pointsUsed} pontos resgatados no pedido #${orderId}`
+            `-${pointsUsed} pontos resgatados no pedido #${orderId}`,
+            routedStore.storeId
           );
         } catch (debitErr) {
           try {
@@ -11637,7 +16628,7 @@ var appRouter = router({
             console.error("[orders.create] failed to cancel order after debit error:", cancelErr);
           }
           console.error("[orders.create] debit points failed unexpectedly:", debitErr);
-          throw new TRPCError7({
+          throw new TRPCError12({
             code: "INTERNAL_SERVER_ERROR",
             message: "Falha ao processar pontos de fidelidade."
           });
@@ -11649,25 +16640,46 @@ var appRouter = router({
           } catch (cancelErr) {
             console.error("[orders.create] failed to cancel order after debit race:", cancelErr);
           }
-          throw new TRPCError7({
+          throw new TRPCError12({
             code: "BAD_REQUEST",
             message: `Saldo de pontos insuficiente. Saldo atual: ${debit.newBalance}.`
           });
         }
       }
+      if (rewardCouponBenefit && input.couponCode && input.storeId) {
+        try {
+          await consumeRewardCoupon({
+            storeId: input.storeId,
+            userId: ctx.user.id,
+            code: input.couponCode,
+            orderId
+          });
+        } catch (rewardCouponError) {
+          try {
+            await updateOrderStatusGuarded(orderId, "cancelled", ["pending"]);
+            if (pointsUsed > 0) {
+              await addLoyaltyPoints(ctx.user.id, pointsUsed, orderId, `Estorno por falha ao aplicar recompensa no pedido #${orderId}`, routedStore.storeId);
+            }
+            await releaseFreePizzaBenefit();
+          } catch (cleanupError) {
+            console.error("[orders.create] cleanup after reward coupon race failed:", cleanupError);
+          }
+          throw rewardCouponError;
+        }
+      }
       if (couponToApply) {
-        const accepted = await incrementCouponUsage(couponToApply.code);
+        const accepted = await incrementCouponUsage(couponToApply.id);
         if (!accepted) {
           try {
             await updateOrderStatusGuarded(orderId, "cancelled", ["pending"]);
             if (pointsUsed > 0) {
-              await addLoyaltyPoints(ctx.user.id, pointsUsed, orderId, `Estorno por falha ao aplicar cupom no pedido #${orderId}`);
+              await addLoyaltyPoints(ctx.user.id, pointsUsed, orderId, `Estorno por falha ao aplicar cupom no pedido #${orderId}`, routedStore.storeId);
             }
             await releaseFreePizzaBenefit();
           } catch (cleanupErr) {
             console.error("[orders.create] cleanup after coupon race failed:", cleanupErr);
           }
-          throw new TRPCError7({ code: "BAD_REQUEST", message: "Este cupom atingiu o limite de usos." });
+          throw new TRPCError12({ code: "BAD_REQUEST", message: "Este cupom atingiu o limite de usos." });
         }
         try {
           await registerCouponRedemption(couponToApply.id, couponToApply.code, orderId, ctx.user.id);
@@ -11702,43 +16714,46 @@ ${itemsList}
       }
       return { orderId, total };
     }),
-    myOrders: protectedProcedure.query(({ ctx }) => getOrdersByUser(ctx.user.id)),
-    byId: protectedProcedure.input(z7.object({ id: z7.number() })).query(async ({ input, ctx }) => {
+    myOrders: protectedProcedure.input(z11.object({ storeId: z11.number().optional() }).optional()).query(({ input, ctx }) => getOrdersByUser(ctx.user.id, input?.storeId)),
+    byId: protectedProcedure.input(z11.object({ id: z11.number() })).query(async ({ input, ctx }) => {
       const order = await getOrderById(input.id);
-      if (!order) throw new TRPCError7({ code: "NOT_FOUND" });
+      if (!order) throw new TRPCError12({ code: "NOT_FOUND" });
       if (order.userId !== ctx.user.id && ctx.user.role !== "admin") {
-        throw new TRPCError7({ code: "FORBIDDEN", message: "Acesso negado" });
+        if (ctx.user.role !== "manager" || order.storeId == null) {
+          throw new TRPCError12({ code: "FORBIDDEN", message: "Acesso negado" });
+        }
+        await assertStoreEntityAccess(ctx.user, order.storeId);
       }
       const items = await getOrderItems(input.id);
       return { ...order, items };
     }),
     // Admin
     list: staffProcedure.input(
-      z7.object({
-        status: z7.enum(["pending", "confirmed", "preparing", "out_for_delivery", "delivered", "cancelled"]).optional(),
-        limit: z7.number().int().min(1).max(5e4).optional(),
-        offset: z7.number().int().min(0).optional(),
-        storeId: z7.number().optional(),
-        startDate: z7.date().optional(),
-        endDate: z7.date().optional()
+      z11.object({
+        status: z11.enum(["pending", "confirmed", "preparing", "out_for_delivery", "delivered", "cancelled"]).optional(),
+        limit: z11.number().int().min(1).max(5e4).optional(),
+        offset: z11.number().int().min(0).optional(),
+        storeId: z11.number().optional(),
+        startDate: z11.date().optional(),
+        endDate: z11.date().optional()
       }).optional()
     ).query(async ({ input, ctx }) => {
       const storeId = await resolveStoreId(ctx.user, input?.storeId);
       return getAllOrders({ ...input, storeId });
     }),
     alertFeed: staffProcedure.input(
-      z7.object({
-        limit: z7.number().int().min(1).max(50).optional(),
-        storeId: z7.number().optional()
+      z11.object({
+        limit: z11.number().int().min(1).max(50).optional(),
+        storeId: z11.number().optional()
       }).optional()
     ).query(async ({ input, ctx }) => {
       const storeId = await resolveStoreId(ctx.user, input?.storeId);
       return getOrderAlertFeed(storeId, input?.limit ?? 20);
     }),
     updateStatus: staffProcedure.input(
-      z7.object({
-        id: z7.number(),
-        status: z7.enum(["pending", "confirmed", "preparing", "out_for_delivery", "delivered", "cancelled"])
+      z11.object({
+        id: z11.number(),
+        status: z11.enum(["pending", "confirmed", "preparing", "out_for_delivery", "delivered", "cancelled"])
       })
     ).mutation(async ({ input, ctx }) => {
       const TRANSITIONS = {
@@ -11753,22 +16768,22 @@ ${itemsList}
       };
       const allowedFrom = Object.entries(TRANSITIONS).filter(([, nexts]) => nexts.includes(input.status)).map(([from]) => from);
       if (allowedFrom.length === 0) {
-        throw new TRPCError7({ code: "BAD_REQUEST", message: `Transi\xE7\xE3o inv\xE1lida para ${input.status}.` });
+        throw new TRPCError12({ code: "BAD_REQUEST", message: `Transi\xE7\xE3o inv\xE1lida para ${input.status}.` });
       }
       const currentOrder = await getOrderById(input.id);
       if (!currentOrder) {
-        throw new TRPCError7({ code: "NOT_FOUND", message: "Pedido n\xE3o encontrado." });
+        throw new TRPCError12({ code: "NOT_FOUND", message: "Pedido n\xE3o encontrado." });
       }
       await assertStoreEntityAccess(ctx.user, currentOrder.storeId);
       if (input.status === "preparing" && currentOrder.paymentMethod === "pix" && currentOrder.paymentStatus !== "paid") {
-        throw new TRPCError7({
+        throw new TRPCError12({
           code: "BAD_REQUEST",
           message: "Marque o PIX como recebido antes de preparar este pedido."
         });
       }
       const guard = await updateOrderStatusGuarded(input.id, input.status, allowedFrom);
       if (!guard.ok) {
-        throw new TRPCError7({
+        throw new TRPCError12({
           code: "BAD_REQUEST",
           message: guard.previous ? `N\xE3o \xE9 poss\xEDvel ir de ${guard.previous} para ${input.status}.` : "Pedido n\xE3o encontrado."
         });
@@ -11783,10 +16798,12 @@ ${itemsList}
       if (order) {
         if ((input.status === "confirmed" || input.status === "preparing") && order.userId) {
           (async () => {
-            try {
-              await markConversions(order.userId, input.id);
-            } catch (e) {
-              console.error("markConversions error:", e);
+            if (order.storeId) {
+              try {
+                await markConversions(order.userId, input.id, order.storeId);
+              } catch (e) {
+                console.error("markConversions error:", e);
+              }
             }
           })();
         }
@@ -11809,14 +16826,18 @@ ${itemsList}
           if (pointsToAdd > 0) {
             (async () => {
               try {
+                const orderTenant = order.storeId ? await getWhiteLabelRuntimeByStoreId(order.storeId) : null;
+                if (orderTenant && !orderTenant.features.loyalty) return;
                 const credited = await creditLoyaltyForOrderIdempotent(
                   input.id,
                   order.userId,
                   pointsToAdd,
-                  `+${pointsToAdd} pontos pelo pedido #${input.id}`
+                  `+${pointsToAdd} pontos pelo pedido #${input.id}`,
+                  order.storeId
                 );
                 if (credited) {
                   await sendPushToUser(order.userId, {
+                    storeId: order.storeId,
                     title: "\u2B50 Pontos creditados!",
                     body: `+${pointsToAdd} pontos foram adicionados ao seu saldo Bonatto!`,
                     url: "/minha-conta",
@@ -11850,10 +16871,10 @@ ${itemsList}
           };
           (async () => {
             try {
-              const tpl = await pickRandomTemplate(eventName, "push");
+              const tpl = await pickRandomTemplate(eventName, "push", order.storeId ?? void 0);
               const payload = tpl ? { title: interpolate(tpl.title), body: interpolate(tpl.body) } : pushFallbacks[input.status];
               if (payload) {
-                await sendPushToUser(order.userId, { ...payload, url: "/minha-conta", tag: `order-status-${input.id}` });
+                await sendPushToUser(order.userId, { storeId: order.storeId, ...payload, url: "/minha-conta", tag: `order-status-${input.id}` });
               }
             } catch (e) {
               console.error("Push error:", e);
@@ -11870,7 +16891,7 @@ ${itemsList}
           };
           (async () => {
             try {
-              const tpl = await pickRandomTemplate(eventName, "whatsapp");
+              const tpl = await pickRandomTemplate(eventName, "whatsapp", order.storeId ?? void 0);
               const msg = tpl ? interpolate(tpl.body) : waMsgFallbacks[input.status];
               if (msg) await sendWhatsApp(phone, msg);
             } catch (e) {
@@ -11885,7 +16906,7 @@ ${itemsList}
           };
           const journeyTrigger = orderTriggerMap[input.status];
           if (journeyTrigger) {
-            fireJourneyTrigger(journeyTrigger, order.userId, order.customerPhone ?? void 0).catch(() => {
+            fireJourneyTrigger(journeyTrigger, order.userId, order.customerPhone ?? void 0, order.storeId ?? void 0).catch(() => {
             });
           }
           if (input.status === "delivered") {
@@ -11907,7 +16928,7 @@ ${itemsList}
                   _ne(ordersTable.id, input.id)
                 )).limit(1);
                 if (prevDelivered.length === 0) {
-                  fireJourneyTrigger("first_order_month", order.userId, order.customerPhone ?? void 0).catch(() => {
+                  fireJourneyTrigger("first_order_month", order.userId, order.customerPhone ?? void 0, order.storeId ?? void 0).catch(() => {
                   });
                 }
               } catch (e) {
@@ -11920,23 +16941,23 @@ ${itemsList}
       return { ok: true };
     }),
     updatePaymentStatus: staffProcedure.input(
-      z7.object({
-        id: z7.number(),
-        paymentStatus: z7.enum(["pending", "paid", "failed", "refunded"]),
-        stripePaymentIntentId: z7.string().optional()
+      z11.object({
+        id: z11.number(),
+        paymentStatus: z11.enum(["pending", "paid", "failed", "refunded"]),
+        stripePaymentIntentId: z11.string().optional()
       })
     ).mutation(async ({ input, ctx }) => {
       const order = await getOrderById(input.id);
-      if (!order) throw new TRPCError7({ code: "NOT_FOUND", message: "Pedido nao encontrado." });
+      if (!order) throw new TRPCError12({ code: "NOT_FOUND", message: "Pedido nao encontrado." });
       await assertStoreEntityAccess(ctx.user, order.storeId);
       return updateOrderPaymentStatus(input.id, input.paymentStatus, input.stripePaymentIntentId);
     }),
-    confirmPixReceived: staffProcedure.input(z7.object({ id: z7.number() })).mutation(async ({ input, ctx }) => {
+    confirmPixReceived: staffProcedure.input(z11.object({ id: z11.number() })).mutation(async ({ input, ctx }) => {
       const order = await getOrderById(input.id);
-      if (!order) throw new TRPCError7({ code: "NOT_FOUND", message: "Pedido n\xE3o encontrado." });
+      if (!order) throw new TRPCError12({ code: "NOT_FOUND", message: "Pedido n\xE3o encontrado." });
       await assertStoreEntityAccess(ctx.user, order.storeId);
       if (order.paymentMethod !== "pix") {
-        throw new TRPCError7({ code: "BAD_REQUEST", message: "Este pedido n\xE3o foi feito com PIX." });
+        throw new TRPCError12({ code: "BAD_REQUEST", message: "Este pedido n\xE3o foi feito com PIX." });
       }
       if (order.paymentStatus !== "paid") {
         await updateOrderPaymentStatus(input.id, "paid");
@@ -11946,28 +16967,26 @@ ${itemsList}
   }),
   // --- MARKETPLACES ----------------------------------------------------------
   marketplaces: router({
-    overview: adminProcedure3.query(async () => {
+    overview: adminProcedure2.query(async () => {
       return getMarketplaceOverview();
     }),
-    saveConfig: adminProcedure3.input(
-      z7.object({
+    saveConfig: adminProcedure2.input(
+      z11.object({
         providerId: marketplaceProviderIdSchema,
         config: marketplaceConfigSchema.partial()
       })
-    ).mutation(async ({ input }) => {
-      return saveMarketplaceConfig(input.providerId, input.config);
-    }),
-    testConnection: adminProcedure3.input(z7.object({ providerId: marketplaceProviderIdSchema })).mutation(async ({ input }) => {
+    ).mutation(async ({ input }) => saveMarketplaceConfig(input.providerId, input.config)),
+    testConnection: adminProcedure2.input(z11.object({ providerId: marketplaceProviderIdSchema })).mutation(async ({ input }) => {
       return testMarketplaceConnection(input.providerId);
     }),
-    syncCatalog: adminProcedure3.input(z7.object({ providerId: marketplaceProviderIdSchema, merchantId: z7.string().optional() })).mutation(async ({ input }) => {
+    syncCatalog: adminProcedure2.input(z11.object({ providerId: marketplaceProviderIdSchema, merchantId: z11.string().optional() })).mutation(async ({ input }) => {
       return runMarketplaceCatalogSync(input.providerId, input.merchantId);
     }),
-    syncPromotions: adminProcedure3.input(
-      z7.object({
+    syncPromotions: adminProcedure2.input(
+      z11.object({
         providerId: marketplaceProviderIdSchema,
-        merchantId: z7.string().optional(),
-        aggregationIds: z7.array(z7.string().min(1)).optional()
+        merchantId: z11.string().optional(),
+        aggregationIds: z11.array(z11.string().min(1)).optional()
       })
     ).mutation(async ({ input }) => {
       return runMarketplacePromotionsSync(input.providerId, {
@@ -11975,82 +16994,82 @@ ${itemsList}
         aggregationIds: input.aggregationIds
       });
     }),
-    pullOrders: adminProcedure3.input(z7.object({ providerId: marketplaceProviderIdSchema })).mutation(async ({ input }) => {
+    pullOrders: adminProcedure2.input(z11.object({ providerId: marketplaceProviderIdSchema })).mutation(async ({ input }) => {
       return pullMarketplaceOrders(input.providerId);
     })
   }),
   // --- INTEGRATIONS ----------------------------------------------------------
   integrations: router({
     ifood: router({
-      status: staffProcedure.input(z7.object({ storeId: z7.number().optional() }).optional()).query(async ({ ctx, input }) => {
-        const scopedStoreId = await resolveStoreId(ctx.user, input?.storeId);
-        const restaurantId = await resolveIntegrationRestaurantId(scopedStoreId);
+      status: staffProcedure.input(z11.object({ storeId: z11.number().optional() }).optional()).query(async ({ ctx, input }) => {
+        const scopedStoreId2 = await resolveStoreId(ctx.user, input?.storeId);
+        const restaurantId = await resolveIntegrationRestaurantId(scopedStoreId2);
         return getIfoodProvider().getStatus(restaurantId);
       }),
-      connect: staffProcedure.input(z7.object({ storeId: z7.number().optional() }).optional()).mutation(async ({ ctx, input }) => {
-        const scopedStoreId = await resolveStoreId(ctx.user, input?.storeId);
-        const restaurantId = await resolveIntegrationRestaurantId(scopedStoreId);
+      connect: staffProcedure.input(z11.object({ storeId: z11.number().optional() }).optional()).mutation(async ({ ctx, input }) => {
+        const scopedStoreId2 = await resolveStoreId(ctx.user, input?.storeId);
+        const restaurantId = await resolveIntegrationRestaurantId(scopedStoreId2);
         return getIfoodProvider().connect(restaurantId);
       }),
-      disconnect: staffProcedure.input(z7.object({ storeId: z7.number().optional() }).optional()).mutation(async ({ ctx, input }) => {
-        const scopedStoreId = await resolveStoreId(ctx.user, input?.storeId);
-        const restaurantId = await resolveIntegrationRestaurantId(scopedStoreId);
+      disconnect: staffProcedure.input(z11.object({ storeId: z11.number().optional() }).optional()).mutation(async ({ ctx, input }) => {
+        const scopedStoreId2 = await resolveStoreId(ctx.user, input?.storeId);
+        const restaurantId = await resolveIntegrationRestaurantId(scopedStoreId2);
         return getIfoodProvider().disconnect(restaurantId);
       }),
-      orders: staffProcedure.input(z7.object({ storeId: z7.number().optional() }).optional()).query(async ({ ctx, input }) => {
-        const scopedStoreId = await resolveStoreId(ctx.user, input?.storeId);
-        const restaurantId = await resolveIntegrationRestaurantId(scopedStoreId);
+      orders: staffProcedure.input(z11.object({ storeId: z11.number().optional() }).optional()).query(async ({ ctx, input }) => {
+        const scopedStoreId2 = await resolveStoreId(ctx.user, input?.storeId);
+        const restaurantId = await resolveIntegrationRestaurantId(scopedStoreId2);
         return getIfoodProvider().getOrders(restaurantId);
       }),
-      generateTestOrder: staffProcedure.input(z7.object({ storeId: z7.number().optional() }).optional()).mutation(async ({ ctx, input }) => {
-        const scopedStoreId = await resolveStoreId(ctx.user, input?.storeId);
-        const restaurantId = await resolveIntegrationRestaurantId(scopedStoreId);
+      generateTestOrder: staffProcedure.input(z11.object({ storeId: z11.number().optional() }).optional()).mutation(async ({ ctx, input }) => {
+        const scopedStoreId2 = await resolveStoreId(ctx.user, input?.storeId);
+        const restaurantId = await resolveIntegrationRestaurantId(scopedStoreId2);
         return getIfoodProvider().generateTestOrder(restaurantId);
       }),
-      logs: staffProcedure.input(z7.object({ storeId: z7.number().optional() }).optional()).query(async ({ ctx, input }) => {
-        const scopedStoreId = await resolveStoreId(ctx.user, input?.storeId);
-        const restaurantId = await resolveIntegrationRestaurantId(scopedStoreId);
+      logs: staffProcedure.input(z11.object({ storeId: z11.number().optional() }).optional()).query(async ({ ctx, input }) => {
+        const scopedStoreId2 = await resolveStoreId(ctx.user, input?.storeId);
+        const restaurantId = await resolveIntegrationRestaurantId(scopedStoreId2);
         return listIfoodIntegrationLogs(restaurantId);
       }),
-      confirmOrder: staffProcedure.input(z7.object({ id: z7.number(), storeId: z7.number().optional() })).mutation(async ({ ctx, input }) => {
-        const scopedStoreId = await resolveStoreId(ctx.user, input.storeId);
-        const restaurantId = await resolveIntegrationRestaurantId(scopedStoreId);
+      confirmOrder: staffProcedure.input(z11.object({ id: z11.number(), storeId: z11.number().optional() })).mutation(async ({ ctx, input }) => {
+        const scopedStoreId2 = await resolveStoreId(ctx.user, input.storeId);
+        const restaurantId = await resolveIntegrationRestaurantId(scopedStoreId2);
         return getIfoodProvider().confirmOrder(input.id, restaurantId);
       }),
-      startPreparation: staffProcedure.input(z7.object({ id: z7.number(), storeId: z7.number().optional() })).mutation(async ({ ctx, input }) => {
-        const scopedStoreId = await resolveStoreId(ctx.user, input.storeId);
-        const restaurantId = await resolveIntegrationRestaurantId(scopedStoreId);
+      startPreparation: staffProcedure.input(z11.object({ id: z11.number(), storeId: z11.number().optional() })).mutation(async ({ ctx, input }) => {
+        const scopedStoreId2 = await resolveStoreId(ctx.user, input.storeId);
+        const restaurantId = await resolveIntegrationRestaurantId(scopedStoreId2);
         return getIfoodProvider().startPreparation(input.id, restaurantId);
       }),
-      dispatch: staffProcedure.input(z7.object({ id: z7.number(), storeId: z7.number().optional() })).mutation(async ({ ctx, input }) => {
-        const scopedStoreId = await resolveStoreId(ctx.user, input.storeId);
-        const restaurantId = await resolveIntegrationRestaurantId(scopedStoreId);
+      dispatch: staffProcedure.input(z11.object({ id: z11.number(), storeId: z11.number().optional() })).mutation(async ({ ctx, input }) => {
+        const scopedStoreId2 = await resolveStoreId(ctx.user, input.storeId);
+        const restaurantId = await resolveIntegrationRestaurantId(scopedStoreId2);
         return getIfoodProvider().dispatchOrder(input.id, restaurantId);
       }),
-      conclude: staffProcedure.input(z7.object({ id: z7.number(), storeId: z7.number().optional() })).mutation(async ({ ctx, input }) => {
-        const scopedStoreId = await resolveStoreId(ctx.user, input.storeId);
-        const restaurantId = await resolveIntegrationRestaurantId(scopedStoreId);
+      conclude: staffProcedure.input(z11.object({ id: z11.number(), storeId: z11.number().optional() })).mutation(async ({ ctx, input }) => {
+        const scopedStoreId2 = await resolveStoreId(ctx.user, input.storeId);
+        const restaurantId = await resolveIntegrationRestaurantId(scopedStoreId2);
         return getIfoodProvider().concludeOrder(input.id, restaurantId);
       }),
-      cancel: staffProcedure.input(z7.object({ id: z7.number(), storeId: z7.number().optional() })).mutation(async ({ ctx, input }) => {
-        const scopedStoreId = await resolveStoreId(ctx.user, input.storeId);
-        const restaurantId = await resolveIntegrationRestaurantId(scopedStoreId);
+      cancel: staffProcedure.input(z11.object({ id: z11.number(), storeId: z11.number().optional() })).mutation(async ({ ctx, input }) => {
+        const scopedStoreId2 = await resolveStoreId(ctx.user, input.storeId);
+        const restaurantId = await resolveIntegrationRestaurantId(scopedStoreId2);
         return getIfoodProvider().cancelOrder(input.id, restaurantId);
       })
     })
   }),
   // --- IFOOD ------------------------------------------------------------------
   ifood: router({
-    merchants: adminProcedure3.query(async () => {
+    merchants: adminProcedure2.query(async () => {
       return listIfoodMerchants();
     }),
-    syncCatalog: adminProcedure3.input(z7.object({ merchantId: z7.string().optional() }).optional()).mutation(async ({ input }) => {
+    syncCatalog: adminProcedure2.input(z11.object({ merchantId: z11.string().optional() }).optional()).mutation(async ({ input }) => {
       return syncIfoodCatalog(input?.merchantId);
     }),
-    syncPromotions: adminProcedure3.input(
-      z7.object({
-        merchantId: z7.string().optional(),
-        aggregationIds: z7.array(z7.string().min(1)).optional()
+    syncPromotions: adminProcedure2.input(
+      z11.object({
+        merchantId: z11.string().optional(),
+        aggregationIds: z11.array(z11.string().min(1)).optional()
       }).optional()
     ).mutation(async ({ input }) => {
       return syncIfoodPromotions({
@@ -12058,60 +17077,60 @@ ${itemsList}
         aggregationIds: input?.aggregationIds
       });
     }),
-    confirmOrder: adminProcedure3.input(z7.object({ ifoodOrderId: z7.string() })).mutation(async ({ input }) => {
+    confirmOrder: adminProcedure2.input(z11.object({ ifoodOrderId: z11.string() })).mutation(async ({ input }) => {
       await confirmIfoodOrder(input.ifoodOrderId);
       return { success: true };
     }),
-    startPreparation: adminProcedure3.input(z7.object({ ifoodOrderId: z7.string() })).mutation(async ({ input }) => {
+    startPreparation: adminProcedure2.input(z11.object({ ifoodOrderId: z11.string() })).mutation(async ({ input }) => {
       await startPreparationIfoodOrder(input.ifoodOrderId);
       return { success: true };
     }),
-    dispatch: adminProcedure3.input(z7.object({ ifoodOrderId: z7.string() })).mutation(async ({ input }) => {
+    dispatch: adminProcedure2.input(z11.object({ ifoodOrderId: z11.string() })).mutation(async ({ input }) => {
       await dispatchIfoodOrder(input.ifoodOrderId);
       return { success: true };
     }),
-    cancelOrder: adminProcedure3.input(z7.object({ ifoodOrderId: z7.string(), reason: z7.string().default("Pedido cancelado pelo restaurante") })).mutation(async ({ input }) => {
+    cancelOrder: adminProcedure2.input(z11.object({ ifoodOrderId: z11.string(), reason: z11.string().default("Pedido cancelado pelo restaurante") })).mutation(async ({ input }) => {
       await cancelIfoodOrder(input.ifoodOrderId, input.reason);
       return { success: true };
     })
   }),
   // --- NFC-e (Focus NFe) -------------------------------------------------------
   nfce: router({
-    emitir: adminProcedure3.input(z7.object({ orderId: z7.number() })).mutation(async ({ input }) => {
+    emitir: adminProcedure2.input(z11.object({ orderId: z11.number() })).mutation(async ({ input }) => {
       const result = await emitirNfce(input.orderId);
-      if (!result.success) throw new TRPCError7({ code: "INTERNAL_SERVER_ERROR", message: result.error || "Erro ao emitir NFC-e" });
+      if (!result.success) throw new TRPCError12({ code: "INTERNAL_SERVER_ERROR", message: result.error || "Erro ao emitir NFC-e" });
       return result;
     }),
-    cancelar: adminProcedure3.input(z7.object({ orderId: z7.number(), justificativa: z7.string().min(15) })).mutation(async ({ input }) => {
+    cancelar: adminProcedure2.input(z11.object({ orderId: z11.number(), justificativa: z11.string().min(15) })).mutation(async ({ input }) => {
       const result = await cancelarNfce(input.orderId, input.justificativa);
-      if (!result.success) throw new TRPCError7({ code: "INTERNAL_SERVER_ERROR", message: result.error || "Erro ao cancelar NFC-e" });
+      if (!result.success) throw new TRPCError12({ code: "INTERNAL_SERVER_ERROR", message: result.error || "Erro ao cancelar NFC-e" });
       return result;
     })
   }),
   // --- PAYMENTS ---------------------------------------------------------------
   payments: router({
-    createIntent: protectedProcedure.input(z7.object({ orderId: z7.number() })).mutation(async ({ input, ctx }) => {
-      await assertPaymentMethodEnabled("credit_card");
+    createIntent: protectedProcedure.input(z11.object({ orderId: z11.number() })).mutation(async ({ input, ctx }) => {
       const order = await getOrderById(input.orderId);
-      if (!order) throw new TRPCError7({ code: "NOT_FOUND", message: "Pedido n\xE3o encontrado" });
-      if (order.userId !== ctx.user.id) throw new TRPCError7({ code: "FORBIDDEN", message: "Acesso negado" });
+      if (!order) throw new TRPCError12({ code: "NOT_FOUND", message: "Pedido n\xE3o encontrado" });
+      if (order.userId !== ctx.user.id) throw new TRPCError12({ code: "FORBIDDEN", message: "Acesso negado" });
+      await assertPaymentMethodEnabled("credit_card", order.storeId ?? void 0);
       const amountInReais = parseFloat(order.total ?? "0");
-      if (amountInReais <= 0) throw new TRPCError7({ code: "BAD_REQUEST", message: "Valor do pedido inv\xE1lido" });
+      if (amountInReais <= 0) throw new TRPCError12({ code: "BAD_REQUEST", message: "Valor do pedido inv\xE1lido" });
       const paymentIntent = await createPaymentIntent(amountInReais, "brl", {
         orderId: String(input.orderId)
       });
       return { clientSecret: paymentIntent.client_secret };
     }),
-    createCheckoutSession: protectedProcedure.input(z7.object({
-      orderId: z7.number(),
-      origin: z7.string().url()
+    createCheckoutSession: protectedProcedure.input(z11.object({
+      orderId: z11.number(),
+      origin: z11.string().url()
     })).mutation(async ({ input, ctx }) => {
-      await assertPaymentMethodEnabled("credit_card");
       const order = await getOrderById(input.orderId);
-      if (!order) throw new TRPCError7({ code: "NOT_FOUND", message: "Pedido n\xE3o encontrado" });
-      if (order.userId !== ctx.user.id) throw new TRPCError7({ code: "FORBIDDEN", message: "Acesso negado" });
+      if (!order) throw new TRPCError12({ code: "NOT_FOUND", message: "Pedido n\xE3o encontrado" });
+      if (order.userId !== ctx.user.id) throw new TRPCError12({ code: "FORBIDDEN", message: "Acesso negado" });
+      await assertPaymentMethodEnabled("credit_card", order.storeId ?? void 0);
       const amountInReais = parseFloat(order.total ?? "0");
-      if (amountInReais < 0.5) throw new TRPCError7({ code: "BAD_REQUEST", message: "Valor m\xEDnimo para pagamento online \xE9 R$ 0,50" });
+      if (amountInReais < 0.5) throw new TRPCError12({ code: "BAD_REQUEST", message: "Valor m\xEDnimo para pagamento online \xE9 R$ 0,50" });
       const session = await createCheckoutSession({
         orderId: input.orderId,
         amountInReais,
@@ -12128,9 +17147,9 @@ ${itemsList}
     }),
     getMyTransactions: protectedProcedure.query(({ ctx }) => getTransactionsByUser(ctx.user.id)),
     // ─── Saved Cards ─────────────────────────────────────────────────────────────
-    createSetupIntent: protectedProcedure.input(z7.object({ origin: z7.string().url() })).mutation(async ({ ctx }) => {
+    createSetupIntent: protectedProcedure.input(z11.object({ origin: z11.string().url() })).mutation(async ({ ctx }) => {
       const user = await getUserById(ctx.user.id);
-      if (!user) throw new TRPCError7({ code: "NOT_FOUND" });
+      if (!user) throw new TRPCError12({ code: "NOT_FOUND" });
       const stripeCustomerId = await getOrCreateStripeCustomer({
         userId: ctx.user.id,
         stripeCustomerId: user.stripeCustomerId,
@@ -12149,32 +17168,32 @@ ${itemsList}
         return [];
       }
     }),
-    deleteCard: protectedProcedure.input(z7.object({ paymentMethodId: z7.string() })).mutation(async ({ input, ctx }) => {
+    deleteCard: protectedProcedure.input(z11.object({ paymentMethodId: z11.string() })).mutation(async ({ input, ctx }) => {
       const user = await getUserById(ctx.user.id);
-      if (!user?.stripeCustomerId) throw new TRPCError7({ code: "BAD_REQUEST", message: "Nenhum cart\xE3o salvo" });
+      if (!user?.stripeCustomerId) throw new TRPCError12({ code: "BAD_REQUEST", message: "Nenhum cart\xE3o salvo" });
       const cards = await listSavedCards(user.stripeCustomerId);
       const card = cards.find((c) => c.id === input.paymentMethodId);
-      if (!card) throw new TRPCError7({ code: "NOT_FOUND", message: "Cart\xE3o n\xE3o encontrado" });
+      if (!card) throw new TRPCError12({ code: "NOT_FOUND", message: "Cart\xE3o n\xE3o encontrado" });
       await detachPaymentMethod(input.paymentMethodId);
       return { success: true };
     }),
-    checkoutWithSavedCard: protectedProcedure.input(z7.object({
-      orderId: z7.number(),
-      paymentMethodId: z7.string(),
-      origin: z7.string().url()
+    checkoutWithSavedCard: protectedProcedure.input(z11.object({
+      orderId: z11.number(),
+      paymentMethodId: z11.string(),
+      origin: z11.string().url()
     })).mutation(async ({ input, ctx }) => {
-      const paymentSettings = await assertPaymentMethodEnabled("credit_card");
+      const order = await getOrderById(input.orderId);
+      if (!order) throw new TRPCError12({ code: "NOT_FOUND", message: "Pedido nao encontrado" });
+      if (order.userId !== ctx.user.id) throw new TRPCError12({ code: "FORBIDDEN" });
+      const paymentSettings = await assertPaymentMethodEnabled("credit_card", order.storeId ?? void 0);
       if (!paymentSettings.config.orders.savedCardsEnabled) {
-        throw new TRPCError7({
+        throw new TRPCError12({
           code: "PRECONDITION_FAILED",
           message: "O uso de cart\xF5es salvos est\xE1 desativado no momento."
         });
       }
-      const order = await getOrderById(input.orderId);
-      if (!order) throw new TRPCError7({ code: "NOT_FOUND", message: "Pedido n\xE3o encontrado" });
-      if (order.userId !== ctx.user.id) throw new TRPCError7({ code: "FORBIDDEN" });
       const user = await getUserById(ctx.user.id);
-      if (!user) throw new TRPCError7({ code: "NOT_FOUND" });
+      if (!user) throw new TRPCError12({ code: "NOT_FOUND" });
       const stripeCustomerId = await getOrCreateStripeCustomer({
         userId: ctx.user.id,
         stripeCustomerId: user.stripeCustomerId,
@@ -12182,7 +17201,7 @@ ${itemsList}
         name: user.name
       });
       const amountInReais = parseFloat(order.total ?? "0");
-      if (amountInReais < 0.5) throw new TRPCError7({ code: "BAD_REQUEST", message: "Valor m\xEDnimo \xE9 R$ 0,50" });
+      if (amountInReais < 0.5) throw new TRPCError12({ code: "BAD_REQUEST", message: "Valor m\xEDnimo \xE9 R$ 0,50" });
       const session = await createCheckoutSessionWithSavedCard({
         orderId: input.orderId,
         amountInReais,
@@ -12194,27 +17213,30 @@ ${itemsList}
       });
       return { checkoutUrl: session.url, sessionId: session.id };
     }),
-    createManualPixCode: protectedProcedure.input(z7.object({ orderId: z7.number() })).mutation(async ({ input, ctx }) => {
-      const paymentSettings = await assertPaymentMethodEnabled("pix");
+    createManualPixCode: protectedProcedure.input(z11.object({ orderId: z11.number() })).mutation(async ({ input, ctx }) => {
+      const paymentOrder = await getOrderById(input.orderId);
+      if (!paymentOrder) throw new TRPCError12({ code: "NOT_FOUND", message: "Pedido nao encontrado" });
+      if (paymentOrder.userId !== ctx.user.id) throw new TRPCError12({ code: "FORBIDDEN" });
+      const paymentSettings = await assertPaymentMethodEnabled("pix", paymentOrder.storeId ?? void 0);
       if (paymentSettings.config.orders.pixMode !== "manual_key") {
-        throw new TRPCError7({
+        throw new TRPCError12({
           code: "PRECONDITION_FAILED",
           message: "O PIX manual n\xE3o est\xE1 ativo para pedidos."
         });
       }
-      const adminPaymentSettings = await getPaymentSettingsAdmin();
+      const adminPaymentSettings = await getPaymentSettingsAdmin(paymentOrder.storeId ?? void 0);
       const pixKey = adminPaymentSettings.pixKey.trim();
       if (!pixKey) {
-        throw new TRPCError7({
+        throw new TRPCError12({
           code: "PRECONDITION_FAILED",
           message: "Configure a chave PIX na aba de pagamentos do admin."
         });
       }
       const order = await getOrderById(input.orderId);
-      if (!order) throw new TRPCError7({ code: "NOT_FOUND", message: "Pedido n\xE3o encontrado" });
-      if (order.userId !== ctx.user.id) throw new TRPCError7({ code: "FORBIDDEN" });
+      if (!order) throw new TRPCError12({ code: "NOT_FOUND", message: "Pedido n\xE3o encontrado" });
+      if (order.userId !== ctx.user.id) throw new TRPCError12({ code: "FORBIDDEN" });
       const amount = parseFloat(order.total ?? "0");
-      if (amount <= 0) throw new TRPCError7({ code: "BAD_REQUEST", message: "Valor do pedido inv\xE1lido" });
+      if (amount <= 0) throw new TRPCError12({ code: "BAD_REQUEST", message: "Valor do pedido inv\xE1lido" });
       const txId = `PED${order.id}${Date.now()}`.substring(0, 25);
       const pixCopiaECola = generatePixCode(
         pixKey,
@@ -12237,21 +17259,24 @@ ${itemsList}
   // --- ASAAS PIX ---------------------------------------------------------------
   asaas: router({
     /** Gera cobrança PIX via Asaas e retorna QR Code */
-    createPix: protectedProcedure.input(z7.object({ orderId: z7.number() })).mutation(async ({ input, ctx }) => {
-      const paymentSettings = await assertPaymentMethodEnabled("pix");
+    createPix: protectedProcedure.input(z11.object({ orderId: z11.number() })).mutation(async ({ input, ctx }) => {
+      const paymentOrder = await getOrderById(input.orderId);
+      if (!paymentOrder) throw new TRPCError12({ code: "NOT_FOUND", message: "Pedido nao encontrado" });
+      if (paymentOrder.userId !== ctx.user.id) throw new TRPCError12({ code: "FORBIDDEN" });
+      const paymentSettings = await assertPaymentMethodEnabled("pix", paymentOrder.storeId ?? void 0);
       if (paymentSettings.config.orders.pixMode !== "dynamic_asaas") {
-        throw new TRPCError7({
+        throw new TRPCError12({
           code: "PRECONDITION_FAILED",
           message: "O PIX autom\xE1tico via Asaas n\xE3o est\xE1 ativo para pedidos."
         });
       }
       if (!process.env.ASAAS_API_KEY) {
-        throw new TRPCError7({ code: "PRECONDITION_FAILED", message: "Integra\xE7\xE3o Asaas n\xE3o configurada. Configure ASAAS_API_KEY nas vari\xE1veis de ambiente." });
+        throw new TRPCError12({ code: "PRECONDITION_FAILED", message: "Integra\xE7\xE3o Asaas n\xE3o configurada. Configure ASAAS_API_KEY nas vari\xE1veis de ambiente." });
       }
       const order = await getOrderById(input.orderId);
-      if (!order) throw new TRPCError7({ code: "NOT_FOUND", message: "Pedido n\xE3o encontrado" });
-      if (order.userId !== ctx.user.id) throw new TRPCError7({ code: "FORBIDDEN" });
-      if (order.paymentStatus === "paid") throw new TRPCError7({ code: "BAD_REQUEST", message: "Pedido j\xE1 pago" });
+      if (!order) throw new TRPCError12({ code: "NOT_FOUND", message: "Pedido n\xE3o encontrado" });
+      if (order.userId !== ctx.user.id) throw new TRPCError12({ code: "FORBIDDEN" });
+      if (order.paymentStatus === "paid") throw new TRPCError12({ code: "BAD_REQUEST", message: "Pedido j\xE1 pago" });
       if (order.asaasPaymentId) {
         const status = await getChargeStatus(order.asaasPaymentId);
         if (status === "RECEIVED" || status === "CONFIRMED") {
@@ -12260,7 +17285,7 @@ ${itemsList}
         }
       }
       const user = await getUserById(ctx.user.id);
-      if (!user) throw new TRPCError7({ code: "NOT_FOUND" });
+      if (!user) throw new TRPCError12({ code: "NOT_FOUND" });
       const customerId = await getOrCreateAsaasCustomer({
         name: order.customerName,
         email: user.email ?? void 0,
@@ -12283,10 +17308,10 @@ ${itemsList}
       };
     }),
     /** Consulta status de cobrança PIX */
-    checkPixStatus: protectedProcedure.input(z7.object({ orderId: z7.number() })).query(async ({ input, ctx }) => {
+    checkPixStatus: protectedProcedure.input(z11.object({ orderId: z11.number() })).query(async ({ input, ctx }) => {
       const order = await getOrderById(input.orderId);
-      if (!order) throw new TRPCError7({ code: "NOT_FOUND" });
-      if (order.userId !== ctx.user.id) throw new TRPCError7({ code: "FORBIDDEN" });
+      if (!order) throw new TRPCError12({ code: "NOT_FOUND" });
+      if (order.userId !== ctx.user.id) throw new TRPCError12({ code: "FORBIDDEN" });
       if (order.paymentStatus === "paid") return { status: "CONFIRMED", paid: true };
       if (!order.asaasPaymentId) return { status: "PENDING", paid: false };
       const status = await getChargeStatus(order.asaasPaymentId);
@@ -12310,131 +17335,144 @@ ${itemsList}
       } = user;
       return safeUser;
     }),
-    update: protectedProcedure.input(z7.object({
-      name: z7.string().optional(),
-      phone: z7.string().optional(),
-      savedAddress: z7.string().optional(),
-      savedCep: z7.string().optional(),
-      savedCity: z7.string().optional()
+    update: protectedProcedure.input(z11.object({
+      name: z11.string().optional(),
+      phone: z11.string().optional(),
+      savedAddress: z11.string().optional(),
+      savedCep: z11.string().optional(),
+      savedCity: z11.string().optional()
     })).mutation(({ input, ctx }) => updateUserProfile(ctx.user.id, input)),
-    myCoupons: protectedProcedure.query(({ ctx }) => getCouponsByUser(ctx.user.id))
+    myCoupons: protectedProcedure.input(z11.object({ storeId: z11.number().optional() }).optional()).query(({ input, ctx }) => getCouponsByUser(ctx.user.id, input?.storeId))
   }),
   // --- UP-SELLS ---------------------------------------------------------------
   upsells: router({
-    forCart: publicProcedure.input(z7.object({ productIds: z7.array(z7.number()), cartTotal: z7.number() })).query(({ input }) => getUpsellsForCart(input.productIds, input.cartTotal)),
-    all: staffProcedure.query(() => getAllUpsells()),
-    create: staffProcedure.input(z7.object({
-      suggestedProductId: z7.number(),
-      triggerProductId: z7.number().optional(),
-      triggerMinTotal: z7.string().optional(),
-      type: z7.enum(["upsell", "downsell"]).default("upsell"),
-      title: z7.string().min(1),
-      description: z7.string().optional(),
-      discountPercent: z7.number().default(0),
-      active: z7.boolean().default(true),
-      sortOrder: z7.number().default(0)
-    })).mutation(({ input }) => createUpsell(input)),
-    update: staffProcedure.input(z7.object({ id: z7.number(), data: z7.object({
-      title: z7.string().optional(),
-      description: z7.string().optional(),
-      discountPercent: z7.number().optional(),
-      active: z7.boolean().optional(),
-      sortOrder: z7.number().optional()
-    }) })).mutation(({ input }) => updateUpsell(input.id, input.data)),
-    delete: staffProcedure.input(z7.object({ id: z7.number() })).mutation(({ input }) => deleteUpsell(input.id))
+    forCart: publicProcedure.input(z11.object({ productIds: z11.array(z11.number()), cartTotal: z11.number(), storeId: z11.number().optional() })).query(({ input }) => getUpsellsForCart(input.productIds, input.cartTotal, input.storeId)),
+    all: staffProcedure.input(z11.object({ storeId: z11.number().optional() }).optional()).query(async ({ input, ctx }) => getAllUpsells(await resolveRequiredStoreId(ctx.user, input?.storeId))),
+    create: staffProcedure.input(z11.object({
+      storeId: z11.number().optional(),
+      suggestedProductId: z11.number(),
+      triggerProductId: z11.number().optional(),
+      triggerMinTotal: z11.string().optional(),
+      type: z11.enum(["upsell", "downsell"]).default("upsell"),
+      title: z11.string().min(1),
+      description: z11.string().optional(),
+      discountPercent: z11.number().default(0),
+      active: z11.boolean().default(true),
+      sortOrder: z11.number().default(0)
+    })).mutation(async ({ input, ctx }) => {
+      const storeId = await resolveRequiredStoreId(ctx.user, input.storeId);
+      return createUpsell({ ...input, storeId });
+    }),
+    update: staffProcedure.input(z11.object({ id: z11.number(), storeId: z11.number().optional(), data: z11.object({
+      title: z11.string().optional(),
+      description: z11.string().optional(),
+      discountPercent: z11.number().optional(),
+      active: z11.boolean().optional(),
+      sortOrder: z11.number().optional()
+    }) })).mutation(async ({ input, ctx }) => updateUpsell(input.id, await resolveRequiredStoreId(ctx.user, input.storeId), input.data)),
+    delete: staffProcedure.input(z11.object({ id: z11.number(), storeId: z11.number().optional() })).mutation(async ({ input, ctx }) => deleteUpsell(input.id, await resolveRequiredStoreId(ctx.user, input.storeId)))
   }),
   // --- PROMOTIONS ---------------------------------------------------------------
   promotions: router({
     // Only logged-in customers can see promotions that requiresLogin=true
-    active: protectedProcedure.query(() => getActivePromotions()),
+    active: protectedProcedure.input(z11.object({ storeId: z11.number().optional() }).optional()).query(({ input }) => getActivePromotions(input?.storeId)),
     // Public promotions (requiresLogin=false) visible to everyone
-    publicActive: publicProcedure.query(
-      () => getActivePromotions().then((promos) => promos.filter((p) => !p.requiresLogin))
-    ),
-    all: staffProcedure.query(() => getAllPromotions()),
-    create: staffProcedure.input(z7.object({
-      title: z7.string().min(1),
-      description: z7.string().optional(),
-      imageUrl: z7.string().optional(),
-      couponCode: z7.string().optional(),
-      active: z7.boolean().default(true),
-      requiresLogin: z7.boolean().default(true),
-      startsAt: z7.date().optional(),
-      endsAt: z7.date().optional()
-    })).mutation(async ({ input }) => {
-      const result = await createPromotion(input);
+    publicActive: publicProcedure.input(z11.object({ storeId: z11.number().optional() }).optional()).query(({ input }) => getActivePromotions(input?.storeId).then((promos) => promos.filter((p) => !p.requiresLogin))),
+    // A promotion can be public while its coupon remains protected by login.
+    homeActive: publicProcedure.input(z11.object({ storeId: z11.number().optional() }).optional()).query(({ input }) => getActivePromotions(input?.storeId).then((promos) => promos.map((promotion) => ({
+      ...promotion,
+      couponCode: promotion.requiresLogin ? null : promotion.couponCode
+    })))),
+    all: staffProcedure.input(z11.object({ storeId: z11.number().optional() }).optional()).query(async ({ input, ctx }) => getAllPromotions(await resolveRequiredStoreId(ctx.user, input?.storeId))),
+    create: staffProcedure.input(z11.object({
+      storeId: z11.number().optional(),
+      title: z11.string().min(1),
+      description: z11.string().optional(),
+      imageUrl: z11.string().optional(),
+      couponCode: z11.string().optional(),
+      active: z11.boolean().default(true),
+      requiresLogin: z11.boolean().default(true),
+      startsAt: z11.date().optional(),
+      endsAt: z11.date().optional()
+    })).mutation(async ({ input, ctx }) => {
+      const storeId = await resolveRequiredStoreId(ctx.user, input.storeId);
+      const result = await createPromotion({ ...input, storeId });
       await createClientAlert({
         type: "promotion",
         title: `\u{1F37D}\uFE0F Nova promo\xE7\xE3o: ${input.title}`,
         message: input.description ?? "Confira a nova promo\xE7\xE3o dispon\xEDvel no card\xE1pio!",
         icon: "\u{1F37D}\uFE0F",
         url: "/minha-conta",
+        storeId,
         expiresAt: input.endsAt
       });
       return result;
     }),
-    update: staffProcedure.input(z7.object({ id: z7.number(), data: z7.object({
-      title: z7.string().optional(),
-      description: z7.string().optional(),
-      imageUrl: z7.string().optional(),
-      couponCode: z7.string().optional(),
-      active: z7.boolean().optional(),
-      requiresLogin: z7.boolean().optional(),
-      endsAt: z7.date().optional()
-    }) })).mutation(({ input }) => updatePromotion(input.id, input.data)),
-    delete: staffProcedure.input(z7.object({ id: z7.number() })).mutation(({ input }) => deletePromotion(input.id))
+    update: staffProcedure.input(z11.object({ id: z11.number(), storeId: z11.number().optional(), data: z11.object({
+      title: z11.string().optional(),
+      description: z11.string().optional(),
+      imageUrl: z11.string().optional(),
+      couponCode: z11.string().optional(),
+      active: z11.boolean().optional(),
+      requiresLogin: z11.boolean().optional(),
+      endsAt: z11.date().optional()
+    }) })).mutation(async ({ input, ctx }) => updatePromotion(input.id, await resolveRequiredStoreId(ctx.user, input.storeId), input.data)),
+    delete: staffProcedure.input(z11.object({ id: z11.number(), storeId: z11.number().optional() })).mutation(async ({ input, ctx }) => deletePromotion(input.id, await resolveRequiredStoreId(ctx.user, input.storeId)))
   }),
   // --- RAFFLES ---------------------------------------------------------------
   raffles: router({
-    active: publicProcedure.query(() => getActiveRaffles()),
-    all: staffProcedure.query(() => getAllRaffles()),
-    entries: staffProcedure.input(z7.object({ raffleId: z7.number() })).query(({ input }) => getRaffleEntries(input.raffleId)),
-    enter: protectedProcedure.input(z7.object({ raffleId: z7.number() })).mutation(({ input, ctx }) => enterRaffle(input.raffleId, ctx.user.id, ctx.user.name ?? "Cliente")),
-    draw: staffProcedure.input(z7.object({ raffleId: z7.number() })).mutation(({ input }) => drawRaffleWinner(input.raffleId)),
-    create: staffProcedure.input(z7.object({
-      title: z7.string().min(1),
-      description: z7.string().optional(),
-      prize: z7.string().min(1),
-      imageUrl: z7.string().optional(),
-      endsAt: z7.date().optional()
-    })).mutation(async ({ input }) => {
-      const result = await createRaffle({ ...input, status: "active" });
+    active: publicProcedure.input(z11.object({ storeId: z11.number().optional() }).optional()).query(({ input }) => getActiveRaffles(input?.storeId)),
+    all: staffProcedure.input(z11.object({ storeId: z11.number().optional() }).optional()).query(async ({ input, ctx }) => getAllRaffles(await resolveRequiredStoreId(ctx.user, input?.storeId))),
+    entries: staffProcedure.input(z11.object({ raffleId: z11.number(), storeId: z11.number().optional() })).query(async ({ input, ctx }) => getRaffleEntries(input.raffleId, await resolveRequiredStoreId(ctx.user, input.storeId))),
+    enter: protectedProcedure.input(z11.object({ raffleId: z11.number(), storeId: z11.number().optional() })).mutation(({ input, ctx }) => enterRaffle(input.raffleId, ctx.user.id, ctx.user.name ?? "Cliente", input.storeId)),
+    draw: staffProcedure.input(z11.object({ raffleId: z11.number(), storeId: z11.number().optional() })).mutation(async ({ input, ctx }) => drawRaffleWinner(input.raffleId, await resolveRequiredStoreId(ctx.user, input.storeId))),
+    create: staffProcedure.input(z11.object({
+      storeId: z11.number().optional(),
+      title: z11.string().min(1),
+      description: z11.string().optional(),
+      prize: z11.string().min(1),
+      imageUrl: z11.string().optional(),
+      endsAt: z11.date().optional()
+    })).mutation(async ({ input, ctx }) => {
+      const storeId = await resolveRequiredStoreId(ctx.user, input.storeId);
+      const result = await createRaffle({ ...input, storeId, status: "active" });
       await createClientAlert({
         type: "raffle",
         title: `\u{1F31F} Novo sorteio: ${input.title}`,
         message: `Pr\xEAmio: ${input.prize}. ${input.description ?? "Participe agora e concorra!"}`,
         icon: "\u{1F31F}",
         url: "/minha-conta",
+        storeId,
         expiresAt: input.endsAt
       });
       return result;
     }),
-    update: staffProcedure.input(z7.object({ id: z7.number(), data: z7.object({
-      title: z7.string().optional(),
-      description: z7.string().optional(),
-      prize: z7.string().optional(),
-      status: z7.enum(["active", "closed", "drawn"]).optional(),
-      endsAt: z7.date().optional()
-    }) })).mutation(({ input }) => updateRaffle(input.id, input.data))
+    update: staffProcedure.input(z11.object({ id: z11.number(), storeId: z11.number().optional(), data: z11.object({
+      title: z11.string().optional(),
+      description: z11.string().optional(),
+      prize: z11.string().optional(),
+      status: z11.enum(["active", "closed", "drawn"]).optional(),
+      endsAt: z11.date().optional()
+    }) })).mutation(async ({ input, ctx }) => updateRaffle(input.id, await resolveRequiredStoreId(ctx.user, input.storeId), input.data))
   }),
   inventory: router({
-    list: staffProcedure.input(z7.object({
-      storeId: z7.number().optional(),
-      activeOnly: z7.boolean().optional(),
-      lowStockOnly: z7.boolean().optional()
+    list: staffProcedure.input(z11.object({
+      storeId: z11.number().optional(),
+      activeOnly: z11.boolean().optional(),
+      lowStockOnly: z11.boolean().optional()
     }).optional()).query(async ({ input, ctx }) => {
       const storeId = await resolveStoreId(ctx.user, input?.storeId);
       return getIngredients({ storeId, activeOnly: input?.activeOnly ?? true, lowStockOnly: input?.lowStockOnly ?? false });
     }),
-    lowStock: staffProcedure.input(z7.object({ storeId: z7.number().optional() }).optional()).query(async ({ input, ctx }) => {
+    lowStock: staffProcedure.input(z11.object({ storeId: z11.number().optional() }).optional()).query(async ({ input, ctx }) => {
       const storeId = await resolveStoreId(ctx.user, input?.storeId);
       return getIngredients({ storeId, activeOnly: true, lowStockOnly: true });
     }),
-    movements: staffProcedure.input(z7.object({
-      storeId: z7.number().optional(),
-      ingredientId: z7.number().optional(),
-      orderId: z7.number().optional(),
-      limit: z7.number().min(1).max(500).optional()
+    movements: staffProcedure.input(z11.object({
+      storeId: z11.number().optional(),
+      ingredientId: z11.number().optional(),
+      orderId: z11.number().optional(),
+      limit: z11.number().min(1).max(500).optional()
     }).optional()).query(async ({ input, ctx }) => {
       const storeId = await resolveStoreId(ctx.user, input?.storeId);
       return getInventoryMovements({
@@ -12444,17 +17482,17 @@ ${itemsList}
         limit: input?.limit
       });
     }),
-    create: staffProcedure.input(z7.object({
-      storeId: z7.number().optional(),
-      name: z7.string().min(1).max(160),
-      category: z7.string().max(120).optional(),
-      unit: z7.enum(["g", "kg", "ml", "l", "unit", "pack", "slice", "portion"]),
-      currentStock: z7.string().regex(/^-?\d+(\.\d{1,3})?$/),
-      minimumStock: z7.string().regex(/^-?\d+(\.\d{1,3})?$/),
-      unitCost: z7.string().regex(/^-?\d+(\.\d{1,4})?$/).optional(),
-      supplier: z7.string().max(160).optional(),
-      notes: z7.string().max(5e3).optional(),
-      active: z7.boolean().optional()
+    create: staffProcedure.input(z11.object({
+      storeId: z11.number().optional(),
+      name: z11.string().min(1).max(160),
+      category: z11.string().max(120).optional(),
+      unit: z11.enum(["g", "kg", "ml", "l", "unit", "pack", "slice", "portion"]),
+      currentStock: z11.string().regex(/^-?\d+(\.\d{1,3})?$/),
+      minimumStock: z11.string().regex(/^-?\d+(\.\d{1,3})?$/),
+      unitCost: z11.string().regex(/^-?\d+(\.\d{1,4})?$/).optional(),
+      supplier: z11.string().max(160).optional(),
+      notes: z11.string().max(5e3).optional(),
+      active: z11.boolean().optional()
     })).mutation(async ({ input, ctx }) => {
       const storeId = await resolveStoreId(ctx.user, input.storeId);
       return createIngredient({
@@ -12470,31 +17508,31 @@ ${itemsList}
         active: input.active ?? true
       });
     }),
-    update: staffProcedure.input(z7.object({
-      id: z7.number(),
-      name: z7.string().min(1).max(160).optional(),
-      category: z7.string().max(120).optional(),
-      unit: z7.enum(["g", "kg", "ml", "l", "unit", "pack", "slice", "portion"]).optional(),
-      currentStock: z7.string().regex(/^-?\d+(\.\d{1,3})?$/).optional(),
-      minimumStock: z7.string().regex(/^-?\d+(\.\d{1,3})?$/).optional(),
-      unitCost: z7.string().regex(/^-?\d+(\.\d{1,4})?$/).optional(),
-      supplier: z7.string().max(160).optional(),
-      notes: z7.string().max(5e3).optional(),
-      active: z7.boolean().optional()
+    update: staffProcedure.input(z11.object({
+      id: z11.number(),
+      name: z11.string().min(1).max(160).optional(),
+      category: z11.string().max(120).optional(),
+      unit: z11.enum(["g", "kg", "ml", "l", "unit", "pack", "slice", "portion"]).optional(),
+      currentStock: z11.string().regex(/^-?\d+(\.\d{1,3})?$/).optional(),
+      minimumStock: z11.string().regex(/^-?\d+(\.\d{1,3})?$/).optional(),
+      unitCost: z11.string().regex(/^-?\d+(\.\d{1,4})?$/).optional(),
+      supplier: z11.string().max(160).optional(),
+      notes: z11.string().max(5e3).optional(),
+      active: z11.boolean().optional()
     })).mutation(async ({ input }) => {
       const { id, ...data } = input;
       await updateIngredient(id, data);
       return { ok: true };
     }),
-    delete: staffProcedure.input(z7.object({ id: z7.number() })).mutation(async ({ input }) => {
+    delete: staffProcedure.input(z11.object({ id: z11.number() })).mutation(async ({ input }) => {
       await deleteIngredient(input.id);
       return { ok: true };
     }),
-    adjust: staffProcedure.input(z7.object({
-      ingredientId: z7.number(),
-      quantityDelta: z7.string().regex(/^-?\d+(\.\d{1,3})?$/),
-      movementType: z7.enum(["entry", "manual_adjustment", "waste", "reversal"]),
-      reason: z7.string().max(255).optional()
+    adjust: staffProcedure.input(z11.object({
+      ingredientId: z11.number(),
+      quantityDelta: z11.string().regex(/^-?\d+(\.\d{1,3})?$/),
+      movementType: z11.enum(["entry", "manual_adjustment", "waste", "reversal"]),
+      reason: z11.string().max(255).optional()
     })).mutation(async ({ input, ctx }) => {
       return adjustIngredientStock({
         ingredientId: input.ingredientId,
@@ -12504,24 +17542,24 @@ ${itemsList}
         performedByUserId: ctx.user.id
       });
     }),
-    recipe: staffProcedure.input(z7.object({ productId: z7.number() })).query(({ input }) => getProductRecipe(input.productId)),
-    setRecipe: staffProcedure.input(z7.object({
-      productId: z7.number(),
-      items: z7.array(z7.object({
-        ingredientId: z7.number(),
-        quantity: z7.string().regex(/^\d+(\.\d{1,3})?$/),
-        wastePercent: z7.string().regex(/^\d+(\.\d{1,2})?$/).optional()
+    recipe: staffProcedure.input(z11.object({ productId: z11.number() })).query(({ input }) => getProductRecipe(input.productId)),
+    setRecipe: staffProcedure.input(z11.object({
+      productId: z11.number(),
+      items: z11.array(z11.object({
+        ingredientId: z11.number(),
+        quantity: z11.string().regex(/^\d+(\.\d{1,3})?$/),
+        wastePercent: z11.string().regex(/^\d+(\.\d{1,2})?$/).optional()
       }))
     })).mutation(({ input }) => setProductRecipe(input.productId, input.items)),
-    syncOrderConsumption: staffProcedure.input(z7.object({ orderId: z7.number(), mode: z7.enum(["consume", "reverse"]) })).mutation(async ({ input }) => {
+    syncOrderConsumption: staffProcedure.input(z11.object({ orderId: z11.number(), mode: z11.enum(["consume", "reverse"]) })).mutation(async ({ input }) => {
       return input.mode === "consume" ? consumeInventoryForOrder(input.orderId) : reverseInventoryForOrder(input.orderId);
     })
   }),
   staffMembers: router({
-    list: staffProcedure.input(z7.object({
-      storeId: z7.number().optional(),
-      role: z7.enum(["waiter", "cashier", "attendant", "kitchen", "driver", "manager", "admin"]).optional(),
-      activeOnly: z7.boolean().optional()
+    list: staffProcedure.input(z11.object({
+      storeId: z11.number().optional(),
+      role: z11.enum(["waiter", "cashier", "attendant", "kitchen", "driver", "manager", "admin"]).optional(),
+      activeOnly: z11.boolean().optional()
     }).optional()).query(async ({ input, ctx }) => {
       const storeId = await resolveStoreId(ctx.user, input?.storeId);
       const staff = await getStaffMembers({ storeId, role: input?.role, activeOnly: input?.activeOnly ?? true });
@@ -12533,14 +17571,14 @@ ${itemsList}
         })
       );
     }),
-    create: staffProcedure.input(z7.object({
-      storeId: z7.number().optional(),
-      userId: z7.number().optional(),
-      name: z7.string().min(2).max(200),
-      phone: z7.string().optional(),
-      email: z7.string().email().optional(),
-      role: z7.enum(["waiter", "cashier", "attendant", "kitchen", "driver", "manager", "admin"]),
-      active: z7.boolean().optional()
+    create: staffProcedure.input(z11.object({
+      storeId: z11.number().optional(),
+      userId: z11.number().optional(),
+      name: z11.string().min(2).max(200),
+      phone: z11.string().optional(),
+      email: z11.string().email().optional(),
+      role: z11.enum(["waiter", "cashier", "attendant", "kitchen", "driver", "manager", "admin"]),
+      active: z11.boolean().optional()
     })).mutation(async ({ input, ctx }) => {
       const storeId = await resolveStoreId(ctx.user, input.storeId);
       const id = await createStaffMember({
@@ -12555,46 +17593,46 @@ ${itemsList}
       const accessToken = input.role === "waiter" ? await ensureStaffAccessToken(id) : null;
       return { id, accessToken };
     }),
-    update: staffProcedure.input(z7.object({
-      id: z7.number(),
-      name: z7.string().min(2).max(200).optional(),
-      phone: z7.string().optional(),
-      email: z7.string().email().optional(),
-      role: z7.enum(["waiter", "cashier", "attendant", "kitchen", "driver", "manager", "admin"]).optional(),
-      active: z7.boolean().optional()
+    update: staffProcedure.input(z11.object({
+      id: z11.number(),
+      name: z11.string().min(2).max(200).optional(),
+      phone: z11.string().optional(),
+      email: z11.string().email().optional(),
+      role: z11.enum(["waiter", "cashier", "attendant", "kitchen", "driver", "manager", "admin"]).optional(),
+      active: z11.boolean().optional()
     })).mutation(async ({ input, ctx }) => {
       const { id, ...data } = input;
       const member = await getStaffMemberById(id);
-      if (!member) throw new TRPCError7({ code: "NOT_FOUND", message: "Membro nao encontrado." });
+      if (!member) throw new TRPCError12({ code: "NOT_FOUND", message: "Membro nao encontrado." });
       await assertStoreEntityAccess(ctx.user, member.storeId);
       await updateStaffMember(id, data);
       return { ok: true };
     }),
-    delete: staffProcedure.input(z7.object({ id: z7.number() })).mutation(async ({ input, ctx }) => {
+    delete: staffProcedure.input(z11.object({ id: z11.number() })).mutation(async ({ input, ctx }) => {
       const member = await getStaffMemberById(input.id);
-      if (!member) throw new TRPCError7({ code: "NOT_FOUND", message: "Membro nao encontrado." });
+      if (!member) throw new TRPCError12({ code: "NOT_FOUND", message: "Membro nao encontrado." });
       await assertStoreEntityAccess(ctx.user, member.storeId);
       await deleteStaffMember(input.id);
       return { ok: true };
     }),
-    regenerateAccessToken: staffProcedure.input(z7.object({ id: z7.number() })).mutation(async ({ input, ctx }) => {
+    regenerateAccessToken: staffProcedure.input(z11.object({ id: z11.number() })).mutation(async ({ input, ctx }) => {
       const member = await getStaffMemberById(input.id);
-      if (!member) throw new TRPCError7({ code: "NOT_FOUND", message: "Membro nao encontrado." });
+      if (!member) throw new TRPCError12({ code: "NOT_FOUND", message: "Membro nao encontrado." });
       await assertStoreEntityAccess(ctx.user, member.storeId);
       const accessToken = await regenerateStaffAccessToken(input.id);
       return { accessToken };
     })
   }),
   diningRoom: router({
-    tables: staffProcedure.input(z7.object({ storeId: z7.number().optional(), activeOnly: z7.boolean().optional() }).optional()).query(async ({ input, ctx }) => {
+    tables: staffProcedure.input(z11.object({ storeId: z11.number().optional(), activeOnly: z11.boolean().optional() }).optional()).query(async ({ input, ctx }) => {
       const storeId = await resolveStoreId(ctx.user, input?.storeId);
       return getDiningTables({ storeId, activeOnly: input?.activeOnly ?? true });
     }),
-    createTable: staffProcedure.input(z7.object({
-      storeId: z7.number().optional(),
-      name: z7.string().min(1).max(80),
-      capacity: z7.number().int().min(1).max(50).optional(),
-      active: z7.boolean().optional()
+    createTable: staffProcedure.input(z11.object({
+      storeId: z11.number().optional(),
+      name: z11.string().min(1).max(80),
+      capacity: z11.number().int().min(1).max(50).optional(),
+      active: z11.boolean().optional()
     })).mutation(async ({ input, ctx }) => {
       const storeId = await resolveStoreId(ctx.user, input.storeId);
       return createDiningTable({
@@ -12605,46 +17643,46 @@ ${itemsList}
         active: input.active ?? true
       });
     }),
-    updateTable: staffProcedure.input(z7.object({
-      id: z7.number(),
-      name: z7.string().min(1).max(80).optional(),
-      status: z7.enum(["free", "occupied", "reserved", "awaiting_closure"]).optional(),
-      capacity: z7.number().int().min(1).max(50).optional(),
-      active: z7.boolean().optional()
+    updateTable: staffProcedure.input(z11.object({
+      id: z11.number(),
+      name: z11.string().min(1).max(80).optional(),
+      status: z11.enum(["free", "occupied", "reserved", "awaiting_closure"]).optional(),
+      capacity: z11.number().int().min(1).max(50).optional(),
+      active: z11.boolean().optional()
     })).mutation(async ({ input, ctx }) => {
       const { id, ...data } = input;
       const table = await getDiningTableById(id);
-      if (!table) throw new TRPCError7({ code: "NOT_FOUND", message: "Mesa nao encontrada." });
+      if (!table) throw new TRPCError12({ code: "NOT_FOUND", message: "Mesa nao encontrada." });
       await assertStoreEntityAccess(ctx.user, table.storeId);
       await updateDiningTable(id, data);
       return { ok: true };
     }),
-    deleteTable: staffProcedure.input(z7.object({ id: z7.number() })).mutation(async ({ input, ctx }) => {
+    deleteTable: staffProcedure.input(z11.object({ id: z11.number() })).mutation(async ({ input, ctx }) => {
       const table = await getDiningTableById(input.id);
-      if (!table) throw new TRPCError7({ code: "NOT_FOUND", message: "Mesa nao encontrada." });
+      if (!table) throw new TRPCError12({ code: "NOT_FOUND", message: "Mesa nao encontrada." });
       await assertStoreEntityAccess(ctx.user, table.storeId);
       await deleteDiningTable(input.id);
       return { ok: true };
     }),
-    sessions: staffProcedure.input(z7.object({
-      storeId: z7.number().optional(),
-      status: z7.enum(["open", "awaiting_closure", "closed", "cancelled"]).optional(),
-      waiterStaffId: z7.number().optional()
+    sessions: staffProcedure.input(z11.object({
+      storeId: z11.number().optional(),
+      status: z11.enum(["open", "awaiting_closure", "closed", "cancelled"]).optional(),
+      waiterStaffId: z11.number().optional()
     }).optional()).query(async ({ input, ctx }) => {
       const storeId = await resolveStoreId(ctx.user, input?.storeId);
       return getTableSessions({ storeId, status: input?.status, waiterStaffId: input?.waiterStaffId });
     }),
-    openSession: staffProcedure.input(z7.object({
-      storeId: z7.number().optional(),
-      tableId: z7.number(),
-      waiterStaffId: z7.number().optional(),
-      customerName: z7.string().max(200).optional(),
-      guestCount: z7.number().int().min(1).max(50).optional(),
-      notes: z7.string().max(5e3).optional()
+    openSession: staffProcedure.input(z11.object({
+      storeId: z11.number().optional(),
+      tableId: z11.number(),
+      waiterStaffId: z11.number().optional(),
+      customerName: z11.string().max(200).optional(),
+      guestCount: z11.number().int().min(1).max(50).optional(),
+      notes: z11.string().max(5e3).optional()
     })).mutation(async ({ input, ctx }) => {
       const storeId = await resolveStoreId(ctx.user, input.storeId);
       const table = await getDiningTableById(input.tableId);
-      if (!table) throw new TRPCError7({ code: "NOT_FOUND", message: "Mesa nao encontrada." });
+      if (!table) throw new TRPCError12({ code: "NOT_FOUND", message: "Mesa nao encontrada." });
       await assertStoreEntityAccess(ctx.user, table.storeId, storeId);
       return openTableSession({
         tableId: input.tableId,
@@ -12659,35 +17697,35 @@ ${itemsList}
         total: "0.00"
       });
     }),
-    updateSession: staffProcedure.input(z7.object({
-      id: z7.number(),
-      waiterStaffId: z7.number().optional(),
-      customerName: z7.string().max(200).optional(),
-      guestCount: z7.number().int().min(1).max(50).optional(),
-      notes: z7.string().max(5e3).optional(),
-      status: z7.enum(["open", "awaiting_closure", "closed", "cancelled"]).optional(),
-      subtotal: z7.string().regex(/^\d+(\.\d{1,2})?$/).optional(),
-      discountAmount: z7.string().regex(/^\d+(\.\d{1,2})?$/).optional(),
-      total: z7.string().regex(/^\d+(\.\d{1,2})?$/).optional()
+    updateSession: staffProcedure.input(z11.object({
+      id: z11.number(),
+      waiterStaffId: z11.number().optional(),
+      customerName: z11.string().max(200).optional(),
+      guestCount: z11.number().int().min(1).max(50).optional(),
+      notes: z11.string().max(5e3).optional(),
+      status: z11.enum(["open", "awaiting_closure", "closed", "cancelled"]).optional(),
+      subtotal: z11.string().regex(/^\d+(\.\d{1,2})?$/).optional(),
+      discountAmount: z11.string().regex(/^\d+(\.\d{1,2})?$/).optional(),
+      total: z11.string().regex(/^\d+(\.\d{1,2})?$/).optional()
     })).mutation(async ({ input, ctx }) => {
       const { id, ...data } = input;
       const session = await getTableSessionById(id);
-      if (!session) throw new TRPCError7({ code: "NOT_FOUND", message: "Comanda nao encontrada." });
+      if (!session) throw new TRPCError12({ code: "NOT_FOUND", message: "Comanda nao encontrada." });
       await assertStoreEntityAccess(ctx.user, session.storeId);
       await updateTableSession(id, data);
       return { ok: true };
     }),
-    closeSession: staffProcedure.input(z7.object({
-      id: z7.number(),
-      subtotal: z7.string().regex(/^\d+(\.\d{1,2})?$/).optional(),
-      discountAmount: z7.string().regex(/^\d+(\.\d{1,2})?$/).optional(),
-      tipAmount: z7.string().regex(/^\d+(\.\d{1,2})?$/).optional(),
-      total: z7.string().regex(/^\d+(\.\d{1,2})?$/).optional(),
-      status: z7.enum(["awaiting_closure", "closed", "cancelled"]).optional(),
-      closedByStaffId: z7.number().optional()
+    closeSession: staffProcedure.input(z11.object({
+      id: z11.number(),
+      subtotal: z11.string().regex(/^\d+(\.\d{1,2})?$/).optional(),
+      discountAmount: z11.string().regex(/^\d+(\.\d{1,2})?$/).optional(),
+      tipAmount: z11.string().regex(/^\d+(\.\d{1,2})?$/).optional(),
+      total: z11.string().regex(/^\d+(\.\d{1,2})?$/).optional(),
+      status: z11.enum(["awaiting_closure", "closed", "cancelled"]).optional(),
+      closedByStaffId: z11.number().optional()
     })).mutation(async ({ input, ctx }) => {
       const session = await getTableSessionById(input.id);
-      if (!session) throw new TRPCError7({ code: "NOT_FOUND", message: "Comanda nao encontrada." });
+      if (!session) throw new TRPCError12({ code: "NOT_FOUND", message: "Comanda nao encontrada." });
       await assertStoreEntityAccess(ctx.user, session.storeId);
       await closeTableSessionWithComputedTotals(input.id, {
         subtotal: input.subtotal,
@@ -12699,29 +17737,29 @@ ${itemsList}
       });
       return { ok: true };
     }),
-    attachOrder: staffProcedure.input(z7.object({ tableSessionId: z7.number(), orderId: z7.number() })).mutation(async ({ input, ctx }) => {
+    attachOrder: staffProcedure.input(z11.object({ tableSessionId: z11.number(), orderId: z11.number() })).mutation(async ({ input, ctx }) => {
       const session = await getTableSessionById(input.tableSessionId);
       const order = await getOrderById(input.orderId);
-      if (!session || !order) throw new TRPCError7({ code: "NOT_FOUND", message: "Comanda ou pedido nao encontrado." });
+      if (!session || !order) throw new TRPCError12({ code: "NOT_FOUND", message: "Comanda ou pedido nao encontrado." });
       await assertStoreEntityAccess(ctx.user, session.storeId);
       await assertStoreEntityAccess(ctx.user, order.storeId);
-      if (session.storeId !== order.storeId) throw new TRPCError7({ code: "BAD_REQUEST", message: "Comanda e pedido pertencem a lojas diferentes." });
+      if (session.storeId !== order.storeId) throw new TRPCError12({ code: "BAD_REQUEST", message: "Comanda e pedido pertencem a lojas diferentes." });
       await attachOrderToTableSessionAndSync(input.tableSessionId, input.orderId);
       return { ok: true };
     }),
-    addItem: staffProcedure.input(z7.object({
-      tableSessionId: z7.number(),
-      productId: z7.number(),
-      quantity: z7.number().int().min(1).max(100),
-      notes: z7.string().max(500).optional(),
-      addedByStaffId: z7.number().optional()
+    addItem: staffProcedure.input(z11.object({
+      tableSessionId: z11.number(),
+      productId: z11.number(),
+      quantity: z11.number().int().min(1).max(100),
+      notes: z11.string().max(500).optional(),
+      addedByStaffId: z11.number().optional()
     })).mutation(async ({ input, ctx }) => {
       const session = await getTableSessionById(input.tableSessionId);
       const product = await getProductById(input.productId);
-      if (!session || !product) throw new TRPCError7({ code: "NOT_FOUND", message: "Comanda ou produto nao encontrado." });
+      if (!session || !product) throw new TRPCError12({ code: "NOT_FOUND", message: "Comanda ou produto nao encontrado." });
       await assertStoreEntityAccess(ctx.user, session.storeId);
       if (product.storeId != null && product.storeId !== session.storeId) {
-        throw new TRPCError7({ code: "BAD_REQUEST", message: "Produto fora da loja da comanda." });
+        throw new TRPCError12({ code: "BAD_REQUEST", message: "Produto fora da loja da comanda." });
       }
       const itemId = await addTableSessionItem({
         tableSessionId: input.tableSessionId,
@@ -12732,44 +17770,44 @@ ${itemsList}
       });
       return { ok: true, itemId };
     }),
-    removeItem: staffProcedure.input(z7.object({ id: z7.number() })).mutation(async ({ input, ctx }) => {
+    removeItem: staffProcedure.input(z11.object({ id: z11.number() })).mutation(async ({ input, ctx }) => {
       const item = await getTableSessionItemById(input.id);
       const session = item ? await getTableSessionById(item.tableSessionId) : void 0;
-      if (!item || !session) throw new TRPCError7({ code: "NOT_FOUND", message: "Item nao encontrado." });
+      if (!item || !session) throw new TRPCError12({ code: "NOT_FOUND", message: "Item nao encontrado." });
       await assertStoreEntityAccess(ctx.user, session.storeId);
       await removeTableSessionItem(input.id);
       return { ok: true };
     }),
-    updateItemStatus: staffProcedure.input(z7.object({
-      id: z7.number(),
-      status: z7.enum(["pending", "preparing", "ready", "served", "cancelled"])
+    updateItemStatus: staffProcedure.input(z11.object({
+      id: z11.number(),
+      status: z11.enum(["pending", "preparing", "ready", "served", "cancelled"])
     })).mutation(async ({ input, ctx }) => {
       const item = await getTableSessionItemById(input.id);
       const session = item ? await getTableSessionById(item.tableSessionId) : void 0;
-      if (!item || !session) throw new TRPCError7({ code: "NOT_FOUND", message: "Item nao encontrado." });
+      if (!item || !session) throw new TRPCError12({ code: "NOT_FOUND", message: "Item nao encontrado." });
       await assertStoreEntityAccess(ctx.user, session.storeId);
       await updateTableSessionItemStatus(input.id, input.status);
       return { ok: true };
     })
   }),
   customerMetrics: router({
-    list: staffProcedure.input(z7.object({ storeId: z7.number().optional(), limit: z7.number().min(1).max(500).optional() }).optional()).query(async ({ input, ctx }) => {
+    list: staffProcedure.input(z11.object({ storeId: z11.number().optional(), limit: z11.number().min(1).max(500).optional() }).optional()).query(async ({ input, ctx }) => {
       const storeId = await resolveStoreId(ctx.user, input?.storeId);
       return getCustomerMetricsReport({ storeId: storeId ?? 0, limit: input?.limit });
     })
   }),
   // --- ADMIN USERS ---------------------------------------------------------------
   adminUsers: router({
-    list: staffProcedure.input(z7.object({
-      page: z7.number().int().min(1).optional(),
-      pageSize: z7.number().int().min(1).max(100).optional(),
-      search: z7.string().max(160).optional(),
-      role: z7.enum(["user", "admin", "manager"]).optional(),
-      status: z7.enum(["active", "inactive", "suspended", "setup_pending"]).optional(),
-      clubStatus: z7.enum(["active", "pending", "cancelled", "none"]).optional(),
-      loginMethod: z7.enum(["email", "phone", "google", "apple", "facebook", "instagram", "manus"]).optional(),
-      hasOrders: z7.enum(["with_orders", "without_orders"]).optional(),
-      storeId: z7.number().optional()
+    list: staffProcedure.input(z11.object({
+      page: z11.number().int().min(1).optional(),
+      pageSize: z11.number().int().min(1).max(100).optional(),
+      search: z11.string().max(160).optional(),
+      role: z11.enum(["user", "admin", "manager"]).optional(),
+      status: z11.enum(["active", "inactive", "suspended", "setup_pending"]).optional(),
+      clubStatus: z11.enum(["active", "pending", "cancelled", "none"]).optional(),
+      loginMethod: z11.enum(["email", "phone", "google", "apple", "facebook", "instagram", "manus"]).optional(),
+      hasOrders: z11.enum(["with_orders", "without_orders"]).optional(),
+      storeId: z11.number().optional()
     }).optional()).query(async ({ input, ctx }) => {
       const storeId = await resolveStoreId(ctx.user, input?.storeId);
       return getAdminUsersPage({
@@ -12784,27 +17822,28 @@ ${itemsList}
         storeId
       });
     }),
-    sendCoupon: adminProcedure3.input(z7.object({
-      userId: z7.number(),
-      code: z7.string().min(1),
-      discountType: z7.enum(["percentage", "fixed"]),
-      discountValue: z7.string(),
-      minOrderValue: z7.string().optional(),
-      maxUses: z7.number().optional(),
-      expiresAt: z7.date().optional()
-    })).mutation(({ input }) => createUserCoupon(input))
+    sendCoupon: staffProcedure.input(z11.object({
+      storeId: z11.number().optional(),
+      userId: z11.number(),
+      code: z11.string().min(1),
+      discountType: z11.enum(["percentage", "fixed"]),
+      discountValue: z11.string(),
+      minOrderValue: z11.string().optional(),
+      maxUses: z11.number().optional(),
+      expiresAt: z11.date().optional()
+    })).mutation(async ({ input, ctx }) => createUserCoupon({ ...input, storeId: await resolveRequiredStoreId(ctx.user, input.storeId) }))
   }),
   reports: router({
-    sales: staffProcedure.input(z7.object({ startDate: z7.date(), endDate: z7.date(), storeId: z7.number().optional() })).query(async ({ input, ctx }) => {
+    sales: staffProcedure.input(z11.object({ startDate: z11.date(), endDate: z11.date(), storeId: z11.number().optional() })).query(async ({ input, ctx }) => {
       const storeId = await resolveStoreId(ctx.user, input.storeId);
       return getSalesReport(input.startDate, input.endDate, storeId);
     }),
     topProducts: staffProcedure.input(
-      z7.object({
-        limit: z7.number().optional(),
-        storeId: z7.number().optional(),
-        startDate: z7.date().optional(),
-        endDate: z7.date().optional()
+      z11.object({
+        limit: z11.number().optional(),
+        storeId: z11.number().optional(),
+        startDate: z11.date().optional(),
+        endDate: z11.date().optional()
       }).optional()
     ).query(async ({ input, ctx }) => {
       const storeId = await resolveStoreId(ctx.user, input?.storeId);
@@ -12813,20 +17852,20 @@ ${itemsList}
         endDate: input?.endDate
       });
     }),
-    topCategories: staffProcedure.input(z7.object({ startDate: z7.date(), endDate: z7.date(), storeId: z7.number().optional() })).query(async ({ input, ctx }) => {
+    topCategories: staffProcedure.input(z11.object({ startDate: z11.date(), endDate: z11.date(), storeId: z11.number().optional() })).query(async ({ input, ctx }) => {
       const storeId = await resolveStoreId(ctx.user, input.storeId);
       return getTopCategories(input.startDate, input.endDate, storeId);
     }),
-    ordersByPeriod: staffProcedure.input(z7.object({ startDate: z7.date(), endDate: z7.date(), storeId: z7.number().optional() })).query(async ({ input, ctx }) => {
+    ordersByPeriod: staffProcedure.input(z11.object({ startDate: z11.date(), endDate: z11.date(), storeId: z11.number().optional() })).query(async ({ input, ctx }) => {
       const storeId = await resolveStoreId(ctx.user, input.storeId);
       return getOrdersByPeriod(input.startDate, input.endDate, storeId);
     }),
-    dailyRevenue: staffProcedure.input(z7.object({ days: z7.number().optional(), storeId: z7.number().optional(), timezoneOffset: z7.number().optional() }).optional()).query(async ({ input, ctx }) => {
+    dailyRevenue: staffProcedure.input(z11.object({ days: z11.number().optional(), storeId: z11.number().optional(), timezoneOffset: z11.number().optional() }).optional()).query(async ({ input, ctx }) => {
       const storeId = await resolveStoreId(ctx.user, input?.storeId);
       return getDailyRevenue(input?.days, storeId, input?.timezoneOffset);
     }),
     // Resumo de hoje calculado no servidor com suporte a timezone do cliente
-    todaySummary: staffProcedure.input(z7.object({ timezoneOffset: z7.number().optional(), storeId: z7.number().optional() })).query(async ({ input, ctx }) => {
+    todaySummary: staffProcedure.input(z11.object({ timezoneOffset: z11.number().optional(), storeId: z11.number().optional() })).query(async ({ input, ctx }) => {
       const storeId = await resolveStoreId(ctx.user, input.storeId);
       const now = /* @__PURE__ */ new Date();
       const todayStart = getTodayStartUtc(now);
@@ -12842,38 +17881,38 @@ ${itemsList}
   }),
   // --- DRIVERS (MOTOBOYS) -----------------------------------------------------
   drivers: router({
-    list: staffProcedure.input(z7.object({ storeId: z7.number().optional() }).optional()).query(async ({ input, ctx }) => {
+    list: staffProcedure.input(z11.object({ storeId: z11.number().optional() }).optional()).query(async ({ input, ctx }) => {
       const storeId = await resolveStoreId(ctx.user, input?.storeId);
       return getAllDrivers(false, storeId);
     }),
-    create: staffProcedure.input(z7.object({ name: z7.string(), phone: z7.string().optional(), storeId: z7.number().optional() })).mutation(async ({ input, ctx }) => {
+    create: staffProcedure.input(z11.object({ name: z11.string(), phone: z11.string().optional(), storeId: z11.number().optional() })).mutation(async ({ input, ctx }) => {
       const storeId = await resolveStoreId(ctx.user, input.storeId);
-      const token = crypto3.randomBytes(32).toString("hex");
+      const token = crypto5.randomBytes(32).toString("hex");
       const id = await createDriver({ name: input.name, phone: input.phone ?? null, accessToken: token, active: true, storeId: storeId ?? null });
       return { id, accessToken: token };
     }),
-    update: staffProcedure.input(z7.object({ id: z7.number(), name: z7.string().optional(), phone: z7.string().optional(), active: z7.boolean().optional() })).mutation(async ({ input, ctx }) => {
+    update: staffProcedure.input(z11.object({ id: z11.number(), name: z11.string().optional(), phone: z11.string().optional(), active: z11.boolean().optional() })).mutation(async ({ input, ctx }) => {
       const driver = await getDriverById(input.id);
-      if (!driver) throw new TRPCError7({ code: "NOT_FOUND", message: "Motoboy nao encontrado." });
+      if (!driver) throw new TRPCError12({ code: "NOT_FOUND", message: "Motoboy nao encontrado." });
       await assertStoreEntityAccess(ctx.user, driver.storeId);
       return updateDriver(input.id, { name: input.name, phone: input.phone, active: input.active });
     }),
-    delete: staffProcedure.input(z7.object({ id: z7.number() })).mutation(async ({ input, ctx }) => {
+    delete: staffProcedure.input(z11.object({ id: z11.number() })).mutation(async ({ input, ctx }) => {
       const driver = await getDriverById(input.id);
-      if (!driver) throw new TRPCError7({ code: "NOT_FOUND", message: "Motoboy nao encontrado." });
+      if (!driver) throw new TRPCError12({ code: "NOT_FOUND", message: "Motoboy nao encontrado." });
       await assertStoreEntityAccess(ctx.user, driver.storeId);
       return deleteDriver(input.id);
     }),
-    assignToOrder: staffProcedure.input(z7.object({ orderId: z7.number(), driverId: z7.number().nullable() })).mutation(async ({ input, ctx }) => {
+    assignToOrder: staffProcedure.input(z11.object({ orderId: z11.number(), driverId: z11.number().nullable() })).mutation(async ({ input, ctx }) => {
       const prevOrder = await getOrderById(input.orderId);
-      if (!prevOrder) throw new TRPCError7({ code: "NOT_FOUND", message: "Pedido nao encontrado." });
+      if (!prevOrder) throw new TRPCError12({ code: "NOT_FOUND", message: "Pedido nao encontrado." });
       await assertStoreEntityAccess(ctx.user, prevOrder.storeId);
       if (input.driverId) {
         const nextDriver = await getDriverById(input.driverId);
-        if (!nextDriver) throw new TRPCError7({ code: "NOT_FOUND", message: "Motoboy nao encontrado." });
+        if (!nextDriver) throw new TRPCError12({ code: "NOT_FOUND", message: "Motoboy nao encontrado." });
         await assertStoreEntityAccess(ctx.user, nextDriver.storeId);
         if (prevOrder.storeId !== nextDriver.storeId) {
-          throw new TRPCError7({ code: "BAD_REQUEST", message: "Pedido e motoboy pertencem a lojas diferentes." });
+          throw new TRPCError12({ code: "BAD_REQUEST", message: "Pedido e motoboy pertencem a lojas diferentes." });
         }
       }
       await assignDriverToOrder(input.orderId, input.driverId);
@@ -12902,28 +17941,28 @@ ${itemsList}
         });
       }
     }),
-    allLocations: staffProcedure.input(z7.object({ storeId: z7.number().optional() }).optional()).query(async ({ ctx, input }) => {
+    allLocations: staffProcedure.input(z11.object({ storeId: z11.number().optional() }).optional()).query(async ({ ctx, input }) => {
       const storeId = await resolveStoreId(ctx.user, input?.storeId);
       return getAllActiveDriverLocations(storeId);
     }),
-    updateLocation: publicProcedure.input(z7.object({ token: z7.string(), lat: z7.string(), lng: z7.string(), orderId: z7.number().optional() })).mutation(async ({ input }) => {
+    updateLocation: publicProcedure.input(z11.object({ token: z11.string(), lat: z11.string(), lng: z11.string(), orderId: z11.number().optional() })).mutation(async ({ input }) => {
       const driver = await getDriverByToken(input.token);
-      if (!driver) throw new TRPCError7({ code: "UNAUTHORIZED", message: "Token inv\xE1lido" });
+      if (!driver) throw new TRPCError12({ code: "UNAUTHORIZED", message: "Token inv\xE1lido" });
       await upsertDriverLocation(driver.id, input.lat, input.lng, input.orderId);
       return { ok: true };
     }),
-    myActiveOrder: publicProcedure.input(z7.object({ token: z7.string() })).query(async ({ input }) => {
+    myActiveOrder: publicProcedure.input(z11.object({ token: z11.string() })).query(async ({ input }) => {
       const driver = await getDriverByToken(input.token);
-      if (!driver) throw new TRPCError7({ code: "UNAUTHORIZED", message: "Token inv\xE1lido" });
+      if (!driver) throw new TRPCError12({ code: "UNAUTHORIZED", message: "Token inv\xE1lido" });
       const loc = await getDriverLocation(driver.id);
       return { driver: { id: driver.id, name: driver.name }, activeOrderId: loc?.orderId ?? null };
     }),
-    locationByOrder: protectedProcedure.input(z7.object({ orderId: z7.number() })).query(async ({ input, ctx }) => {
+    locationByOrder: protectedProcedure.input(z11.object({ orderId: z11.number() })).query(async ({ input, ctx }) => {
       const order = await getOrderById(input.orderId);
-      if (!order) throw new TRPCError7({ code: "NOT_FOUND", message: "Pedido n\xE3o encontrado" });
+      if (!order) throw new TRPCError12({ code: "NOT_FOUND", message: "Pedido n\xE3o encontrado" });
       const isStaff = ctx.user.role === "admin" || ctx.user.role === "manager";
       if (order.userId !== ctx.user.id && !isStaff) {
-        throw new TRPCError7({ code: "FORBIDDEN", message: "Acesso negado" });
+        throw new TRPCError12({ code: "FORBIDDEN", message: "Acesso negado" });
       }
       if (!order.driverId) return null;
       const driverId = order.driverId;
@@ -12934,43 +17973,46 @@ ${itemsList}
     }),
     // --- DRIVER APP: novas procedures ---
     // Dashboard do dia: entregas, ganhos, avaliação
-    todayStats: publicProcedure.input(z7.object({ token: z7.string() })).query(async ({ input }) => {
+    todayStats: publicProcedure.input(z11.object({ token: z11.string() })).query(async ({ input }) => {
       const driver = await getDriverByToken(input.token);
-      if (!driver) throw new TRPCError7({ code: "UNAUTHORIZED", message: "Token inv\xE1lido" });
+      if (!driver) throw new TRPCError12({ code: "UNAUTHORIZED", message: "Token inv\xE1lido" });
       return getDriverTodayStats(driver.id);
     }),
     // Detalhes do pedido ativo (endereço, itens, cliente) — mantido por compatibilidade
-    activeOrderDetails: publicProcedure.input(z7.object({ token: z7.string() })).query(async ({ input }) => {
+    activeOrderDetails: publicProcedure.input(z11.object({ token: z11.string() })).query(async ({ input }) => {
       const driver = await getDriverByToken(input.token);
-      if (!driver) throw new TRPCError7({ code: "UNAUTHORIZED", message: "Token inv\xE1lido" });
+      if (!driver) throw new TRPCError12({ code: "UNAUTHORIZED", message: "Token inv\xE1lido" });
       return getDriverActiveOrderDetails(driver.id);
     }),
     // Lista de TODOS os pedidos atribuídos ao motoboy (out_for_delivery)
-    assignedOrders: publicProcedure.input(z7.object({ token: z7.string() })).query(async ({ input }) => {
+    assignedOrders: publicProcedure.input(z11.object({ token: z11.string() })).query(async ({ input }) => {
       const driver = await getDriverByToken(input.token);
-      if (!driver) throw new TRPCError7({ code: "UNAUTHORIZED", message: "Token inv\xE1lido" });
+      if (!driver) throw new TRPCError12({ code: "UNAUTHORIZED", message: "Token inv\xE1lido" });
       return getDriverAssignedOrders(driver.id);
     }),
     // Histórico de entregas do dia
-    todayDeliveries: publicProcedure.input(z7.object({ token: z7.string() })).query(async ({ input }) => {
+    todayDeliveries: publicProcedure.input(z11.object({ token: z11.string() })).query(async ({ input }) => {
       const driver = await getDriverByToken(input.token);
-      if (!driver) throw new TRPCError7({ code: "UNAUTHORIZED", message: "Token inv\xE1lido" });
+      if (!driver) throw new TRPCError12({ code: "UNAUTHORIZED", message: "Token inv\xE1lido" });
       return getDriverTodayDeliveries(driver.id);
     }),
     // Confirmar entrega: status → delivered + push para cliente
-    confirmDelivery: publicProcedure.input(z7.object({ token: z7.string(), orderId: z7.number() })).mutation(async ({ input }) => {
+    confirmDelivery: publicProcedure.input(z11.object({ token: z11.string(), orderId: z11.number() })).mutation(async ({ input }) => {
       const driver = await getDriverByToken(input.token);
-      if (!driver) throw new TRPCError7({ code: "UNAUTHORIZED", message: "Token inv\xE1lido" });
+      if (!driver) throw new TRPCError12({ code: "UNAUTHORIZED", message: "Token inv\xE1lido" });
       const result = await driverConfirmDelivery(driver.id, input.orderId);
-      if (!result.success) throw new TRPCError7({ code: "BAD_REQUEST", message: result.error ?? "Erro ao confirmar entrega" });
+      if (!result.success) throw new TRPCError12({ code: "BAD_REQUEST", message: result.error ?? "Erro ao confirmar entrega" });
       if (result.customerId) {
+        const deliveredOrder = await getOrderById(input.orderId);
         await sendPushToUser(result.customerId, {
+          storeId: deliveredOrder?.storeId,
           title: "Pedido entregue! \u{1F355}",
           body: `Seu pedido #${input.orderId} chegou. Que tal avaliar a entrega?`,
           url: `/meus-pedidos?avaliar=${input.orderId}`,
           tag: `delivery-confirmed-${input.orderId}`
         });
         await createClientNotification({
+          storeId: deliveredOrder?.storeId,
           userId: result.customerId,
           title: "Pedido entregue! \u{1F355}",
           message: `Seu pedido #${input.orderId} foi entregue. Avalie a experi\xEAncia!`,
@@ -12986,72 +18028,72 @@ ${itemsList}
       return { success: true };
     }),
     // Salvar push subscription do motoboy
-    savePushSubscription: publicProcedure.input(z7.object({
-      token: z7.string(),
-      endpoint: z7.string(),
-      p256dh: z7.string(),
-      auth: z7.string(),
-      userAgent: z7.string().optional()
+    savePushSubscription: publicProcedure.input(z11.object({
+      token: z11.string(),
+      endpoint: z11.string(),
+      p256dh: z11.string(),
+      auth: z11.string(),
+      userAgent: z11.string().optional()
     })).mutation(async ({ input }) => {
       const driver = await getDriverByToken(input.token);
-      if (!driver) throw new TRPCError7({ code: "UNAUTHORIZED", message: "Token inv\xE1lido" });
+      if (!driver) throw new TRPCError12({ code: "UNAUTHORIZED", message: "Token inv\xE1lido" });
       await saveDriverPushSubscription(driver.id, input.endpoint, input.p256dh, input.auth, input.userAgent);
       return { ok: true };
     }),
     // Remover push subscription do motoboy
-    removePushSubscription: publicProcedure.input(z7.object({ token: z7.string(), endpoint: z7.string() })).mutation(async ({ input }) => {
+    removePushSubscription: publicProcedure.input(z11.object({ token: z11.string(), endpoint: z11.string() })).mutation(async ({ input }) => {
       const driver = await getDriverByToken(input.token);
-      if (!driver) throw new TRPCError7({ code: "UNAUTHORIZED", message: "Token inv\xE1lido" });
+      if (!driver) throw new TRPCError12({ code: "UNAUTHORIZED", message: "Token inv\xE1lido" });
       await removeDriverPushSubscription(driver.id, input.endpoint);
       return { ok: true };
     })
   }),
   waiters: router({
-    me: publicProcedure.input(z7.object({ token: z7.string() })).query(async ({ input }) => {
+    me: publicProcedure.input(z11.object({ token: z11.string() })).query(async ({ input }) => {
       const waiter = await getStaffMemberByAccessToken(input.token);
       if (!waiter || waiter.role !== "waiter") {
-        throw new TRPCError7({ code: "UNAUTHORIZED", message: "Token invalido" });
+        throw new TRPCError12({ code: "UNAUTHORIZED", message: "Token invalido" });
       }
       return waiter;
     }),
-    tables: publicProcedure.input(z7.object({ token: z7.string() })).query(async ({ input }) => {
+    tables: publicProcedure.input(z11.object({ token: z11.string() })).query(async ({ input }) => {
       const waiter = await getStaffMemberByAccessToken(input.token);
       if (!waiter || waiter.role !== "waiter") {
-        throw new TRPCError7({ code: "UNAUTHORIZED", message: "Token invalido" });
+        throw new TRPCError12({ code: "UNAUTHORIZED", message: "Token invalido" });
       }
       return getDiningTables({ storeId: waiter.storeId ?? void 0, activeOnly: true });
     }),
-    sessions: publicProcedure.input(z7.object({ token: z7.string() })).query(async ({ input }) => {
+    sessions: publicProcedure.input(z11.object({ token: z11.string() })).query(async ({ input }) => {
       const waiter = await getStaffMemberByAccessToken(input.token);
       if (!waiter || waiter.role !== "waiter") {
-        throw new TRPCError7({ code: "UNAUTHORIZED", message: "Token invalido" });
+        throw new TRPCError12({ code: "UNAUTHORIZED", message: "Token invalido" });
       }
       const sessions = await getTableSessions({ storeId: waiter.storeId ?? void 0 });
       return sessions.filter(
         (session) => (session.status === "open" || session.status === "awaiting_closure") && (session.waiterStaffId == null || session.waiterStaffId === waiter.id)
       );
     }),
-    menu: publicProcedure.input(z7.object({ token: z7.string() })).query(async ({ input }) => {
+    menu: publicProcedure.input(z11.object({ token: z11.string() })).query(async ({ input }) => {
       const waiter = await getStaffMemberByAccessToken(input.token);
       if (!waiter || waiter.role !== "waiter") {
-        throw new TRPCError7({ code: "UNAUTHORIZED", message: "Token invalido" });
+        throw new TRPCError12({ code: "UNAUTHORIZED", message: "Token invalido" });
       }
       return getProducts({ storeId: waiter.storeId ?? void 0, activeOnly: true });
     }),
-    openSession: publicProcedure.input(z7.object({
-      token: z7.string(),
-      tableId: z7.number(),
-      customerName: z7.string().max(200).optional(),
-      guestCount: z7.number().int().min(1).max(50).optional(),
-      notes: z7.string().max(5e3).optional()
+    openSession: publicProcedure.input(z11.object({
+      token: z11.string(),
+      tableId: z11.number(),
+      customerName: z11.string().max(200).optional(),
+      guestCount: z11.number().int().min(1).max(50).optional(),
+      notes: z11.string().max(5e3).optional()
     })).mutation(async ({ input }) => {
       const waiter = await getStaffMemberByAccessToken(input.token);
       if (!waiter || waiter.role !== "waiter") {
-        throw new TRPCError7({ code: "UNAUTHORIZED", message: "Token invalido" });
+        throw new TRPCError12({ code: "UNAUTHORIZED", message: "Token invalido" });
       }
       const table = await getDiningTableById(input.tableId);
       if (!table || table.storeId == null || table.storeId !== waiter.storeId) {
-        throw new TRPCError7({ code: "FORBIDDEN", message: "Mesa fora da loja do garcom." });
+        throw new TRPCError12({ code: "FORBIDDEN", message: "Mesa fora da loja do garcom." });
       }
       const id = await openTableSession({
         tableId: input.tableId,
@@ -13068,24 +18110,24 @@ ${itemsList}
       });
       return { id };
     }),
-    addItem: publicProcedure.input(z7.object({
-      token: z7.string(),
-      tableSessionId: z7.number(),
-      productId: z7.number(),
-      quantity: z7.number().int().min(1).max(100),
-      notes: z7.string().max(500).optional()
+    addItem: publicProcedure.input(z11.object({
+      token: z11.string(),
+      tableSessionId: z11.number(),
+      productId: z11.number(),
+      quantity: z11.number().int().min(1).max(100),
+      notes: z11.string().max(500).optional()
     })).mutation(async ({ input }) => {
       const waiter = await getStaffMemberByAccessToken(input.token);
       if (!waiter || waiter.role !== "waiter") {
-        throw new TRPCError7({ code: "UNAUTHORIZED", message: "Token invalido" });
+        throw new TRPCError12({ code: "UNAUTHORIZED", message: "Token invalido" });
       }
       const session = await getTableSessionById(input.tableSessionId);
       const product = await getProductById(input.productId);
       if (!session || session.storeId == null || session.storeId !== waiter.storeId) {
-        throw new TRPCError7({ code: "FORBIDDEN", message: "Comanda fora da loja do garcom." });
+        throw new TRPCError12({ code: "FORBIDDEN", message: "Comanda fora da loja do garcom." });
       }
       if (!product || product.storeId != null && product.storeId !== waiter.storeId) {
-        throw new TRPCError7({ code: "FORBIDDEN", message: "Produto fora da loja do garcom." });
+        throw new TRPCError12({ code: "FORBIDDEN", message: "Produto fora da loja do garcom." });
       }
       await updateTableSession(input.tableSessionId, { waiterStaffId: waiter.id });
       const itemId = await addTableSessionItem({
@@ -13097,19 +18139,19 @@ ${itemsList}
       });
       return { itemId };
     }),
-    closeSession: publicProcedure.input(z7.object({
-      token: z7.string(),
-      id: z7.number(),
-      discountAmount: z7.string().regex(/^\d+(\.\d{1,2})?$/).optional(),
-      tipAmount: z7.string().regex(/^\d+(\.\d{1,2})?$/).optional()
+    closeSession: publicProcedure.input(z11.object({
+      token: z11.string(),
+      id: z11.number(),
+      discountAmount: z11.string().regex(/^\d+(\.\d{1,2})?$/).optional(),
+      tipAmount: z11.string().regex(/^\d+(\.\d{1,2})?$/).optional()
     })).mutation(async ({ input }) => {
       const waiter = await getStaffMemberByAccessToken(input.token);
       if (!waiter || waiter.role !== "waiter") {
-        throw new TRPCError7({ code: "UNAUTHORIZED", message: "Token invalido" });
+        throw new TRPCError12({ code: "UNAUTHORIZED", message: "Token invalido" });
       }
       const session = await getTableSessionById(input.id);
       if (!session || session.storeId == null || session.storeId !== waiter.storeId) {
-        throw new TRPCError7({ code: "FORBIDDEN", message: "Comanda fora da loja do garcom." });
+        throw new TRPCError12({ code: "FORBIDDEN", message: "Comanda fora da loja do garcom." });
       }
       await updateTableSession(input.id, { waiterStaffId: waiter.id });
       await closeTableSessionWithComputedTotals(input.id, {
@@ -13123,75 +18165,111 @@ ${itemsList}
   }),
   // --- PAYMENT SETTINGS -------------------------------------------------------
   paymentSettings: router({
-    getPublic: publicProcedure.query(() => getPaymentSettingsPublic()),
-    getAdmin: adminProcedure3.query(() => getPaymentSettingsAdmin()),
-    save: adminProcedure3.input(z7.object({
+    getPublic: publicProcedure.input(z11.object({ storeId: z11.number().optional() }).optional()).query(({ input }) => getPaymentSettingsPublic(input?.storeId)),
+    getAdmin: staffProcedure.input(z11.object({ storeId: z11.number().optional() }).optional()).query(async ({ ctx, input }) => getPaymentSettingsAdmin(await resolveRequiredStoreId(ctx.user, input?.storeId))),
+    save: staffProcedure.input(z11.object({
+      storeId: z11.number().optional(),
       config: paymentConfigSchema,
-      pixKey: z7.string().max(120)
-    })).mutation(async ({ input }) => {
-      await savePaymentSettings(input);
-      return getPaymentSettingsAdmin();
+      pixKey: z11.string().max(120)
+    })).mutation(async ({ ctx, input }) => {
+      const storeId = await resolveRequiredStoreId(ctx.user, input.storeId);
+      const { storeId: _requestedStoreId, ...settings } = input;
+      await savePaymentSettings(settings, storeId);
+      return getPaymentSettingsAdmin(storeId);
     })
   }),
   // --- STORE SETTINGS ---------------------------------------------------------
   storeSettings: router({
     // Qualquer um pode ler (para validar horário/CEP no frontend)
-    get: publicProcedure.query(async () => {
-      const settings = await getAllStoreSettings();
+    get: publicProcedure.input(z11.object({ storeId: z11.number().optional() }).optional()).query(async ({ input }) => {
+      const settings = await getAllStoreSettings(input?.storeId);
       const { pixKey: _pk, whatsappNumber: _wn, ...publicSettings } = settings;
       return publicSettings;
     }),
     // Staff endpoint with all settings including sensitive fields
-    getAdmin: staffProcedure.query(() => getAllStoreSettings()),
+    getAdmin: staffProcedure.input(z11.object({ storeId: z11.number().optional() }).optional()).query(async ({ input, ctx }) => {
+      const storeId = await resolveStoreId(ctx.user, input?.storeId);
+      return getAllStoreSettings(storeId);
+    }),
     // Staff pode salvar configurações da loja
-    save: staffProcedure.input(z7.object({
-      storeHours: z7.record(z7.string(), z7.union([
-        z7.null(),
-        z7.object({ open: z7.string(), close: z7.string() })
+    save: staffProcedure.input(z11.object({
+      storeHours: z11.record(z11.string(), z11.union([
+        z11.null(),
+        z11.object({ open: z11.string(), close: z11.string() })
       ])),
-      deliveryCepPrefixes: z7.array(z7.string()),
-      pixKey: z7.string().optional(),
-      whatsappNumber: z7.string().optional(),
-      deliveryFee: z7.string().optional(),
-      minOrderValue: z7.string().optional()
-    })).mutation(async ({ input }) => {
-      await setStoreSetting("storeHours", JSON.stringify(input.storeHours));
-      await setStoreSetting("deliveryCepPrefixes", JSON.stringify(input.deliveryCepPrefixes));
-      if (input.pixKey !== void 0) await setStoreSetting("pixKey", input.pixKey);
-      if (input.whatsappNumber !== void 0) await setStoreSetting("whatsappNumber", input.whatsappNumber);
-      if (input.deliveryFee !== void 0) await setStoreSetting("deliveryFee", input.deliveryFee);
-      if (input.minOrderValue !== void 0) await setStoreSetting("minOrderValue", input.minOrderValue);
+      deliveryCepPrefixes: z11.array(z11.string()),
+      pixKey: z11.string().optional(),
+      whatsappNumber: z11.string().optional(),
+      deliveryFee: z11.string().optional(),
+      minOrderValue: z11.string().optional(),
+      storeId: z11.number().optional()
+    })).mutation(async ({ input, ctx }) => {
+      const storeId = await resolveStoreId(ctx.user, input.storeId);
+      await setStoreSetting("storeHours", JSON.stringify(input.storeHours), storeId);
+      await setStoreSetting("deliveryCepPrefixes", JSON.stringify(input.deliveryCepPrefixes), storeId);
+      if (input.pixKey !== void 0) await setStoreSetting("pixKey", input.pixKey, storeId);
+      if (input.whatsappNumber !== void 0) await setStoreSetting("whatsappNumber", input.whatsappNumber, storeId);
+      if (input.deliveryFee !== void 0) await setStoreSetting("deliveryFee", input.deliveryFee, storeId);
+      if (input.minOrderValue !== void 0) await setStoreSetting("minOrderValue", input.minOrderValue, storeId);
       return { success: true };
     }),
-    savePizzaFlavorConfig: staffProcedure.input(z7.object({
-      enabled: z7.boolean(),
-      pricingMode: z7.enum(["highest"]).default("highest"),
-      maxFlavorsBySize: z7.object({
-        small: z7.number().int().min(1).max(4),
-        medium: z7.number().int().min(1).max(4),
-        large: z7.number().int().min(1).max(4),
-        family: z7.number().int().min(1).max(4)
-      })
-    })).mutation(async ({ input }) => {
-      await setStoreSetting("pizzaFlavorConfig", JSON.stringify(input));
+    savePizzaFlavorConfig: staffProcedure.input(z11.object({
+      enabled: z11.boolean(),
+      pricingMode: z11.enum(["highest"]).default("highest"),
+      maxFlavorsBySize: z11.object({
+        small: z11.number().int().min(1).max(4),
+        medium: z11.number().int().min(1).max(4),
+        large: z11.number().int().min(1).max(4),
+        family: z11.number().int().min(1).max(4)
+      }),
+      storeId: z11.number().optional()
+    })).mutation(async ({ input, ctx }) => {
+      const storeId = await resolveStoreId(ctx.user, input.storeId);
+      const { storeId: _storeId, ...config } = input;
+      await setStoreSetting("pizzaFlavorConfig", JSON.stringify(config), storeId);
+      return { success: true };
+    }),
+    saveMenuLayout: staffProcedure.input(z11.object({
+      storeId: z11.number().optional(),
+      layout: z11.enum(["editorial", "compact", "visual"])
+    })).mutation(async ({ input, ctx }) => {
+      const storeId = await resolveStoreId(ctx.user, input.storeId);
+      await setStoreSetting("menuLayout", input.layout, storeId);
+      return { success: true };
+    }),
+    saveHomeLayoutConfig: staffProcedure.input(z11.object({
+      storeId: z11.number().optional(),
+      greetingSubtitle: z11.string().min(1).max(100),
+      orderTitle: z11.string().min(1).max(80),
+      orderDescription: z11.string().min(1).max(180),
+      orderButtonLabel: z11.string().min(1).max(40),
+      quickActionsTitle: z11.string().min(1).max(60),
+      offersLabel: z11.string().min(1).max(24),
+      couponsLabel: z11.string().min(1).max(24),
+      clubLabel: z11.string().min(1).max(24),
+      menuLabel: z11.string().min(1).max(24)
+    })).mutation(async ({ input, ctx }) => {
+      const storeId = await resolveStoreId(ctx.user, input.storeId);
+      const { storeId: _storeId, ...config } = input;
+      await setStoreSetting("homeLayoutConfig", JSON.stringify(config), storeId);
       return { success: true };
     })
   }),
   // --- DELIVERY RATINGS -----------------------------------------------------------
   ratings: router({
     // Cliente avalia a entrega após receber o pedido
-    submit: protectedProcedure.input(z7.object({
-      orderId: z7.number(),
-      rating: z7.number().min(1).max(5),
-      comment: z7.string().optional()
+    submit: protectedProcedure.input(z11.object({
+      orderId: z11.number(),
+      rating: z11.number().min(1).max(5),
+      comment: z11.string().optional()
     })).mutation(async ({ ctx, input }) => {
       const order = await getOrderById(input.orderId);
-      if (!order) throw new TRPCError7({ code: "NOT_FOUND", message: "Pedido n\xE3o encontrado" });
-      if (order.userId !== ctx.user.id) throw new TRPCError7({ code: "FORBIDDEN", message: "Pedido n\xE3o pertence a voc\xEA" });
-      if (order.status !== "delivered") throw new TRPCError7({ code: "BAD_REQUEST", message: "Pedido ainda n\xE3o foi entregue" });
-      if (!order.driverId) throw new TRPCError7({ code: "BAD_REQUEST", message: "Pedido sem motoboy atribu\xEDdo" });
+      if (!order) throw new TRPCError12({ code: "NOT_FOUND", message: "Pedido n\xE3o encontrado" });
+      if (order.userId !== ctx.user.id) throw new TRPCError12({ code: "FORBIDDEN", message: "Pedido n\xE3o pertence a voc\xEA" });
+      if (order.status !== "delivered") throw new TRPCError12({ code: "BAD_REQUEST", message: "Pedido ainda n\xE3o foi entregue" });
+      if (!order.driverId) throw new TRPCError12({ code: "BAD_REQUEST", message: "Pedido sem motoboy atribu\xEDdo" });
       const existing = await getRatingByOrder(input.orderId);
-      if (existing) throw new TRPCError7({ code: "CONFLICT", message: "Pedido j\xE1 foi avaliado" });
+      if (existing) throw new TRPCError12({ code: "CONFLICT", message: "Pedido j\xE1 foi avaliado" });
       await submitDeliveryRating({
         orderId: input.orderId,
         driverId: order.driverId,
@@ -13200,24 +18278,24 @@ ${itemsList}
         comment: input.comment ?? null
       });
       const userPhone = ctx.user.phone ?? void 0;
-      fireJourneyTrigger("rating_submitted", ctx.user.id, userPhone).catch(() => {
+      fireJourneyTrigger("rating_submitted", ctx.user.id, userPhone, order.storeId ?? void 0).catch(() => {
       });
       if (input.rating <= 3) {
-        fireJourneyTrigger("rating_negative", ctx.user.id, userPhone).catch(() => {
+        fireJourneyTrigger("rating_negative", ctx.user.id, userPhone, order.storeId ?? void 0).catch(() => {
         });
       }
       return { success: true };
     }),
     // Verificar se um pedido já foi avaliado
-    getByOrder: protectedProcedure.input(z7.object({ orderId: z7.number() })).query(async ({ ctx, input }) => {
+    getByOrder: protectedProcedure.input(z11.object({ orderId: z11.number() })).query(async ({ ctx, input }) => {
       const order = await getOrderById(input.orderId);
       if (!order || order.userId !== ctx.user.id) return null;
       return getRatingByOrder(input.orderId);
     }),
     // Perfil público do motoboy com avaliações e histórico
-    driverProfile: publicProcedure.input(z7.object({ driverId: z7.number() })).query(async ({ input }) => {
+    driverProfile: publicProcedure.input(z11.object({ driverId: z11.number() })).query(async ({ input }) => {
       const driver = await getDriverById(input.driverId);
-      if (!driver) throw new TRPCError7({ code: "NOT_FOUND", message: "Motoboy n\xE3o encontrado" });
+      if (!driver) throw new TRPCError12({ code: "NOT_FOUND", message: "Motoboy n\xE3o encontrado" });
       const [ratings, stats, history] = await Promise.all([
         getDriverRatings(input.driverId),
         getDriverAverageRating(input.driverId),
@@ -13228,58 +18306,65 @@ ${itemsList}
       return { driver: safeDriver, ratings: safeRatings, stats, history };
     }),
     // Admin: ver todas as avaliações de um motoboy
-    driverRatings: adminProcedure3.input(z7.object({ driverId: z7.number() })).query(({ input }) => getDriverRatings(input.driverId))
+    driverRatings: adminProcedure2.input(z11.object({ driverId: z11.number() })).query(({ input }) => getDriverRatings(input.driverId))
   }),
   // --- ADDRESSES --------------------------------------------------------------
   addresses: router({
     list: protectedProcedure.query(({ ctx }) => getUserAddresses(ctx.user.id)),
-    create: protectedProcedure.input(z7.object({
-      label: z7.string().min(1).max(50),
-      address: z7.string().min(1),
-      cep: z7.string().optional(),
-      city: z7.string().optional(),
-      isDefault: z7.boolean().optional()
+    create: protectedProcedure.input(z11.object({
+      label: z11.string().min(1).max(50),
+      address: z11.string().min(1),
+      cep: z11.string().optional(),
+      city: z11.string().optional(),
+      isDefault: z11.boolean().optional()
     })).mutation(({ ctx, input }) => createUserAddress({ ...input, userId: ctx.user.id, isDefault: input.isDefault ?? false })),
-    update: protectedProcedure.input(z7.object({
-      id: z7.number(),
-      label: z7.string().min(1).max(50).optional(),
-      address: z7.string().min(1).optional(),
-      cep: z7.string().optional(),
-      city: z7.string().optional(),
-      isDefault: z7.boolean().optional()
+    update: protectedProcedure.input(z11.object({
+      id: z11.number(),
+      label: z11.string().min(1).max(50).optional(),
+      address: z11.string().min(1).optional(),
+      cep: z11.string().optional(),
+      city: z11.string().optional(),
+      isDefault: z11.boolean().optional()
     })).mutation(({ ctx, input }) => {
       const { id, ...data } = input;
       return updateUserAddress(id, ctx.user.id, data);
     }),
-    delete: protectedProcedure.input(z7.object({ id: z7.number() })).mutation(({ ctx, input }) => deleteUserAddress(input.id, ctx.user.id))
+    delete: protectedProcedure.input(z11.object({ id: z11.number() })).mutation(({ ctx, input }) => deleteUserAddress(input.id, ctx.user.id))
   }),
   // --- FAVORITES --------------------------------------------------------------
   favorites: router({
     list: protectedProcedure.query(({ ctx }) => getUserFavorites(ctx.user.id)),
-    toggle: protectedProcedure.input(z7.object({ productId: z7.number() })).mutation(({ ctx, input }) => toggleFavorite(ctx.user.id, input.productId))
+    toggle: protectedProcedure.input(z11.object({ productId: z11.number() })).mutation(({ ctx, input }) => toggleFavorite(ctx.user.id, input.productId))
   }),
   // --- NOTIFICATIONS ----------------------------------------------------------
   notifications: router({
-    list: protectedProcedure.query(({ ctx }) => getClientNotifications(ctx.user.id)),
-    unreadCount: protectedProcedure.query(({ ctx }) => getUnreadNotificationCount(ctx.user.id)),
-    markRead: protectedProcedure.mutation(({ ctx }) => markNotificationsRead(ctx.user.id)),
-    send: adminProcedure3.input(z7.object({
-      userId: z7.number(),
-      title: z7.string(),
-      message: z7.string(),
-      type: z7.enum(["order", "promo", "system"]).optional()
-    })).mutation(({ input }) => createClientNotification({ ...input, type: input.type ?? "system" })),
+    list: protectedProcedure.input(z11.object({ storeId: z11.number().int().positive().optional() }).optional()).query(({ ctx, input }) => getClientNotifications(ctx.user.id, input?.storeId)),
+    unreadCount: protectedProcedure.input(z11.object({ storeId: z11.number().int().positive().optional() }).optional()).query(({ ctx, input }) => getUnreadNotificationCount(ctx.user.id, input?.storeId)),
+    markRead: protectedProcedure.input(z11.object({ storeId: z11.number().int().positive().optional() }).optional()).mutation(({ ctx, input }) => markNotificationsRead(ctx.user.id, input?.storeId)),
+    send: staffProcedure.input(z11.object({
+      storeId: z11.number().optional(),
+      userId: z11.number(),
+      title: z11.string(),
+      message: z11.string(),
+      type: z11.enum(["order", "promo", "system"]).optional()
+    })).mutation(async ({ input, ctx }) => createClientNotification({
+      ...input,
+      storeId: await resolveRequiredStoreId(ctx.user, input.storeId),
+      type: input.type ?? "system"
+    })),
     // --- Agendamento de notificações ---
-    scheduleList: staffProcedure.query(() => listScheduledNotifications()),
-    scheduleCreate: adminProcedure3.input(z7.object({
-      title: z7.string().min(1).max(200),
-      message: z7.string().min(1),
-      channel: z7.enum(["push", "whatsapp", "both"]).default("push"),
-      targetAudience: z7.enum(["all", "active", "inactive", "club"]).default("all"),
-      scheduledAt: z7.date(),
-      recurrence: z7.enum(["once", "daily", "weekly"]).default("once"),
-      neighborhoodFilter: z7.array(z7.string()).optional().nullable()
-    })).mutation(({ ctx, input }) => createScheduledNotification({
+    scheduleList: staffProcedure.input(z11.object({ storeId: z11.number().optional() }).optional()).query(async ({ ctx, input }) => listScheduledNotifications(await resolveRequiredStoreId(ctx.user, input?.storeId))),
+    scheduleCreate: staffProcedure.input(z11.object({
+      storeId: z11.number().optional(),
+      title: z11.string().min(1).max(200),
+      message: z11.string().min(1),
+      channel: z11.enum(["push", "whatsapp", "both"]).default("push"),
+      targetAudience: z11.enum(["all", "active", "inactive", "club"]).default("all"),
+      scheduledAt: z11.date(),
+      recurrence: z11.enum(["once", "daily", "weekly"]).default("once"),
+      neighborhoodFilter: z11.array(z11.string()).optional().nullable()
+    })).mutation(async ({ ctx, input }) => createScheduledNotification({
+      storeId: await resolveRequiredStoreId(ctx.user, input.storeId),
       title: input.title,
       message: input.message,
       channel: input.channel,
@@ -13291,35 +18376,36 @@ ${itemsList}
       sentCount: 0,
       createdBy: ctx.user.id
     })),
-    scheduleCancel: adminProcedure3.input(z7.object({ id: z7.number() })).mutation(({ input }) => cancelScheduledNotification(input.id)),
-    scheduleDelete: adminProcedure3.input(z7.object({ id: z7.number() })).mutation(({ input }) => deleteScheduledNotification(input.id))
+    scheduleCancel: staffProcedure.input(z11.object({ id: z11.number(), storeId: z11.number().optional() })).mutation(async ({ ctx, input }) => cancelScheduledNotification(input.id, await resolveRequiredStoreId(ctx.user, input.storeId))),
+    scheduleDelete: staffProcedure.input(z11.object({ id: z11.number(), storeId: z11.number().optional() })).mutation(async ({ ctx, input }) => deleteScheduledNotification(input.id, await resolveRequiredStoreId(ctx.user, input.storeId)))
   }),
   // --- LOYALTY ----------------------------------------------------------------
   loyalty: router({
-    points: protectedProcedure.query(({ ctx }) => getUserLoyaltyPoints(ctx.user.id)),
-    spendingHistory: protectedProcedure.query(({ ctx }) => getUserSpendingHistory(ctx.user.id)),
-    history: protectedProcedure.query(({ ctx }) => getLoyaltyHistory(ctx.user.id)),
+    points: protectedProcedure.input(z11.object({ storeId: z11.number().int().positive().optional() }).optional()).query(({ ctx, input }) => getUserLoyaltyPoints(ctx.user.id, input?.storeId)),
+    spendingHistory: protectedProcedure.input(z11.object({ storeId: z11.number().int().positive().optional() }).optional()).query(({ ctx, input }) => getUserSpendingHistory(ctx.user.id, input?.storeId)),
+    history: protectedProcedure.input(z11.object({ storeId: z11.number().int().positive().optional() }).optional()).query(({ ctx, input }) => getLoyaltyHistory(ctx.user.id, 30, input?.storeId)),
     // Preview do desconto de pontos (sem debitar — o débito acontece no createOrder)
-    preview: protectedProcedure.input(z7.object({ points: z7.number().int().min(50).max(5e3) })).query(async ({ ctx, input }) => {
+    preview: protectedProcedure.input(z11.object({ points: z11.number().int().min(50).max(5e3), storeId: z11.number().int().positive().optional() })).query(async ({ ctx, input }) => {
       const POINTS_TO_BRL = 0.1;
-      const balance = await getUserLoyaltyPoints(ctx.user.id);
+      const balance = await getUserLoyaltyPoints(ctx.user.id, input.storeId);
       const pts = Math.min(input.points, balance);
-      if (pts < 50) throw new TRPCError7({ code: "BAD_REQUEST", message: "Pontos insuficientes para resgate." });
+      if (pts < 50) throw new TRPCError12({ code: "BAD_REQUEST", message: "Pontos insuficientes para resgate." });
       const discount = parseFloat((pts * POINTS_TO_BRL).toFixed(2));
       return { discount, pointsUsed: pts, balance };
     }),
     // Admin: adicionar pontos manualmente
-    adminAdd: adminProcedure3.input(z7.object({ userId: z7.number(), points: z7.number().int().min(1), description: z7.string().optional() })).mutation(async ({ input }) => {
-      await addLoyaltyPoints(input.userId, input.points, void 0, input.description ?? `+${input.points} pontos (manual)`);
+    adminAdd: staffProcedure.input(z11.object({ userId: z11.number(), points: z11.number().int().min(1), description: z11.string().optional(), storeId: z11.number().optional() })).mutation(async ({ input, ctx }) => {
+      const storeId = await resolveRequiredStoreId(ctx.user, input.storeId);
+      await addLoyaltyPoints(input.userId, input.points, void 0, input.description ?? `+${input.points} pontos (manual)`, storeId);
       return { ok: true };
     })
   }),
   // --- AVATAR -----------------------------------------------------------------------------
   avatar: router({
-    upload: protectedProcedure.input(z7.object({
-      base64: z7.string().max(4e6),
+    upload: protectedProcedure.input(z11.object({
+      base64: z11.string().max(4e6),
       // ~3MB base64 limit for avatars
-      mimeType: z7.enum(["image/jpeg", "image/png", "image/webp", "image/gif"])
+      mimeType: z11.enum(["image/jpeg", "image/png", "image/webp", "image/gif"])
     })).mutation(async ({ ctx, input }) => {
       const { storagePutAdapter: storagePut2 } = await Promise.resolve().then(() => (init_storage2(), storage_exports2));
       const buffer = Buffer.from(input.base64, "base64");
@@ -13329,33 +18415,34 @@ ${itemsList}
       await updateUserAvatar(ctx.user.id, url);
       return { url };
     }),
-    update: protectedProcedure.input(z7.object({ avatarUrl: z7.string().url() })).mutation(({ ctx, input }) => updateUserAvatar(ctx.user.id, input.avatarUrl))
+    update: protectedProcedure.input(z11.object({ avatarUrl: z11.string().url() })).mutation(({ ctx, input }) => updateUserAvatar(ctx.user.id, input.avatarUrl))
   }),
   // --- CHAT (mensagens do pedido) ---
   chat: router({
-    messages: protectedProcedure.input(z7.object({ orderId: z7.number() })).query(async ({ ctx, input }) => {
+    messages: protectedProcedure.input(z11.object({ orderId: z11.number() })).query(async ({ ctx, input }) => {
       const order = await getOrderById(input.orderId);
-      if (!order) throw new TRPCError7({ code: "NOT_FOUND" });
+      if (!order) throw new TRPCError12({ code: "NOT_FOUND" });
       if (order.userId !== ctx.user.id && ctx.user.role !== "admin") {
-        throw new TRPCError7({ code: "FORBIDDEN" });
+        throw new TRPCError12({ code: "FORBIDDEN" });
       }
       const msgs = await getOrderMessages(input.orderId);
       return { messages: msgs, aiPaused: order.aiPaused ?? false };
     }),
-    send: protectedProcedure.input(z7.object({ orderId: z7.number(), message: z7.string().min(1).max(1e3), senderRole: z7.enum(["customer", "admin"]).optional() })).mutation(async ({ ctx, input }) => {
+    send: protectedProcedure.input(z11.object({ orderId: z11.number(), message: z11.string().min(1).max(1e3), senderRole: z11.enum(["customer", "admin"]).optional() })).mutation(async ({ ctx, input }) => {
       const order = await getOrderById(input.orderId);
-      if (!order) throw new TRPCError7({ code: "NOT_FOUND" });
+      if (!order) throw new TRPCError12({ code: "NOT_FOUND" });
       if (order.userId !== ctx.user.id && ctx.user.role !== "admin") {
-        throw new TRPCError7({ code: "FORBIDDEN" });
+        throw new TRPCError12({ code: "FORBIDDEN" });
       }
       const senderRole = input.senderRole ?? (ctx.user.role === "admin" ? "admin" : "customer");
       if (senderRole === "admin" && ctx.user.role !== "admin") {
-        throw new TRPCError7({ code: "FORBIDDEN" });
+        throw new TRPCError12({ code: "FORBIDDEN" });
       }
       const msg = await sendOrderMessage({ orderId: input.orderId, userId: ctx.user.id, senderRole, message: input.message });
       const pushPreview = input.message.length > 100 ? input.message.slice(0, 97) + "..." : input.message;
       if (senderRole === "customer") {
         await sendPushToAdmins({
+          storeId: order.storeId,
           title: "Nova mensagem de cliente",
           body: `Pedido #${input.orderId} - ${order.customerName}: ${pushPreview}`,
           url: `/admin?tab=messages&order=${input.orderId}`,
@@ -13364,6 +18451,7 @@ ${itemsList}
       }
       if (senderRole === "admin" && order.userId) {
         await sendPushToUser(order.userId, {
+          storeId: order.storeId,
           title: "Mensagem da Bonatto Pizza",
           body: pushPreview,
           url: `/rastrear/${input.orderId}`,
@@ -13380,16 +18468,16 @@ ${itemsList}
       }
       return msg;
     }),
-    markRead: protectedProcedure.input(z7.object({ orderId: z7.number() })).mutation(async ({ ctx, input }) => {
+    markRead: protectedProcedure.input(z11.object({ orderId: z11.number() })).mutation(async ({ ctx, input }) => {
       if (ctx.user.role !== "admin") {
         const order = await getOrderById(input.orderId);
-        if (!order || order.userId !== ctx.user.id) throw new TRPCError7({ code: "FORBIDDEN" });
+        if (!order || order.userId !== ctx.user.id) throw new TRPCError12({ code: "FORBIDDEN" });
       }
       const readerRole = ctx.user.role === "admin" ? "admin" : "customer";
       await markMessagesRead(input.orderId, readerRole);
       return { ok: true };
     }),
-    unreadCount: protectedProcedure.input(z7.object({ orderId: z7.number() })).query(async ({ ctx, input }) => {
+    unreadCount: protectedProcedure.input(z11.object({ orderId: z11.number() })).query(async ({ ctx, input }) => {
       if (ctx.user.role !== "admin") {
         const order = await getOrderById(input.orderId);
         if (!order || order.userId !== ctx.user.id) return { count: 0 };
@@ -13404,11 +18492,11 @@ ${itemsList}
       return { count: await getTotalUnreadForUser(ctx.user.id) };
     }),
     // IA responde automaticamente quando o cliente envia uma mensagem
-    aiReply: protectedProcedure.input(z7.object({ orderId: z7.number() })).mutation(async ({ ctx, input }) => {
+    aiReply: protectedProcedure.input(z11.object({ orderId: z11.number() })).mutation(async ({ ctx, input }) => {
       const order = await getOrderById(input.orderId);
-      if (!order) throw new TRPCError7({ code: "NOT_FOUND" });
+      if (!order) throw new TRPCError12({ code: "NOT_FOUND" });
       if (order.userId !== ctx.user.id && ctx.user.role !== "admin") {
-        throw new TRPCError7({ code: "FORBIDDEN" });
+        throw new TRPCError12({ code: "FORBIDDEN" });
       }
       const [items, messages, products2, dbSettings] = await Promise.all([
         getOrderItems(input.orderId),
@@ -13460,6 +18548,7 @@ Telefone/WhatsApp: ${dbSettings.whatsappNumber ?? "(37) 99999-0000"}`
       const reply = content.trim();
       await sendOrderMessage({ orderId: input.orderId, userId: adminId, senderRole: "admin", message: reply });
       if (order.userId) await sendPushToUser(order.userId, {
+        storeId: order.storeId,
         title: "Resposta da Bonatto Pizza",
         body: reply.length > 100 ? reply.slice(0, 97) + "..." : reply,
         url: `/rastrear/${input.orderId}`,
@@ -13468,10 +18557,10 @@ Telefone/WhatsApp: ${dbSettings.whatsappNumber ?? "(37) 99999-0000"}`
       return { reply };
     }),
     // Solicitar atendente humano — pausa a IA e notifica o admin
-    requestHuman: protectedProcedure.input(z7.object({ orderId: z7.number() })).mutation(async ({ ctx, input }) => {
+    requestHuman: protectedProcedure.input(z11.object({ orderId: z11.number() })).mutation(async ({ ctx, input }) => {
       const order = await getOrderById(input.orderId);
-      if (!order) throw new TRPCError7({ code: "NOT_FOUND" });
-      if (order.userId !== ctx.user.id) throw new TRPCError7({ code: "FORBIDDEN" });
+      if (!order) throw new TRPCError12({ code: "NOT_FOUND" });
+      if (order.userId !== ctx.user.id) throw new TRPCError12({ code: "FORBIDDEN" });
       await setOrderAiPaused(input.orderId, true);
       await sendPushToAdmins({
         title: "\u{1F9D1} Atendimento Humano Solicitado",
@@ -13483,29 +18572,29 @@ Telefone/WhatsApp: ${dbSettings.whatsappNumber ?? "(37) 99999-0000"}`
       return { ok: true };
     }),
     // Retomar IA (admin pode reativar)
-    resumeAI: protectedProcedure.input(z7.object({ orderId: z7.number() })).mutation(async ({ ctx, input }) => {
-      if (ctx.user.role !== "admin") throw new TRPCError7({ code: "FORBIDDEN" });
+    resumeAI: protectedProcedure.input(z11.object({ orderId: z11.number() })).mutation(async ({ ctx, input }) => {
+      if (ctx.user.role !== "admin") throw new TRPCError12({ code: "FORBIDDEN" });
       await setOrderAiPaused(input.orderId, false);
       return { ok: true };
     }),
-    ordersWithMessages: staffProcedure.input(z7.object({ storeId: z7.number().optional() }).optional()).query(async ({ ctx, input }) => {
+    ordersWithMessages: staffProcedure.input(z11.object({ storeId: z11.number().optional() }).optional()).query(async ({ ctx, input }) => {
       const storeId = await resolveStoreId(ctx.user, input?.storeId);
       return getOrdersWithMessages(storeId);
     })
   }),
   // ─── PUSH NOTIFICATIONS ────────────────────────────────────────────────────
   push: router({
-    subscribe: protectedProcedure.input(z7.object({
-      endpoint: z7.string().url(),
-      p256dh: z7.string(),
-      auth: z7.string(),
-      userAgent: z7.string().max(512).optional()
+    subscribe: protectedProcedure.input(z11.object({
+      endpoint: z11.string().url(),
+      p256dh: z11.string(),
+      auth: z11.string(),
+      userAgent: z11.string().max(512).optional()
     })).mutation(async ({ ctx, input }) => {
       const safeUserAgent = input.userAgent?.substring(0, 512);
       await savePushSubscription(ctx.user.id, input.endpoint, input.p256dh, input.auth, safeUserAgent);
       return { ok: true };
     }),
-    unsubscribe: protectedProcedure.input(z7.object({ endpoint: z7.string() })).mutation(async ({ ctx, input }) => {
+    unsubscribe: protectedProcedure.input(z11.object({ endpoint: z11.string() })).mutation(async ({ ctx, input }) => {
       await removePushSubscription(ctx.user.id, input.endpoint);
       return { ok: true };
     }),
@@ -13515,127 +18604,128 @@ Telefone/WhatsApp: ${dbSettings.whatsappNumber ?? "(37) 99999-0000"}`
   }),
   // ─── MARKETING AUTOMATION ──────────────────────────────────────────────────
   automations: router({
-    listJourneys: adminProcedure3.query(async () => {
-      const list = await listJourneys();
+    listJourneys: staffProcedure.input(z11.object({ storeId: z11.number().optional() })).query(async ({ input, ctx }) => {
+      const list = await listJourneys(await resolveRequiredStoreId(ctx.user, input.storeId));
       return list.map((j) => ({ ...j, steps: JSON.parse(j.steps) }));
     }),
-    getJourney: adminProcedure3.input(z7.object({ id: z7.number() })).query(async ({ input }) => {
-      const j = await getJourneyById(input.id);
-      if (!j) throw new TRPCError7({ code: "NOT_FOUND" });
+    getJourney: staffProcedure.input(z11.object({ id: z11.number(), storeId: z11.number().optional() })).query(async ({ input, ctx }) => {
+      const storeId = await resolveRequiredStoreId(ctx.user, input.storeId);
+      const j = await getJourneyById(input.id, storeId);
+      if (!j) throw new TRPCError12({ code: "NOT_FOUND" });
       return { ...j, steps: JSON.parse(j.steps) };
     }),
-    createJourney: adminProcedure3.input(z7.object({
-      name: z7.string().min(1),
-      description: z7.string().optional(),
-      trigger: z7.enum(["checkout_abandoned", "tag_inativo_15", "tag_inativo_30", "tag_inativo_60", "tag_inativo_custom", "first_order", "new_user", "club_subscriber", "manual", "order_delivered", "order_cancelled", "birthday", "loyalty_milestone", "rating_submitted", "rating_negative", "club_expiring", "first_order_month"]),
-      steps: z7.array(z7.object({
-        id: z7.string(),
-        type: z7.enum(["wait", "send_whatsapp", "send_push", "condition", "add_tag", "remove_tag", "webhook", "send_coupon", "update_loyalty", "send_alert", "split_ab", "pause_journey", "notify_admin"]),
-        label: z7.string(),
-        delayMinutes: z7.number().optional(),
-        message: z7.string().optional(),
-        title: z7.string().optional(),
-        condition: z7.enum(["purchased_since_start", "has_tag", "has_min_orders", "has_min_points"]).optional(),
-        conditionTag: z7.string().optional(),
-        conditionValue: z7.number().optional(),
-        onTrue: z7.enum(["continue", "stop"]).optional(),
-        onFalse: z7.enum(["continue", "stop"]).optional(),
-        tag: z7.string().optional(),
-        couponDiscountType: z7.enum(["percentage", "fixed"]).optional(),
-        couponDiscountValue: z7.number().optional(),
-        couponExpiryDays: z7.number().optional(),
-        loyaltyPoints: z7.number().optional(),
-        loyaltyDescription: z7.string().optional(),
-        alertTitle: z7.string().optional(),
-        alertMessage: z7.string().optional(),
-        alertIcon: z7.string().optional(),
-        alertUrl: z7.string().optional(),
-        messageA: z7.string().optional(),
-        messageB: z7.string().optional(),
-        titleA: z7.string().optional(),
-        titleB: z7.string().optional(),
-        splitChannel: z7.enum(["whatsapp", "push"]).optional(),
-        webhookUrl: z7.string().optional(),
-        secret: z7.string().optional(),
-        pauseJourneyId: z7.number().optional(),
-        adminTaskTitle: z7.string().optional(),
-        adminTaskMessage: z7.string().optional(),
-        adminTaskPriority: z7.enum(["low", "normal", "high"]).optional()
+    createJourney: staffProcedure.input(z11.object({
+      storeId: z11.number().optional(),
+      name: z11.string().min(1),
+      description: z11.string().optional(),
+      trigger: z11.enum(["checkout_abandoned", "tag_inativo_15", "tag_inativo_30", "tag_inativo_60", "tag_inativo_custom", "first_order", "new_user", "club_subscriber", "manual", "order_delivered", "order_cancelled", "birthday", "loyalty_milestone", "rating_submitted", "rating_negative", "club_expiring", "first_order_month"]),
+      steps: z11.array(z11.object({
+        id: z11.string(),
+        type: z11.enum(["wait", "send_whatsapp", "send_push", "condition", "add_tag", "remove_tag", "webhook", "send_coupon", "update_loyalty", "send_alert", "split_ab", "pause_journey", "notify_admin"]),
+        label: z11.string(),
+        delayMinutes: z11.number().optional(),
+        message: z11.string().optional(),
+        title: z11.string().optional(),
+        condition: z11.enum(["purchased_since_start", "has_tag", "has_min_orders", "has_min_points"]).optional(),
+        conditionTag: z11.string().optional(),
+        conditionValue: z11.number().optional(),
+        onTrue: z11.enum(["continue", "stop"]).optional(),
+        onFalse: z11.enum(["continue", "stop"]).optional(),
+        tag: z11.string().optional(),
+        couponDiscountType: z11.enum(["percentage", "fixed"]).optional(),
+        couponDiscountValue: z11.number().optional(),
+        couponExpiryDays: z11.number().optional(),
+        loyaltyPoints: z11.number().optional(),
+        loyaltyDescription: z11.string().optional(),
+        alertTitle: z11.string().optional(),
+        alertMessage: z11.string().optional(),
+        alertIcon: z11.string().optional(),
+        alertUrl: z11.string().optional(),
+        messageA: z11.string().optional(),
+        messageB: z11.string().optional(),
+        titleA: z11.string().optional(),
+        titleB: z11.string().optional(),
+        splitChannel: z11.enum(["whatsapp", "push"]).optional(),
+        webhookUrl: z11.string().optional(),
+        secret: z11.string().optional(),
+        pauseJourneyId: z11.number().optional(),
+        adminTaskTitle: z11.string().optional(),
+        adminTaskMessage: z11.string().optional(),
+        adminTaskPriority: z11.enum(["low", "normal", "high"]).optional()
       })),
-      daysInactive: z7.number().optional()
-    })).mutation(async ({ input }) => {
-      const id = await createJourney(input);
+      daysInactive: z11.number().optional()
+    })).mutation(async ({ input, ctx }) => {
+      const storeId = await resolveRequiredStoreId(ctx.user, input.storeId);
+      const id = await createJourney({ ...input, storeId });
       return { id };
     }),
-    updateJourney: adminProcedure3.input(z7.object({
-      id: z7.number(),
-      name: z7.string().optional(),
-      description: z7.string().optional(),
-      trigger: z7.enum(["checkout_abandoned", "tag_inativo_15", "tag_inativo_30", "tag_inativo_60", "tag_inativo_custom", "first_order", "new_user", "club_subscriber", "manual", "order_delivered", "order_cancelled", "birthday", "loyalty_milestone", "rating_submitted", "rating_negative", "club_expiring", "first_order_month"]).optional(),
-      status: z7.enum(["active", "paused", "draft"]).optional(),
-      steps: z7.array(z7.object({
-        id: z7.string(),
-        type: z7.enum(["wait", "send_whatsapp", "send_push", "condition", "add_tag", "remove_tag", "webhook", "send_coupon", "update_loyalty", "send_alert", "split_ab", "pause_journey", "notify_admin"]),
-        label: z7.string(),
-        delayMinutes: z7.number().optional(),
-        message: z7.string().optional(),
-        title: z7.string().optional(),
-        condition: z7.enum(["purchased_since_start", "has_tag", "has_min_orders", "has_min_points"]).optional(),
-        conditionTag: z7.string().optional(),
-        conditionValue: z7.number().optional(),
-        onTrue: z7.enum(["continue", "stop"]).optional(),
-        onFalse: z7.enum(["continue", "stop"]).optional(),
-        tag: z7.string().optional(),
-        couponDiscountType: z7.enum(["percentage", "fixed"]).optional(),
-        couponDiscountValue: z7.number().optional(),
-        couponExpiryDays: z7.number().optional(),
-        loyaltyPoints: z7.number().optional(),
-        loyaltyDescription: z7.string().optional(),
-        alertTitle: z7.string().optional(),
-        alertMessage: z7.string().optional(),
-        alertIcon: z7.string().optional(),
-        alertUrl: z7.string().optional(),
-        messageA: z7.string().optional(),
-        messageB: z7.string().optional(),
-        titleA: z7.string().optional(),
-        titleB: z7.string().optional(),
-        splitChannel: z7.enum(["whatsapp", "push"]).optional(),
-        webhookUrl: z7.string().optional(),
-        secret: z7.string().optional()
+    updateJourney: staffProcedure.input(z11.object({
+      id: z11.number(),
+      storeId: z11.number().optional(),
+      name: z11.string().optional(),
+      description: z11.string().optional(),
+      trigger: z11.enum(["checkout_abandoned", "tag_inativo_15", "tag_inativo_30", "tag_inativo_60", "tag_inativo_custom", "first_order", "new_user", "club_subscriber", "manual", "order_delivered", "order_cancelled", "birthday", "loyalty_milestone", "rating_submitted", "rating_negative", "club_expiring", "first_order_month"]).optional(),
+      status: z11.enum(["active", "paused", "draft"]).optional(),
+      steps: z11.array(z11.object({
+        id: z11.string(),
+        type: z11.enum(["wait", "send_whatsapp", "send_push", "condition", "add_tag", "remove_tag", "webhook", "send_coupon", "update_loyalty", "send_alert", "split_ab", "pause_journey", "notify_admin"]),
+        label: z11.string(),
+        delayMinutes: z11.number().optional(),
+        message: z11.string().optional(),
+        title: z11.string().optional(),
+        condition: z11.enum(["purchased_since_start", "has_tag", "has_min_orders", "has_min_points"]).optional(),
+        conditionTag: z11.string().optional(),
+        conditionValue: z11.number().optional(),
+        onTrue: z11.enum(["continue", "stop"]).optional(),
+        onFalse: z11.enum(["continue", "stop"]).optional(),
+        tag: z11.string().optional(),
+        couponDiscountType: z11.enum(["percentage", "fixed"]).optional(),
+        couponDiscountValue: z11.number().optional(),
+        couponExpiryDays: z11.number().optional(),
+        loyaltyPoints: z11.number().optional(),
+        loyaltyDescription: z11.string().optional(),
+        alertTitle: z11.string().optional(),
+        alertMessage: z11.string().optional(),
+        alertIcon: z11.string().optional(),
+        alertUrl: z11.string().optional(),
+        messageA: z11.string().optional(),
+        messageB: z11.string().optional(),
+        titleA: z11.string().optional(),
+        titleB: z11.string().optional(),
+        splitChannel: z11.enum(["whatsapp", "push"]).optional(),
+        webhookUrl: z11.string().optional(),
+        secret: z11.string().optional()
       })).optional()
-    })).mutation(async ({ input }) => {
-      const { id, ...data } = input;
-      await updateJourney(id, data);
+    })).mutation(async ({ input, ctx }) => {
+      const { id, storeId: requestedStoreId, ...data } = input;
+      const storeId = await resolveRequiredStoreId(ctx.user, requestedStoreId);
+      await updateJourney(id, data, storeId);
       return { ok: true };
     }),
-    deleteJourney: adminProcedure3.input(z7.object({ id: z7.number() })).mutation(async ({ input }) => {
-      await deleteJourney(input.id);
+    deleteJourney: staffProcedure.input(z11.object({ id: z11.number(), storeId: z11.number().optional() })).mutation(async ({ input, ctx }) => {
+      await deleteJourney(input.id, await resolveRequiredStoreId(ctx.user, input.storeId));
       return { ok: true };
     }),
-    duplicateJourney: adminProcedure3.input(z7.object({ id: z7.number() })).mutation(async ({ input }) => {
-      const newId = await duplicateJourney(input.id);
-      if (newId === -1) throw new TRPCError7({ code: "NOT_FOUND", message: "Jornada n\xE3o encontrada" });
+    duplicateJourney: staffProcedure.input(z11.object({ id: z11.number(), storeId: z11.number().optional() })).mutation(async ({ input, ctx }) => {
+      const newId = await duplicateJourney(input.id, await resolveRequiredStoreId(ctx.user, input.storeId));
+      if (newId === -1) throw new TRPCError12({ code: "NOT_FOUND", message: "Jornada n\xE3o encontrada" });
       return { id: newId };
     }),
-    toggleJourney: adminProcedure3.input(z7.object({ id: z7.number(), status: z7.enum(["active", "paused", "draft"]) })).mutation(async ({ input }) => {
-      await updateJourney(input.id, { status: input.status });
+    toggleJourney: staffProcedure.input(z11.object({ id: z11.number(), status: z11.enum(["active", "paused", "draft"]), storeId: z11.number().optional() })).mutation(async ({ input, ctx }) => {
+      await updateJourney(input.id, { status: input.status }, await resolveRequiredStoreId(ctx.user, input.storeId));
       return { ok: true };
     }),
-    listExecutions: adminProcedure3.input(z7.object({ journeyId: z7.number().optional(), storeId: z7.number().optional() })).query(async ({ input, ctx }) => {
-      const executions = await listExecutions(input.journeyId);
-      const storeId = await resolveStoreId(ctx.user, input.storeId);
-      if (!storeId || executions.length === 0) return executions;
-      const db = await getDb();
-      if (!db) return executions;
-      const storeUserRows = await db.selectDistinct({ userId: orders.userId }).from(orders).where(and9(eq12(orders.storeId, storeId), isNotNull2(orders.userId)));
-      const allowedUserIds = new Set(storeUserRows.map((row) => row.userId).filter((value) => typeof value === "number"));
-      return executions.filter((execution) => allowedUserIds.has(execution.userId));
+    listExecutions: staffProcedure.input(z11.object({ journeyId: z11.number().optional(), storeId: z11.number().optional() })).query(async ({ input, ctx }) => {
+      const storeId = await resolveRequiredStoreId(ctx.user, input.storeId);
+      return listExecutions(input.journeyId, storeId);
     }),
-    cancelExecution: adminProcedure3.input(z7.object({ id: z7.number() })).mutation(async ({ input }) => {
-      await cancelExecution(input.id);
+    cancelExecution: staffProcedure.input(z11.object({ id: z11.number(), storeId: z11.number().optional() })).mutation(async ({ input, ctx }) => {
+      await cancelExecution(input.id, await resolveRequiredStoreId(ctx.user, input.storeId));
       return { ok: true };
     }),
-    triggerJourney: adminProcedure3.input(z7.object({ journeyId: z7.number(), userIds: z7.array(z7.number()) })).mutation(async ({ input }) => {
+    triggerJourney: staffProcedure.input(z11.object({ journeyId: z11.number(), userIds: z11.array(z11.number()), storeId: z11.number().optional() })).mutation(async ({ input, ctx }) => {
+      const storeId = await resolveRequiredStoreId(ctx.user, input.storeId);
+      if (!await getJourneyById(input.journeyId, storeId)) throw new TRPCError12({ code: "NOT_FOUND" });
       let started = 0;
       for (const uid of input.userIds) {
         const r = await startJourneyExecution(input.journeyId, uid);
@@ -13643,67 +18733,77 @@ Telefone/WhatsApp: ${dbSettings.whatsappNumber ?? "(37) 99999-0000"}`
       }
       return { started };
     }),
-    listCustomerTags: adminProcedure3.query(async () => {
-      const result = await getAllCustomerTagsWithUsers();
+    listCustomerTags: staffProcedure.input(z11.object({ storeId: z11.number().optional() })).query(async ({ input, ctx }) => {
+      const result = await getAllCustomerTagsWithUsers(await resolveRequiredStoreId(ctx.user, input.storeId));
       return result[0];
     }),
-    refreshTags: adminProcedure3.mutation(async () => {
-      await refreshCustomerTags();
+    refreshTags: staffProcedure.input(z11.object({ storeId: z11.number().optional() })).mutation(async ({ input, ctx }) => {
+      await refreshCustomerTags(await resolveRequiredStoreId(ctx.user, input.storeId));
       return { ok: true };
     }),
-    listAbandonedCarts: adminProcedure3.input(z7.object({ status: z7.enum(["pending", "recovered", "expired"]).optional() })).query(async ({ input }) => listAbandonedCarts(input.status)),
-    registerAbandonedCart: protectedProcedure.input(z7.object({
-      customerName: z7.string(),
-      customerPhone: z7.string().optional(),
-      items: z7.array(z7.object({
-        productId: z7.number(),
-        productName: z7.string(),
-        quantity: z7.number(),
-        productPrice: z7.string()
+    listAbandonedCarts: staffProcedure.input(z11.object({ status: z11.enum(["pending", "recovered", "expired"]).optional(), storeId: z11.number().optional() })).query(async ({ input, ctx }) => listAbandonedCarts(input.status, await resolveRequiredStoreId(ctx.user, input.storeId))),
+    registerAbandonedCart: protectedProcedure.input(z11.object({
+      storeId: z11.number().int().positive(),
+      customerName: z11.string(),
+      customerPhone: z11.string().optional(),
+      items: z11.array(z11.object({
+        productId: z11.number(),
+        productName: z11.string(),
+        quantity: z11.number().int().min(1).max(99),
+        productPrice: z11.string()
       })),
-      total: z7.string()
+      total: z11.string()
     })).mutation(async ({ ctx, input }) => {
+      const tenant = await getWhiteLabelRuntimeByStoreId(input.storeId);
+      if (!tenant?.features.automations) throw new TRPCError12({ code: "PRECONDITION_FAILED", message: "Automacoes indisponiveis nesta loja." });
       const id = await registerAbandonedCart({ userId: ctx.user.id, ...input });
       return { id };
     }),
-    generateWebhookToken: adminProcedure3.input(z7.object({ id: z7.number() })).mutation(async ({ input }) => {
-      const token = crypto3.randomBytes(32).toString("hex");
-      await updateJourney(input.id, { webhookToken: token });
+    generateWebhookToken: staffProcedure.input(z11.object({ id: z11.number(), storeId: z11.number().optional() })).mutation(async ({ input, ctx }) => {
+      const storeId = await resolveRequiredStoreId(ctx.user, input.storeId);
+      if (!await getJourneyById(input.id, storeId)) throw new TRPCError12({ code: "NOT_FOUND" });
+      const token = crypto5.randomBytes(32).toString("hex");
+      await updateJourney(input.id, { webhookToken: token }, storeId);
       return { token };
     }),
-    getWebhookToken: adminProcedure3.input(z7.object({ id: z7.number() })).query(async ({ input }) => {
-      const j = await getJourneyById(input.id);
-      if (!j) throw new TRPCError7({ code: "NOT_FOUND" });
+    getWebhookToken: staffProcedure.input(z11.object({ id: z11.number(), storeId: z11.number().optional() })).query(async ({ input, ctx }) => {
+      const j = await getJourneyById(input.id, await resolveRequiredStoreId(ctx.user, input.storeId));
+      if (!j) throw new TRPCError12({ code: "NOT_FOUND" });
       return { token: j.webhookToken };
     }),
-    processExecutions: adminProcedure3.mutation(async () => {
-      await processJourneyExecutions();
+    processExecutions: staffProcedure.input(z11.object({ storeId: z11.number().optional() })).mutation(async ({ input, ctx }) => {
+      const storeId = await resolveRequiredStoreId(ctx.user, input.storeId);
+      await processJourneyExecutions(storeId);
       return { ok: true };
     }),
-    getExecutionLogs: adminProcedure3.input(z7.object({ executionId: z7.number() })).query(async ({ input }) => {
-      const execs = await listExecutions();
+    getExecutionLogs: staffProcedure.input(z11.object({ executionId: z11.number(), storeId: z11.number().optional() })).query(async ({ input, ctx }) => {
+      const execs = await listExecutions(void 0, await resolveRequiredStoreId(ctx.user, input.storeId));
       const exec = execs.find((e) => e.id === input.executionId);
-      if (!exec) throw new TRPCError7({ code: "NOT_FOUND" });
+      if (!exec) throw new TRPCError12({ code: "NOT_FOUND" });
       return {
         ...exec,
         logs: exec.logs ? JSON.parse(exec.logs) : []
       };
     }),
-    testTrigger: adminProcedure3.input(z7.object({
-      journeyId: z7.number(),
-      trigger: z7.enum(["checkout_abandoned", "tag_inativo_15", "tag_inativo_30", "tag_inativo_60", "tag_inativo_custom", "first_order", "new_user", "club_subscriber", "manual", "order_delivered", "order_cancelled", "birthday", "loyalty_milestone", "rating_submitted", "rating_negative", "club_expiring", "first_order_month"]),
-      userId: z7.number().optional(),
-      phone: z7.string().optional()
+    testTrigger: staffProcedure.input(z11.object({
+      journeyId: z11.number(),
+      storeId: z11.number().optional(),
+      trigger: z11.enum(["checkout_abandoned", "tag_inativo_15", "tag_inativo_30", "tag_inativo_60", "tag_inativo_custom", "first_order", "new_user", "club_subscriber", "manual", "order_delivered", "order_cancelled", "birthday", "loyalty_milestone", "rating_submitted", "rating_negative", "club_expiring", "first_order_month"]),
+      userId: z11.number().optional(),
+      phone: z11.string().optional()
     })).mutation(async ({ input, ctx }) => {
+      const storeId = await resolveRequiredStoreId(ctx.user, input.storeId);
+      if (!await getJourneyById(input.journeyId, storeId)) throw new TRPCError12({ code: "NOT_FOUND" });
       const targetUserId = input.userId ?? ctx.user.id;
       await startJourneyExecution(input.journeyId, targetUserId, input.phone);
       return { ok: true, message: `Gatilho disparado para jornada #${input.journeyId} com usu\xE1rio #${targetUserId}` };
     }),
     // ── Painel A/B: estatísticas de grupos A e B por jornada ─────────────────
-    getAbStats: adminProcedure3.input(z7.object({ journeyId: z7.number() })).query(async ({ input }) => {
+    getAbStats: staffProcedure.input(z11.object({ journeyId: z11.number(), storeId: z11.number().optional() })).query(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) return { groupA: 0, groupB: 0, conversionA: 0, conversionB: 0, revenueA: 0, revenueB: 0 };
-      const execs = await db.select().from(journeyExecutions).where(eq12(journeyExecutions.journeyId, input.journeyId));
+      const storeId = await resolveRequiredStoreId(ctx.user, input.storeId);
+      const execs = await db.select().from(journeyExecutions).where(and16(eq19(journeyExecutions.journeyId, input.journeyId), eq19(journeyExecutions.storeId, storeId)));
       const groupA = execs.filter((e) => e.abGroup === "A");
       const groupB = execs.filter((e) => e.abGroup === "B");
       const convA = groupA.filter((e) => e.convertedAt !== null).length;
@@ -13713,11 +18813,11 @@ Telefone/WhatsApp: ${dbSettings.whatsappNumber ?? "(37) 99999-0000"}`
       let revenueA = 0;
       let revenueB = 0;
       if (convOrderIdsA.length > 0) {
-        const ordersA = await db.select({ total: orders.total }).from(orders).where(inArray4(orders.id, convOrderIdsA));
+        const ordersA = await db.select({ total: orders.total }).from(orders).where(inArray11(orders.id, convOrderIdsA));
         revenueA = ordersA.reduce((sum, o) => sum + Number(o.total ?? 0), 0);
       }
       if (convOrderIdsB.length > 0) {
-        const ordersB = await db.select({ total: orders.total }).from(orders).where(inArray4(orders.id, convOrderIdsB));
+        const ordersB = await db.select({ total: orders.total }).from(orders).where(inArray11(orders.id, convOrderIdsB));
         revenueB = ordersB.reduce((sum, o) => sum + Number(o.total ?? 0), 0);
       }
       return {
@@ -13732,32 +18832,57 @@ Telefone/WhatsApp: ${dbSettings.whatsappNumber ?? "(37) 99999-0000"}`
       };
     }),
     // ── Métricas globais de automações ───────────────────────────────────────
-    getGlobalMetrics: adminProcedure3.input(z7.object({ storeId: z7.number().optional() }).optional()).query(async ({ input, ctx }) => {
+    health: staffProcedure.input(z11.object({ storeId: z11.number().optional() })).query(async ({ input, ctx }) => {
+      const db = await getDb();
+      const storeId = await resolveRequiredStoreId(ctx.user, input.storeId);
+      if (!db) return {
+        status: "critical",
+        running: 0,
+        overdue: 0,
+        failedLast7Days: 0,
+        completedLast7Days: 0,
+        channels: { push: false, whatsapp: false, email: false },
+        lastExecutionAt: null
+      };
+      const since = new Date(Date.now() - 7 * 864e5);
+      const [runningRows, recentRows, latestRows] = await Promise.all([
+        db.select({ id: journeyExecutions.id, nextStepAt: journeyExecutions.nextStepAt }).from(journeyExecutions).where(and16(eq19(journeyExecutions.storeId, storeId), eq19(journeyExecutions.status, "running"))).limit(1e4),
+        db.select({ status: journeyExecutions.status }).from(journeyExecutions).where(and16(eq19(journeyExecutions.storeId, storeId), gte4(journeyExecutions.startedAt, since))).limit(2e4),
+        db.select({ startedAt: journeyExecutions.startedAt }).from(journeyExecutions).where(eq19(journeyExecutions.storeId, storeId)).orderBy(desc7(journeyExecutions.startedAt)).limit(1)
+      ]);
+      const now = Date.now();
+      const overdue = runningRows.filter((item) => item.nextStepAt && item.nextStepAt.getTime() < now - 5 * 6e4).length;
+      const failedLast7Days = recentRows.filter((item) => item.status === "failed").length;
+      const completedLast7Days = recentRows.filter((item) => item.status === "completed").length;
+      const channels = {
+        push: Boolean(process.env.VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY),
+        whatsapp: (process.env.WHATSAPP_PROVIDER ?? "none") !== "none",
+        email: Boolean(process.env.RESEND_API_KEY)
+      };
+      const status = overdue > 20 || failedLast7Days > 50 ? "critical" : overdue > 0 || failedLast7Days > 0 || !channels.push ? "attention" : "healthy";
+      return { status, running: runningRows.length, overdue, failedLast7Days, completedLast7Days, channels, lastExecutionAt: latestRows[0]?.startedAt ?? null };
+    }),
+    getGlobalMetrics: staffProcedure.input(z11.object({ storeId: z11.number().optional() }).optional()).query(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) return { totalExecutions: 0, completedExecutions: 0, conversions: 0, conversionRate: 0, attributedRevenue: 0, activeJourneys: 0, topJourneys: [] };
-      const storeId = await resolveStoreId(ctx.user, input?.storeId);
+      const storeId = await resolveRequiredStoreId(ctx.user, input?.storeId);
       const now = /* @__PURE__ */ new Date();
       const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-      let allExecs = await db.select().from(journeyExecutions).where(gte4(journeyExecutions.startedAt, monthStart));
-      if (storeId) {
-        const storeUserRows = await db.selectDistinct({ userId: orders.userId }).from(orders).where(and9(eq12(orders.storeId, storeId), isNotNull2(orders.userId)));
-        const allowedUserIds = new Set(storeUserRows.map((row) => row.userId).filter((value) => typeof value === "number"));
-        allExecs = allExecs.filter((execution) => allowedUserIds.has(execution.userId));
-      }
+      let allExecs = await db.select().from(journeyExecutions).where(and16(eq19(journeyExecutions.storeId, storeId), gte4(journeyExecutions.startedAt, monthStart)));
       const completed = allExecs.filter((e) => e.status === "completed").length;
       const conversions = allExecs.filter((e) => e.convertedAt !== null).length;
       const convOrderIds = allExecs.map((e) => e.conversionOrderId).filter(Boolean);
       let attributedRevenue = 0;
       if (convOrderIds.length > 0) {
-        const convOrders = await db.select({ total: orders.total }).from(orders).where(inArray4(orders.id, convOrderIds));
+        const convOrders = await db.select({ total: orders.total }).from(orders).where(inArray11(orders.id, convOrderIds));
         attributedRevenue = convOrders.reduce((sum, o) => sum + Number(o.total ?? 0), 0);
       }
-      const activeJourneysList = await db.select({ id: journeys.id, name: journeys.name }).from(journeys).where(eq12(journeys.status, "active"));
+      const activeJourneysList = await db.select({ id: journeys.id, name: journeys.name }).from(journeys).where(and16(eq19(journeys.storeId, storeId), eq19(journeys.status, "active")));
       const execsByJourney = allExecs.reduce((acc, e) => {
         acc[e.journeyId] = (acc[e.journeyId] ?? 0) + 1;
         return acc;
       }, {});
-      const allJourneysList = await db.select({ id: journeys.id, name: journeys.name }).from(journeys);
+      const allJourneysList = await db.select({ id: journeys.id, name: journeys.name }).from(journeys).where(eq19(journeys.storeId, storeId));
       const topJourneys = Object.entries(execsByJourney).sort(([, a], [, b]) => b - a).slice(0, 5).map(([jId, count]) => ({
         id: Number(jId),
         name: allJourneysList.find((j) => j.id === Number(jId))?.name ?? `Jornada #${jId}`,
@@ -13775,12 +18900,13 @@ Telefone/WhatsApp: ${dbSettings.whatsappNumber ?? "(37) 99999-0000"}`
       };
     }),
     // ── Histórico de jornadas por cliente ────────────────────────────────────
-    getCustomerJourneyHistory: adminProcedure3.input(z7.object({ userId: z7.number() })).query(async ({ input }) => {
+    getCustomerJourneyHistory: staffProcedure.input(z11.object({ userId: z11.number(), storeId: z11.number().optional() })).query(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) return [];
-      const execs = await db.select().from(journeyExecutions).where(eq12(journeyExecutions.userId, input.userId)).orderBy(desc3(journeyExecutions.startedAt)).limit(50);
+      const storeId = await resolveRequiredStoreId(ctx.user, input.storeId);
+      const execs = await db.select().from(journeyExecutions).where(and16(eq19(journeyExecutions.storeId, storeId), eq19(journeyExecutions.userId, input.userId))).orderBy(desc7(journeyExecutions.startedAt)).limit(50);
       const journeyIds = Array.from(new Set(execs.map((e) => e.journeyId)));
-      const journeyList = journeyIds.length > 0 ? await db.select({ id: journeys.id, name: journeys.name, trigger: journeys.trigger }).from(journeys).where(inArray4(journeys.id, journeyIds)) : [];
+      const journeyList = journeyIds.length > 0 ? await db.select({ id: journeys.id, name: journeys.name, trigger: journeys.trigger }).from(journeys).where(inArray11(journeys.id, journeyIds)) : [];
       return execs.map((e) => ({
         ...e,
         journeyName: journeyList.find((j) => j.id === e.journeyId)?.name ?? `Jornada #${e.journeyId}`,
@@ -13791,16 +18917,16 @@ Telefone/WhatsApp: ${dbSettings.whatsappNumber ?? "(37) 99999-0000"}`
   }),
   // ─── CRM ───────────────────────────────────────────────────────────────────
   crm: router({
-    listCustomers: staffProcedure.input(z7.object({
-      search: z7.string().optional(),
-      tag: z7.string().optional(),
-      limit: z7.number().optional(),
-      offset: z7.number().optional(),
-      storeId: z7.number().optional()
+    listCustomers: staffProcedure.input(z11.object({
+      search: z11.string().optional(),
+      tag: z11.string().optional(),
+      limit: z11.number().optional(),
+      offset: z11.number().optional(),
+      storeId: z11.number().optional()
     })).query(async ({ input, ctx }) => {
-      const storeId = await resolveStoreId(ctx.user, input.storeId);
+      const storeId = await resolveRequiredStoreId(ctx.user, input.storeId);
       if (input.tag) {
-        const customers2 = await getCrmCustomersByTag(input.tag);
+        const customers2 = await getCrmCustomersByTag(input.tag, storeId);
         return { customers: customers2, total: customers2.length };
       }
       const [customers, total] = await Promise.all([
@@ -13809,62 +18935,62 @@ Telefone/WhatsApp: ${dbSettings.whatsappNumber ?? "(37) 99999-0000"}`
       ]);
       return { customers, total };
     }),
-    getCustomerDetail: adminProcedure3.input(z7.object({ userId: z7.number(), storeId: z7.number().optional() })).query(async ({ input, ctx }) => {
-      const storeId = await resolveStoreId(ctx.user, input.storeId);
+    getCustomerDetail: staffProcedure.input(z11.object({ userId: z11.number(), storeId: z11.number().optional() })).query(async ({ input, ctx }) => {
+      const storeId = await resolveRequiredStoreId(ctx.user, input.storeId);
       const detail = await getCrmCustomerDetail(input.userId, storeId);
-      if (!detail) throw new TRPCError7({ code: "NOT_FOUND" });
+      if (!detail) throw new TRPCError12({ code: "NOT_FOUND" });
       const [tags, executions, carts] = await Promise.all([
-        getTagsForCustomer(input.userId),
-        getJourneyExecutionsByUser(input.userId),
-        getAbandonedCartsByUser(input.userId)
+        getTagsForCustomer(input.userId, storeId),
+        getJourneyExecutionsByUser(input.userId, storeId),
+        getAbandonedCartsByUser(input.userId, storeId)
       ]);
       return { ...detail, tags, executions, carts };
     }),
-    assignTag: adminProcedure3.input(z7.object({ userId: z7.number(), tag: z7.string() })).mutation(async ({ input }) => {
-      await assignTagToCustomer(input.userId, input.tag);
+    assignTag: staffProcedure.input(z11.object({ userId: z11.number(), tag: z11.string(), storeId: z11.number().optional() })).mutation(async ({ input, ctx }) => {
+      await assignTagToCustomer(input.userId, input.tag, await resolveRequiredStoreId(ctx.user, input.storeId));
       return { ok: true };
     }),
-    removeTag: adminProcedure3.input(z7.object({ userId: z7.number(), tag: z7.string() })).mutation(async ({ input }) => {
-      await removeTagFromCustomer(input.userId, input.tag);
+    removeTag: staffProcedure.input(z11.object({ userId: z11.number(), tag: z11.string(), storeId: z11.number().optional() })).mutation(async ({ input, ctx }) => {
+      await removeTagFromCustomer(input.userId, input.tag, await resolveRequiredStoreId(ctx.user, input.storeId));
       return { ok: true };
     }),
-    getStats: adminProcedure3.input(z7.object({ storeId: z7.number().optional() }).optional()).query(async ({ input, ctx }) => {
-      const storeId = await resolveStoreId(ctx.user, input?.storeId);
+    getStats: staffProcedure.input(z11.object({ storeId: z11.number().optional() }).optional()).query(async ({ input, ctx }) => {
+      const storeId = await resolveRequiredStoreId(ctx.user, input?.storeId);
       return getCrmStats(storeId);
     }),
     // ── Tags Personalizadas ──────────────────────────────────────────────
-    listCustomTags: adminProcedure3.query(async () => {
-      return listCustomTags();
-    }),
-    createCustomTag: adminProcedure3.input(z7.object({ name: z7.string().min(1).max(100), color: z7.string().default("#6b7280"), description: z7.string().optional() })).mutation(async ({ input }) => {
-      const id = await createCustomTag(input);
+    listCustomTags: staffProcedure.input(z11.object({ storeId: z11.number().optional() })).query(async ({ input, ctx }) => listCustomTags(await resolveRequiredStoreId(ctx.user, input.storeId))),
+    createCustomTag: staffProcedure.input(z11.object({ name: z11.string().min(1).max(100), color: z11.string().default("#6b7280"), description: z11.string().optional(), storeId: z11.number().optional() })).mutation(async ({ input, ctx }) => {
+      const id = await createCustomTag({ ...input, storeId: await resolveRequiredStoreId(ctx.user, input.storeId) });
       return { id };
     }),
-    updateCustomTag: adminProcedure3.input(z7.object({ id: z7.number(), name: z7.string().optional(), color: z7.string().optional(), description: z7.string().optional() })).mutation(async ({ input }) => {
-      const { id, ...data } = input;
-      await updateCustomTag(id, data);
+    updateCustomTag: staffProcedure.input(z11.object({ id: z11.number(), name: z11.string().optional(), color: z11.string().optional(), description: z11.string().optional(), storeId: z11.number().optional() })).mutation(async ({ input, ctx }) => {
+      const { id, storeId: requestedStoreId, ...data } = input;
+      await updateCustomTag(id, await resolveRequiredStoreId(ctx.user, requestedStoreId), data);
       return { ok: true };
     }),
-    deleteCustomTag: adminProcedure3.input(z7.object({ id: z7.number() })).mutation(async ({ input }) => {
-      await deleteCustomTag(input.id);
+    deleteCustomTag: staffProcedure.input(z11.object({ id: z11.number(), storeId: z11.number().optional() })).mutation(async ({ input, ctx }) => {
+      await deleteCustomTag(input.id, await resolveRequiredStoreId(ctx.user, input.storeId));
       return { ok: true };
     }),
-    assignCustomTag: adminProcedure3.input(z7.object({ userId: z7.number(), tagId: z7.number() })).mutation(async ({ input }) => {
-      await assignCustomTagToCustomer(input.userId, input.tagId);
+    assignCustomTag: staffProcedure.input(z11.object({ userId: z11.number(), tagId: z11.number(), storeId: z11.number().optional() })).mutation(async ({ input, ctx }) => {
+      await assignCustomTagToCustomer(input.userId, input.tagId, await resolveRequiredStoreId(ctx.user, input.storeId));
       return { ok: true };
     }),
-    removeCustomTag: adminProcedure3.input(z7.object({ userId: z7.number(), tagId: z7.number() })).mutation(async ({ input }) => {
-      await removeCustomTagFromCustomer(input.userId, input.tagId);
+    removeCustomTag: staffProcedure.input(z11.object({ userId: z11.number(), tagId: z11.number(), storeId: z11.number().optional() })).mutation(async ({ input, ctx }) => {
+      await removeCustomTagFromCustomer(input.userId, input.tagId, await resolveRequiredStoreId(ctx.user, input.storeId));
       return { ok: true };
     }),
-    getCustomTagsForCustomer: adminProcedure3.input(z7.object({ userId: z7.number() })).query(async ({ input }) => {
-      return getCustomTagsForCustomer(input.userId);
+    getCustomTagsForCustomer: staffProcedure.input(z11.object({ userId: z11.number(), storeId: z11.number().optional() })).query(async ({ input, ctx }) => {
+      return getCustomTagsForCustomer(input.userId, await resolveRequiredStoreId(ctx.user, input.storeId));
     }),
-    getCustomersByCustomTag: adminProcedure3.input(z7.object({ tagName: z7.string() })).query(async ({ input }) => {
-      return getCustomersByCustomTagName(input.tagName);
+    getCustomersByCustomTag: staffProcedure.input(z11.object({ tagName: z11.string(), storeId: z11.number().optional() })).query(async ({ input, ctx }) => {
+      return getCustomersByCustomTagName(input.tagName, await resolveRequiredStoreId(ctx.user, input.storeId));
     }),
-    triggerJourneyForTag: adminProcedure3.input(z7.object({ journeyId: z7.number(), tag: z7.string() })).mutation(async ({ input }) => {
-      const customers = await getCrmCustomersByTag(input.tag);
+    triggerJourneyForTag: staffProcedure.input(z11.object({ journeyId: z11.number(), tag: z11.string(), storeId: z11.number().optional() })).mutation(async ({ input, ctx }) => {
+      const storeId = await resolveRequiredStoreId(ctx.user, input.storeId);
+      if (!await getJourneyById(input.journeyId, storeId)) throw new TRPCError12({ code: "NOT_FOUND" });
+      const customers = await getCrmCustomersByTag(input.tag, storeId);
       let started = 0;
       for (const c of customers) {
         const r = await startJourneyExecution(input.journeyId, c.id, c.phone ?? void 0);
@@ -13872,69 +18998,83 @@ Telefone/WhatsApp: ${dbSettings.whatsappNumber ?? "(37) 99999-0000"}`
       }
       return { started, total: customers.length };
     }),
-    triggerJourneyForCustomer: adminProcedure3.input(z7.object({ journeyId: z7.number(), userId: z7.number() })).mutation(async ({ input }) => {
+    triggerJourneyForCustomer: staffProcedure.input(z11.object({ journeyId: z11.number(), userId: z11.number(), storeId: z11.number().optional() })).mutation(async ({ input, ctx }) => {
+      const storeId = await resolveRequiredStoreId(ctx.user, input.storeId);
+      if (!await getJourneyById(input.journeyId, storeId)) throw new TRPCError12({ code: "NOT_FOUND" });
       const db = await Promise.resolve().then(() => (init_db(), db_exports));
-      const detail = await db.getCrmCustomerDetail(input.userId);
-      if (!detail) throw new TRPCError7({ code: "NOT_FOUND", message: "Cliente n\xE3o encontrado" });
+      const detail = await db.getCrmCustomerDetail(input.userId, storeId);
+      if (!detail) throw new TRPCError12({ code: "NOT_FOUND", message: "Cliente n\xE3o encontrado" });
       const r = await startJourneyExecution(input.journeyId, input.userId, detail.user.phone ?? void 0);
       return { started: r > 0 ? 1 : 0 };
     })
   }),
   // ── Templates de Notificação ──────────────────────────────────────────────
   notificationTemplates: router({
-    list: staffProcedure.input(z7.object({ event: z7.string().optional(), channel: z7.string().optional() }).optional()).query(async ({ input }) => listNotificationTemplates(input ?? {})),
-    seed: staffProcedure.mutation(async () => {
-      await seedNotificationTemplates();
+    list: staffProcedure.input(z11.object({ storeId: z11.number().optional(), event: z11.string().optional(), channel: z11.string().optional() }).optional()).query(async ({ ctx, input }) => listNotificationTemplates({
+      ...input,
+      storeId: await resolveRequiredStoreId(ctx.user, input?.storeId)
+    })),
+    seed: staffProcedure.input(z11.object({ storeId: z11.number().optional() })).mutation(async ({ ctx, input }) => {
+      await seedNotificationTemplates(await resolveRequiredStoreId(ctx.user, input.storeId));
       return { ok: true };
     }),
-    create: staffProcedure.input(z7.object({
-      event: z7.enum(["order_confirmed", "order_preparing", "order_out_for_delivery", "order_delivered", "order_cancelled", "cart_abandoned_step1", "cart_abandoned_step2", "cart_abandoned_step3", "reactivation_15", "reactivation_30", "reactivation_60", "custom"]),
-      channel: z7.enum(["push", "whatsapp", "both"]).default("both"),
-      title: z7.string().min(1).max(200),
-      body: z7.string().min(1),
-      redirectUrl: z7.string().max(500).optional(),
-      isActive: z7.boolean().default(true)
-    })).mutation(async ({ input }) => {
-      const id = await createNotificationTemplate(input);
+    create: staffProcedure.input(z11.object({
+      storeId: z11.number().optional(),
+      event: z11.enum(["order_confirmed", "order_preparing", "order_out_for_delivery", "order_delivered", "order_cancelled", "cart_abandoned_step1", "cart_abandoned_step2", "cart_abandoned_step3", "reactivation_15", "reactivation_30", "reactivation_60", "custom"]),
+      channel: z11.enum(["push", "whatsapp", "both"]).default("both"),
+      title: z11.string().min(1).max(200),
+      body: z11.string().min(1),
+      redirectUrl: z11.string().max(500).optional(),
+      isActive: z11.boolean().default(true)
+    })).mutation(async ({ ctx, input }) => {
+      const id = await createNotificationTemplate({
+        ...input,
+        storeId: await resolveRequiredStoreId(ctx.user, input.storeId)
+      });
       return { id };
     }),
-    update: staffProcedure.input(z7.object({
-      id: z7.number(),
-      title: z7.string().min(1).max(200).optional(),
-      body: z7.string().min(1).optional(),
-      isActive: z7.boolean().optional(),
-      channel: z7.enum(["push", "whatsapp", "both"]).optional(),
-      redirectUrl: z7.string().max(500).optional().nullable()
-    })).mutation(async ({ input }) => {
-      const { id, ...data } = input;
-      await updateNotificationTemplate(id, data);
+    update: staffProcedure.input(z11.object({
+      id: z11.number(),
+      storeId: z11.number().optional(),
+      title: z11.string().min(1).max(200).optional(),
+      body: z11.string().min(1).optional(),
+      isActive: z11.boolean().optional(),
+      channel: z11.enum(["push", "whatsapp", "both"]).optional(),
+      redirectUrl: z11.string().max(500).optional().nullable()
+    })).mutation(async ({ ctx, input }) => {
+      const { id, storeId: requestedStoreId, ...data } = input;
+      await updateNotificationTemplate(id, await resolveRequiredStoreId(ctx.user, requestedStoreId), data);
       return { ok: true };
     }),
-    delete: staffProcedure.input(z7.object({ id: z7.number() })).mutation(async ({ input }) => {
-      await deleteNotificationTemplate(input.id);
+    delete: staffProcedure.input(z11.object({ id: z11.number(), storeId: z11.number().optional() })).mutation(async ({ ctx, input }) => {
+      await deleteNotificationTemplate(input.id, await resolveRequiredStoreId(ctx.user, input.storeId));
       return { ok: true };
     }),
     // Disparo de notificação personalizada em massa
-    sendCustom: staffProcedure.input(z7.object({
-      title: z7.string().min(1).max(200),
-      body: z7.string().min(1),
-      redirectUrl: z7.string().optional(),
+    sendCustom: staffProcedure.input(z11.object({
+      storeId: z11.number().optional(),
+      title: z11.string().min(1).max(200),
+      body: z11.string().min(1),
+      redirectUrl: z11.string().optional(),
       // ex: "/cardapio", "/promocoes", URL completa
-      tag: z7.string().optional()
-      // tag de cliente para segmentar (ex: "inativo_30")
+      tag: z11.enum(["novo", "recorrente", "indeciso", "inativo_15", "inativo_30", "inativo_60"]).optional()
       // se tag for undefined, envia para todos
-    })).mutation(async ({ input }) => {
-      let userIds;
+    })).mutation(async ({ ctx, input }) => {
+      const storeId = await resolveRequiredStoreId(ctx.user, input.storeId);
+      const database = await getDb();
+      if (!database) {
+        throw new TRPCError12({ code: "INTERNAL_SERVER_ERROR", message: "Banco de dados indispon\xEDvel" });
+      }
+      const storeCustomers = await database.selectDistinct({ userId: orders.userId }).from(orders).where(and16(eq19(orders.storeId, storeId), isNotNull2(orders.userId)));
+      let userIds = storeCustomers.map((row) => row.userId).filter((userId) => userId !== null);
       if (input.tag) {
-        const { getDb: getDb2 } = await Promise.resolve().then(() => (init_db(), db_exports));
         const { customerTags: customerTags2 } = await Promise.resolve().then(() => (init_schema(), schema_exports));
-        const { eq: eq14 } = await import("drizzle-orm");
-        const db = await getDb2();
-        if (db) {
-          const rows = await db.select({ userId: customerTags2.userId }).from(customerTags2).where(eq14(customerTags2.tag, input.tag));
-          userIds = rows.map((r) => r.userId);
-          if (userIds.length === 0) return { sent: 0, failed: 0, skipped: true };
-        }
+        const rows = await database.select({ userId: customerTags2.userId }).from(customerTags2).where(and16(eq19(customerTags2.storeId, storeId), eq19(customerTags2.tag, input.tag)));
+        const taggedUserIds = new Set(rows.map((row) => row.userId));
+        userIds = userIds.filter((userId) => taggedUserIds.has(userId));
+      }
+      if (userIds.length === 0) {
+        return { sent: 0, failed: 0, skipped: true };
       }
       const result = await sendPushToAllUsers(
         {
@@ -13951,87 +19091,91 @@ Telefone/WhatsApp: ${dbSettings.whatsappNumber ?? "(37) 99999-0000"}`
   // --- ZONAS DE ENTREGA POR BAIRRO ---
   deliveryZones: router({
     // Público: buscar zona por bairro (usado no checkout)
-    search: publicProcedure.input(z7.object({ query: z7.string().min(1) })).query(async ({ input }) => {
-      return searchDeliveryZones(input.query);
+    search: publicProcedure.input(z11.object({ query: z11.string().min(1), storeId: z11.number().optional() })).query(async ({ input }) => {
+      return searchDeliveryZones(input.query, input.storeId);
     }),
-    getByNeighborhood: publicProcedure.input(z7.object({ neighborhood: z7.string() })).query(async ({ input }) => {
-      return getDeliveryZoneByNeighborhood(input.neighborhood);
+    getByNeighborhood: publicProcedure.input(z11.object({ neighborhood: z11.string(), storeId: z11.number().optional() })).query(async ({ input }) => {
+      return getDeliveryZoneByNeighborhood(input.neighborhood, input.storeId);
     }),
     // Staff: CRUD completo
-    list: staffProcedure.query(async () => {
-      return getAllDeliveryZones(false);
-    }),
-    create: staffProcedure.input(z7.object({
-      neighborhood: z7.string().min(1).max(200),
-      city: z7.string().max(200).optional(),
-      deliveryFee: z7.string(),
-      estimatedMinutes: z7.number().int().min(1).optional()
-    })).mutation(async ({ input }) => {
-      const id = await createDeliveryZone(input);
+    list: staffProcedure.input(z11.object({ storeId: z11.number().optional() }).optional()).query(async ({ input, ctx }) => getAllDeliveryZones(false, await resolveRequiredStoreId(ctx.user, input?.storeId))),
+    create: staffProcedure.input(z11.object({
+      storeId: z11.number().optional(),
+      neighborhood: z11.string().min(1).max(200),
+      city: z11.string().max(200).optional(),
+      deliveryFee: z11.string(),
+      estimatedMinutes: z11.number().int().min(1).optional()
+    })).mutation(async ({ input, ctx }) => {
+      const id = await createDeliveryZone({ ...input, storeId: await resolveRequiredStoreId(ctx.user, input.storeId) });
       return { id };
     }),
-    update: staffProcedure.input(z7.object({
-      id: z7.number(),
-      neighborhood: z7.string().min(1).max(200).optional(),
-      city: z7.string().max(200).optional(),
-      deliveryFee: z7.string().optional(),
-      estimatedMinutes: z7.number().int().min(1).optional(),
-      isActive: z7.boolean().optional()
-    })).mutation(async ({ input }) => {
-      const { id, ...data } = input;
-      await updateDeliveryZone(id, data);
+    update: staffProcedure.input(z11.object({
+      id: z11.number(),
+      storeId: z11.number().optional(),
+      neighborhood: z11.string().min(1).max(200).optional(),
+      city: z11.string().max(200).optional(),
+      deliveryFee: z11.string().optional(),
+      estimatedMinutes: z11.number().int().min(1).optional(),
+      isActive: z11.boolean().optional()
+    })).mutation(async ({ input, ctx }) => {
+      const { id, storeId: requestedStoreId, ...data } = input;
+      await updateDeliveryZone(id, await resolveRequiredStoreId(ctx.user, requestedStoreId), data);
       return { ok: true };
     }),
-    delete: staffProcedure.input(z7.object({ id: z7.number() })).mutation(async ({ input }) => {
-      await deleteDeliveryZone(input.id);
+    delete: staffProcedure.input(z11.object({ id: z11.number(), storeId: z11.number().optional() })).mutation(async ({ input, ctx }) => {
+      await deleteDeliveryZone(input.id, await resolveRequiredStoreId(ctx.user, input.storeId));
       return { ok: true };
     })
   }),
   // --- LOJAS (MULTI-TENANT) --------------------------------------------------
   stores: storesRouter,
+  platform: platformRouter,
+  siteStudio: siteStudioRouter,
+  rewards: rewardsRouter,
+  catalog: catalogRouter,
   restaurantNetwork: router({
-    distributionProducts: staffProcedure.input(z7.object({ activeOnly: z7.boolean().optional() }).optional()).query(({ input }) => listDistributionProducts({ activeOnly: input?.activeOnly ?? true })),
-    createDistributionProduct: adminProcedure3.input(distributionProductSchema).mutation(({ ctx, input }) => createDistributionProduct(input, ctx.user.id)),
-    updateDistributionProduct: adminProcedure3.input(updateDistributionProductSchema).mutation(({ ctx, input }) => updateDistributionProduct(input, ctx.user.id)),
-    overview: staffProcedure.input(z7.object({
-      storeId: z7.number().optional(),
-      startDate: z7.date(),
-      endDate: z7.date()
+    distributionProducts: staffProcedure.input(z11.object({ activeOnly: z11.boolean().optional() }).optional()).query(({ input }) => listDistributionProducts({ activeOnly: input?.activeOnly ?? true })),
+    createDistributionProduct: adminProcedure2.input(distributionProductSchema).mutation(({ ctx, input }) => createDistributionProduct(input, ctx.user.id)),
+    updateDistributionProduct: adminProcedure2.input(updateDistributionProductSchema).mutation(({ ctx, input }) => updateDistributionProduct(input, ctx.user.id)),
+    overview: staffProcedure.input(z11.object({
+      storeId: z11.number().optional(),
+      startDate: z11.date(),
+      endDate: z11.date()
     })).query(async ({ ctx, input }) => {
       const storeId = await resolveStoreId(ctx.user, input.storeId);
       return getFinancialOverview({ storeId, startDate: input.startDate, endDate: input.endDate });
     }),
-    supplyOrders: staffProcedure.input(z7.object({
-      storeId: z7.number().optional(),
-      status: z7.string().optional()
+    supplyOrders: staffProcedure.input(z11.object({
+      storeId: z11.number().optional(),
+      status: z11.string().optional()
     }).optional()).query(async ({ ctx, input }) => {
       const storeId = await resolveStoreId(ctx.user, input?.storeId);
       return listSupplyOrders({ storeId, status: input?.status });
     }),
-    supplyOrderDetails: staffProcedure.input(z7.object({ id: z7.number() })).query(async ({ input }) => getSupplyOrderDetails(input.id)),
+    supplyOrderDetails: staffProcedure.input(z11.object({ id: z11.number() })).query(async ({ input }) => getSupplyOrderDetails(input.id)),
     createSupplyOrder: staffProcedure.input(createSupplyOrderSchema).mutation(async ({ ctx, input }) => {
       const storeId = await resolveStoreId(ctx.user, input.storeId);
-      if (!storeId) throw new TRPCError7({ code: "BAD_REQUEST", message: "Selecione uma loja para criar o pedido ao centro de distribui\xE7\xE3o." });
+      if (!storeId) throw new TRPCError12({ code: "BAD_REQUEST", message: "Selecione uma loja para criar o pedido ao centro de distribui\xE7\xE3o." });
       return createSupplyOrder({ ...input, storeId }, ctx.user.id);
     }),
     updateSupplyOrderStatus: staffProcedure.input(updateSupplyOrderStatusSchema).mutation(async ({ ctx, input }) => updateSupplyOrderStatus(input, ctx.user.id)),
     createExpense: staffProcedure.input(createExpenseSchema).mutation(async ({ ctx, input }) => {
-      const scopedStoreId = await resolveStoreId(ctx.user, input.storeId);
-      return createExpense(input, ctx.user.id, scopedStoreId);
+      const scopedStoreId2 = await resolveStoreId(ctx.user, input.storeId);
+      return createExpense(input, ctx.user.id, scopedStoreId2);
     }),
     createFinancialFee: staffProcedure.input(createFinancialFeeSchema).mutation(async ({ ctx, input }) => {
-      const scopedStoreId = await resolveStoreId(ctx.user, input.storeId);
-      return createFinancialFee(input, ctx.user.id, scopedStoreId);
+      const scopedStoreId2 = await resolveStoreId(ctx.user, input.storeId);
+      return createFinancialFee(input, ctx.user.id, scopedStoreId2);
     }),
     upsertMonthlyClosing: staffProcedure.input(createMonthlyClosingSchema).mutation(async ({ ctx, input }) => {
-      const scopedStoreId = await resolveStoreId(ctx.user, input.storeId);
-      return upsertMonthlyClosing(input, ctx.user.id, scopedStoreId);
+      const scopedStoreId2 = await resolveStoreId(ctx.user, input.storeId);
+      return upsertMonthlyClosing(input, ctx.user.id, scopedStoreId2);
     }),
-    monthlyClosings: staffProcedure.input(z7.object({ storeId: z7.number().optional(), year: z7.number().optional() }).optional()).query(async ({ ctx, input }) => {
+    monthlyClosings: staffProcedure.input(z11.object({ storeId: z11.number().optional(), year: z11.number().optional() }).optional()).query(async ({ ctx, input }) => {
       const storeId = await resolveStoreId(ctx.user, input?.storeId);
       return listMonthlyClosings({ storeId, year: input?.year });
     }),
-    auditLogs: staffProcedure.input(z7.object({ storeId: z7.number().optional(), limit: z7.number().min(1).max(250).optional() }).optional()).query(async ({ ctx, input }) => {
+    auditLogs: staffProcedure.input(z11.object({ storeId: z11.number().optional(), limit: z11.number().min(1).max(250).optional() }).optional()).query(async ({ ctx, input }) => {
       const storeId = await resolveStoreId(ctx.user, input?.storeId);
       return listAuditLogs({ storeId, limit: input?.limit });
     })
@@ -14040,38 +19184,38 @@ Telefone/WhatsApp: ${dbSettings.whatsappNumber ?? "(37) 99999-0000"}`
   club: clubRouter,
   // --- MENU SLIDES -----------------------------------------------------------
   analytics: router({
-    salesOverview: staffProcedure.input(z7.object({
-      startDate: z7.date(),
-      endDate: z7.date(),
-      storeId: z7.number().optional()
+    salesOverview: staffProcedure.input(z11.object({
+      startDate: z11.date(),
+      endDate: z11.date(),
+      storeId: z11.number().optional()
     })).query(async ({ input, ctx }) => {
       const storeId = await resolveStoreId(ctx.user, input.storeId);
       return getSalesOverview(input.startDate, input.endDate, storeId);
     }),
-    salesTimeSeries: staffProcedure.input(z7.object({
-      startDate: z7.date(),
-      endDate: z7.date(),
-      storeId: z7.number().optional(),
-      timezoneOffset: z7.number().optional()
+    salesTimeSeries: staffProcedure.input(z11.object({
+      startDate: z11.date(),
+      endDate: z11.date(),
+      storeId: z11.number().optional(),
+      timezoneOffset: z11.number().optional()
     })).query(async ({ input, ctx }) => {
       const storeId = await resolveStoreId(ctx.user, input.storeId);
       return getSalesTimeSeries(input.startDate, input.endDate, storeId, input.timezoneOffset);
     }),
-    recentOrders: staffProcedure.input(z7.object({ limit: z7.number().int().min(1).max(50).optional(), storeId: z7.number().optional() })).query(async ({ input, ctx }) => {
+    recentOrders: staffProcedure.input(z11.object({ limit: z11.number().int().min(1).max(50).optional(), storeId: z11.number().optional() })).query(async ({ input, ctx }) => {
       const storeId = await resolveStoreId(ctx.user, input.storeId);
       return getRecentOrdersFeed(input.limit ?? 20, storeId);
     }),
-    globalSearch: staffProcedure.input(z7.object({ query: z7.string().trim().min(2).max(80), storeId: z7.number().optional() })).query(async ({ input, ctx }) => {
+    globalSearch: staffProcedure.input(z11.object({ query: z11.string().trim().min(2).max(80), storeId: z11.number().optional() })).query(async ({ input, ctx }) => {
       const storeId = await resolveStoreId(ctx.user, input.storeId);
       const db = await getDb();
-      if (!db) throw new TRPCError7({ code: "INTERNAL_SERVER_ERROR" });
-      const { sql: sql9 } = await import("drizzle-orm");
+      if (!db) throw new TRPCError12({ code: "INTERNAL_SERVER_ERROR" });
+      const { sql: sql14 } = await import("drizzle-orm");
       const likeQuery = `%${input.query}%`;
-      const storeClause = storeId ? sql9`AND o.storeId = ${storeId}` : sql9``;
-      const messageStoreClause = storeId ? sql9`AND ord.storeId = ${storeId}` : sql9``;
-      const tableStoreClause = storeId ? sql9`AND dt.storeId = ${storeId}` : sql9``;
+      const storeClause = storeId ? sql14`AND o.storeId = ${storeId}` : sql14``;
+      const messageStoreClause = storeId ? sql14`AND ord.storeId = ${storeId}` : sql14``;
+      const tableStoreClause = storeId ? sql14`AND dt.storeId = ${storeId}` : sql14``;
       const [ordersResult, customersResult, tablesResult, conversationsResult] = await Promise.all([
-        db.execute(sql9`
+        db.execute(sql14`
             SELECT o.id, o.customerName, o.customerPhone, o.status, o.total, o.createdAt
             FROM orders o
             WHERE (
@@ -14083,7 +19227,7 @@ Telefone/WhatsApp: ${dbSettings.whatsappNumber ?? "(37) 99999-0000"}`
             ORDER BY o.createdAt DESC
             LIMIT 8
           `),
-        db.execute(sql9`
+        db.execute(sql14`
             SELECT u.id, u.name, u.email, u.phone, MAX(o.createdAt) AS lastOrderAt
             FROM users u
             LEFT JOIN orders o ON o.userId = u.id
@@ -14093,12 +19237,12 @@ Telefone/WhatsApp: ${dbSettings.whatsappNumber ?? "(37) 99999-0000"}`
                 OR u.email LIKE ${likeQuery}
                 OR u.phone LIKE ${likeQuery}
               )
-              ${storeId ? sql9`AND EXISTS (SELECT 1 FROM orders ox WHERE ox.userId = u.id AND ox.storeId = ${storeId})` : sql9``}
+              ${storeId ? sql14`AND EXISTS (SELECT 1 FROM orders ox WHERE ox.userId = u.id AND ox.storeId = ${storeId})` : sql14``}
             GROUP BY u.id, u.name, u.email, u.phone
             ORDER BY lastOrderAt DESC
             LIMIT 8
           `),
-        db.execute(sql9`
+        db.execute(sql14`
             SELECT dt.id, dt.name, dt.status, ts.id AS sessionId, ts.customerName, ts.updatedAt
             FROM dining_tables dt
             LEFT JOIN table_sessions ts ON ts.tableId = dt.id AND ts.status IN ('open', 'awaiting_closure')
@@ -14110,7 +19254,7 @@ Telefone/WhatsApp: ${dbSettings.whatsappNumber ?? "(37) 99999-0000"}`
             ORDER BY ts.updatedAt DESC, dt.updatedAt DESC
             LIMIT 8
           `),
-        db.execute(sql9`
+        db.execute(sql14`
             SELECT ord.id AS orderId, ord.customerName, MAX(om.createdAt) AS lastMessageAt, MAX(om.message) AS lastMessage
             FROM order_messages om
             INNER JOIN orders ord ON ord.id = om.orderId
@@ -14132,102 +19276,108 @@ Telefone/WhatsApp: ${dbSettings.whatsappNumber ?? "(37) 99999-0000"}`
         conversations: conversationsResult[0]
       };
     }),
-    dashboardSnapshot: staffProcedure.input(z7.object({ storeId: z7.number().optional() }).optional()).query(async ({ input, ctx }) => {
+    dashboardSnapshot: staffProcedure.input(z11.object({ storeId: z11.number().optional() }).optional()).query(async ({ input, ctx }) => {
       const storeId = await resolveStoreId(ctx.user, input?.storeId);
       return getAdminDashboardSnapshot(storeId);
     })
   }),
   menuSlides: router({
-    uploadImage: staffProcedure.input(z7.object({
-      base64: z7.string().max(43e5),
+    uploadImage: staffProcedure.input(z11.object({
+      storeId: z11.number().optional(),
+      base64: z11.string().max(43e5),
       // keep below Vercel request-size limits
-      mimeType: z7.enum(["image/jpeg", "image/png", "image/webp", "image/gif"]),
-      fileName: z7.string().max(255).optional()
-    })).mutation(async ({ input }) => {
+      mimeType: z11.enum(["image/jpeg", "image/png", "image/webp", "image/gif"]),
+      fileName: z11.string().max(255).optional()
+    })).mutation(async ({ input, ctx }) => {
+      const storeId = await resolveRequiredStoreId(ctx.user, input.storeId);
       const { storagePutAdapter: storagePut2 } = await Promise.resolve().then(() => (init_storage2(), storage_exports2));
       const { compressToWebP: compressToWebP2 } = await Promise.resolve().then(() => (init_imageUtils(), imageUtils_exports));
       const rawBuffer = Buffer.from(input.base64, "base64");
       const { buffer, mimeType, ext, reductionPct } = await compressToWebP2(rawBuffer, 85, 1920);
-      const key = `banners/slide-${Date.now()}.${ext}`;
+      const key = `stores/${storeId}/banners/slide-${Date.now()}.${ext}`;
       const { url } = await storagePut2(key, buffer, mimeType);
       console.log(`[upload] banner comprimido ${reductionPct}% \u2192 WebP`);
       return { url };
     }),
-    list: publicProcedure.query(() => getMenuSlides(true)),
-    listAll: staffProcedure.query(() => getMenuSlides(false)),
-    seed: staffProcedure.mutation(() => seedMenuSlides()),
-    create: staffProcedure.input(z7.object({
-      title: z7.string().min(1).max(200),
-      subtitle: z7.string().max(300).optional().nullable(),
-      imageUrl: z7.string().max(2e3).optional().nullable(),
-      videoUrl: z7.string().max(2e3).optional().nullable(),
-      badgeText: z7.string().max(80).optional().nullable(),
-      ctaText: z7.string().max(80).optional().nullable(),
-      ctaLink: z7.string().max(500).optional().nullable(),
-      sortOrder: z7.number().int().optional()
-    })).mutation(({ input }) => createMenuSlide(input)),
-    update: staffProcedure.input(z7.object({
-      id: z7.number(),
-      title: z7.string().min(1).max(200).optional(),
-      subtitle: z7.string().max(300).optional().nullable(),
-      imageUrl: z7.string().max(2e3).optional().nullable(),
-      videoUrl: z7.string().max(2e3).optional().nullable(),
-      badgeText: z7.string().max(80).optional().nullable(),
-      ctaText: z7.string().max(80).optional().nullable(),
-      ctaLink: z7.string().max(500).optional().nullable(),
-      sortOrder: z7.number().int().optional(),
-      isActive: z7.boolean().optional()
-    })).mutation(async ({ input }) => {
-      const { id, ...data } = input;
-      return updateMenuSlide(id, data);
+    list: publicProcedure.input(z11.object({ storeId: z11.number().optional() }).optional()).query(({ input }) => getMenuSlides(true, input?.storeId)),
+    listAll: staffProcedure.input(z11.object({ storeId: z11.number().optional() }).optional()).query(async ({ input, ctx }) => getMenuSlides(false, await resolveRequiredStoreId(ctx.user, input?.storeId))),
+    seed: staffProcedure.input(z11.object({ storeId: z11.number().optional() }).optional()).mutation(async ({ input, ctx }) => seedMenuSlides(await resolveRequiredStoreId(ctx.user, input?.storeId))),
+    create: staffProcedure.input(z11.object({
+      storeId: z11.number().optional(),
+      title: z11.string().min(1).max(200),
+      subtitle: z11.string().max(300).optional().nullable(),
+      imageUrl: z11.string().max(2e3).optional().nullable(),
+      videoUrl: z11.string().max(2e3).optional().nullable(),
+      badgeText: z11.string().max(80).optional().nullable(),
+      ctaText: z11.string().max(80).optional().nullable(),
+      ctaLink: z11.string().max(500).optional().nullable(),
+      sortOrder: z11.number().int().optional()
+    })).mutation(async ({ input, ctx }) => createMenuSlide({ ...input, storeId: await resolveRequiredStoreId(ctx.user, input.storeId) })),
+    update: staffProcedure.input(z11.object({
+      id: z11.number(),
+      storeId: z11.number().optional(),
+      title: z11.string().min(1).max(200).optional(),
+      subtitle: z11.string().max(300).optional().nullable(),
+      imageUrl: z11.string().max(2e3).optional().nullable(),
+      videoUrl: z11.string().max(2e3).optional().nullable(),
+      badgeText: z11.string().max(80).optional().nullable(),
+      ctaText: z11.string().max(80).optional().nullable(),
+      ctaLink: z11.string().max(500).optional().nullable(),
+      sortOrder: z11.number().int().optional(),
+      isActive: z11.boolean().optional()
+    })).mutation(async ({ input, ctx }) => {
+      const { id, storeId: requestedStoreId, ...data } = input;
+      return updateMenuSlide(id, await resolveRequiredStoreId(ctx.user, requestedStoreId), data);
     }),
-    delete: staffProcedure.input(z7.object({ id: z7.number() })).mutation(async ({ input }) => {
-      await deleteMenuSlide(input.id);
+    delete: staffProcedure.input(z11.object({ id: z11.number(), storeId: z11.number().optional() })).mutation(async ({ input, ctx }) => {
+      await deleteMenuSlide(input.id, await resolveRequiredStoreId(ctx.user, input.storeId));
       return { ok: true };
     })
   }),
   // --- CARROSSEL HERO --------------------------------------------------------
   carousel: router({
-    list: publicProcedure.query(() => getCarouselImages(true)),
-    listAll: staffProcedure.query(() => getCarouselImages(false)),
-    uploadImage: staffProcedure.input(z7.object({
-      base64: z7.string().max(43e5),
+    list: publicProcedure.input(z11.object({ storeId: z11.number().optional() }).optional()).query(({ input }) => getCarouselImages(true, input?.storeId)),
+    listAll: staffProcedure.input(z11.object({ storeId: z11.number().optional() }).optional()).query(async ({ input, ctx }) => getCarouselImages(false, await resolveRequiredStoreId(ctx.user, input?.storeId))),
+    uploadImage: staffProcedure.input(z11.object({
+      storeId: z11.number().optional(),
+      base64: z11.string().max(43e5),
       // keep below Vercel request-size limits
-      mimeType: z7.enum(["image/jpeg", "image/png", "image/webp", "image/gif"]),
-      fileName: z7.string().max(255).optional()
-    })).mutation(async ({ input }) => {
+      mimeType: z11.enum(["image/jpeg", "image/png", "image/webp", "image/gif"]),
+      fileName: z11.string().max(255).optional()
+    })).mutation(async ({ input, ctx }) => {
+      const storeId = await resolveRequiredStoreId(ctx.user, input.storeId);
       const { storagePutAdapter: storagePut2 } = await Promise.resolve().then(() => (init_storage2(), storage_exports2));
       const { compressToWebP: compressToWebP2 } = await Promise.resolve().then(() => (init_imageUtils(), imageUtils_exports));
       const rawBuffer = Buffer.from(input.base64, "base64");
       const { buffer, mimeType, ext, reductionPct } = await compressToWebP2(rawBuffer, 85, 1920);
-      const key = `carousel/hero-${Date.now()}.${ext}`;
+      const key = `stores/${storeId}/carousel/hero-${Date.now()}.${ext}`;
       const { url } = await storagePut2(key, buffer, mimeType);
       console.log(`[upload] carrossel comprimido ${reductionPct}% \u2192 WebP`);
       return { url };
     }),
-    create: staffProcedure.input(z7.object({ imageUrl: z7.string().min(1), title: z7.string().optional().nullable(), sortOrder: z7.number().optional() })).mutation(({ input }) => createCarouselImage(input)),
-    update: staffProcedure.input(z7.object({ id: z7.number(), imageUrl: z7.string().optional(), title: z7.string().optional().nullable(), sortOrder: z7.number().optional(), active: z7.boolean().optional() })).mutation(({ input }) => {
-      const { id, ...data } = input;
-      return updateCarouselImage(id, data);
+    create: staffProcedure.input(z11.object({ storeId: z11.number().optional(), imageUrl: z11.string().min(1), title: z11.string().optional().nullable(), sortOrder: z11.number().optional() })).mutation(async ({ input, ctx }) => createCarouselImage({ ...input, storeId: await resolveRequiredStoreId(ctx.user, input.storeId) })),
+    update: staffProcedure.input(z11.object({ id: z11.number(), storeId: z11.number().optional(), imageUrl: z11.string().optional(), title: z11.string().optional().nullable(), sortOrder: z11.number().optional(), active: z11.boolean().optional() })).mutation(async ({ input, ctx }) => {
+      const { id, storeId: requestedStoreId, ...data } = input;
+      return updateCarouselImage(id, await resolveRequiredStoreId(ctx.user, requestedStoreId), data);
     }),
-    delete: staffProcedure.input(z7.object({ id: z7.number() })).mutation(async ({ input }) => {
-      await deleteCarouselImage(input.id);
+    delete: staffProcedure.input(z11.object({ id: z11.number(), storeId: z11.number().optional() })).mutation(async ({ input, ctx }) => {
+      await deleteCarouselImage(input.id, await resolveRequiredStoreId(ctx.user, input.storeId));
       return { ok: true };
     })
   }),
   // ─── RECOVERY DASHBOARD ─────────────────────────────────────────────────────────────
   recovery: router({
     /** KPIs gerais de recuperação de receita */
-    stats: adminProcedure3.input(z7.object({
-      period: z7.enum(["7d", "30d", "90d"]).default("30d")
+    stats: adminProcedure2.input(z11.object({
+      period: z11.enum(["7d", "30d", "90d"]).default("30d")
     })).query(async ({ input }) => {
       const { getDb: getDb2 } = await Promise.resolve().then(() => (init_db(), db_exports));
-      const { sql: sql9 } = await import("drizzle-orm");
+      const { sql: sql14 } = await import("drizzle-orm");
       const db = await getDb2();
-      if (!db) throw new TRPCError7({ code: "INTERNAL_SERVER_ERROR" });
+      if (!db) throw new TRPCError12({ code: "INTERNAL_SERVER_ERROR" });
       const days = input.period === "7d" ? 7 : input.period === "30d" ? 30 : 90;
       const since = new Date(Date.now() - days * 24 * 60 * 60 * 1e3);
-      const [cartStats] = await db.execute(sql9`
+      const [cartStats] = await db.execute(sql14`
           SELECT
             COUNT(*) AS total,
             SUM(CASE WHEN status = 'recovered' THEN 1 ELSE 0 END) AS recovered,
@@ -14237,7 +19387,7 @@ Telefone/WhatsApp: ${dbSettings.whatsappNumber ?? "(37) 99999-0000"}`
           FROM abandoned_carts
           WHERE createdAt >= ${since}
         `);
-      const [reactivationStats] = await db.execute(sql9`
+      const [reactivationStats] = await db.execute(sql14`
           SELECT
             COUNT(DISTINCT userId) AS totalInactive,
             SUM(CASE WHEN type = 'reactivation_15d' THEN 1 ELSE 0 END) AS sent15d,
@@ -14246,7 +19396,7 @@ Telefone/WhatsApp: ${dbSettings.whatsappNumber ?? "(37) 99999-0000"}`
           FROM automation_events
           WHERE createdAt >= ${since} AND type LIKE 'reactivation_%' AND channel = 'whatsapp'
         `);
-      const [conversionStats] = await db.execute(sql9`
+      const [conversionStats] = await db.execute(sql14`
           SELECT
             COUNT(*) AS totalConversions,
             ROUND(SUM(o.total), 2) AS conversionRevenue
@@ -14254,7 +19404,7 @@ Telefone/WhatsApp: ${dbSettings.whatsappNumber ?? "(37) 99999-0000"}`
           JOIN orders o ON o.id = ae.orderId
           WHERE ae.createdAt >= ${since} AND ae.type = 'conversion'
         `);
-      const [stepStats] = await db.execute(sql9`
+      const [stepStats] = await db.execute(sql14`
           SELECT
             step,
             COUNT(*) AS sent,
@@ -14298,13 +19448,13 @@ Telefone/WhatsApp: ${dbSettings.whatsappNumber ?? "(37) 99999-0000"}`
       };
     }),
     /** Lista de carrinhos abandonados com filtro */
-    abandonedCarts: adminProcedure3.input(z7.object({
-      status: z7.enum(["pending", "recovered", "expired"]).optional(),
-      limit: z7.number().min(1).max(100).default(50)
+    abandonedCarts: adminProcedure2.input(z11.object({
+      status: z11.enum(["pending", "recovered", "expired"]).optional(),
+      limit: z11.number().min(1).max(100).default(50)
     })).query(async ({ input }) => {
       const { getDb: getDb2 } = await Promise.resolve().then(() => (init_db(), db_exports));
       const db = await getDb2();
-      if (!db) throw new TRPCError7({ code: "INTERNAL_SERVER_ERROR" });
+      if (!db) throw new TRPCError12({ code: "INTERNAL_SERVER_ERROR" });
       const { abandonedCarts: acTable } = await Promise.resolve().then(() => (init_schema(), schema_exports));
       const { eq: eqFn, and: andFn } = await import("drizzle-orm");
       const conditions = [];
@@ -14313,13 +19463,13 @@ Telefone/WhatsApp: ${dbSettings.whatsappNumber ?? "(37) 99999-0000"}`
       return rows.map((r) => ({ ...r, items: JSON.parse(r.items) }));
     }),
     /** Lista de eventos de automação para auditoria */
-    events: adminProcedure3.input(z7.object({
-      type: z7.string().optional(),
-      limit: z7.number().min(1).max(200).default(100)
+    events: adminProcedure2.input(z11.object({
+      type: z11.string().optional(),
+      limit: z11.number().min(1).max(200).default(100)
     })).query(async ({ input }) => {
       const { getDb: getDb3 } = await Promise.resolve().then(() => (init_db(), db_exports));
       const db = await getDb3();
-      if (!db) throw new TRPCError7({ code: "INTERNAL_SERVER_ERROR" });
+      if (!db) throw new TRPCError12({ code: "INTERNAL_SERVER_ERROR" });
       const { automationEvents: aeTable } = await Promise.resolve().then(() => (init_schema(), schema_exports));
       const { eq: eqFn, and: andFn } = await import("drizzle-orm");
       const conditions = [];
@@ -14327,7 +19477,7 @@ Telefone/WhatsApp: ${dbSettings.whatsappNumber ?? "(37) 99999-0000"}`
       return db.select().from(aeTable).where(conditions.length > 0 ? andFn(...conditions) : void 0).orderBy(aeTable.createdAt).limit(input.limit);
     }),
     /** Disparo manual de reativação */
-    triggerReactivation: adminProcedure3.mutation(async () => {
+    triggerReactivation: adminProcedure2.mutation(async () => {
       await processReactivation();
       return { ok: true };
     })
@@ -14353,17 +19503,17 @@ Telefone/WhatsApp: ${dbSettings.whatsappNumber ?? "(37) 99999-0000"}`
       }));
     }),
     /** Descarta (marca como expirado) um carrinho abandonado do usuário */
-    dismiss: protectedProcedure.input(z7.object({ cartId: z7.number() })).mutation(async ({ ctx, input }) => {
+    dismiss: protectedProcedure.input(z11.object({ cartId: z11.number() })).mutation(async ({ ctx, input }) => {
       const { getDb: getDb4 } = await Promise.resolve().then(() => (init_db(), db_exports));
       const db = await getDb4();
-      if (!db) throw new TRPCError7({ code: "INTERNAL_SERVER_ERROR" });
+      if (!db) throw new TRPCError12({ code: "INTERNAL_SERVER_ERROR" });
       const { abandonedCarts: acTable } = await Promise.resolve().then(() => (init_schema(), schema_exports));
       const { eq: eqFn, and: andFn } = await import("drizzle-orm");
       await db.update(acTable).set({ status: "expired" }).where(andFn(eqFn(acTable.id, input.cartId), eqFn(acTable.userId, ctx.user.id)));
       return { ok: true };
     }),
     /** Busca um carrinho pelo ID para restaurar no checkout */
-    getById: protectedProcedure.input(z7.object({ cartId: z7.number() })).query(async ({ ctx, input }) => {
+    getById: protectedProcedure.input(z11.object({ cartId: z11.number() })).query(async ({ ctx, input }) => {
       const { getDb: getDb4 } = await Promise.resolve().then(() => (init_db(), db_exports));
       const db = await getDb4();
       if (!db) return null;
@@ -14382,34 +19532,38 @@ Telefone/WhatsApp: ${dbSettings.whatsappNumber ?? "(37) 99999-0000"}`
   // --- CLIENT ALERTS ----------------------------------------------------------
   clientAlerts: router({
     // Lista alertas ativos não lidos pelo cliente logado
-    list: protectedProcedure.query(({ ctx }) => listClientAlerts(ctx.user.id)),
+    list: protectedProcedure.input(z11.object({ storeId: z11.number().int().positive() })).query(({ ctx, input }) => listClientAlerts(ctx.user.id, input.storeId)),
     // Conta alertas não lidos (para badge no nav)
-    unreadCount: protectedProcedure.query(({ ctx }) => countUnreadClientAlerts(ctx.user.id)),
+    unreadCount: protectedProcedure.input(z11.object({ storeId: z11.number().int().positive() })).query(({ ctx, input }) => countUnreadClientAlerts(ctx.user.id, input.storeId)),
     // Marca alerta como lido
-    dismiss: protectedProcedure.input(z7.object({ alertId: z7.number() })).mutation(({ input, ctx }) => dismissClientAlert(input.alertId, ctx.user.id)),
+    dismiss: protectedProcedure.input(z11.object({ alertId: z11.number(), storeId: z11.number().int().positive() })).mutation(({ input, ctx }) => dismissClientAlert(input.alertId, ctx.user.id, input.storeId)),
     // Admin: criar alerta manual (novidades do clube, comunicados etc.)
-    createManual: staffProcedure.input(z7.object({
-      type: z7.enum(["promotion", "raffle", "coupon", "club", "custom"]),
-      title: z7.string().min(1),
-      message: z7.string().min(1),
-      icon: z7.string().optional(),
-      url: z7.string().optional(),
-      expiresAt: z7.date().optional()
-    })).mutation(({ input }) => createClientAlert(input))
+    createManual: staffProcedure.input(z11.object({
+      storeId: z11.number().optional(),
+      type: z11.enum(["promotion", "raffle", "coupon", "club", "custom"]),
+      title: z11.string().min(1),
+      message: z11.string().min(1),
+      icon: z11.string().optional(),
+      url: z11.string().optional(),
+      expiresAt: z11.date().optional()
+    })).mutation(async ({ input, ctx }) => createClientAlert({
+      ...input,
+      storeId: await resolveRequiredStoreId(ctx.user, input.storeId)
+    }))
   })
 });
 
 // server/_core/bootstrapRoute.ts
-import { z as z8 } from "zod";
+import { z as z12 } from "zod";
 
 // server/bootstrapAccess.ts
 init_schema();
 init_db();
 import bcrypt2 from "bcryptjs";
-import crypto4 from "crypto";
-import { eq as eq13 } from "drizzle-orm";
+import crypto6 from "crypto";
+import { eq as eq20 } from "drizzle-orm";
 function buildDefaultPassword() {
-  return `Bonatto@${crypto4.randomBytes(6).toString("hex")}!`;
+  return `Bonatto@${crypto6.randomBytes(6).toString("hex")}!`;
 }
 async function bootstrapAdminAndDriver(input = {}) {
   const db = await getDb();
@@ -14421,7 +19575,7 @@ async function bootstrapAdminAndDriver(input = {}) {
   const adminPassword = input.adminPassword?.trim() || buildDefaultPassword();
   const driverName = input.driverName?.trim() || "Motoboy Bonatto";
   const driverPhone = input.driverPhone?.trim() || null;
-  const existingAdmin = await db.select().from(users).where(eq13(users.email, adminEmail)).limit(1);
+  const existingAdmin = await db.select().from(users).where(eq20(users.email, adminEmail)).limit(1);
   const passwordHash = await bcrypt2.hash(adminPassword, 12);
   if (existingAdmin[0]) {
     await db.update(users).set({
@@ -14431,10 +19585,10 @@ async function bootstrapAdminAndDriver(input = {}) {
       role: "admin",
       emailVerified: true,
       lastSignedIn: /* @__PURE__ */ new Date()
-    }).where(eq13(users.id, existingAdmin[0].id));
+    }).where(eq20(users.id, existingAdmin[0].id));
   } else {
     await db.insert(users).values({
-      openId: `email_${crypto4.randomBytes(16).toString("hex")}`,
+      openId: `email_${crypto6.randomBytes(16).toString("hex")}`,
       name: adminName,
       email: adminEmail,
       passwordHash,
@@ -14444,15 +19598,15 @@ async function bootstrapAdminAndDriver(input = {}) {
       lastSignedIn: /* @__PURE__ */ new Date()
     });
   }
-  const driverToken = crypto4.randomBytes(32).toString("hex");
-  const existingDriver = await db.select().from(drivers).where(eq13(drivers.name, driverName)).limit(1);
+  const driverToken = crypto6.randomBytes(32).toString("hex");
+  const existingDriver = await db.select().from(drivers).where(eq20(drivers.name, driverName)).limit(1);
   if (existingDriver[0]) {
     await db.update(drivers).set({
       name: driverName,
       phone: driverPhone,
       active: true,
       accessToken: driverToken
-    }).where(eq13(drivers.id, existingDriver[0].id));
+    }).where(eq20(drivers.id, existingDriver[0].id));
   } else {
     await db.insert(drivers).values({
       name: driverName,
@@ -14476,12 +19630,12 @@ async function bootstrapAdminAndDriver(input = {}) {
 }
 
 // server/_core/bootstrapRoute.ts
-var bootstrapSchema = z8.object({
-  adminEmail: z8.string().email().optional(),
-  adminName: z8.string().min(2).max(120).optional(),
-  adminPassword: z8.string().min(8).max(120).optional(),
-  driverName: z8.string().min(2).max(120).optional(),
-  driverPhone: z8.string().max(30).nullable().optional()
+var bootstrapSchema = z12.object({
+  adminEmail: z12.string().email().optional(),
+  adminName: z12.string().min(2).max(120).optional(),
+  adminPassword: z12.string().min(8).max(120).optional(),
+  driverName: z12.string().min(2).max(120).optional(),
+  driverPhone: z12.string().max(30).nullable().optional()
 });
 function registerBootstrapRoute(app) {
   app.post("/api/bootstrap/access", async (req, res) => {
@@ -14528,243 +19682,6 @@ async function createContext(opts) {
     res: opts.res,
     user
   };
-}
-
-// server/_core/oauth.ts
-init_db();
-import { SignJWT as SignJWT2, jwtVerify as jwtVerify2 } from "jose";
-init_env();
-var GOOGLE_AUTH_ENDPOINT = "https://accounts.google.com/o/oauth2/v2/auth";
-var GOOGLE_TOKEN_ENDPOINT = "https://oauth2.googleapis.com/token";
-var GOOGLE_USERINFO_ENDPOINT = "https://openidconnect.googleapis.com/v1/userinfo";
-function getQueryParam(req, key) {
-  const value = req.query[key];
-  return typeof value === "string" ? value : void 0;
-}
-function getStateSecret() {
-  return new TextEncoder().encode(ENV.cookieSecret || "bonatto-oauth-state-dev-secret");
-}
-function buildBaseAppUrl(req) {
-  return (ENV.publicAppUrl || `${req.protocol}://${req.get("host") ?? ""}`).replace(/\/+$/, "");
-}
-function buildCallbackUrl(req) {
-  return `${buildBaseAppUrl(req)}/api/oauth/callback`;
-}
-function sanitizeReturnPath(value) {
-  if (!value || !value.startsWith("/") || value.startsWith("//")) {
-    return "/";
-  }
-  return value;
-}
-async function signOAuthState(payload) {
-  return new SignJWT2(payload).setProtectedHeader({ alg: "HS256", typ: "JWT" }).setIssuedAt().setExpirationTime("10m").sign(getStateSecret());
-}
-async function parseSignedState(state) {
-  const { payload } = await jwtVerify2(state, getStateSecret(), {
-    algorithms: ["HS256"]
-  });
-  const redirectUri = typeof payload.redirectUri === "string" ? payload.redirectUri : "";
-  const returnPath = typeof payload.returnPath === "string" ? payload.returnPath : "/";
-  const provider = payload.provider === "google" ? payload.provider : void 0;
-  if (!redirectUri) {
-    throw new Error("Invalid OAuth state payload");
-  }
-  return {
-    provider,
-    redirectUri,
-    returnPath: sanitizeReturnPath(returnPath)
-  };
-}
-function parseLegacyOAuthState(state) {
-  const decoded = Buffer.from(state, "base64").toString("utf-8");
-  const [redirectUri = "", returnPath = "/"] = decoded.split("|");
-  if (!redirectUri) {
-    throw new Error("Invalid OAuth state payload");
-  }
-  return {
-    redirectUri,
-    returnPath: sanitizeReturnPath(returnPath)
-  };
-}
-async function parseOAuthState(state) {
-  try {
-    return await parseSignedState(state);
-  } catch {
-    return parseLegacyOAuthState(state);
-  }
-}
-async function exchangeGoogleCodeForTokens(code, redirectUri) {
-  if (!ENV.googleClientId || !ENV.googleClientSecret) {
-    throw new Error("Google OAuth is not configured");
-  }
-  const body = new URLSearchParams({
-    client_id: ENV.googleClientId,
-    client_secret: ENV.googleClientSecret,
-    code,
-    grant_type: "authorization_code",
-    redirect_uri: redirectUri
-  });
-  const response = await fetch(GOOGLE_TOKEN_ENDPOINT, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/x-www-form-urlencoded"
-    },
-    body
-  });
-  if (!response.ok) {
-    const text2 = await response.text();
-    throw new Error(`Google token exchange failed: ${response.status} ${text2}`);
-  }
-  return await response.json();
-}
-async function fetchGoogleUserInfo(accessToken) {
-  const response = await fetch(GOOGLE_USERINFO_ENDPOINT, {
-    headers: {
-      Authorization: `Bearer ${accessToken}`
-    }
-  });
-  if (!response.ok) {
-    const text2 = await response.text();
-    throw new Error(`Google userinfo failed: ${response.status} ${text2}`);
-  }
-  return await response.json();
-}
-async function resolveGoogleUser(profile) {
-  const providerUserId = profile.sub;
-  const normalizedEmail = profile.email?.trim().toLowerCase();
-  let user = await getUserByAuthProvider("google", providerUserId);
-  let isNew = false;
-  if (!user && normalizedEmail && profile.email_verified) {
-    user = await getUserByEmail(normalizedEmail);
-  }
-  if (!user) {
-    const openId = `google:${providerUserId}`;
-    await upsertUser({
-      openId,
-      name: profile.name ?? "Cliente Bonatto",
-      email: normalizedEmail ?? null,
-      loginMethod: "google",
-      lastSignedIn: /* @__PURE__ */ new Date()
-    });
-    user = await getUserByOpenId(openId);
-    isNew = true;
-  }
-  if (!user) {
-    throw new Error("Failed to resolve Google user");
-  }
-  await updateUserSocialProfile(user.id, {
-    name: !user.name && profile.name ? profile.name : void 0,
-    email: !user.email && normalizedEmail && profile.email_verified ? normalizedEmail : void 0,
-    avatarUrl: profile.picture ?? void 0,
-    loginMethod: "google",
-    emailVerified: profile.email_verified === true ? true : void 0,
-    lastSignedIn: /* @__PURE__ */ new Date()
-  });
-  await linkCustomerAuthProvider({
-    userId: user.id,
-    provider: "google",
-    providerUserId,
-    providerEmail: normalizedEmail ?? null,
-    isPrimary: user.loginMethod === "google" || !user.loginMethod
-  });
-  const refreshedUser = await getUserById(user.id);
-  if (!refreshedUser) {
-    throw new Error("Failed to reload Google user");
-  }
-  return { user: refreshedUser, isNew };
-}
-async function finalizeLogin(req, res, openId, name, returnPath) {
-  const sessionToken = await sdk.createSessionToken(openId, {
-    name,
-    expiresInMs: DEFAULT_SESSION_MS
-  });
-  const cookieOptions = getSessionCookieOptions(req);
-  res.cookie(COOKIE_NAME, sessionToken, { ...cookieOptions, maxAge: DEFAULT_SESSION_MS });
-  res.redirect(302, sanitizeReturnPath(returnPath));
-}
-function registerOAuthRoutes(app) {
-  app.get("/api/oauth/google/start", async (req, res) => {
-    if (!ENV.googleClientId || !ENV.googleClientSecret) {
-      res.status(503).json({ error: "Google OAuth is not configured" });
-      return;
-    }
-    try {
-      const redirectUri = buildCallbackUrl(req);
-      const returnPath = sanitizeReturnPath(getQueryParam(req, "returnTo"));
-      const state = await signOAuthState({
-        provider: "google",
-        redirectUri,
-        returnPath
-      });
-      const url = new URL(GOOGLE_AUTH_ENDPOINT);
-      url.searchParams.set("client_id", ENV.googleClientId);
-      url.searchParams.set("redirect_uri", redirectUri);
-      url.searchParams.set("response_type", "code");
-      url.searchParams.set("scope", "openid email profile");
-      url.searchParams.set("state", state);
-      url.searchParams.set("prompt", "select_account");
-      res.redirect(302, url.toString());
-    } catch (error) {
-      console.error("[OAuth] Google start failed", error);
-      res.status(500).json({ error: "Google OAuth start failed" });
-    }
-  });
-  app.get("/api/oauth/callback", async (req, res) => {
-    const code = getQueryParam(req, "code");
-    const state = getQueryParam(req, "state");
-    if (!code || !state) {
-      res.status(400).json({ error: "code and state are required" });
-      return;
-    }
-    try {
-      const parsedState = await parseOAuthState(state);
-      const expectedCallback = buildCallbackUrl(req);
-      if (!parsedState.redirectUri || parsedState.redirectUri !== expectedCallback) {
-        return res.status(400).json({ error: "Invalid OAuth redirect target" });
-      }
-      if (parsedState.provider === "google") {
-        const tokenResponse2 = await exchangeGoogleCodeForTokens(code, expectedCallback);
-        const profile = await fetchGoogleUserInfo(tokenResponse2.access_token);
-        if (!profile.sub) {
-          res.status(400).json({ error: "Google user id missing" });
-          return;
-        }
-        const { user, isNew: isNew2 } = await resolveGoogleUser(profile);
-        if (isNew2) {
-          fireJourneyTrigger("new_user", user.id, user.phone ?? void 0).catch(
-            (error) => console.error("[OAuth] new_user trigger failed", error)
-          );
-        }
-        await finalizeLogin(req, res, user.openId, user.name ?? "Cliente Bonatto", parsedState.returnPath);
-        return;
-      }
-      const tokenResponse = await sdk.exchangeCodeForToken(code, state);
-      const userInfo = await sdk.getUserInfo(tokenResponse.accessToken);
-      if (!userInfo.openId) {
-        res.status(400).json({ error: "openId missing from user info" });
-        return;
-      }
-      const { isNew } = await upsertUser({
-        openId: userInfo.openId,
-        name: userInfo.name || null,
-        email: userInfo.email ?? null,
-        loginMethod: userInfo.loginMethod ?? userInfo.platform ?? null,
-        lastSignedIn: /* @__PURE__ */ new Date()
-      });
-      if (isNew) {
-        const newUser = await getUserByOpenId(userInfo.openId);
-        if (newUser) {
-          fireJourneyTrigger("new_user", newUser.id, newUser.phone ?? void 0).catch(
-            (error) => console.error("[OAuth] new_user trigger failed", error)
-          );
-        }
-      }
-      await finalizeLogin(req, res, userInfo.openId, userInfo.name || "", parsedState.returnPath);
-    } catch (error) {
-      console.error("[OAuth] Callback failed", error);
-      res.status(500).json({ error: "OAuth callback failed" });
-    }
-  });
 }
 
 // server/_core/storageProxy.ts
@@ -14983,7 +19900,10 @@ async function configureApiApp(app) {
     "payments.createCheckoutSession",
     "payments.checkoutWithSavedCard",
     "club.subscribe",
-    "asaas.createPix"
+    "asaas.createPix",
+    "auth.syncSocialAccount",
+    "auth.disconnectSocialAccount",
+    "auth.deleteAccount"
   ]);
   const uploadProcedures = /* @__PURE__ */ new Set([
     "avatar.upload",
