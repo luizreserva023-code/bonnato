@@ -6120,7 +6120,7 @@ function SettingsTab() {
             <div>
               <p className="text-sm font-semibold">Abrir loja agora</p>
               <p className="mt-0.5 text-xs text-muted-foreground">
-                MantÃ©m a loja aberta para pedidos mesmo fora do horÃ¡rio configurado. Desative para voltar ao horÃ¡rio automÃ¡tico.
+                Mantém a loja aberta para pedidos mesmo fora do horário configurado. Desative para voltar ao horário automático.
               </p>
             </div>
             <Switch checked={manualStoreOpen} onCheckedChange={setManualStoreOpen} />
