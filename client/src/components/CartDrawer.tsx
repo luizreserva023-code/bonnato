@@ -32,6 +32,13 @@ export function CartDrawer() {
     navigate("/checkout");
   };
 
+  const handleOrderMore = () => {
+    const pathParts = window.location.pathname.split("/").filter(Boolean);
+    const storeSlug = pathParts.length > 1 ? pathParts[0] : null;
+    setIsOpen(false);
+    navigate(storeSlug ? `/${storeSlug}/cardapio` : "/cardapio");
+  };
+
   const toggleNotes = (itemKey: string) => {
     setExpandedNotes((prev) => ({ ...prev, [itemKey]: !prev[itemKey] }));
   };
@@ -158,6 +165,16 @@ export function CartDrawer() {
                   Você precisará fazer login para finalizar o pedido
                 </p>
               )}
+
+              <Button
+                type="button"
+                variant="outline"
+                onClick={handleOrderMore}
+                className="w-full h-11 text-sm font-semibold gap-2 border-primary/30 text-primary"
+              >
+                <Plus className="w-4 h-4" />
+                Pedir mais
+              </Button>
 
               <Button
                 onClick={handleCheckout}
