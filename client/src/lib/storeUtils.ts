@@ -87,26 +87,8 @@ export function nextOpenTime(): string {
   return nextOpenTimeWithHours();
 }
 
-// ── CEP / Delivery zone ──
-
-// CEPs de cobertura: prefixos (5 dígitos) atendidos pela Bonatto Pizza
-// Ajuste conforme a área real de entrega
-export const DELIVERY_CEP_PREFIXES: string[] = [
-  "37500", "37501", "37502", "37503", "37504",
-  "37505", "37506", "37507", "37508", "37509",
-  "37510", "37511", "37512", "37513", "37514",
-  "37515", "37516", "37517", "37518", "37519",
-  "37520", "37521", "37522", "37523", "37524",
-  "37525", "37526", "37527", "37528", "37529",
-];
-
-/** Verifica se um CEP está dentro da área de entrega */
-export function isCepInDeliveryZone(cep: string): boolean {
-  const cleanCep = cep.replace(/\D/g, "");
-  if (cleanCep.length !== 8) return false;
-  const prefix = cleanCep.substring(0, 5);
-  return DELIVERY_CEP_PREFIXES.includes(prefix);
-}
+// CEP é apenas parte do endereço. Cobertura, taxa e prazo são calculados
+// exclusivamente pelo backend a partir da rota entre a unidade e o destino.
 
 /** Formata o CEP no padrão 00000-000 */
 export function formatCep(cep: string): string {

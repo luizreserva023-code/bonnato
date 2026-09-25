@@ -3,6 +3,7 @@ import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { X, Bell, ChevronRight } from "lucide-react";
 import { useLocation } from "wouter";
+import { useStore } from "@/contexts/StoreContext";
 
 interface AlertCardProps {
   alert: {
@@ -10,6 +11,7 @@ interface AlertCardProps {
     type: string;
     title: string;
     message: string;
+    imageUrl: string | null;
     icon: string | null;
     url: string | null;
     read: boolean;
@@ -20,6 +22,7 @@ interface AlertCardProps {
 
 function AlertCard({ alert, onDismiss }: AlertCardProps) {
   const [, setLocation] = useLocation();
+  const { selectedStore } = useStore();
   const utils = trpc.useUtils();
 
   const dismissMutation = trpc.clientAlerts.dismiss.useMutation({
@@ -31,13 +34,13 @@ function AlertCard({ alert, onDismiss }: AlertCardProps) {
 
   const handleDismiss = (e: React.MouseEvent) => {
     e.stopPropagation();
-    dismissMutation.mutate({ alertId: alert.id });
+    if (selectedStore?.id) dismissMutation.mutate({ alertId: alert.id, storeId: selectedStore.id });
     onDismiss(alert.id);
   };
 
   const handleClick = () => {
     if (!alert.read) {
-      dismissMutation.mutate({ alertId: alert.id });
+      if (selectedStore?.id) dismissMutation.mutate({ alertId: alert.id, storeId: selectedStore.id });
     }
     if (alert.url) {
       setLocation(alert.url);
@@ -89,8 +92,12 @@ function AlertCard({ alert, onDismiss }: AlertCardProps) {
       className={`relative flex items-start gap-3 p-3.5 rounded-xl border-l-4 cursor-pointer transition-all hover:brightness-95 active:scale-[0.99] ${styles.border} ${styles.bg} ${!alert.read ? "shadow-sm ring-1 ring-black/5" : "opacity-75"}`}
       onClick={handleClick}
     >
-      {/* Ícone */}
-      <span className="text-xl flex-shrink-0 mt-0.5 leading-none">{alert.icon ?? "🔔"}</span>
+      {/* Imagem/ícone */}
+      {alert.imageUrl ? (
+        <img src={alert.imageUrl} alt="" className="h-14 w-14 flex-shrink-0 rounded-lg object-cover" loading="lazy" />
+      ) : (
+        <span className="text-xl flex-shrink-0 mt-0.5 leading-none">{alert.icon ?? "🔔"}</span>
+      )}
 
       {/* Conteúdo */}
       <div className="flex-1 min-w-0">
@@ -130,11 +137,12 @@ interface ClientAlertsBannerProps {
 
 export function ClientAlertsBanner({ maxVisible = 3, className = "" }: ClientAlertsBannerProps) {
   const { user } = useAuth();
+  const { selectedStore } = useStore();
   const [dismissed, setDismissed] = useState<Set<number>>(new Set());
   const [expanded, setExpanded] = useState(false);
 
-  const { data: alerts = [] } = trpc.clientAlerts.list.useQuery(undefined, {
-    enabled: !!user,
+  const { data: alerts = [] } = trpc.clientAlerts.list.useQuery({ storeId: selectedStore?.id ?? 0 }, {
+    enabled: Boolean(user && selectedStore?.id),
     refetchInterval: 60_000, // atualiza a cada 1 min
   });
 

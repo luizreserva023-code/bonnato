@@ -159,8 +159,8 @@ function InfiniteCategoryCarousel() {
 }
 
 export function CommerceHero({
-  headline = "A pizza que você merece",
-  subheadline = "Massa artesanal, ingredientes frescos e entrega rápida. Sabor de verdade na sua porta em até 60 minutos.",
+  headline = "Escolha sua pizza e faça o pedido",
+  subheadline = "Massa artesanal, ingredientes frescos e entrega em até 60 minutos.",
   promos,
   className,
 }: CommerceHeroProps) {

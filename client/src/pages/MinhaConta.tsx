@@ -3,6 +3,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -11,18 +12,25 @@ import { useAuth } from "@/_core/hooks/useAuth";
 import { getLoginUrl } from "@/const";
 import { loadMagnificAvatarPresets, type MagnificAvatarPreset } from "@/lib/magnific-assets";
 import { trpc } from "@/lib/trpc";
+import { uploadImageFile } from "@/lib/imageUpload";
+import { lookupCep } from "@/lib/cep";
 import {
   Bell, BellOff, BellRing, ChevronDown, ChevronUp, Clock, CreditCard, Gift, Heart, Home, LogIn,
   Loader2, MapPin, Package, Plus, RotateCcw, Share2, ShoppingBag, Smartphone, Star, Tag, Ticket, Trash2,
   TrendingUp, Trophy, User, Zap, Crown, Truck, Pizza, CheckCircle, XCircle, QrCode, Receipt,
-  ShoppingCart, AlertCircle,
+  ShoppingCart, AlertCircle, Archive, CheckCheck, MonitorSmartphone, LogOut, ShieldCheck,
 } from "lucide-react";
 import { useState, useEffect, useRef } from "react";
 import { usePushNotifications } from "@/hooks/usePushNotifications";
+import { useOrderRealtime } from "@/hooks/useOrderRealtime";
 import { PWAInstallBanner } from "@/components/PWAInstallBanner";
 import { ClientAlertsBanner } from "@/components/ClientAlertsBanner";
 import { Link, useLocation } from "wouter";
 import { toast } from "sonner";
+import { useStore } from "@/contexts/StoreContext";
+import { BonattoSectionHero } from "@/components/consumer/BonattoSectionHero";
+import { SocialConnections } from "@/components/SocialConnections";
+import { RewardsCatalog } from "@/features/rewards/RewardsCatalog";
 
 const LOGO_URL = "/brand/bonatto-logo-driver.jpg";
 
@@ -47,6 +55,7 @@ const PAYMENT_LABELS: Record<string, string> = {
 const ACCOUNT_TABS = [
   { value: "pedidos", label: "Pedidos", icon: Package },
   { value: "fidelidade", label: "Pontos", icon: Trophy },
+  { value: "recompensas", label: "Recompensas", icon: Gift },
   { value: "enderecos", label: "Endereços", icon: MapPin },
   { value: "notificacoes", label: "Avisos", icon: Bell },
   { value: "cupons", label: "Cupons", icon: Tag },
@@ -87,6 +96,177 @@ function StatusProgressBar({ status }: { status: string }) {
           style={{ width: `${(info.step / 4) * 100}%` }}
         />
       </div>
+    </div>
+  );
+}
+
+function OrderReviewSection({ orderId }: { orderId: number }) {
+  const utils = trpc.useUtils();
+  const review = trpc.ratings.orderReviewByOrder.useQuery({ orderId });
+  const offer = trpc.rewards.reviewOffer.useQuery({ orderId });
+  const order = trpc.orders.byId.useQuery({ id: orderId }, { enabled: !review.data });
+  const [rating, setRating] = useState(0);
+  const [comment, setComment] = useState("");
+  const [itemRatings, setItemRatings] = useState<Record<number, number>>({});
+
+  const submit = trpc.ratings.submitOrderReview.useMutation({
+    onSuccess: async (result) => {
+      if (result.reward?.awarded && result.reward.points > 0) {
+        toast.success(`Avaliação enviada! +${result.reward.points} pontos foram adicionados ao seu saldo.`);
+      } else {
+        toast.success("Avaliação do pedido enviada. Obrigado!");
+      }
+      await Promise.all([
+        review.refetch(),
+        offer.refetch(),
+        utils.loyalty.points.invalidate(),
+      ]);
+    },
+    onError: (error) => toast.error(error.message),
+  });
+
+  if (review.isLoading) {
+    return <div className="mt-3 border-t pt-3"><Skeleton className="h-16 w-full" /></div>;
+  }
+
+  if (review.data) {
+    return (
+      <div className="mt-3 border-t pt-3">
+        <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Sua experiência</p>
+        <div className="flex gap-1">
+          {[1,2,3,4,5].map((star) => (
+            <Star key={star} className={`h-5 w-5 ${star <= review.data!.rating ? "fill-yellow-400 text-yellow-400" : "text-muted-foreground"}`} />
+          ))}
+        </div>
+        {review.data.comment && <p className="mt-1 text-sm text-muted-foreground">{review.data.comment}</p>}
+        {review.data.reward?.alreadyAwarded && review.data.reward.awardedPoints > 0 && (
+          <div className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-emerald-950">
+            <div className="flex items-start gap-3">
+              <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-emerald-100">
+                <Gift className="h-5 w-5 text-emerald-700" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-black">+{review.data.reward.awardedPoints} pontos recebidos</p>
+                <p className="mt-1 text-xs leading-5 text-emerald-800">
+                  Cashback de {review.data.reward.cashbackPercent}% creditado automaticamente pela sua avaliação deste pedido.
+                </p>
+                {review.data.reward.externalReviewEnabled && review.data.reward.externalReviewUrl && (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className="mt-3 border-emerald-300 bg-white text-emerald-900 hover:bg-emerald-100"
+                    onClick={() => window.open(review.data!.reward!.externalReviewUrl, "_blank", "noopener,noreferrer")}
+                  >
+                    {review.data.reward.externalReviewLabel}
+                  </Button>
+                )}
+                <p className="mt-2 text-[11px] leading-4 text-emerald-700">
+                  O link externo é opcional e não altera os pontos já recebidos.
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  const items = order.data?.items ?? [];
+  return (
+    <div className="mt-3 space-y-3 border-t pt-3">
+      {offer.data?.enabled && offer.data.open && offer.data.estimatedPoints > 0 && (
+        <div className="rounded-2xl border border-[#ead3cd] bg-[#fff8f5] p-4">
+          <div className="flex items-start gap-3">
+            <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-[#f7e6e1] text-[#7d0f14]">
+              <Gift className="h-5 w-5" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-black text-[#3b1618]">
+                Avalie e receba {offer.data.estimatedPoints} pontos
+              </p>
+              <p className="mt-1 text-xs leading-5 text-[#765f5b]">
+                Este pedido gera {offer.data.cashbackPercent}% de cashback convertido em pontos automaticamente após o envio da avaliação.
+              </p>
+              {offer.data.expiresAt && (
+                <p className="mt-2 text-[11px] font-semibold text-[#7d0f14]">
+                  Disponível até {new Date(offer.data.expiresAt).toLocaleDateString("pt-BR")}.
+                </p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {offer.data?.enabled
+        && offer.data.open
+        && offer.data.campaignMode === "google_request"
+        && offer.data.externalReviewEnabled
+        && offer.data.externalReviewUrl && (
+          <div className="rounded-2xl border border-[#ead3cd] bg-[#fff8f5] p-4">
+            <div className="flex items-start gap-3">
+              <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-[#f7e6e1] text-[#7d0f14]">
+                <Star className="h-5 w-5" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-black text-[#3b1618]">Avalie sua experiência no Google</p>
+                <p className="mt-1 text-xs leading-5 text-[#765f5b]">
+                  Sua avaliação é voluntária e ajuda outras pessoas a conhecerem a loja.
+                </p>
+                <Button
+                  type="button"
+                  size="sm"
+                  className="mt-3"
+                  onClick={() => window.open(offer.data!.externalReviewUrl, "_blank", "noopener,noreferrer")}
+                >
+                  {offer.data.externalReviewLabel || "Avaliar no Google"}
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
+      <div>
+        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Como foi seu pedido?</p>
+        <div className="mt-2 flex gap-1">
+          {[1,2,3,4,5].map((star) => (
+            <button key={star} type="button" onClick={() => setRating(star)} aria-label={`${star} estrelas`}>
+              <Star className={`h-7 w-7 ${star <= rating ? "fill-yellow-400 text-yellow-400" : "text-muted-foreground"}`} />
+            </button>
+          ))}
+        </div>
+      </div>
+      {items.length > 0 && (
+        <div className="space-y-2">
+          <p className="text-xs font-medium text-muted-foreground">Avalie os itens (opcional)</p>
+          {items.map((item) => (
+            <div key={item.id} className="flex items-center justify-between gap-3 rounded-lg border p-2.5">
+              <span className="min-w-0 truncate text-sm font-medium">{item.productName}</span>
+              <div className="flex shrink-0 gap-0.5">
+                {[1,2,3,4,5].map((star) => (
+                  <button key={star} type="button" onClick={() => setItemRatings((current) => ({ ...current, [item.id]: star }))}>
+                    <Star className={`h-5 w-5 ${star <= (itemRatings[item.id] ?? 0) ? "fill-yellow-400 text-yellow-400" : "text-muted-foreground"}`} />
+                  </button>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+      <Textarea value={comment} onChange={(event) => setComment(event.target.value)} maxLength={1200} placeholder="Conte como foi sua experiência (opcional)" />
+      <Button
+        className="w-full"
+        disabled={rating === 0 || submit.isPending}
+        onClick={() => submit.mutate({
+          orderId,
+          rating,
+          comment: comment.trim() || undefined,
+          items: Object.entries(itemRatings)
+            .filter(([, value]) => value > 0)
+            .map(([orderItemId, value]) => ({ orderItemId: Number(orderItemId), rating: value })),
+        })}
+      >
+        {submit.isPending ? "Enviando..." : "Enviar avaliação do pedido"}
+      </Button>
     </div>
   );
 }
@@ -269,7 +449,24 @@ function AbandonedCartsTab() {
 //  Orders Tab 
 function OrdersTab() {
   const [expandedId, setExpandedId] = useState<number | null>(null);
-  const { data: orders, isLoading } = trpc.orders.myOrders.useQuery(undefined, { refetchInterval: 30000 });
+  const { selectedStore } = useStore();
+  const utils = trpc.useUtils();
+  useOrderRealtime({
+    enabled: Boolean(selectedStore?.id),
+    onEvent: () => {
+      void utils.orders.myOrders.invalidate();
+      void utils.orders.byId.invalidate();
+      void utils.ratings.orderReviewByOrder.invalidate();
+    },
+    onFallback: () => {
+      void utils.orders.myOrders.invalidate();
+    },
+    fallbackIntervalMs: 15_000,
+  });
+  const { data: orders, isLoading } = trpc.orders.myOrders.useQuery(
+    { storeId: selectedStore?.id },
+    { enabled: Boolean(selectedStore?.id), refetchInterval: false },
+  );
   const [, navigate] = useLocation();
   const orderRefs = useRef<Record<number, HTMLDivElement | null>>({});
 
@@ -312,7 +509,7 @@ function OrdersTab() {
     <div className="text-center py-16 text-muted-foreground">
       <Package className="w-16 h-16 mx-auto mb-4 opacity-20" />
       <p className="text-xl font-medium">Nenhum pedido ainda</p>
-      <p className="text-sm mt-2 mb-6">Faça seu primeiro pedido agora!</p>
+      <p className="text-sm mt-2 mb-6">Seu histórico de pedidos vai aparecer aqui.</p>
       <Link href="/cardapio"><Button className="gap-2"><ShoppingBag className="w-4 h-4" />Ver Cardápio</Button></Link>
     </div>
   );
@@ -365,6 +562,7 @@ function OrdersTab() {
                   </button>
                 </Link>
               )}
+              {order.status === "delivered" && <OrderReviewSection orderId={order.id} />}
               {order.status === "delivered" && order.driverId && <DeliveryRatingSection orderId={order.id} />}
             </CardContent>
           </Card>
@@ -376,9 +574,12 @@ function OrdersTab() {
 
 //  Loyalty Tab 
 function LoyaltyTab() {
-  const { data: points, isLoading: loadingPoints } = trpc.loyalty.points.useQuery();
-  const { data: history, isLoading: loadingHistory } = trpc.loyalty.spendingHistory.useQuery();
-  const { data: txHistory, isLoading: loadingTxHistory } = trpc.loyalty.history.useQuery();
+  const { selectedStore } = useStore();
+  const storeInput = { storeId: selectedStore?.id };
+  const queryOptions = { enabled: Boolean(selectedStore?.id) };
+  const { data: points, isLoading: loadingPoints } = trpc.loyalty.points.useQuery(storeInput, queryOptions);
+  const { data: history, isLoading: loadingHistory } = trpc.loyalty.spendingHistory.useQuery(storeInput, queryOptions);
+  const { data: txHistory, isLoading: loadingTxHistory } = trpc.loyalty.history.useQuery(storeInput, queryOptions);
 
   const LEVELS = [
     { name: "Bronze", min: 0,   max: 100,  color: "text-amber-700",  bg: "bg-amber-100" },
@@ -523,27 +724,78 @@ function LoyaltyTab() {
 //  Addresses Tab 
 function AddressesTab() {
   const { data: addresses, isLoading, refetch } = trpc.addresses.list.useQuery();
-  const createAddress = trpc.addresses.create.useMutation({ onSuccess: () => { toast.success("Endereço salvo!"); refetch(); setOpen(false); resetForm(); }, onError: e => toast.error(e.message) });
+  const createAddress = trpc.addresses.create.useMutation({ onSuccess: () => { toast.success("Endereço salvo e localizado!"); refetch(); setOpen(false); resetForm(); }, onError: e => toast.error(e.message) });
   const deleteAddress = trpc.addresses.delete.useMutation({ onSuccess: () => { toast.success("Endereço removido."); refetch(); }, onError: e => toast.error(e.message) });
-  const updateAddress = trpc.addresses.update.useMutation({ onSuccess: () => { toast.success("Endereço atualizado!"); refetch(); setOpen(false); setEditId(null); resetForm(); }, onError: e => toast.error(e.message) });
+  const updateAddress = trpc.addresses.update.useMutation({ onSuccess: () => { toast.success("Endereço atualizado e localizado!"); refetch(); setOpen(false); setEditId(null); resetForm(); }, onError: e => toast.error(e.message) });
 
+  const emptyForm = { label: "", cep: "", street: "", number: "", complement: "", neighborhood: "", city: "", state: "", isDefault: false };
   const [open, setOpen] = useState(false);
   const [editId, setEditId] = useState<number | null>(null);
-  const [form, setForm] = useState({ label: "", address: "", cep: "", city: "", isDefault: false });
+  const [cepLoading, setCepLoading] = useState(false);
+  const [form, setForm] = useState(emptyForm);
 
-  function resetForm() { setForm({ label: "", address: "", cep: "", city: "", isDefault: false }); }
+  function resetForm() { setForm(emptyForm); }
 
   function startEdit(a: typeof addresses extends (infer T)[] | undefined ? T : never) {
     if (!a) return;
-    setEditId((a as any).id);
-    setForm({ label: (a as any).label, address: (a as any).address, cep: (a as any).cep ?? "", city: (a as any).city ?? "", isDefault: (a as any).isDefault ?? false });
+    const address = a as any;
+    setEditId(address.id);
+    setForm({
+      label: address.label ?? "",
+      cep: address.cep ?? "",
+      street: address.street ?? "",
+      number: address.number ?? "",
+      complement: address.complement ?? "",
+      neighborhood: address.neighborhood ?? "",
+      city: address.city ?? "",
+      state: address.state ?? "",
+      isDefault: address.isDefault ?? false,
+    });
     setOpen(true);
   }
 
+  async function handleCepBlur() {
+    const cep = form.cep.replace(/\D/g, "");
+    if (cep.length !== 8) return;
+    setCepLoading(true);
+    try {
+      const data = await lookupCep(cep);
+      if (!data) {
+        toast.error("CEP não encontrado");
+        return;
+      }
+      setForm((current) => ({
+        ...current,
+        street: data.street || current.street,
+        neighborhood: data.neighborhood || current.neighborhood,
+        city: data.city || current.city,
+        state: data.state || current.state,
+      }));
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Não foi possível consultar o CEP agora.");
+    } finally {
+      setCepLoading(false);
+    }
+  }
+
   function handleSubmit() {
-    if (!form.label || !form.address) { toast.error("Preencha o nome e o endereço."); return; }
-    if (editId) updateAddress.mutate({ id: editId, ...form });
-    else createAddress.mutate(form);
+    if (!form.label.trim() || !form.cep.trim() || !form.street.trim() || !form.number.trim() || !form.city.trim() || form.state.trim().length !== 2) {
+      toast.error("Preencha nome, CEP, rua, número, cidade e UF.");
+      return;
+    }
+    const payload = {
+      label: form.label.trim(),
+      cep: form.cep.trim(),
+      street: form.street.trim(),
+      number: form.number.trim(),
+      complement: form.complement.trim() || undefined,
+      neighborhood: form.neighborhood.trim() || undefined,
+      city: form.city.trim(),
+      state: form.state.trim().toUpperCase(),
+      isDefault: form.isDefault,
+    };
+    if (editId) updateAddress.mutate({ id: editId, ...payload });
+    else createAddress.mutate(payload);
   }
 
   if (isLoading) return <div className="space-y-3">{Array.from({ length: 2 }).map((_, i) => <Skeleton key={i} className="h-20 w-full" />)}</div>;
@@ -556,33 +808,57 @@ function AddressesTab() {
           <DialogTrigger asChild>
             <Button size="sm" className="gap-1.5"><Plus className="w-4 h-4" />Adicionar</Button>
           </DialogTrigger>
-          <DialogContent>
+          <DialogContent className="max-w-xl">
             <DialogHeader><DialogTitle>{editId ? "Editar Endereço" : "Novo Endereço"}</DialogTitle></DialogHeader>
             <div className="space-y-3 pt-2">
               <div className="space-y-1.5">
                 <Label>Nome (ex: Casa, Trabalho)</Label>
                 <Input value={form.label} onChange={e => setForm(f => ({ ...f, label: e.target.value }))} placeholder="Casa" />
               </div>
-              <div className="space-y-1.5">
-                <Label>Endereço completo</Label>
-                <Input value={form.address} onChange={e => setForm(f => ({ ...f, address: e.target.value }))} placeholder="Rua, número, bairro" />
+              <div className="grid grid-cols-[1fr_90px] gap-3">
+                <div className="space-y-1.5">
+                  <Label>CEP</Label>
+                  <div className="relative">
+                    <Input value={form.cep} onChange={e => setForm(f => ({ ...f, cep: e.target.value }))} onBlur={handleCepBlur} placeholder="00000-000" />
+                    {cepLoading && <Loader2 className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 animate-spin text-muted-foreground" />}
+                  </div>
+                </div>
+                <div className="space-y-1.5">
+                  <Label>UF</Label>
+                  <Input value={form.state} maxLength={2} onChange={e => setForm(f => ({ ...f, state: e.target.value.toUpperCase() }))} placeholder="MG" />
+                </div>
+              </div>
+              <div className="grid grid-cols-[1fr_110px] gap-3">
+                <div className="space-y-1.5">
+                  <Label>Rua</Label>
+                  <Input value={form.street} onChange={e => setForm(f => ({ ...f, street: e.target.value }))} placeholder="Rua..." />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Número</Label>
+                  <Input value={form.number} onChange={e => setForm(f => ({ ...f, number: e.target.value }))} placeholder="123" />
+                </div>
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1.5">
-                  <Label>CEP</Label>
-                  <Input value={form.cep} onChange={e => setForm(f => ({ ...f, cep: e.target.value }))} placeholder="00000-000" />
+                  <Label>Bairro</Label>
+                  <Input value={form.neighborhood} onChange={e => setForm(f => ({ ...f, neighborhood: e.target.value }))} placeholder="Centro" />
                 </div>
                 <div className="space-y-1.5">
                   <Label>Cidade</Label>
                   <Input value={form.city} onChange={e => setForm(f => ({ ...f, city: e.target.value }))} placeholder="Cidade" />
                 </div>
               </div>
+              <div className="space-y-1.5">
+                <Label>Complemento</Label>
+                <Input value={form.complement} onChange={e => setForm(f => ({ ...f, complement: e.target.value }))} placeholder="Apto, bloco, referência..." />
+              </div>
+              <p className="text-xs text-muted-foreground">Ao salvar, o endereço é geocodificado no servidor. A taxa de entrega nunca fica salva aqui: ela é recalculada no checkout.</p>
               <label className="flex items-center gap-2 text-sm cursor-pointer">
                 <input type="checkbox" checked={form.isDefault} onChange={e => setForm(f => ({ ...f, isDefault: e.target.checked }))} className="rounded" />
                 Definir como endereço padrão
               </label>
               <Button className="w-full" onClick={handleSubmit} disabled={createAddress.isPending || updateAddress.isPending}>
-                {createAddress.isPending || updateAddress.isPending ? "Salvando..." : editId ? "Salvar alterações" : "Adicionar endereço"}
+                {createAddress.isPending || updateAddress.isPending ? "Localizando e salvando..." : editId ? "Salvar alterações" : "Adicionar endereço"}
               </Button>
             </div>
           </DialogContent>
@@ -607,10 +883,11 @@ function AddressesTab() {
                   <div>
                     <div className="flex items-center gap-2">
                       <p className="font-semibold text-sm">{a.label}</p>
-                      {a.isDefault && <Badge className="bg-primary/10 text-primary border-0 text-xs py-0">Padro</Badge>}
+                      {a.isDefault && <Badge className="bg-primary/10 text-primary border-0 text-xs py-0">Padrão</Badge>}
                     </div>
                     <p className="text-sm text-muted-foreground">{a.address}</p>
-                    {(a.cep || a.city) && <p className="text-xs text-muted-foreground">{[a.cep, a.city].filter(Boolean).join("  ")}</p>}
+                    {(a.cep || a.city) && <p className="text-xs text-muted-foreground">{[a.cep, a.city, a.state].filter(Boolean).join(" • ")}</p>}
+                    {a.latitude && a.longitude && <p className="mt-1 text-[11px] text-green-700">Endereço localizado ✓</p>}
                   </div>
                 </div>
                 <div className="flex gap-1 shrink-0">
@@ -670,12 +947,62 @@ function PushToggle() {
 }
 
 function NotificationsTab() {
-  const { data: notifications, isLoading, refetch } = trpc.notifications.list.useQuery();
-  const markRead = trpc.notifications.markRead.useMutation({ onSuccess: () => refetch() });
+  const { selectedStore } = useStore();
+  const utils = trpc.useUtils();
+  const queryInput = { storeId: selectedStore?.id };
+  const { data: notifications, isLoading } = trpc.notifications.list.useQuery(
+    queryInput,
+    { enabled: Boolean(selectedStore?.id) },
+  );
 
-  useEffect(() => {
-    if (notifications?.some(n => !n.read)) markRead.mutate();
-  }, [notifications?.length]);
+  const refreshNotificationState = async () => {
+    await Promise.all([
+      utils.notifications.list.invalidate(queryInput),
+      utils.notifications.unreadCount.invalidate(queryInput),
+    ]);
+  };
+
+  const markAllRead = trpc.notifications.markRead.useMutation({
+    onMutate: async () => {
+      await utils.notifications.list.cancel(queryInput);
+      const previous = utils.notifications.list.getData(queryInput);
+      utils.notifications.list.setData(queryInput, (current) => current?.map((item) => ({ ...item, read: true })));
+      return { previous };
+    },
+    onError: (_error, _variables, context) => {
+      if (context?.previous) utils.notifications.list.setData(queryInput, context.previous);
+    },
+    onSettled: refreshNotificationState,
+  });
+
+  const markOneRead = trpc.notifications.markOneRead.useMutation({
+    onMutate: async ({ notificationId }) => {
+      await utils.notifications.list.cancel(queryInput);
+      const previous = utils.notifications.list.getData(queryInput);
+      utils.notifications.list.setData(queryInput, (current) => current?.map((item) => item.id === notificationId ? { ...item, read: true } : item));
+      return { previous };
+    },
+    onError: (_error, _variables, context) => {
+      if (context?.previous) utils.notifications.list.setData(queryInput, context.previous);
+    },
+    onSettled: refreshNotificationState,
+  });
+
+  const archiveNotification = trpc.notifications.archive.useMutation({
+    onMutate: async ({ notificationId }) => {
+      await utils.notifications.list.cancel(queryInput);
+      const previous = utils.notifications.list.getData(queryInput);
+      utils.notifications.list.setData(queryInput, (current) => current?.filter((item) => item.id !== notificationId));
+      return { previous };
+    },
+    onError: (_error, _variables, context) => {
+      if (context?.previous) utils.notifications.list.setData(queryInput, context.previous);
+      toast.error("Não foi possível arquivar a notificação.");
+    },
+    onSettled: refreshNotificationState,
+  });
+
+  const unreadCount = (notifications ?? []).filter((item) => !item.read).length;
 
   const TYPE_ICONS: Record<string, React.ReactNode> = {
     order:  <Package className="w-4 h-4 text-blue-500" />,
@@ -690,6 +1017,21 @@ function NotificationsTab() {
       <ClientAlertsBanner maxVisible={5} />
       <PWAInstallBanner />
       <PushToggle />
+      {unreadCount > 0 && (
+        <div className="flex justify-end">
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            disabled={markAllRead.isPending}
+            onClick={() => markAllRead.mutate({ storeId: selectedStore?.id })}
+            className="gap-2"
+          >
+            {markAllRead.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCheck className="h-4 w-4" />}
+            Marcar todas como lidas
+          </Button>
+        </div>
+      )}
       {!notifications?.length && (
         <div className="text-center py-16 text-muted-foreground">
           <Bell className="w-16 h-16 mx-auto mb-4 opacity-20" />
@@ -700,9 +1042,13 @@ function NotificationsTab() {
       {(notifications ?? []).map((n) => (
         <Card key={n.id} className={n.read ? "opacity-70" : "border-primary/20 bg-primary/5"}>
           <CardContent className="p-4 flex items-start gap-3">
-            <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center shrink-0">
-              {TYPE_ICONS[n.type] ?? <Bell className="w-4 h-4" />}
-            </div>
+            {n.imageUrl ? (
+              <img src={n.imageUrl} alt="" className="h-16 w-16 rounded-xl object-cover shrink-0" loading="lazy" />
+            ) : (
+              <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center shrink-0">
+                {TYPE_ICONS[n.type] ?? <Bell className="w-4 h-4" />}
+              </div>
+            )}
             <div className="flex-1 min-w-0">
             <p className="mb-2 inline-flex rounded-full border border-[#f0d6d0] bg-[#fff7f4] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-[#7d0f14]">Minha conta</p>
               <div className="flex items-center justify-between gap-2">
@@ -710,7 +1056,46 @@ function NotificationsTab() {
                 {!n.read && <div className="w-2 h-2 rounded-full bg-primary shrink-0" />}
               </div>
               <p className="text-sm text-muted-foreground">{n.message}</p>
-              <p className="text-xs text-muted-foreground mt-1">{new Date(n.createdAt).toLocaleString("pt-BR")}</p>
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                <p className="mr-auto text-xs text-muted-foreground">{new Date(n.createdAt).toLocaleString("pt-BR")}</p>
+                {n.url && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      if (!n.read) markOneRead.mutate({ notificationId: n.id, storeId: selectedStore?.id });
+                      if (/^https?:\/\//i.test(n.url!)) window.open(n.url!, "_blank", "noopener,noreferrer");
+                      else window.location.href = n.url!;
+                    }}
+                    className="h-8 gap-1.5 px-3 text-xs font-semibold"
+                  >
+                    Abrir
+                  </Button>
+                )}
+                {!n.read && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    disabled={markOneRead.isPending}
+                    onClick={() => markOneRead.mutate({ notificationId: n.id, storeId: selectedStore?.id })}
+                    className="h-8 gap-1.5 px-2 text-xs"
+                  >
+                    <CheckCheck className="h-3.5 w-3.5" /> Marcar lida
+                  </Button>
+                )}
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  disabled={archiveNotification.isPending}
+                  onClick={() => archiveNotification.mutate({ notificationId: n.id, storeId: selectedStore?.id })}
+                  className="h-8 gap-1.5 px-2 text-xs"
+                >
+                  <Archive className="h-3.5 w-3.5" /> Arquivar
+                </Button>
+              </div>
             </div>
           </CardContent>
         </Card>
@@ -726,26 +1111,53 @@ function ProfileTab() {
     onSuccess: () => { toast.success("Perfil atualizado!"); refetch(); },
     onError: (e) => toast.error(e.message),
   });
-  const uploadAvatar = trpc.avatar.upload.useMutation({
-    onSuccess: (data) => { toast.success("Foto atualizada!"); setAvatarPreview(data.url); refetch(); },
-    onError: (e) => toast.error(e.message),
-  });
   const updateAvatar = trpc.avatar.update.useMutation({
     onSuccess: () => { toast.success("Avatar atualizado!"); refetch(); },
     onError: (e) => toast.error(e.message),
   });
 
   const fileRef = useRef<HTMLInputElement>(null);
-  const [form, setForm] = useState({ name: "", phone: "", savedAddress: "", savedCep: "", savedCity: "" });
+  const [form, setForm] = useState({
+    name: "",
+    phone: "",
+    savedStreet: "",
+    savedNumber: "",
+    savedComplement: "",
+    savedNeighborhood: "",
+    savedCep: "",
+    savedCity: "",
+    savedState: "",
+  });
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
+  const [avatarUploading, setAvatarUploading] = useState(false);
   const [avatarPresets, setAvatarPresets] = useState<MagnificAvatarPreset[]>([]);
   const [avatarPickerOpen, setAvatarPickerOpen] = useState(false);
 
   useEffect(() => {
     if (profile) {
-      setForm({ name: profile.name ?? "", phone: profile.phone ?? "", savedAddress: profile.savedAddress ?? "", savedCep: profile.savedCep ?? "", savedCity: profile.savedCity ?? "" });
+      setForm({
+        name: profile.name ?? "",
+        phone: profile.phone ?? "",
+        savedStreet: profile.savedStreet ?? "",
+        savedNumber: profile.savedNumber ?? "",
+        savedComplement: profile.savedComplement ?? "",
+        savedNeighborhood: profile.savedNeighborhood ?? "",
+        savedCep: profile.savedCep ?? "",
+        savedCity: profile.savedCity ?? "",
+        savedState: profile.savedState ?? "",
+      });
     }
-  }, [profile?.name, profile?.phone, profile?.savedAddress, profile?.savedCep, profile?.savedCity]);
+  }, [
+    profile?.name,
+    profile?.phone,
+    profile?.savedStreet,
+    profile?.savedNumber,
+    profile?.savedComplement,
+    profile?.savedNeighborhood,
+    profile?.savedCep,
+    profile?.savedCity,
+    profile?.savedState,
+  ]);
 
   useEffect(() => {
     let cancelled = false;
@@ -766,15 +1178,23 @@ function ProfileTab() {
   async function handleAvatarChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (file.size > 2 * 1024 * 1024) { toast.error("Imagem muito grande. Mximo 2MB."); return; }
-    const reader = new FileReader();
-    reader.onload = (ev) => {
-      const dataUrl = ev.target?.result as string;
-      setAvatarPreview(dataUrl);
-      const base64 = dataUrl.split(",")[1];
-      uploadAvatar.mutate({ base64, mimeType: (file.type || "image/jpeg") as "image/jpeg" | "image/png" | "image/webp" | "image/gif" });
-    };
-    reader.readAsDataURL(file);
+
+    const localPreview = URL.createObjectURL(file);
+    setAvatarPreview(localPreview);
+    setAvatarUploading(true);
+    try {
+      const data = await uploadImageFile({ file, scope: "avatar" });
+      setAvatarPreview(data.url);
+      await refetch();
+      toast.success("Foto atualizada!");
+    } catch (error) {
+      setAvatarPreview((profile as any)?.avatarUrl ?? null);
+      toast.error(error instanceof Error ? error.message : "Não foi possível enviar a imagem.");
+    } finally {
+      setAvatarUploading(false);
+      URL.revokeObjectURL(localPreview);
+      if (e.target) e.target.value = "";
+    }
   }
 
   function handlePresetAvatarSelect(preset: MagnificAvatarPreset) {
@@ -788,6 +1208,7 @@ function ProfileTab() {
   const selectedAvatarPreset = avatarPresets.find((preset) => preset.src === avatarSrc) ?? null;
 
   return (
+    <div className="space-y-4">
     <Card>
       <CardHeader>
         <CardTitle className="flex items-center gap-2"><User className="w-5 h-5 text-primary" />Meu Perfil</CardTitle>
@@ -865,7 +1286,7 @@ function ProfileTab() {
                 <p className="text-sm font-semibold text-foreground">Curadoria Bonatto</p>
                 <p className="text-xs text-muted-foreground">Os avatares prontos agora ficam mais discretos e com uma linha visual mais quente.</p>
               </div>
-              {(uploadAvatar.isPending || updateAvatar.isPending) && <Loader2 className="h-4 w-4 animate-spin text-primary" />}
+              {(avatarUploading || updateAvatar.isPending) && <Loader2 className="h-4 w-4 animate-spin text-primary" />}
             </div>
             {selectedAvatarPreset && (
               <div className="mt-3 flex items-center gap-3 rounded-2xl bg-white/90 p-2.5">
@@ -889,22 +1310,306 @@ function ProfileTab() {
             <Input value={form.phone} onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))} placeholder="(00) 00000-0000" />
           </div>
         </div>
-        <div className="space-y-1.5">
-          <Label>Endereço salvo</Label>
-          <Input value={form.savedAddress} onChange={(e) => setForm((f) => ({ ...f, savedAddress: e.target.value }))} placeholder="Rua, número, bairro" />
-        </div>
-        <div className="grid grid-cols-2 gap-4">
-          <div className="space-y-1.5">
-            <Label>CEP</Label>
-            <Input value={form.savedCep} onChange={(e) => setForm((f) => ({ ...f, savedCep: e.target.value }))} placeholder="00000-000" />
+        <div className="rounded-2xl border border-border bg-muted/20 p-4">
+          <div className="mb-4">
+            <p className="text-sm font-semibold">Endereço salvo</p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Guardamos a localização para facilitar o preenchimento. Taxa e prazo são recalculados sempre que você fizer um pedido.
+            </p>
           </div>
-          <div className="space-y-1.5">
-            <Label>Cidade</Label>
-            <Input value={form.savedCity} onChange={(e) => setForm((f) => ({ ...f, savedCity: e.target.value }))} placeholder="Sua cidade" />
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-[1fr_90px]">
+            <div className="space-y-1.5">
+              <Label>CEP</Label>
+              <Input value={form.savedCep} onChange={(e) => setForm((f) => ({ ...f, savedCep: e.target.value }))} placeholder="00000-000" />
+            </div>
+            <div className="space-y-1.5">
+              <Label>UF</Label>
+              <Input maxLength={2} value={form.savedState} onChange={(e) => setForm((f) => ({ ...f, savedState: e.target.value.toUpperCase() }))} placeholder="MG" />
+            </div>
           </div>
+          <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-[1fr_120px]">
+            <div className="space-y-1.5">
+              <Label>Rua</Label>
+              <Input value={form.savedStreet} onChange={(e) => setForm((f) => ({ ...f, savedStreet: e.target.value }))} placeholder="Nome da rua" />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Número</Label>
+              <Input value={form.savedNumber} onChange={(e) => setForm((f) => ({ ...f, savedNumber: e.target.value }))} placeholder="123" />
+            </div>
+          </div>
+          <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div className="space-y-1.5">
+              <Label>Bairro</Label>
+              <Input value={form.savedNeighborhood} onChange={(e) => setForm((f) => ({ ...f, savedNeighborhood: e.target.value }))} placeholder="Centro" />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Cidade</Label>
+              <Input value={form.savedCity} onChange={(e) => setForm((f) => ({ ...f, savedCity: e.target.value }))} placeholder="Sua cidade" />
+            </div>
+          </div>
+          <div className="mt-4 space-y-1.5">
+            <Label>Complemento</Label>
+            <Input value={form.savedComplement} onChange={(e) => setForm((f) => ({ ...f, savedComplement: e.target.value }))} placeholder="Apto, bloco ou referência" />
+          </div>
+          {profile?.savedLatitude && profile?.savedLongitude && (
+            <p className="mt-3 text-[11px] text-muted-foreground">
+              Localização validada em {profile.savedGeocodedAt ? new Date(profile.savedGeocodedAt).toLocaleDateString("pt-BR") : "cadastro anterior"}.
+            </p>
+          )}
         </div>
         <Button className="w-full" onClick={() => updateProfile.mutate(form)} disabled={updateProfile.isPending}>
           {updateProfile.isPending ? "Salvando..." : "Salvar Dados"}
+        </Button>
+      </CardContent>
+    </Card>
+    <SocialConnections />
+    <SecuritySessionsCard />
+    </div>
+  );
+}
+
+const TWO_FACTOR_UI_ENABLED = import.meta.env.VITE_ENABLE_2FA === "true";
+
+function SecuritySessionsCard() {
+  const utils = trpc.useUtils();
+  const [totpSetup, setTotpSetup] = useState<{ secret: string; uri: string } | null>(null);
+  const [totpCode, setTotpCode] = useState("");
+  const [disablePassword, setDisablePassword] = useState("");
+
+  const sessions = trpc.auth.sessions.useQuery(undefined, {
+    staleTime: 15_000,
+    refetchOnWindowFocus: true,
+  });
+  const twoFactor = trpc.auth.twoFactorStatus.useQuery(undefined, {
+    enabled: TWO_FACTOR_UI_ENABLED,
+    staleTime: 15_000,
+    refetchOnWindowFocus: true,
+  });
+  const revokeSession = trpc.auth.revokeSession.useMutation({
+    onSuccess: async (result) => {
+      if (result.currentSessionRevoked) {
+        window.location.replace("/login");
+        return;
+      }
+      await sessions.refetch();
+      toast.success("Sessão encerrada.");
+    },
+    onError: (error) => toast.error(error.message),
+  });
+  const logoutAll = trpc.auth.logoutAll.useMutation({
+    onSuccess: async () => {
+      utils.auth.me.setData(undefined, null);
+      window.location.replace("/login");
+    },
+    onError: (error) => toast.error(error.message),
+  });
+
+  const beginTwoFactor = trpc.auth.beginTwoFactorSetup.useMutation({
+    onSuccess: (data) => {
+      setTotpSetup(data);
+      setTotpCode("");
+      toast.success("Autenticador pronto para configurar.");
+    },
+    onError: (error) => toast.error(error.message),
+  });
+
+  const confirmTwoFactor = trpc.auth.confirmTwoFactorSetup.useMutation({
+    onSuccess: async () => {
+      setTotpSetup(null);
+      setTotpCode("");
+      await Promise.all([twoFactor.refetch(), sessions.refetch()]);
+      toast.success("Autenticação em duas etapas ativada.");
+    },
+    onError: (error) => toast.error(error.message),
+  });
+
+  const disableTwoFactor = trpc.auth.disableTwoFactor.useMutation({
+    onSuccess: async () => {
+      setTotpCode("");
+      setDisablePassword("");
+      await Promise.all([twoFactor.refetch(), sessions.refetch()]);
+      toast.success("Autenticação em duas etapas desativada.");
+    },
+    onError: (error) => toast.error(error.message),
+  });
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <ShieldCheck className="h-5 w-5 text-primary" />
+          Segurança e sessões
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <p className="text-sm text-muted-foreground">
+          Veja onde sua conta está conectada e encerre acessos que você não reconhece.
+        </p>
+
+        {TWO_FACTOR_UI_ENABLED && (
+        <div className="rounded-2xl border bg-muted/20 p-4">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <p className="text-sm font-semibold">Autenticação em duas etapas</p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Proteja sua conta com Google Authenticator, Microsoft Authenticator ou outro app TOTP.
+              </p>
+            </div>
+            <Badge variant={twoFactor.data?.enabled ? "default" : "secondary"}>
+              {twoFactor.data?.enabled ? "Ativada" : "Desativada"}
+            </Badge>
+          </div>
+
+          {!twoFactor.data?.enabled && !totpSetup && (
+            <Button
+              className="mt-4"
+              variant="outline"
+              disabled={beginTwoFactor.isPending || twoFactor.isLoading}
+              onClick={() => beginTwoFactor.mutate()}
+            >
+              <ShieldCheck className="mr-2 h-4 w-4" />
+              Ativar 2FA
+            </Button>
+          )}
+
+          {!twoFactor.data?.enabled && totpSetup && (
+            <div className="mt-4 space-y-3">
+              <p className="text-xs text-muted-foreground">
+                Adicione a chave abaixo no seu autenticador e depois confirme com o código de 6 dígitos.
+              </p>
+              <div className="flex gap-2">
+                <Input readOnly value={totpSetup.secret} className="font-mono text-xs" />
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={async () => {
+                    await navigator.clipboard.writeText(totpSetup.secret);
+                    toast.success("Chave copiada.");
+                  }}
+                >
+                  Copiar
+                </Button>
+              </div>
+              <a href={totpSetup.uri} className="inline-block text-xs font-semibold text-primary hover:underline">
+                Abrir no aplicativo autenticador
+              </a>
+              <div className="flex gap-2">
+                <Input
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  maxLength={6}
+                  placeholder="000000"
+                  value={totpCode}
+                  onChange={(event) => setTotpCode(event.target.value.replace(/\D/g, "").slice(0, 6))}
+                />
+                <Button
+                  disabled={confirmTwoFactor.isPending || totpCode.length !== 6}
+                  onClick={() => confirmTwoFactor.mutate({ code: totpCode })}
+                >
+                  Confirmar
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {twoFactor.data?.enabled && (
+            <div className="mt-4 space-y-3">
+              <p className="text-xs text-muted-foreground">
+                Para desativar, confirme um código atual do autenticador
+                {twoFactor.data.hasPassword ? " e sua senha." : "."}
+              </p>
+              <Input
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                maxLength={6}
+                placeholder="Código de 6 dígitos"
+                value={totpCode}
+                onChange={(event) => setTotpCode(event.target.value.replace(/\D/g, "").slice(0, 6))}
+              />
+              {twoFactor.data.hasPassword && (
+                <Input
+                  type="password"
+                  autoComplete="current-password"
+                  placeholder="Sua senha"
+                  value={disablePassword}
+                  onChange={(event) => setDisablePassword(event.target.value)}
+                />
+              )}
+              <Button
+                variant="destructive"
+                disabled={
+                  disableTwoFactor.isPending ||
+                  totpCode.length !== 6 ||
+                  (twoFactor.data.hasPassword && !disablePassword)
+                }
+                onClick={() => {
+                  if (!window.confirm("Desativar a autenticação em duas etapas?")) return;
+                  disableTwoFactor.mutate({
+                    code: totpCode,
+                    password: twoFactor.data.hasPassword ? disablePassword : undefined,
+                  });
+                }}
+              >
+                Desativar 2FA
+              </Button>
+            </div>
+          )}
+        </div>
+        )}
+
+        {sessions.isLoading && (
+          <div className="space-y-2">
+            <Skeleton className="h-16 w-full" />
+            <Skeleton className="h-16 w-full" />
+          </div>
+        )}
+
+        {sessions.isError && (
+          <div className="rounded-xl border border-destructive/20 bg-destructive/5 p-3 text-sm">
+            Não foi possível carregar suas sessões.
+            <Button variant="link" className="h-auto px-2" onClick={() => sessions.refetch()}>
+              Tentar novamente
+            </Button>
+          </div>
+        )}
+
+        <div className="space-y-2">
+          {(sessions.data ?? []).map((session) => (
+            <div key={session.id} className="flex items-center justify-between gap-3 rounded-xl border p-3">
+              <div className="flex min-w-0 items-start gap-3">
+                <MonitorSmartphone className="mt-0.5 h-5 w-5 shrink-0 text-muted-foreground" />
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <p className="truncate text-sm font-semibold">{session.deviceLabel}</p>
+                    {session.isCurrent && <Badge variant="secondary">Este dispositivo</Badge>}
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Ativa em {new Date(session.lastSeenAt).toLocaleString("pt-BR")}
+                  </p>
+                </div>
+              </div>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={revokeSession.isPending}
+                onClick={() => revokeSession.mutate({ sessionId: session.id })}
+              >
+                Sair
+              </Button>
+            </div>
+          ))}
+        </div>
+
+        <Button
+          variant="destructive"
+          className="w-full"
+          disabled={logoutAll.isPending}
+          onClick={() => {
+            if (window.confirm("Encerrar sua conta em todos os dispositivos?")) logoutAll.mutate();
+          }}
+        >
+          <LogOut className="mr-2 h-4 w-4" />
+          Sair de todos os dispositivos
         </Button>
       </CardContent>
     </Card>
@@ -913,8 +1618,9 @@ function ProfileTab() {
 
 //  Coupons Tab 
 function CouponsTab() {
-  const { data: coupons, isLoading } = trpc.profile.myCoupons.useQuery();
-  const { data: allCoupons } = trpc.coupons.listActive.useQuery();
+  const { selectedStore } = useStore();
+  const { data: coupons, isLoading } = trpc.profile.myCoupons.useQuery({ storeId: selectedStore?.id });
+  const { data: allCoupons } = trpc.coupons.listActive.useQuery({ storeId: selectedStore?.id });
   const publicCoupons = allCoupons?.filter((c) => !c.userId && c.active) ?? [];
 
   if (isLoading) return <div className="space-y-3">{Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-20 w-full" />)}</div>;
@@ -971,7 +1677,7 @@ function CouponsTab() {
         <div className="text-center py-16 text-muted-foreground">
           <Tag className="w-16 h-16 mx-auto mb-4 opacity-20" />
           <p className="text-xl font-medium">Nenhum cupom disponível</p>
-          <p className="text-sm mt-2">Fique de olho! Em breve teremos promoções exclusivas para você.</p>
+          <p className="text-sm mt-2">Quando houver novas promoções, elas vão aparecer aqui.</p>
         </div>
       )}
     </div>
@@ -980,7 +1686,8 @@ function CouponsTab() {
 
 //  Promotions Tab 
 function PromotionsTab() {
-  const { data: promotions, isLoading } = trpc.promotions.active.useQuery();
+  const { selectedStore } = useStore();
+  const { data: promotions, isLoading } = trpc.promotions.active.useQuery({ storeId: selectedStore?.id });
   if (isLoading) return <div className="grid gap-4">{Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-40 w-full rounded-xl" />)}</div>;
   if (!promotions?.length) return (
     <div className="text-center py-16 text-muted-foreground">
@@ -1013,7 +1720,8 @@ function PromotionsTab() {
 
 //  Raffles Tab 
 function RafflesTab() {
-  const { data: raffles, isLoading, refetch } = trpc.raffles.active.useQuery();
+  const { selectedStore } = useStore();
+  const { data: raffles, isLoading, refetch } = trpc.raffles.active.useQuery({ storeId: selectedStore?.id });
   const enterRaffle = trpc.raffles.enter.useMutation({
     onSuccess: (ok) => { if (ok) { toast.success("Você entrou no sorteio! Boa sorte!"); refetch(); } else toast.info("Você já está participando deste sorteio."); },
     onError: (e) => toast.error(e.message),
@@ -1029,7 +1737,7 @@ function RafflesTab() {
   return (
     <div className="grid gap-4">
       {raffles.map((raffle) => (
-        <Card key={raffle.id} className="overflow-hidden border-2 border-yellow-200 bg-gradient-to-br from-yellow-50 to-orange-50">
+        <Card key={raffle.id} className="overflow-hidden border-2 border-[#eadbd2] bg-[#fffaf6]">
           {raffle.imageUrl && <img src={raffle.imageUrl} alt={raffle.title} className="w-full h-40 object-cover" />}
           <CardContent className="p-5">
             <div className="flex items-start justify-between gap-3 mb-3">
@@ -1044,7 +1752,7 @@ function RafflesTab() {
               <p className="font-bold text-lg text-primary flex items-center gap-2"><Gift className="w-5 h-5" />{raffle.prize}</p>
             </div>
             {raffle.endsAt && <p className="text-xs text-muted-foreground mb-3 flex items-center gap-1"><Clock className="w-3.5 h-3.5" />Encerra em {new Date(raffle.endsAt).toLocaleDateString("pt-BR")}</p>}
-            <Button className="w-full" onClick={() => enterRaffle.mutate({ raffleId: raffle.id })} disabled={enterRaffle.isPending}>
+            <Button className="w-full" onClick={() => enterRaffle.mutate({ raffleId: raffle.id, storeId: selectedStore?.id })} disabled={enterRaffle.isPending}>
               <Ticket className="w-4 h-4 mr-2" />{enterRaffle.isPending ? "Participando..." : "Participar do Sorteio"}
             </Button>
           </CardContent>
@@ -1134,8 +1842,15 @@ function PaymentsTab() {
 // Club Member Tab
 function ClubMemberTab() {
   const { isAuthenticated } = useAuth();
-  const { data: clubPlan, isLoading } = trpc.club.getMyPlan.useQuery(undefined, { enabled: isAuthenticated });
-  const { data: clubConfig } = trpc.club.getPublicConfig.useQuery();
+  const { selectedStore } = useStore();
+  const { data: clubPlan, isLoading } = trpc.club.getMyPlan.useQuery(
+    { storeId: selectedStore?.id ?? 0 },
+    { enabled: isAuthenticated && Boolean(selectedStore?.id) },
+  );
+  const { data: clubConfig } = trpc.club.getPublicConfig.useQuery(
+    { storeId: selectedStore?.id ?? 0 },
+    { enabled: Boolean(selectedStore?.id) },
+  );
   const cancelSub = trpc.club.cancelSubscription.useMutation({
     onSuccess: () => toast.success("Assinatura cancelada. Você ainda terá acesso até o fim do período."),
     onError: (e) => toast.error(e.message),
@@ -1163,14 +1878,14 @@ function ClubMemberTab() {
   if (!clubPlan || (!isActive && !isPending)) {
     return (
       <div className="max-w-xl mx-auto">
-        <div className="relative rounded-3xl overflow-hidden bg-gradient-to-br from-[#2d0305] via-zinc-900 to-zinc-950 border border-[#3a0608]/50 shadow-2xl p-8 text-center">
+        <div className="relative rounded-3xl overflow-hidden bg-[#191412] border border-[#3a2b27] shadow-2xl p-8 text-center">
           <Crown className="w-12 h-12 text-[#7d0f14] mx-auto mb-4" />
           <h2 className="text-2xl font-black text-white mb-2">
             {clubConfig?.profileGuestTitle ?? "Você ainda não é membro"}
           </h2>
           <p className="text-zinc-400 mb-6">
             {clubConfig?.profileGuestSubtitle ??
-              "Assine o Clube do Bonatto e tenha descontos exclusivos, entrega grátis e uma pizza grátis todo mês!"}
+              "Assine o Clube do Bonatto para ter descontos, entrega grátis nos planos elegíveis e uma pizza grátis por mês."}
           </p>
           <div className="flex flex-wrap gap-4 justify-center mb-6">
             {guestPlans.map((plan) => (
@@ -1221,8 +1936,8 @@ function ClubMemberTab() {
       {/* Header do plano */}
       <div className={`rounded-3xl p-6 text-white ${
         isBonattao
-          ? "bg-gradient-to-br from-[#5a0a0f] via-[#450709] to-zinc-900"
-          : "bg-gradient-to-br from-blue-700 via-blue-800 to-zinc-900"
+          ? "bg-[#971117]"
+          : "bg-[#27201d]"
       }`}>
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-3">
@@ -1321,7 +2036,7 @@ function ClubMemberTab() {
           className="flex-1 text-[#6E0D12] border-[#f9d0d0] hover:bg-[#fdf2f2]"
           onClick={() => {
             if (confirm("Tem certeza que deseja cancelar sua assinatura?")) {
-              cancelSub.mutate();
+              if (selectedStore?.id) cancelSub.mutate({ storeId: selectedStore.id });
             }
           }}
           disabled={cancelSub.isPending}
@@ -1337,15 +2052,30 @@ function ClubMemberTab() {
 //  Main Component 
 export default function MinhaConta() {
   const { isAuthenticated, loading, user } = useAuth();
-  const { data: unreadCount } = trpc.notifications.unreadCount.useQuery(undefined, { enabled: isAuthenticated, refetchInterval: 60000 });
-  const { data: unreadAlerts } = trpc.clientAlerts.unreadCount.useQuery(undefined, { enabled: isAuthenticated, refetchInterval: 60000 });
+  const { bonattoConfig } = useStore();
+  const { selectedStore } = useStore();
+  const { data: unreadCount } = trpc.notifications.unreadCount.useQuery(
+    { storeId: selectedStore?.id },
+    { enabled: isAuthenticated && Boolean(selectedStore?.id), refetchInterval: 60000 },
+  );
+  const { data: unreadAlerts } = trpc.clientAlerts.unreadCount.useQuery(
+    { storeId: selectedStore?.id ?? 0 },
+    { enabled: isAuthenticated && Boolean(selectedStore?.id), refetchInterval: 60000 },
+  );
   const totalAvisosBadge = (unreadCount ?? 0) + (unreadAlerts ?? 0);
-  const { data: points } = trpc.loyalty.points.useQuery(undefined, { enabled: isAuthenticated });
-  const { data: orders } = trpc.orders.myOrders.useQuery(undefined, { enabled: isAuthenticated, refetchInterval: 30000 });
+  const { data: points } = trpc.loyalty.points.useQuery(
+    { storeId: selectedStore?.id },
+    { enabled: isAuthenticated && bonattoConfig.features.loyalty && Boolean(selectedStore?.id) },
+  );
+  const { data: orders } = trpc.orders.myOrders.useQuery({ storeId: selectedStore?.id }, { enabled: isAuthenticated && Boolean(selectedStore?.id), refetchInterval: 30000 });
 
   const activeOrdersCount = orders?.filter(o => !["delivered","cancelled"].includes(o.status)).length ?? 0;
   const ordersCount = orders?.length ?? 0;
-  const [activeTab, setActiveTab] = useState<AccountTabValue>("pedidos");
+  const [activeTab, setActiveTab] = useState<AccountTabValue>(() => {
+    const requested = new URLSearchParams(window.location.search).get("tab");
+    return ACCOUNT_TABS.some((tab) => tab.value === requested) ? requested as AccountTabValue : "pedidos";
+  });
+  const initialRewardId = Number(new URLSearchParams(window.location.search).get("reward")) || undefined;
 
   const summaryCards = [
     {
@@ -1353,29 +2083,29 @@ export default function MinhaConta() {
       value: activeOrdersCount,
       helper: activeOrdersCount > 0 ? "Acompanhando em tempo real" : "Nenhum pedido em andamento",
       icon: Package,
-      className: "bg-[linear-gradient(145deg,#6E0D12,#9b1520)] text-white",
-      iconWrapClassName: "bg-white/15 text-white",
-      mutedClassName: "text-white/70",
+      className: "border border-[#eadbd5] bg-white text-[#261817]",
+      iconWrapClassName: "bg-[#f8e8e6] text-[#b51620]",
+      mutedClassName: "text-[#887672]",
     },
     {
       label: "Avisos pendentes",
       value: totalAvisosBadge,
       helper: totalAvisosBadge > 0 ? "Atualizações esperando por você" : "Tudo em dia no momento",
       icon: BellRing,
-      className: "border border-[#ecd8d1] bg-[#fffaf8] text-[#210608]",
-      iconWrapClassName: "bg-[#fff1ef] text-[#7d0f14]",
+      className: "border border-[#eadbd5] bg-white text-[#261817]",
+      iconWrapClassName: "bg-[#f8e8e6] text-[#b51620]",
       mutedClassName: "text-[#7b676b]",
     },
     {
-      label: "Pontos Bonatto",
+      label: `Pontos ${bonattoConfig.brand.shortName}`,
       value: points ?? 0,
       helper: points ? "Prontos para desconto e benefícios" : "Faça pedidos para começar a acumular",
       icon: Trophy,
-      className: "border border-[#f1e2b8] bg-[linear-gradient(145deg,#fff6d8,#fff1bf)] text-[#3a2400]",
-      iconWrapClassName: "bg-white/70 text-[#8a5a00]",
-      mutedClassName: "text-[#816b39]",
+      className: "border border-[#eadbd5] bg-white text-[#261817]",
+      iconWrapClassName: "bg-[#f8e8e6] text-[#b51620]",
+      mutedClassName: "text-[#887672]",
     },
-  ] as const;
+  ].filter((card) => bonattoConfig.features.loyalty || card.icon !== Trophy);
 
   const getTabBadge = (value: AccountTabValue) => {
     if (value === "pedidos" && activeOrdersCount > 0) return activeOrdersCount;
@@ -1393,6 +2123,16 @@ export default function MinhaConta() {
     return () => window.removeEventListener("minhaconta:tab", handleTabEvent);
   }, []);
 
+  useEffect(() => {
+    const unavailable =
+      ((activeTab === "fidelidade" || activeTab === "recompensas") && !bonattoConfig.features.loyalty) ||
+      (activeTab === "clube" && !bonattoConfig.features.club) ||
+      (activeTab === "promocoes" && !bonattoConfig.features.adminTabs.promotions) ||
+      (activeTab === "sorteios" && !bonattoConfig.features.adminTabs.raffles) ||
+      (activeTab === "cupons" && !bonattoConfig.features.adminTabs.coupons);
+    if (unavailable) setActiveTab("pedidos");
+  }, [activeTab, bonattoConfig.features]);
+
   if (loading) return (
     <div className="flex min-h-[100dvh] items-center justify-center bg-[#f6efec]">
       <Loader2 className="h-8 w-8 animate-spin text-primary" />
@@ -1407,15 +2147,15 @@ export default function MinhaConta() {
           <div className="space-y-6">
             <div className="inline-flex items-center gap-2 rounded-full border border-[#f0d6d0] bg-[#fff6f2] px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-[#7d0f14]">
               <User className="h-3.5 w-3.5" />
-              Minha conta Bonatto
+              Minha conta {bonattoConfig.brand.shortName}
             </div>
             <div className="space-y-3">
-              <img src={LOGO_URL} alt="Bonatto Pizza" className="h-20 w-20 rounded-[24px] object-cover shadow-lg shadow-[#7d0f14]/10" />
+              {bonattoConfig.brand.logos.icon ? <img src={bonattoConfig.brand.logos.icon} alt={bonattoConfig.brand.name} className="h-20 w-20 rounded-[24px] object-contain shadow-lg" /> : <div className="flex h-20 w-20 items-center justify-center rounded-[24px] text-xl font-black text-white shadow-lg" style={{ backgroundColor: bonattoConfig.brand.colors.primary }}>{bonattoConfig.brand.shortName.slice(0, 2).toUpperCase()}</div>}
               <h2 className="max-w-[14ch] text-3xl font-black leading-[0.95] text-[#210608]" style={{ fontFamily: "'Poppins', sans-serif" }}>
                 {"Fa\u00e7a login para acompanhar seus pedidos e benef\u00edcios."}
               </h2>
               <p className="max-w-[52ch] text-sm leading-relaxed text-[#6d5a5d]">
-                {"Entre na sua \u00e1rea para rever pedidos, salvar endere\u00e7os, acompanhar pagamentos e usar os benef\u00edcios do Clube Bonatto."}
+                {`Entre na sua área para rever pedidos, salvar endereços e acompanhar pagamentos na ${bonattoConfig.brand.name}.`}
               </p>
             </div>
             <div className="flex flex-col gap-3 sm:flex-row">
@@ -1452,10 +2192,34 @@ export default function MinhaConta() {
   );
 
   return (
-    <div className="min-h-[100dvh] bg-[#f6efec] py-8 sm:py-10">
-      <div className="container max-w-6xl space-y-6">
+    <div className="min-h-[100dvh] overflow-x-clip bg-[#f6efec] py-4 sm:py-10">
+      <div className="container max-w-6xl space-y-4 px-3 sm:space-y-6 sm:px-6">
                 {/* Header */}
-        <div className="grid gap-4 rounded-[30px] border border-[#ead7d1] bg-white/90 p-5 shadow-[0_24px_80px_rgba(83,23,23,0.10)] backdrop-blur lg:grid-cols-[1.2fr_0.8fr]">
+        <div className="space-y-4">
+          <BonattoSectionHero
+            eyebrow="Seu pedaço da Bonatto"
+            title={<>Olá, {user?.name?.split(" ")[0] ?? "Cliente"}!</>}
+            description={`Pedidos, cupons, pontos e benefícios reunidos sem economizar sabor.`}
+            aside={<div className="relative z-[1] grid h-full w-full place-items-center p-5"><div className="flex h-24 w-24 items-center justify-center overflow-hidden rounded-full bg-[#fff8ee] text-3xl font-black text-[#da1923] shadow-[0_12px_0_rgba(129,16,23,0.16)]">{(user as any)?.avatarUrl ? <img src={(user as any).avatarUrl} alt="Avatar" className="h-full w-full object-cover" /> : (user?.name ?? "U")[0].toUpperCase()}</div></div>}
+          />
+          <div className="grid gap-2 sm:grid-cols-3 sm:gap-3">
+            {summaryCards.map((card) => (
+              <div key={card.label} className={`rounded-[18px] px-4 py-3 shadow-[0_4px_14px_rgba(57,27,24,0.04)] ${card.className}`}>
+                <div className="flex items-center gap-3">
+                  <div className={`inline-flex shrink-0 rounded-full p-2 ${card.iconWrapClassName}`}><card.icon className="h-3.5 w-3.5" /></div>
+                  <div className="min-w-0 flex-1">
+                    <p className={`text-[10px] font-semibold uppercase tracking-[0.12em] ${card.mutedClassName}`}>{card.label}</p>
+                    <div className="mt-0.5 flex items-baseline gap-2">
+                      <p className="text-xl font-black leading-none">{card.value}</p>
+                      <p className={`truncate text-[11px] ${card.mutedClassName}`}>{card.helper}</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+        {false && <div className="grid gap-4 rounded-[30px] border border-[#ead7d1] bg-white/90 p-5 lg:grid-cols-[1.2fr_0.8fr]">
           <div className="flex items-center gap-4">
             <div className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-[24px] bg-primary text-xl font-black text-white shadow-lg shadow-[#6E0D12]/20">
               {(user as any)?.avatarUrl
@@ -1469,7 +2233,7 @@ export default function MinhaConta() {
                 {"Ol\u00e1, "}{user?.name?.split(" ")[0] ?? "Cliente"}!
               </h1>
               <p className="mt-2 max-w-[58ch] text-sm leading-relaxed text-[#6d5a5d] sm:text-base">
-                {"Seu espa\u00e7o para acompanhar pedidos, revisar pagamentos, salvar endere\u00e7os e aproveitar tudo que a Bonatto preparou para voc\u00ea."}
+                {`Seu espaço para acompanhar pedidos, revisar pagamentos e aproveitar o que a ${bonattoConfig.brand.name} preparou para você.`}
               </p>
             </div>
           </div>
@@ -1485,11 +2249,11 @@ export default function MinhaConta() {
               </div>
             ))}
           </div>
-        </div>
+        </div>}
 
         <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as AccountTabValue)} className="space-y-4">
           {/* Desktop: TabsList horizontal */}
-          <div className="rounded-[28px] border border-[#ead7d1] bg-white/90 p-3 shadow-[0_18px_50px_rgba(83,23,23,0.08)] backdrop-blur">
+          <div className="hidden rounded-[28px] border border-[#ead7d1] bg-white/90 p-3 shadow-[0_18px_50px_rgba(83,23,23,0.08)] backdrop-blur sm:block">
           <TabsList className="hidden sm:grid w-full grid-cols-4 md:grid-cols-6 xl:grid-cols-12 h-auto gap-2 bg-transparent p-0">
             <TabsTrigger value="pedidos" className="relative flex flex-col gap-1 py-2 text-xs">
               <Package className="w-4 h-4" /><span>Pedidos</span>
@@ -1497,7 +2261,8 @@ export default function MinhaConta() {
                 <span className="absolute -top-1 -right-1 w-4 h-4 bg-primary text-white text-[9px] font-bold rounded-full flex items-center justify-center">{activeOrdersCount}</span>
               )}
             </TabsTrigger>
-            <TabsTrigger value="fidelidade" className="flex flex-col gap-1 py-2 text-xs"><Trophy className="w-4 h-4" /><span>Pontos</span></TabsTrigger>
+            {bonattoConfig.features.loyalty && <TabsTrigger value="fidelidade" className="flex flex-col gap-1 py-2 text-xs"><Trophy className="w-4 h-4" /><span>Pontos</span></TabsTrigger>}
+            {bonattoConfig.features.loyalty && <TabsTrigger value="recompensas" className="flex flex-col gap-1 py-2 text-xs"><Gift className="w-4 h-4" /><span>Recompensas</span></TabsTrigger>}
             <TabsTrigger value="enderecos" className="flex flex-col gap-1 py-2 text-xs"><MapPin className="w-4 h-4" /><span>Endereços</span></TabsTrigger>
             <TabsTrigger value="notificacoes" className="relative flex flex-col gap-1 py-2 text-xs">
               {totalAvisosBadge > 0 ? <BellRing className="w-4 h-4 text-primary" /> : <Bell className="w-4 h-4" />}
@@ -1506,11 +2271,11 @@ export default function MinhaConta() {
                 <span className="absolute -top-1 -right-1 w-4 h-4 bg-[#7d0f14] text-white text-[9px] font-bold rounded-full flex items-center justify-center">{totalAvisosBadge}</span>
               )}
             </TabsTrigger>
-            <TabsTrigger value="cupons" className="flex flex-col gap-1 py-2 text-xs"><Tag className="w-4 h-4" /><span>Cupons</span></TabsTrigger>
-            <TabsTrigger value="promocoes" className="flex flex-col gap-1 py-2 text-xs"><Gift className="w-4 h-4" /><span>Promoções</span></TabsTrigger>
-            <TabsTrigger value="sorteios" className="flex flex-col gap-1 py-2 text-xs"><Ticket className="w-4 h-4" /><span>Sorteios</span></TabsTrigger>
+            {bonattoConfig.features.adminTabs.coupons && <TabsTrigger value="cupons" className="flex flex-col gap-1 py-2 text-xs"><Tag className="w-4 h-4" /><span>Cupons</span></TabsTrigger>}
+            {bonattoConfig.features.adminTabs.promotions && <TabsTrigger value="promocoes" className="flex flex-col gap-1 py-2 text-xs"><Gift className="w-4 h-4" /><span>Promoções</span></TabsTrigger>}
+            {bonattoConfig.features.adminTabs.raffles && <TabsTrigger value="sorteios" className="flex flex-col gap-1 py-2 text-xs"><Ticket className="w-4 h-4" /><span>Sorteios</span></TabsTrigger>}
             <TabsTrigger value="perfil" className="flex flex-col gap-1 py-2 text-xs"><User className="w-4 h-4" /><span>Perfil</span></TabsTrigger>
-            <TabsTrigger value="clube" className="flex flex-col gap-1 py-2 text-xs"><Crown className="w-4 h-4 text-[#7d0f14]" /><span className="text-[#6E0D12] font-semibold">Clube</span></TabsTrigger>
+            {bonattoConfig.features.club && <TabsTrigger value="clube" className="flex flex-col gap-1 py-2 text-xs"><Crown className="w-4 h-4 text-[#7d0f14]" /><span className="text-[#6E0D12] font-semibold">Clube</span></TabsTrigger>}
             <TabsTrigger value="pagamentos" className="flex flex-col gap-1 py-2 text-xs"><Receipt className="w-4 h-4" /><span>Pagamentos</span></TabsTrigger>
             <TabsTrigger value="cartoes" className="flex flex-col gap-1 py-2 text-xs"><CreditCard className="w-4 h-4" /><span>Cartões</span></TabsTrigger>
             <TabsTrigger value="carrinhos" className="relative flex flex-col gap-1 py-2 text-xs"><ShoppingCart className="w-4 h-4" /><span>Salvos</span></TabsTrigger>
@@ -1519,16 +2284,17 @@ export default function MinhaConta() {
 
 
 
-          <div className="rounded-[28px] border border-[#ead7d1] bg-white/90 p-3 shadow-[0_18px_50px_rgba(83,23,23,0.08)] backdrop-blur sm:p-4">
+          <div className="min-w-0 overflow-hidden rounded-[20px] border border-[#ead7d1] bg-white/90 p-2 shadow-[0_18px_50px_rgba(83,23,23,0.08)] backdrop-blur sm:rounded-[28px] sm:p-4">
             <TabsContent value="pedidos" className="mt-0"><OrdersTab /></TabsContent>
-          <TabsContent value="fidelidade" className="mt-0"><LoyaltyTab /></TabsContent>
+          {bonattoConfig.features.loyalty && <TabsContent value="fidelidade" className="mt-0"><LoyaltyTab /></TabsContent>}
+          {bonattoConfig.features.loyalty && selectedStore?.id && <TabsContent value="recompensas" className="mt-0"><RewardsCatalog storeId={selectedStore.id} initialRewardId={initialRewardId} /></TabsContent>}
           <TabsContent value="enderecos" className="mt-0"><AddressesTab /></TabsContent>
           <TabsContent value="notificacoes" className="mt-0"><NotificationsTab /></TabsContent>
-          <TabsContent value="cupons" className="mt-0"><CouponsTab /></TabsContent>
-          <TabsContent value="promocoes" className="mt-0"><PromotionsTab /></TabsContent>
-          <TabsContent value="sorteios" className="mt-0"><RafflesTab /></TabsContent>
+          {bonattoConfig.features.adminTabs.coupons && <TabsContent value="cupons" className="mt-0"><CouponsTab /></TabsContent>}
+          {bonattoConfig.features.adminTabs.promotions && <TabsContent value="promocoes" className="mt-0"><PromotionsTab /></TabsContent>}
+          {bonattoConfig.features.adminTabs.raffles && <TabsContent value="sorteios" className="mt-0"><RafflesTab /></TabsContent>}
           <TabsContent value="perfil" className="mt-0"><ProfileTab /></TabsContent>
-          <TabsContent value="clube" className="mt-0"><ClubMemberTab /></TabsContent>
+          {bonattoConfig.features.club && <TabsContent value="clube" className="mt-0"><ClubMemberTab /></TabsContent>}
           <TabsContent value="pagamentos" className="mt-0"><PaymentsTab /></TabsContent>
           <TabsContent value="cartoes" className="mt-0"><SavedCards /></TabsContent>
           <TabsContent value="carrinhos" className="mt-0"><AbandonedCartsTab /></TabsContent>
@@ -1536,15 +2302,17 @@ export default function MinhaConta() {
         </Tabs>
 
         {/* Espa?o para n?o sobrepor o rodap? fixo no mobile */}
-        <div className="h-24 sm:hidden" />
+        <div className="h-[calc(5rem+env(safe-area-inset-bottom))] sm:hidden" />
       </div>
 
       {/* Barra de rodap? fixa no mobile */}
-      <div className="sm:hidden fixed bottom-0 left-0 right-0 z-50 border-t border-[#ead7d1] bg-white/92 shadow-[0_-2px_20px_rgba(0,0,0,0.06)] backdrop-blur">
-        <div className="grid grid-cols-5 h-16">
+      <div className="fixed inset-x-0 bottom-0 z-50 border-t border-[#ead7d1] bg-white/95 pb-[env(safe-area-inset-bottom)] shadow-[0_-2px_20px_rgba(0,0,0,0.06)] backdrop-blur sm:hidden">
+        <div className="grid h-16 grid-cols-5">
           {[
             { value: "pedidos", icon: <Package className="w-5 h-5" />, label: "Pedidos", badge: activeOrdersCount > 0 ? activeOrdersCount : null },
-            { value: "fidelidade", icon: <Trophy className="w-5 h-5" />, label: "Pontos", badge: null },
+            bonattoConfig.features.loyalty
+              ? { value: "fidelidade", icon: <Trophy className="w-5 h-5" />, label: "Pontos", badge: null }
+              : { value: "enderecos", icon: <MapPin className="w-5 h-5" />, label: "Endereços", badge: null },
             { href: "/cardapio", icon: <ShoppingBag className="w-6 h-6" />, label: "Cardápio", badge: null, isLink: true },
             { value: "notificacoes", icon: totalAvisosBadge > 0 ? <BellRing className="w-5 h-5" /> : <Bell className="w-5 h-5" />, label: "Avisos", badge: totalAvisosBadge > 0 ? totalAvisosBadge : null },
             { value: "perfil", icon: <User className="w-5 h-5" />, label: "Perfil", badge: null },

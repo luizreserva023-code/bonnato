@@ -1,6 +1,7 @@
 import Stripe from "stripe";
 import { Request, Response } from "express";
-import { updateOrderPaymentStatus, createTransaction, getOrderById, updateStripeCustomerId, recordWebhookEventOnce } from "./db.ts";
+import { updateOrderPaymentStatus, createTransaction, getOrderById, updateStripeCustomerId } from "./db.ts";
+import { executeWebhookEvent } from "./webhookLifecycle.ts";
 import { notifyOwnerAdapter } from "./adapters/pushNotifications.ts";
 // Alias para compatibilidade retroativa — passa pelo adapter
 const notifyOwner = (payload: { title: string; content: string }) =>
@@ -90,112 +91,110 @@ export async function handleStripeWebhook(req: Request, res: Response) {
     event = stripe.webhooks.constructEvent(req.body, sig, webhookSecret);
   } catch (err: any) {
     console.error("[Stripe Webhook] Signature verification failed:", err?.message ?? err);
-    // Do not leak internal error messages to the caller.
     return res.status(400).json({ error: "Invalid signature" });
   }
 
-  // Handle test events
   if (event.id.startsWith("evt_test_")) {
-    console.log("[Webhook] Test event detected, returning verification response");
     return res.json({ verified: true });
   }
 
   console.log(`[Stripe Webhook] Event: ${event.type} | ID: ${event.id}`);
 
-  // Idempotency: refuse to process the same event twice (Stripe retries on failure).
   try {
-    const first = await recordWebhookEventOnce("stripe", event.id, event.type);
-    if (!first) {
-      console.log(`[Stripe Webhook] Event ${event.id} already processed, skipping.`);
+    const lifecycle = await executeWebhookEvent({
+      provider: "stripe",
+      eventId: event.id,
+      eventType: event.type,
+      execute: async () => {
+        switch (event.type) {
+          case "payment_intent.succeeded": {
+            const pi = event.data.object as Stripe.PaymentIntent;
+            const orderId = pi.metadata?.orderId ? parseInt(pi.metadata.orderId) : null;
+            if (orderId) {
+              await updateOrderPaymentStatus(orderId, "paid", pi.id);
+              await createTransaction({
+                orderId,
+                stripePaymentIntentId: pi.id,
+                amount: (pi.amount / 100).toFixed(2),
+                currency: pi.currency,
+                status: "succeeded",
+                paymentMethod: "credit_card",
+              });
+            }
+            break;
+          }
+
+          case "payment_intent.payment_failed": {
+            const pi = event.data.object as Stripe.PaymentIntent;
+            const orderId = pi.metadata?.orderId ? parseInt(pi.metadata.orderId) : null;
+            if (orderId) {
+              await updateOrderPaymentStatus(orderId, "failed", pi.id);
+              await createTransaction({
+                orderId,
+                stripePaymentIntentId: pi.id,
+                amount: (pi.amount / 100).toFixed(2),
+                currency: pi.currency,
+                status: "failed",
+                paymentMethod: "credit_card",
+              });
+            }
+            break;
+          }
+
+          case "checkout.session.completed": {
+            const session = event.data.object as Stripe.Checkout.Session;
+            const orderId = session.metadata?.orderId ? parseInt(session.metadata.orderId) : null;
+            if (orderId && session.payment_status === "paid") {
+              const paymentIntentId = typeof session.payment_intent === "string"
+                ? session.payment_intent
+                : session.payment_intent?.id ?? undefined;
+              const paymentMethodLabel = session.payment_method_types?.includes("pix") ? "pix" : "card";
+
+              await updateOrderPaymentStatus(orderId, "paid", paymentIntentId, session.id);
+              await createTransaction({
+                orderId,
+                stripePaymentIntentId: paymentIntentId ?? session.id,
+                amount: ((session.amount_total ?? 0) / 100).toFixed(2),
+                currency: session.currency ?? "brl",
+                status: "succeeded",
+                paymentMethod: paymentMethodLabel,
+              });
+
+              const order = await getOrderById(orderId);
+              if (order) {
+                await notifyOwner({
+                  title: `✅ Pagamento confirmado — Pedido #${orderId}`,
+                  content: `**Cliente:** ${order.customerName}\n**Valor:** R$ ${((session.amount_total ?? 0) / 100).toFixed(2)}\n**Método:** ${paymentMethodLabel === "pix" ? "PIX" : "Cartão"}\n\nO pedido foi automaticamente confirmado e está aguardando preparo.`,
+                }).catch(console.error);
+                sendPushToAdmins({
+                  title: `✅ Pagamento confirmado — Pedido #${orderId}`,
+                  body: `${order.customerName} pagou R$ ${((session.amount_total ?? 0) / 100).toFixed(2)} via ${paymentMethodLabel === "pix" ? "PIX" : "Cartão"}`,
+                  url: "/admin",
+                  tag: `payment-${orderId}`,
+                }).catch(console.error);
+              }
+            }
+            break;
+          }
+
+          default:
+            console.log(`[Stripe Webhook] Unhandled event type: ${event.type}`);
+        }
+      },
+    });
+
+    if (lifecycle.state === "duplicate") {
       return res.json({ received: true, duplicate: true });
     }
-  } catch (err) {
-    console.error("[Stripe Webhook] Failed to record event idempotency, proceeding with caution:", err);
-    // Fall through: if DB is unavailable we still attempt to process; Stripe
-    // will retry on 5xx. Never block payments on ledger outage.
-  }
-
-  try {
-    switch (event.type) {
-      case "payment_intent.succeeded": {
-        const pi = event.data.object as Stripe.PaymentIntent;
-        const orderId = pi.metadata?.orderId ? parseInt(pi.metadata.orderId) : null;
-        if (orderId) {
-          await updateOrderPaymentStatus(orderId, "paid", pi.id);
-          await createTransaction({
-            orderId,
-            stripePaymentIntentId: pi.id,
-            amount: (pi.amount / 100).toFixed(2),
-            currency: pi.currency,
-            status: "succeeded",
-            paymentMethod: "credit_card",
-          });
-        }
-        break;
-      }
-
-      case "payment_intent.payment_failed": {
-        const pi = event.data.object as Stripe.PaymentIntent;
-        const orderId = pi.metadata?.orderId ? parseInt(pi.metadata.orderId) : null;
-        if (orderId) {
-          await updateOrderPaymentStatus(orderId, "failed", pi.id);
-          await createTransaction({
-            orderId,
-            stripePaymentIntentId: pi.id,
-            amount: (pi.amount / 100).toFixed(2),
-            currency: pi.currency,
-            status: "failed",
-            paymentMethod: "credit_card",
-          });
-        }
-        break;
-      }
-
-      case "checkout.session.completed": {
-        const session = event.data.object as Stripe.Checkout.Session;
-        const orderId = session.metadata?.orderId ? parseInt(session.metadata.orderId) : null;
-        if (orderId && session.payment_status === "paid") {
-          const paymentIntentId = typeof session.payment_intent === "string"
-            ? session.payment_intent
-            : session.payment_intent?.id ?? undefined;
-          const paymentMethodLabel = session.payment_method_types?.includes("pix") ? "pix" : "card";
-
-          await updateOrderPaymentStatus(orderId, "paid", paymentIntentId, session.id);
-          await createTransaction({
-            orderId,
-            stripePaymentIntentId: paymentIntentId ?? session.id,
-            amount: ((session.amount_total ?? 0) / 100).toFixed(2),
-            currency: session.currency ?? "brl",
-            status: "succeeded",
-            paymentMethod: paymentMethodLabel,
-          });
-
-          const order = await getOrderById(orderId);
-          if (order) {
-            await notifyOwner({
-              title: `✅ Pagamento confirmado — Pedido #${orderId}`,
-              content: `**Cliente:** ${order.customerName}\n**Valor:** R$ ${((session.amount_total ?? 0) / 100).toFixed(2)}\n**Método:** ${paymentMethodLabel === "pix" ? "PIX" : "Cartão"}\n\nO pedido foi automaticamente confirmado e está aguardando preparo.`,
-            }).catch(console.error);
-            sendPushToAdmins({
-              title: `✅ Pagamento confirmado — Pedido #${orderId}`,
-              body: `${order.customerName} pagou R$ ${((session.amount_total ?? 0) / 100).toFixed(2)} via ${paymentMethodLabel === "pix" ? "PIX" : "Cartão"}`,
-              url: "/admin",
-              tag: `payment-${orderId}`,
-            }).catch(console.error);
-          }
-        }
-        break;
-      }
-
-      default:
-        console.log(`[Stripe Webhook] Unhandled event type: ${event.type}`);
+    if (lifecycle.state === "processing") {
+      return res.status(503).json({ error: "Event already processing" });
     }
+
+    return res.json({ received: true });
   } catch (err) {
     console.error("[Stripe Webhook] Error processing event:", err);
     return res.status(500).json({ error: "Internal server error" });
   }
-
-  return res.json({ received: true });
 }
 
 // ─── Stripe Customer & Saved Cards ───────────────────────────────────────────

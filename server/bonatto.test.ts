@@ -1,9 +1,20 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { appRouter } from "./routers.ts";
 import type { TrpcContext } from "./_core/context.ts";
+import * as dbFns from "./db.ts";
 
 // ─── Mock DB ──────────────────────────────────────────────────────────────────
 const mockDb = vi.hoisted(() => ({
+  select: vi.fn(() => ({
+    from: vi.fn(() => ({
+      where: vi.fn(() => ({
+        limit: vi.fn().mockResolvedValue([{ id: 1, storeId: 1, slug: "mateus-leme", active: true }]),
+      })),
+      innerJoin: vi.fn(() => ({
+        where: vi.fn().mockResolvedValue([{ storeId: 1 }]),
+      })),
+    })),
+  })),
   update: vi.fn(() => ({
     set: vi.fn(() => ({
       where: vi.fn().mockResolvedValue({ rowsAffected: 0 }),
@@ -24,20 +35,20 @@ vi.mock("./db", () => ({
   updateCategory: vi.fn().mockResolvedValue(undefined),
   deleteCategory: vi.fn().mockResolvedValue(undefined),
   getProducts: vi.fn().mockResolvedValue([
-    { id: 1, categoryId: 1, name: "Margherita", description: "Molho, mussarela, tomate", price: "45.00", imageUrl: null, active: true, featured: false, sortOrder: 0, createdAt: new Date(), updatedAt: new Date() },
-    { id: 2, categoryId: 1, name: "Calabresa", description: "Molho, calabresa, cebola", price: "47.00", imageUrl: null, active: true, featured: false, sortOrder: 1, createdAt: new Date(), updatedAt: new Date() },
+    { id: 1, storeId: 1, categoryId: 1, name: "Margherita", description: "Molho, mussarela, tomate", price: "45.00", imageUrl: null, active: true, featured: false, sortOrder: 0, createdAt: new Date(), updatedAt: new Date() },
+    { id: 2, storeId: 1, categoryId: 1, name: "Calabresa", description: "Molho, calabresa, cebola", price: "47.00", imageUrl: null, active: true, featured: false, sortOrder: 1, createdAt: new Date(), updatedAt: new Date() },
   ]),
   getProductById: vi.fn().mockImplementation((id: number) => {
     const products = [
-      { id: 1, categoryId: 1, name: "Margherita", description: "Molho, mussarela, tomate", price: "45.00", imageUrl: null, active: true, featured: false, sortOrder: 0, createdAt: new Date(), updatedAt: new Date() },
-      { id: 2, categoryId: 1, name: "Calabresa", description: "Molho, calabresa, cebola", price: "47.00", imageUrl: null, active: true, featured: false, sortOrder: 1, createdAt: new Date(), updatedAt: new Date() },
+      { id: 1, storeId: 1, categoryId: 1, name: "Margherita", description: "Molho, mussarela, tomate", price: "45.00", imageUrl: null, active: true, featured: false, sortOrder: 0, createdAt: new Date(), updatedAt: new Date() },
+      { id: 2, storeId: 1, categoryId: 1, name: "Calabresa", description: "Molho, calabresa, cebola", price: "47.00", imageUrl: null, active: true, featured: false, sortOrder: 1, createdAt: new Date(), updatedAt: new Date() },
     ];
     return Promise.resolve(products.find(p => p.id === id) ?? null);
   }),
   getProductsByIds: vi.fn().mockImplementation((ids: number[]) => {
     const products = [
-      { id: 1, categoryId: 1, name: "Margherita", description: "Molho, mussarela, tomate", price: "45.00", imageUrl: null, active: true, featured: false, sortOrder: 0, createdAt: new Date(), updatedAt: new Date() },
-      { id: 2, categoryId: 1, name: "Calabresa", description: "Molho, calabresa, cebola", price: "47.00", imageUrl: null, active: true, featured: false, sortOrder: 1, createdAt: new Date(), updatedAt: new Date() },
+      { id: 1, storeId: 1, categoryId: 1, name: "Margherita", description: "Molho, mussarela, tomate", price: "45.00", imageUrl: null, active: true, featured: false, sortOrder: 0, createdAt: new Date(), updatedAt: new Date() },
+      { id: 2, storeId: 1, categoryId: 1, name: "Calabresa", description: "Molho, calabresa, cebola", price: "47.00", imageUrl: null, active: true, featured: false, sortOrder: 1, createdAt: new Date(), updatedAt: new Date() },
     ];
     return Promise.resolve(products.filter((p) => ids.includes(p.id)));
   }),
@@ -52,7 +63,11 @@ vi.mock("./db", () => ({
   getOrderItems: vi.fn().mockResolvedValue([]),
   getOrdersByPeriod: vi.fn().mockResolvedValue([]),
   createOrder: vi.fn().mockResolvedValue(42),
-  updateOrderStatus: vi.fn().mockResolvedValue(undefined),
+  getOrderByIdempotencyKey: vi.fn().mockResolvedValue(undefined),
+  claimOrderRequest: vi.fn().mockResolvedValue({ state: "claimed" }),
+  attachOrderRequest: vi.fn().mockResolvedValue(undefined),
+  completeOrderRequest: vi.fn().mockResolvedValue(undefined),
+  failOrderRequest: vi.fn().mockResolvedValue(undefined),
   updateOrderPaymentStatus: vi.fn().mockResolvedValue(undefined),
   pickStoreForDeliveryAddress: vi.fn().mockResolvedValue({
     storeId: 1,
@@ -109,6 +124,20 @@ vi.mock("./db", () => ({
   getStoreSetting: vi.fn().mockResolvedValue(null),
   setStoreSetting: vi.fn().mockResolvedValue(undefined),
   getUserById: vi.fn().mockResolvedValue({ id: 1, openId: "user-1", name: "Test User", email: "test@test.com", role: "user", clubStatus: null, clubPlan: null, clubActivatedAt: null, clubExpiresAt: null, clubFreeItemUsed: false, loyaltyPoints: 0, createdAt: new Date(), updatedAt: new Date() }),
+  getStoreScope: vi.fn().mockResolvedValue({ tenantKey: "bonatto", storeId: 1 }),
+  getCustomerStoreAccount: vi.fn().mockResolvedValue({
+    id: 1,
+    tenantKey: "bonatto",
+    userId: 1,
+    loyaltyPoints: 0,
+    clubPlan: null,
+    clubStatus: null,
+    clubActivatedAt: null,
+    clubExpiresAt: null,
+    clubFreeItemUsed: false,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  }),
   getAllUsers: vi.fn().mockResolvedValue([]),
   updateUserProfile: vi.fn().mockResolvedValue(undefined),
   getCouponsByUser: vi.fn().mockResolvedValue([]),
@@ -253,6 +282,7 @@ describe("products", () => {
     const caller = appRouter.createCaller(createAdminContext());
     // createProduct returns void (no id returned from mutation)
     await expect(caller.products.create({
+      storeId: 1,
       categoryId: 1,
       name: "Nova Pizza",
       description: "Descrição",
@@ -277,10 +307,13 @@ describe("orders", () => {
   it("creates order successfully", async () => {
     const caller = appRouter.createCaller(createUserContext());
     const result = await caller.orders.create({
+      storeId: 1,
+      idempotencyKey: "test-order-idempotency-0001",
       customerName: "Maria Santos",
       customerEmail: "maria@test.com",
       customerPhone: "(37) 99999-0002",
-      deliveryAddress: "Av Principal, 456",
+      serviceType: "pickup",
+      deliveryAddress: "Retirada na loja",
       deliveryCity: "Mateus Leme",
       deliveryCep: "35670-000",
       deliveryComplement: "",
@@ -291,6 +324,63 @@ describe("orders", () => {
       ],
     });
     expect(result.orderId).toBe(42);
+  });
+
+  it("replays a completed idempotent request without creating another order", async () => {
+    const claim = vi.mocked(dbFns.claimOrderRequest);
+    const create = vi.mocked(dbFns.createOrder);
+    const getOrder = vi.mocked(dbFns.getOrderById);
+    claim.mockResolvedValueOnce({ state: "completed", orderId: 42 });
+    getOrder.mockResolvedValueOnce({
+      id: 42,
+      orderNumber: "BNT-01-000042",
+      storeId: 1,
+      userId: 1,
+      total: "45.00",
+      status: "pending",
+    } as any);
+
+    const before = create.mock.calls.length;
+    const caller = appRouter.createCaller(createUserContext());
+    const result = await caller.orders.create({
+      storeId: 1,
+      idempotencyKey: "test-order-idempotency-replay-0001",
+      customerName: "Maria Santos",
+      customerEmail: "maria@test.com",
+      customerPhone: "(37) 99999-0002",
+      serviceType: "pickup",
+      deliveryAddress: "Retirada na loja",
+      deliveryCity: "Mateus Leme",
+      deliveryCep: "35670-000",
+      paymentMethod: "pix",
+      items: [{ productId: 1, productName: "Margherita", productPrice: "45.00", quantity: 1 }],
+    });
+
+    expect(result).toMatchObject({ orderId: 42, orderNumber: "BNT-01-000042", idempotentReplay: true });
+    expect(create.mock.calls.length).toBe(before);
+  });
+
+  it("blocks retry when a previous attempt already created an incomplete order", async () => {
+    const claim = vi.mocked(dbFns.claimOrderRequest);
+    const create = vi.mocked(dbFns.createOrder);
+    claim.mockResolvedValueOnce({ state: "failed", orderId: 42 });
+
+    const before = create.mock.calls.length;
+    const caller = appRouter.createCaller(createUserContext());
+    await expect(caller.orders.create({
+      storeId: 1,
+      idempotencyKey: "test-order-idempotency-partial-0001",
+      customerName: "Maria Santos",
+      customerEmail: "maria@test.com",
+      customerPhone: "(37) 99999-0002",
+      serviceType: "pickup",
+      deliveryAddress: "Retirada na loja",
+      deliveryCity: "Mateus Leme",
+      deliveryCep: "35670-000",
+      paymentMethod: "pix",
+      items: [{ productId: 1, productName: "Margherita", productPrice: "45.00", quantity: 1 }],
+    })).rejects.toThrow(/tentativa anterior criou um pedido/i);
+    expect(create.mock.calls.length).toBe(before);
   });
 
   it("admin can list all orders", async () => {

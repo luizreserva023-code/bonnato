@@ -10,7 +10,7 @@ if (IS_PRODUCTION && rawJwtSecret.length < 32) {
   );
 }
 
-if (!rawJwtSecret) {
+if (!rawJwtSecret && process.env.NODE_ENV !== "test") {
   // In dev, warn loudly so it's obvious sessions are effectively unsigned.
   console.warn(
     "[env] JWT_SECRET is empty — sessions are signed with an empty key (dev only). Set JWT_SECRET for real auth."
@@ -44,6 +44,16 @@ export const ENV = {
   oAuthServerUrl: process.env.OAUTH_SERVER_URL ?? process.env.VITE_OAUTH_PORTAL_URL ?? "",
   googleClientId: process.env.GOOGLE_CLIENT_ID ?? process.env.VITE_GOOGLE_CLIENT_ID ?? "",
   googleClientSecret: process.env.GOOGLE_CLIENT_SECRET ?? "",
+  facebookAppId: process.env.FACEBOOK_APP_ID ?? "",
+  facebookAppSecret: process.env.FACEBOOK_APP_SECRET ?? "",
+  appleClientId: process.env.APPLE_CLIENT_ID ?? "",
+  appleTeamId: process.env.APPLE_TEAM_ID ?? "",
+  appleKeyId: process.env.APPLE_KEY_ID ?? "",
+  applePrivateKey: process.env.APPLE_PRIVATE_KEY ?? "",
+  instagramAppId: process.env.INSTAGRAM_APP_ID ?? "",
+  instagramAppSecret: process.env.INSTAGRAM_APP_SECRET ?? "",
+  metaGraphApiVersion: process.env.META_GRAPH_API_VERSION ?? "v24.0",
+  oauthEncryptionKey: process.env.OAUTH_ENCRYPTION_KEY ?? rawJwtSecret,
   ownerOpenId: process.env.OWNER_OPEN_ID ?? "",
   isProduction: IS_PRODUCTION,
   forgeApiUrl: process.env.BUILT_IN_FORGE_API_URL ?? "",
@@ -52,4 +62,5 @@ export const ENV = {
   emailFrom: process.env.EMAIL_FROM ?? "Bonatto Pizza <onboarding@resend.dev>",
   publicAppUrl: PUBLIC_APP_URL,
   enablePersistentJobs: process.env.ENABLE_PERSISTENT_JOBS === "true",
+  enableOutboxJobs: process.env.ENABLE_OUTBOX_JOBS === "true",
 };

@@ -8,7 +8,7 @@
  *   PUSH_PROVIDER=vapid
  *   VAPID_PUBLIC_KEY=...    (gerado com: npx web-push generate-vapid-keys)
  *   VAPID_PRIVATE_KEY=...
- *   VAPID_SUBJECT=mailto:contato@bonattopizza.com.br
+ *   VAPID_EMAIL=mailto:contato@bonattopizza.com.br
  *
  * Nota: O provider "manus" só suporta notificações para o dono do projeto.
  * Para notificações para usuários finais (clientes), use "vapid".
@@ -20,6 +20,7 @@ export interface PushNotificationPayload {
   body: string;
   icon?: string;
   badge?: string;
+  imageUrl?: string | null;
   url?: string;
   tag?: string;
 }

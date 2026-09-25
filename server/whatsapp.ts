@@ -53,10 +53,9 @@ class ZApiProvider implements WhatsAppProvider {
 
     if (!response.ok) {
       const body = await response.text();
-      console.error(`[WhatsApp/Z-API] Erro ao enviar: ${response.status} ${body}`);
-    } else {
-      console.log(`[WhatsApp/Z-API] Mensagem enviada para ${phone}`);
+      throw new Error(`[WhatsApp/Z-API] ${response.status}: ${body}`);
     }
+    console.log(`[WhatsApp/Z-API] Mensagem enviada para ${phone}`);
   }
 }
 
@@ -89,10 +88,9 @@ class TwilioProvider implements WhatsAppProvider {
 
     if (!response.ok) {
       const respBody = await response.text();
-      console.error(`[WhatsApp/Twilio] Erro ao enviar: ${response.status} ${respBody}`);
-    } else {
-      console.log(`[WhatsApp/Twilio] Mensagem enviada para ${toWhatsApp}`);
+      throw new Error(`[WhatsApp/Twilio] ${response.status}: ${respBody}`);
     }
+    console.log(`[WhatsApp/Twilio] Mensagem enviada para ${toWhatsApp}`);
   }
 }
 
@@ -125,6 +123,12 @@ export async function sendWhatsApp(to: string, message: string): Promise<void> {
   }
 }
 
+export async function sendWhatsAppOrThrow(to: string, message: string): Promise<void> {
+  if (!to) throw new Error("WhatsApp destination is empty");
+  const provider = getProvider();
+  await provider.send(to, message);
+}
+
 // ─── TEMPLATES ───────────────────────────────────────────────────────────────
 export const WhatsAppTemplates = {
   orderConfirmed: (customerName: string, orderId: number, total: string) =>
@@ -137,7 +141,7 @@ export const WhatsAppTemplates = {
     `🛵 *Bonatto Pizza* — Olá, ${customerName}!\n\nSeu pedido *#${orderId}* saiu para entrega!${driverName ? ` O motoboy *${driverName}* está a caminho.` : ""}\n\nAcompanhe: https://bonattopizza.manus.space/rastrear/${orderId}`,
 
   orderDelivered: (customerName: string, orderId: number) =>
-    `✅ *Bonatto Pizza* — Olá, ${customerName}!\n\nSeu pedido *#${orderId}* foi *entregue*! Esperamos que aproveite muito! 😋\n\nQue tal avaliar nossa entrega? Acesse: https://bonattopizza.manus.space/minha-conta\n\nVolte sempre! 🍕❤️`,
+    `✅ *Bonatto Pizza* — Olá, ${customerName}!\n\nSeu pedido *#${orderId}* foi *entregue*! Esperamos que aproveite muito! 😋\n\nSe quiser avaliar o pedido, acesse: https://bonattopizza.manus.space/minha-conta\n\nVolte sempre! 🍕❤️`,
 
   orderCancelled: (customerName: string, orderId: number) =>
     `❌ *Bonatto Pizza* — Olá, ${customerName}.\n\nInfelizmente seu pedido *#${orderId}* foi *cancelado*.\n\nEntre em contato conosco para mais informações. Pedimos desculpas pelo inconveniente.`,

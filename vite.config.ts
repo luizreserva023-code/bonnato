@@ -173,9 +173,27 @@ export default defineConfig(({ command }) => ({
       output: {
         manualChunks(id) {
           if (!id.includes("node_modules")) return;
-          if (id.includes("@tanstack") || id.includes("@trpc") || id.includes("superjson")) return "vendor-data";
-          if (id.includes("recharts") || id.includes("@xyflow")) return "vendor-dashboard";
-          if (id.includes("framer-motion") || id.includes("embla-carousel-react")) return "vendor-motion";
+          const normalized = id.replace(/\\/g, "/");
+
+          // Data/runtime libraries are used throughout the app and benefit from
+          // a stable cache. Route-specific heavy libraries (charts, flow, motion)
+          // are intentionally NOT forced into global vendor chunks: Rollup keeps
+          // them behind the lazy admin routes so consumers never preload them.
+          if (
+            normalized.includes("/node_modules/@tanstack/")
+            || normalized.includes("/node_modules/@trpc/")
+            || normalized.includes("/node_modules/superjson/")
+          ) return "vendor-data";
+
+          // React is used by every route and benefits from a stable immutable
+          // chunk. Exact package paths avoid accidentally swallowing
+          // @xyflow/react or other packages whose names contain "react".
+          if (
+            normalized.includes("/node_modules/react/")
+            || normalized.includes("/node_modules/react-dom/")
+            || normalized.includes("/node_modules/scheduler/")
+            || normalized.includes("/node_modules/wouter/")
+          ) return "vendor-react";
         },
       },
     },

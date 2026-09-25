@@ -1,0 +1,1 @@
+ALTER TABLE `journeys` MODIFY COLUMN `trigger` enum('checkout_abandoned','tag_inativo_15','tag_inativo_30','tag_inativo_60','first_order','new_user','club_subscriber','manual','order_delivered','order_cancelled','birthday','loyalty_milestone','rating_submitted','club_expiring') NOT NULL;

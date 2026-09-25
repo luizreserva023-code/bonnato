@@ -1,9 +1,10 @@
-import { and, desc, eq, gte, gt, inArray, isNull, like, lte, not, or, sql, type SQL } from "drizzle-orm";
-import { getTodayStartUtc, getTodayEndUtc, getBrasilTzOffset } from "../shared/timezone.ts";
-import { drizzle } from "drizzle-orm/mysql2";
-import { createPool, type Pool } from "mysql2/promise";
+import { and, desc, eq, gte, gt, ilike, inArray, isNull, like, lte, not, or, sql, type SQL } from "drizzle-orm";
+import { getTodayStartUtc, getTodayEndUtc } from "../shared/timezone.ts";
+import { drizzle } from "drizzle-orm/node-postgres";
+import { Pool } from "pg";
 import bcrypt from "bcryptjs";
 import { randomUUID } from "crypto";
+import { hashRecoveryToken } from "./securityTokens.ts";
 import {
   Category,
   Coupon,
@@ -33,6 +34,8 @@ import {
   Upsell,
   categories,
   customerAuthProviders,
+  authEventLogs,
+  userConsents,
   customerMetrics,
   coupons,
   diningTables,
@@ -73,6 +76,7 @@ import {
   orderMessages,
   OrderMessage,
   notificationTemplates,
+  NotificationTemplate,
   InsertNotificationTemplate,
   deliveryZones,
   menuSlides,
@@ -80,6 +84,10 @@ import {
   customTags,
   customCustomerTags,
   CustomTag,
+  customerTags,
+  abandonedCarts,
+  journeys,
+  journeyExecutions,
   scheduledNotifications,
   ScheduledNotification,
   InsertScheduledNotification,
@@ -88,21 +96,25 @@ import {
   driverPushSubscriptions,
   DriverPushSubscription,
   loyaltyTransactions,
+  customerStoreAccounts,
   clientAlerts,
   clientAlertReads,
   ClientAlert,
   webhookEvents,
   loyaltyOrderCredits,
   couponRedemptions,
+  orderRequests,
+  eventOutbox,
+  orderStageLogs,
+  storeAuditLogs,
 } from "../drizzle/schema.ts";
 import { ENV } from "./_core/env.ts";
-import { shouldRunRuntimeSchemaMigrations } from "./runtimeSchema.ts";
+import { publishOrderRealtimeEvent } from "./realtime/orderEvents.ts";
 
 type DatabaseClient = ReturnType<typeof drizzle>;
 
 let _db: DatabaseClient | null = null;
 let _pool: Pool | null = null;
-let _schemaReady: Promise<void> | null = null;
 const _memoCache = new Map<string, { expiresAt: number; value: unknown }>();
 
 async function withShortCache<T>(key: string, ttlMs: number, factory: () => Promise<T>): Promise<T> {
@@ -120,74 +132,50 @@ function buildConnectionStringFromParts(): string | null {
   const host = process.env.DATABASE_HOST?.trim();
   const user = process.env.DATABASE_USER?.trim();
   const password = process.env.DATABASE_PASSWORD?.trim();
-  const database = process.env.DATABASE_NAME?.trim() || "defaultdb";
-  const port = process.env.DATABASE_PORT?.trim() || "3306";
+  const database = process.env.DATABASE_NAME?.trim() || "bonatto";
+  const port = process.env.DATABASE_PORT?.trim() || "5432";
+  if (!host || !user || !password) return null;
 
-  if (!host || !user || !password) {
-    return null;
-  }
-
-  const sslMode = process.env.DATABASE_SSL_MODE?.trim() || "require";
-  const url = new URL(`mysql://${encodeURIComponent(user)}:${encodeURIComponent(password)}@${host}:${port}/${database}`);
-
-  // mysql2 accepts JSON in the ssl query parameter when using URI strings.
-  if (sslMode === "require") {
-    url.searchParams.set("ssl", JSON.stringify({ rejectUnauthorized: false }));
-  }
-
-  return url.toString();
+  // Keep TLS configuration out of the connection string.
+  // node-postgres can let sslmode query parameters override the explicit
+  // Pool.ssl object. We configure TLS once in buildPostgresPool instead.
+  return new URL(
+    `postgresql://${encodeURIComponent(user)}:${encodeURIComponent(password)}@${host}:${port}/${database}`,
+  ).toString();
 }
 
 function normalizeDatabaseUrl(rawUrl?: string | null): string | null {
   if (!rawUrl) return null;
-  try {
-    const url = new URL(rawUrl);
-    const sslMode = (url.searchParams.get("ssl-mode") ?? url.searchParams.get("sslmode") ?? "").toLowerCase();
-    if (sslMode === "required" || sslMode === "require") {
-      url.searchParams.delete("ssl-mode");
-      url.searchParams.delete("sslmode");
-      url.searchParams.set("ssl", JSON.stringify({ rejectUnauthorized: false }));
-    }
-    return url.toString();
-  } catch {
-    return rawUrl;
+  let normalized = rawUrl.trim();
+  if (!normalized) return null;
+  if (/^mysql:/i.test(normalized)) throw new Error("DATABASE_URL must use postgresql://, not mysql://");
+  if (/^postgres:\/\//i.test(normalized)) {
+    normalized = "postgresql://" + normalized.slice("postgres://".length);
   }
+  return normalized.replace(/[?&]ssl-mode=REQUIRED/gi, (match) =>
+    match.startsWith("?") ? "?sslmode=require" : "&sslmode=require",
+  );
 }
 
-function buildMysqlPoolFromParts() {
-  const host = process.env.DATABASE_HOST?.trim();
-  const user = process.env.DATABASE_USER?.trim();
-  const password = process.env.DATABASE_PASSWORD?.trim();
-  const database = process.env.DATABASE_NAME?.trim() || "defaultdb";
-  const port = Number(process.env.DATABASE_PORT?.trim() || "3306");
-
-  if (!host || !user || !password) {
-    return null;
-  }
-
-  const pool = createPool({
-    host,
-    port,
-    user,
-    password,
-    database,
-    waitForConnections: true,
-    connectionLimit: 10,
-    maxIdle: 10,
-    idleTimeout: 60000,
-    enableKeepAlive: true,
-    keepAliveInitialDelay: 0,
-    connectTimeout: 10000,
-    queueLimit: 0,
-    ssl: { rejectUnauthorized: false },
+function buildPostgresPool(connectionString: string) {
+  const sslMode = (process.env.DATABASE_SSL_MODE ?? "").trim().toLowerCase();
+  const hostname = new URL(connectionString).hostname.toLowerCase();
+  const isLocalhost = hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1";
+  const requiresSsl = !isLocalhost && (
+    sslMode === "require" ||
+    sslMode === "required" ||
+    /[?&]sslmode=require/i.test(connectionString)
+  );
+  const pool = new Pool({
+    connectionString,
+    max: 10,
+    idleTimeoutMillis: 60_000,
+    connectionTimeoutMillis: 10_000,
+    ssl: requiresSsl ? { rejectUnauthorized: false } : false,
   });
-  (pool as unknown as { on(event: "error", listener: (error: NodeJS.ErrnoException & { fatal?: boolean }) => void): void }).on("error", (error) => {
+  pool.on("error", (error) => {
     console.error("[Database] Pool error:", error);
-    if (error.fatal) {
-      _db = null;
-      _pool = null;
-      _schemaReady = null;
-    }
+    resetDbState();
   });
   return pool;
 }
@@ -200,7 +188,6 @@ function resetDbState() {
   }
   _db = null;
   _pool = null;
-  _schemaReady = null;
   _memoCache.clear();
 }
 
@@ -265,508 +252,15 @@ async function geocodeAddress(address: string): Promise<Coordinates | null> {
   return { lat, lng };
 }
 
-async function hasColumn(db: DatabaseClient, tableName: string, columnName: string): Promise<boolean> {
-  const result = await db.execute(sql.raw(`SHOW COLUMNS FROM \`${tableName}\` LIKE '${columnName}'`));
-  const rows = (result as unknown as [Array<unknown>])[0] ?? [];
-  return rows.length > 0;
-}
-
-async function hasIndex(db: DatabaseClient, tableName: string, indexName: string): Promise<boolean> {
-  const result = await db.execute(sql.raw(`SHOW INDEX FROM \`${tableName}\` WHERE Key_name = '${indexName}'`));
-  const rows = (result as unknown as [Array<unknown>])[0] ?? [];
-  return rows.length > 0;
-}
-
-export async function ensureRuntimeSchema(db: DatabaseClient): Promise<void> {
-  if (_schemaReady) {
-    return _schemaReady;
-  }
-
-  _schemaReady = (async () => {
-    await db.execute(
-      sql.raw(
-        "ALTER TABLE `users` MODIFY COLUMN `role` enum('user','admin','manager') NOT NULL DEFAULT 'user'"
-      )
-    );
-
-    if (!(await hasColumn(db, "users", "status"))) {
-      await db.execute(
-        sql.raw(
-          "ALTER TABLE `users` ADD `status` enum('active','inactive','suspended','setup_pending') NOT NULL DEFAULT 'active' AFTER `phone`"
-        )
-      );
-    }
-
-    if (!(await hasColumn(db, "stores", "displayName"))) {
-      await db.execute(sql.raw("ALTER TABLE `stores` ADD `displayName` varchar(200)"));
-    }
-    if (!(await hasColumn(db, "stores", "document"))) {
-      await db.execute(sql.raw("ALTER TABLE `stores` ADD `document` varchar(32)"));
-    }
-    if (!(await hasColumn(db, "stores", "latitude"))) {
-      await db.execute(sql.raw("ALTER TABLE `stores` ADD `latitude` decimal(10,7)"));
-    }
-    if (!(await hasColumn(db, "stores", "longitude"))) {
-      await db.execute(sql.raw("ALTER TABLE `stores` ADD `longitude` decimal(10,7)"));
-    }
-    if (!(await hasColumn(db, "stores", "serviceRadiusKm"))) {
-      await db.execute(sql.raw("ALTER TABLE `stores` ADD `serviceRadiusKm` decimal(6,2) NOT NULL DEFAULT '25.00'"));
-    }
-    if (!(await hasColumn(db, "stores", "email"))) {
-      await db.execute(sql.raw("ALTER TABLE `stores` ADD `email` varchar(320)"));
-    }
-    if (!(await hasColumn(db, "stores", "status"))) {
-      await db.execute(
-        sql.raw(
-          "ALTER TABLE `stores` ADD `status` enum('active','inactive','suspended','setup_pending') NOT NULL DEFAULT 'active'"
-        )
-      );
-    }
-    if (!(await hasIndex(db, "stores", "stores_status_idx"))) {
-      await db.execute(sql.raw("CREATE INDEX `stores_status_idx` ON `stores` (`status`)"));
-    }
-    if (!(await hasIndex(db, "orders", "orders_store_created_idx"))) {
-      await db.execute(sql.raw("CREATE INDEX `orders_store_created_idx` ON `orders` (`storeId`,`createdAt`)"));
-    }
-    if (!(await hasIndex(db, "orders", "orders_store_status_created_idx"))) {
-      await db.execute(sql.raw("CREATE INDEX `orders_store_status_created_idx` ON `orders` (`storeId`,`status`,`createdAt`)"));
-    }
-    if (!(await hasIndex(db, "orders", "orders_status_created_idx"))) {
-      await db.execute(sql.raw("CREATE INDEX `orders_status_created_idx` ON `orders` (`status`,`createdAt`)"));
-    }
-    if (!(await hasIndex(db, "order_items", "order_items_order_product_idx"))) {
-      await db.execute(sql.raw("CREATE INDEX `order_items_order_product_idx` ON `order_items` (`orderId`,`productId`)"));
-    }
-
-    if (!(await hasColumn(db, "orders", "serviceType"))) {
-      await db.execute(sql.raw("ALTER TABLE `orders` ADD `serviceType` enum('delivery','pickup','dine_in','counter') NOT NULL DEFAULT 'delivery'"));
-    }
-    if (!(await hasColumn(db, "orders", "deliveryNeighborhood"))) {
-      await db.execute(sql.raw("ALTER TABLE `orders` ADD `deliveryNeighborhood` varchar(120)"));
-    }
-    if (!(await hasColumn(db, "orders", "tableSessionId"))) {
-      await db.execute(sql.raw("ALTER TABLE `orders` ADD `tableSessionId` int"));
-    }
-    if (!(await hasColumn(db, "orders", "predictedReadyAt"))) {
-      await db.execute(sql.raw("ALTER TABLE `orders` ADD `predictedReadyAt` timestamp NULL"));
-    }
-    if (!(await hasColumn(db, "orders", "predictedDeliveredAt"))) {
-      await db.execute(sql.raw("ALTER TABLE `orders` ADD `predictedDeliveredAt` timestamp NULL"));
-    }
-    if (!(await hasColumn(db, "orders", "predictionLabel"))) {
-      await db.execute(sql.raw("ALTER TABLE `orders` ADD `predictionLabel` varchar(120)"));
-    }
-    if (!(await hasColumn(db, "orders", "confirmedAt"))) {
-      await db.execute(sql.raw("ALTER TABLE `orders` ADD `confirmedAt` timestamp NULL"));
-    }
-    if (!(await hasColumn(db, "orders", "preparingAt"))) {
-      await db.execute(sql.raw("ALTER TABLE `orders` ADD `preparingAt` timestamp NULL"));
-    }
-    if (!(await hasColumn(db, "orders", "readyAt"))) {
-      await db.execute(sql.raw("ALTER TABLE `orders` ADD `readyAt` timestamp NULL"));
-    }
-    if (!(await hasColumn(db, "orders", "outForDeliveryAt"))) {
-      await db.execute(sql.raw("ALTER TABLE `orders` ADD `outForDeliveryAt` timestamp NULL"));
-    }
-    if (!(await hasColumn(db, "orders", "deliveredAt"))) {
-      await db.execute(sql.raw("ALTER TABLE `orders` ADD `deliveredAt` timestamp NULL"));
-    }
-    if (!(await hasColumn(db, "orders", "cancelledAt"))) {
-      await db.execute(sql.raw("ALTER TABLE `orders` ADD `cancelledAt` timestamp NULL"));
-    }
-
-    await db.execute(sql.raw(`
-      CREATE TABLE IF NOT EXISTS \`ingredients\` (
-        \`id\` int AUTO_INCREMENT NOT NULL,
-        \`storeId\` int,
-        \`name\` varchar(160) NOT NULL,
-        \`category\` varchar(120),
-        \`unit\` enum('g','kg','ml','l','unit','pack','slice','portion') NOT NULL,
-        \`currentStock\` decimal(12,3) NOT NULL DEFAULT '0.000',
-        \`minimumStock\` decimal(12,3) NOT NULL DEFAULT '0.000',
-        \`unitCost\` decimal(10,4) NOT NULL DEFAULT '0.0000',
-        \`supplier\` varchar(160),
-        \`notes\` text,
-        \`active\` boolean NOT NULL DEFAULT true,
-        \`createdAt\` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        \`updatedAt\` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-        PRIMARY KEY (\`id\`),
-        KEY \`ingredients_store_idx\` (\`storeId\`),
-        KEY \`ingredients_active_idx\` (\`active\`),
-        KEY \`ingredients_name_idx\` (\`name\`)
-      )
-    `));
-
-    await db.execute(sql.raw(`
-      CREATE TABLE IF NOT EXISTS \`product_ingredients\` (
-        \`id\` int AUTO_INCREMENT NOT NULL,
-        \`productId\` int NOT NULL,
-        \`ingredientId\` int NOT NULL,
-        \`quantity\` decimal(12,3) NOT NULL,
-        \`wastePercent\` decimal(5,2) NOT NULL DEFAULT '0.00',
-        \`active\` boolean NOT NULL DEFAULT true,
-        \`createdAt\` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        \`updatedAt\` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-        PRIMARY KEY (\`id\`),
-        UNIQUE KEY \`product_ingredients_unique\` (\`productId\`,\`ingredientId\`),
-        KEY \`product_ingredients_product_idx\` (\`productId\`),
-        KEY \`product_ingredients_ingredient_idx\` (\`ingredientId\`)
-      )
-    `));
-
-    await db.execute(sql.raw(`
-      CREATE TABLE IF NOT EXISTS \`inventory_movements\` (
-        \`id\` int AUTO_INCREMENT NOT NULL,
-        \`ingredientId\` int NOT NULL,
-        \`storeId\` int,
-        \`orderId\` int,
-        \`orderItemId\` int,
-        \`movementType\` enum('entry','manual_adjustment','sale_consumption','reversal','waste') NOT NULL,
-        \`quantityDelta\` decimal(12,3) NOT NULL,
-        \`previousStock\` decimal(12,3) NOT NULL DEFAULT '0.000',
-        \`nextStock\` decimal(12,3) NOT NULL DEFAULT '0.000',
-        \`reason\` varchar(255),
-        \`performedByUserId\` int,
-        \`metadata\` text,
-        \`createdAt\` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        PRIMARY KEY (\`id\`),
-        KEY \`inventory_movements_ingredient_idx\` (\`ingredientId\`),
-        KEY \`inventory_movements_order_idx\` (\`orderId\`),
-        KEY \`inventory_movements_type_idx\` (\`movementType\`),
-        KEY \`inventory_movements_created_idx\` (\`createdAt\`)
-      )
-    `));
-
-    await db.execute(sql.raw(`
-      CREATE TABLE IF NOT EXISTS \`order_stage_logs\` (
-        \`id\` int AUTO_INCREMENT NOT NULL,
-        \`orderId\` int NOT NULL,
-        \`previousStatus\` enum('pending','confirmed','preparing','out_for_delivery','delivered','cancelled'),
-        \`nextStatus\` enum('pending','confirmed','preparing','out_for_delivery','delivered','cancelled') NOT NULL,
-        \`stage\` enum('created','confirmed','preparing','ready','out_for_delivery','delivered','cancelled') NOT NULL,
-        \`source\` enum('system','admin','manager','driver','automation','customer') NOT NULL DEFAULT 'system',
-        \`changedByUserId\` int,
-        \`changedByDriverId\` int,
-        \`notes\` varchar(255),
-        \`metadata\` text,
-        \`createdAt\` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        PRIMARY KEY (\`id\`),
-        KEY \`order_stage_logs_order_idx\` (\`orderId\`),
-        KEY \`order_stage_logs_stage_idx\` (\`stage\`),
-        KEY \`order_stage_logs_created_idx\` (\`createdAt\`)
-      )
-    `));
-
-    await db.execute(sql.raw(`
-      CREATE TABLE IF NOT EXISTS \`productivity_events\` (
-        \`id\` int AUTO_INCREMENT NOT NULL,
-        \`orderId\` int,
-        \`storeId\` int,
-        \`eventType\` enum('acceptance_time','prep_time','dispatch_time','delivery_time','total_time','delay') NOT NULL,
-        \`actorType\` enum('system','user','staff','driver') NOT NULL DEFAULT 'system',
-        \`actorUserId\` int,
-        \`actorDriverId\` int,
-        \`valueSeconds\` int NOT NULL,
-        \`metadata\` text,
-        \`createdAt\` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        PRIMARY KEY (\`id\`),
-        KEY \`productivity_events_order_idx\` (\`orderId\`),
-        KEY \`productivity_events_type_idx\` (\`eventType\`),
-        KEY \`productivity_events_store_idx\` (\`storeId\`),
-        KEY \`productivity_events_created_idx\` (\`createdAt\`)
-      )
-    `));
-
-    await db.execute(sql.raw(`
-      CREATE TABLE IF NOT EXISTS \`staff_members\` (
-        \`id\` int AUTO_INCREMENT NOT NULL,
-        \`storeId\` int,
-        \`userId\` int,
-        \`name\` varchar(200) NOT NULL,
-        \`phone\` varchar(20),
-        \`email\` varchar(320),
-        \`role\` enum('waiter','cashier','attendant','kitchen','driver','manager','admin') NOT NULL,
-        \`accessToken\` varchar(128),
-        \`active\` boolean NOT NULL DEFAULT true,
-        \`createdAt\` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        \`updatedAt\` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-        PRIMARY KEY (\`id\`),
-        UNIQUE KEY \`staff_members_user_unique\` (\`userId\`),
-        UNIQUE KEY \`staff_members_access_token_unique\` (\`accessToken\`),
-        KEY \`staff_members_store_idx\` (\`storeId\`),
-        KEY \`staff_members_role_idx\` (\`role\`)
-      )
-    `));
-    if (!(await hasColumn(db, "staff_members", "accessToken"))) {
-      await db.execute(sql.raw("ALTER TABLE `staff_members` ADD `accessToken` varchar(128)"));
-    }
-    if (!(await hasIndex(db, "staff_members", "staff_members_access_token_unique"))) {
-      await db.execute(sql.raw("ALTER TABLE `staff_members` ADD UNIQUE KEY `staff_members_access_token_unique` (`accessToken`)"));
-    }
-
-    await db.execute(sql.raw(`
-      CREATE TABLE IF NOT EXISTS \`delivery_predictions\` (
-        \`id\` int AUTO_INCREMENT NOT NULL,
-        \`orderId\` int NOT NULL,
-        \`kind\` enum('delivery','pickup','dine_in') NOT NULL DEFAULT 'delivery',
-        \`predictionLabel\` varchar(120) NOT NULL,
-        \`minMinutes\` int NOT NULL,
-        \`maxMinutes\` int NOT NULL,
-        \`prepBaseMinutes\` int NOT NULL DEFAULT 0,
-        \`deliveryBaseMinutes\` int NOT NULL DEFAULT 0,
-        \`queuePressure\` int NOT NULL DEFAULT 0,
-        \`neighborhood\` varchar(120),
-        \`method\` varchar(80) NOT NULL DEFAULT 'heuristic',
-        \`computedAt\` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        \`createdAt\` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        \`updatedAt\` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-        PRIMARY KEY (\`id\`),
-        UNIQUE KEY \`delivery_predictions_order_unique\` (\`orderId\`),
-        KEY \`delivery_predictions_kind_idx\` (\`kind\`)
-      )
-    `));
-
-    await db.execute(sql.raw(`
-      CREATE TABLE IF NOT EXISTS \`dining_tables\` (
-        \`id\` int AUTO_INCREMENT NOT NULL,
-        \`storeId\` int,
-        \`name\` varchar(80) NOT NULL,
-        \`status\` enum('free','occupied','reserved','awaiting_closure') NOT NULL DEFAULT 'free',
-        \`capacity\` int NOT NULL DEFAULT 4,
-        \`active\` boolean NOT NULL DEFAULT true,
-        \`createdAt\` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        \`updatedAt\` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-        PRIMARY KEY (\`id\`),
-        UNIQUE KEY \`dining_tables_store_name_unique\` (\`storeId\`,\`name\`),
-        KEY \`dining_tables_store_idx\` (\`storeId\`),
-        KEY \`dining_tables_status_idx\` (\`status\`)
-      )
-    `));
-
-    await db.execute(sql.raw(`
-      CREATE TABLE IF NOT EXISTS \`table_sessions\` (
-        \`id\` int AUTO_INCREMENT NOT NULL,
-        \`tableId\` int NOT NULL,
-        \`storeId\` int,
-        \`waiterStaffId\` int,
-        \`customerName\` varchar(200),
-        \`guestCount\` int NOT NULL DEFAULT 1,
-        \`status\` enum('open','awaiting_closure','closed','cancelled') NOT NULL DEFAULT 'open',
-        \`notes\` text,
-        \`openedAt\` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        \`closedAt\` timestamp NULL,
-        \`subtotal\` decimal(10,2) NOT NULL DEFAULT '0.00',
-        \`discountAmount\` decimal(10,2) NOT NULL DEFAULT '0.00',
-        \`tipAmount\` decimal(10,2) NOT NULL DEFAULT '0.00',
-        \`closedByStaffId\` int,
-        \`total\` decimal(10,2) NOT NULL DEFAULT '0.00',
-        \`createdAt\` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        \`updatedAt\` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-        PRIMARY KEY (\`id\`),
-        KEY \`table_sessions_table_idx\` (\`tableId\`),
-        KEY \`table_sessions_waiter_idx\` (\`waiterStaffId\`),
-        KEY \`table_sessions_closed_by_idx\` (\`closedByStaffId\`),
-        KEY \`table_sessions_status_idx\` (\`status\`)
-      )
-    `));
-    if (!(await hasColumn(db, "table_sessions", "tipAmount"))) {
-      await db.execute(sql.raw("ALTER TABLE `table_sessions` ADD `tipAmount` decimal(10,2) NOT NULL DEFAULT '0.00'"));
-    }
-    if (!(await hasColumn(db, "table_sessions", "closedByStaffId"))) {
-      await db.execute(sql.raw("ALTER TABLE `table_sessions` ADD `closedByStaffId` int"));
-    }
-    if (!(await hasIndex(db, "table_sessions", "table_sessions_closed_by_idx"))) {
-      await db.execute(sql.raw("ALTER TABLE `table_sessions` ADD KEY `table_sessions_closed_by_idx` (`closedByStaffId`)"));
-    }
-
-    await db.execute(sql.raw(`
-      CREATE TABLE IF NOT EXISTS \`table_order_links\` (
-        \`id\` int AUTO_INCREMENT NOT NULL,
-        \`tableSessionId\` int NOT NULL,
-        \`orderId\` int NOT NULL,
-        \`createdAt\` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        PRIMARY KEY (\`id\`),
-        UNIQUE KEY \`table_order_links_order_unique\` (\`orderId\`),
-        KEY \`table_order_links_session_idx\` (\`tableSessionId\`)
-      )
-    `));
-
-    await db.execute(sql.raw(`
-      CREATE TABLE IF NOT EXISTS \`table_session_items\` (
-        \`id\` int AUTO_INCREMENT NOT NULL,
-        \`tableSessionId\` int NOT NULL,
-        \`productId\` int NOT NULL,
-        \`productName\` varchar(200) NOT NULL,
-        \`unitPrice\` decimal(10,2) NOT NULL,
-        \`quantity\` int NOT NULL DEFAULT 1,
-        \`notes\` text,
-        \`addedByStaffId\` int,
-        \`status\` enum('pending','preparing','ready','served','cancelled') NOT NULL DEFAULT 'pending',
-        \`requestedAt\` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        \`readyAt\` timestamp NULL,
-        \`servedAt\` timestamp NULL,
-        \`createdAt\` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        \`updatedAt\` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-        PRIMARY KEY (\`id\`),
-        KEY \`table_session_items_session_idx\` (\`tableSessionId\`),
-        KEY \`table_session_items_product_idx\` (\`productId\`),
-        KEY \`table_session_items_requested_at_idx\` (\`requestedAt\`),
-        KEY \`table_session_items_status_idx\` (\`status\`)
-      )
-    `));
-    if (!(await hasColumn(db, "table_session_items", "status"))) {
-      await db.execute(sql.raw("ALTER TABLE `table_session_items` ADD `status` enum('pending','preparing','ready','served','cancelled') NOT NULL DEFAULT 'pending'"));
-    }
-    if (!(await hasColumn(db, "table_session_items", "readyAt"))) {
-      await db.execute(sql.raw("ALTER TABLE `table_session_items` ADD `readyAt` timestamp NULL"));
-    }
-    if (!(await hasColumn(db, "table_session_items", "servedAt"))) {
-      await db.execute(sql.raw("ALTER TABLE `table_session_items` ADD `servedAt` timestamp NULL"));
-    }
-    if (!(await hasIndex(db, "table_session_items", "table_session_items_status_idx"))) {
-      await db.execute(sql.raw("ALTER TABLE `table_session_items` ADD KEY `table_session_items_status_idx` (`status`)"));
-    }
-
-    await db.execute(sql.raw(`
-      CREATE TABLE IF NOT EXISTS \`customer_metrics\` (
-        \`id\` int AUTO_INCREMENT NOT NULL,
-        \`userId\` int NOT NULL,
-        \`storeId\` int NOT NULL DEFAULT 0,
-        \`firstOrderAt\` timestamp NULL,
-        \`lastOrderAt\` timestamp NULL,
-        \`totalOrders\` int NOT NULL DEFAULT 0,
-        \`deliveredOrders\` int NOT NULL DEFAULT 0,
-        \`cancelledOrders\` int NOT NULL DEFAULT 0,
-        \`firstOrderCount\` int NOT NULL DEFAULT 0,
-        \`totalSpent\` decimal(12,2) NOT NULL DEFAULT '0.00',
-        \`averageTicket\` decimal(12,2) NOT NULL DEFAULT '0.00',
-        \`favoriteNeighborhood\` varchar(120),
-        \`favoriteOrderDay\` varchar(20),
-        \`favoriteOrderHour\` int,
-        \`favoriteProductName\` varchar(200),
-        \`updatedAt\` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-        \`createdAt\` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        PRIMARY KEY (\`id\`),
-        UNIQUE KEY \`customer_metrics_user_store_unique\` (\`userId\`,\`storeId\`),
-        KEY \`customer_metrics_orders_idx\` (\`totalOrders\`),
-        KEY \`customer_metrics_spent_idx\` (\`totalSpent\`)
-      )
-    `));
-
-    await db.execute(sql.raw(`
-      CREATE TABLE IF NOT EXISTS \`customer_auth_providers\` (
-        \`id\` int AUTO_INCREMENT NOT NULL,
-        \`userId\` int NOT NULL,
-        \`provider\` enum('email','phone','google','apple','facebook','instagram','manus') NOT NULL,
-        \`providerUserId\` varchar(191) NOT NULL,
-        \`providerEmail\` varchar(320),
-        \`providerPhone\` varchar(20),
-        \`isPrimary\` boolean NOT NULL DEFAULT false,
-        \`linkedAt\` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        \`updatedAt\` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-        PRIMARY KEY (\`id\`),
-        UNIQUE KEY \`customer_auth_providers_provider_user_unique\` (\`provider\`,\`providerUserId\`),
-        UNIQUE KEY \`customer_auth_providers_user_provider_unique\` (\`userId\`,\`provider\`),
-        KEY \`customer_auth_providers_user_idx\` (\`userId\`)
-      )
-    `));
-
-    await db.execute(sql.raw(`
-      CREATE TABLE IF NOT EXISTS \`otp_codes\` (
-        \`id\` int AUTO_INCREMENT NOT NULL,
-        \`userId\` int,
-        \`phone\` varchar(20) NOT NULL,
-        \`purpose\` enum('login','verify_phone') NOT NULL DEFAULT 'login',
-        \`codeHash\` varchar(255) NOT NULL,
-        \`attempts\` int NOT NULL DEFAULT 0,
-        \`requestIp\` varchar(64),
-        \`userAgent\` text,
-        \`expiresAt\` timestamp NOT NULL,
-        \`consumedAt\` timestamp NULL,
-        \`createdAt\` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        PRIMARY KEY (\`id\`),
-        KEY \`otp_codes_phone_idx\` (\`phone\`),
-        KEY \`otp_codes_phone_purpose_idx\` (\`phone\`,\`purpose\`),
-        KEY \`otp_codes_expires_idx\` (\`expiresAt\`)
-      )
-    `));
-
-    if (!(await hasColumn(db, "categories", "externalSource"))) {
-      await db.execute(
-        sql.raw(
-          "ALTER TABLE `categories` ADD `externalSource` varchar(32), ADD `externalMerchantId` varchar(128), ADD `externalId` varchar(128)"
-        )
-      );
-    }
-    if (!(await hasColumn(db, "categories", "icon"))) {
-      await db.execute(sql.raw("ALTER TABLE `categories` ADD `icon` varchar(64)"));
-    }
-    if (!(await hasIndex(db, "categories", "categories_external_uq"))) {
-      await db.execute(sql.raw("CREATE UNIQUE INDEX `categories_external_uq` ON `categories` (`externalSource`,`externalMerchantId`,`externalId`)"));
-    }
-
-    if (!(await hasColumn(db, "products", "externalSource"))) {
-      await db.execute(
-        sql.raw(
-          "ALTER TABLE `products` ADD `externalSource` varchar(32), ADD `externalMerchantId` varchar(128), ADD `externalId` varchar(128), ADD `externalCode` varchar(128)"
-        )
-      );
-    }
-    if (!(await hasIndex(db, "products", "products_external_uq"))) {
-      await db.execute(sql.raw("CREATE UNIQUE INDEX `products_external_uq` ON `products` (`externalSource`,`externalMerchantId`,`externalId`)"));
-    }
-
-    if (!(await hasColumn(db, "coupons", "externalSource"))) {
-      await db.execute(
-        sql.raw(
-          "ALTER TABLE `coupons` ADD `externalSource` varchar(32), ADD `externalMerchantId` varchar(128), ADD `externalId` varchar(128)"
-        )
-      );
-    }
-    if (!(await hasIndex(db, "coupons", "coupons_external_uq"))) {
-      await db.execute(sql.raw("CREATE UNIQUE INDEX `coupons_external_uq` ON `coupons` (`externalSource`,`externalMerchantId`,`externalId`)"));
-    }
-
-    if (!(await hasColumn(db, "promotions", "externalSource"))) {
-      await db.execute(
-        sql.raw(
-          "ALTER TABLE `promotions` ADD `externalSource` varchar(32), ADD `externalMerchantId` varchar(128), ADD `externalId` varchar(128)"
-        )
-      );
-    }
-    if (!(await hasIndex(db, "promotions", "promotions_external_uq"))) {
-      await db.execute(sql.raw("CREATE UNIQUE INDEX `promotions_external_uq` ON `promotions` (`externalSource`,`externalMerchantId`,`externalId`)"));
-    }
-  })().catch((error) => {
-    _schemaReady = null;
-    throw error;
-  });
-
-  return _schemaReady;
-}
-
 export async function getDb() {
   const connectionString = normalizeDatabaseUrl(process.env.DATABASE_URL) || buildConnectionStringFromParts();
-
-  if (!_db && !_pool && (process.env.DATABASE_HOST || process.env.DATABASE_URL)) {
-    _pool = buildMysqlPoolFromParts();
-  }
-
-  if (!_db && (_pool || connectionString)) {
+  if (!_db && !_pool && connectionString) {
     try {
-      _db = _pool ? drizzle(_pool as any) : drizzle(connectionString!);
+      _pool = buildPostgresPool(connectionString);
+      _db = drizzle(_pool);
     } catch (error) {
       console.warn("[Database] Failed to connect:", error);
       resetDbState();
-    }
-  }
-  if (_db && shouldRunRuntimeSchemaMigrations()) {
-    try {
-      await ensureRuntimeSchema(_db);
-    } catch (error) {
-      console.error("[Database] Runtime schema/connection error, resetting pool:", error);
-      resetDbState();
-      return null;
     }
   }
   return _db;
@@ -805,7 +299,7 @@ export async function upsertUser(user: InsertUser): Promise<{ isNew: boolean }> 
     if (!values.lastSignedIn) values.lastSignedIn = new Date();
     if (Object.keys(updateSet).length === 0) updateSet.lastSignedIn = new Date();
 
-    await db.insert(users).values(values).onDuplicateKeyUpdate({ set: updateSet });
+    await db.insert(users).values(values).onConflictDoUpdate({ target: users.openId, set: updateSet });
     return { isNew };
   });
 }
@@ -871,14 +365,23 @@ export async function updateUserPasswordHash(openId: string, passwordHash: strin
 }
 
 export async function saveResetToken(email: string, token: string, expiresAt: Date) {
+  const tokenHash = hashRecoveryToken(token);
   await withDbRetry(async (db) => {
-    await db.update(users).set({ resetToken: token, resetTokenExpiresAt: expiresAt }).where(eq(users.email, email));
+    await db.update(users)
+      .set({ resetToken: tokenHash, resetTokenExpiresAt: expiresAt })
+      .where(eq(users.email, email));
   });
 }
 
 export async function getUserByResetToken(token: string) {
+  const tokenHash = hashRecoveryToken(token);
   return withDbRetry(async (db) => {
-    const result = await db.select().from(users).where(eq(users.resetToken, token)).limit(1);
+    const result = await db.select().from(users)
+      .where(or(
+        eq(users.resetToken, tokenHash),
+        eq(users.resetToken, token),
+      ))
+      .limit(1);
     return result[0];
   });
 }
@@ -891,14 +394,16 @@ export async function clearResetToken(openId: string) {
 
 // --- CATEGORIES ---------------------------------------------------------------
 
-export async function getCategories(activeOnly = true) {
+export async function getCategories(input: boolean | { activeOnly?: boolean; storeId?: number } = true) {
   const db = await getDb();
   if (!db) return [];
-  const query = db.select().from(categories);
-  if (activeOnly) {
-    return query.where(eq(categories.active, true)).orderBy(categories.sortOrder);
-  }
-  return query.orderBy(categories.sortOrder);
+  const opts = typeof input === "boolean" ? { activeOnly: input } : input;
+  const conditions: SQL[] = [];
+  if (opts.activeOnly !== false) conditions.push(eq(categories.active, true));
+  if (opts.storeId !== undefined) conditions.push(eq(categories.storeId, opts.storeId));
+  return db.select().from(categories)
+    .where(conditions.length ? and(...conditions) : undefined)
+    .orderBy(categories.sortOrder, categories.name);
 }
 
 export async function getCategoryById(id: number) {
@@ -934,10 +439,7 @@ export async function getProducts(opts?: { categoryId?: number; activeOnly?: boo
   const conditions: SQL[] = [];
   if (opts?.activeOnly !== false) conditions.push(eq(products.active, true));
   if (opts?.categoryId) conditions.push(eq(products.categoryId, opts.categoryId));
-  if (opts?.storeId) {
-    const storeCondition = or(isNull(products.storeId), eq(products.storeId, opts.storeId));
-    if (storeCondition) conditions.push(storeCondition);
-  }
+  if (opts?.storeId !== undefined) conditions.push(eq(products.storeId, opts.storeId));
   return db
     .select()
     .from(products)
@@ -1820,9 +1322,34 @@ export async function linkCustomerAuthProvider(data: {
   providerUserId: string;
   providerEmail?: string | null;
   providerPhone?: string | null;
+  providerUsername?: string | null;
+  displayName?: string | null;
+  avatarUrl?: string | null;
+  accountType?: string | null;
+  accessTokenEncrypted?: string | null;
+  refreshTokenEncrypted?: string | null;
+  tokenExpiresAt?: Date | null;
+  grantedScopes?: string[];
+  rawProfileJson?: string | null;
   isPrimary?: boolean;
+  consentVersion?: string | null;
+  consentedAt?: Date | null;
+  lastSyncedAt?: Date | null;
 }) {
   await withDbRetry(async (db) => {
+    const existingProvider = await db
+      .select({ userId: customerAuthProviders.userId })
+      .from(customerAuthProviders)
+      .where(and(
+        eq(customerAuthProviders.provider, data.provider),
+        eq(customerAuthProviders.providerUserId, data.providerUserId),
+      ))
+      .limit(1);
+
+    if (existingProvider[0] && existingProvider[0].userId !== data.userId) {
+      throw new Error("This social account is already linked to another user");
+    }
+
     await db
       .insert(customerAuthProviders)
       .values({
@@ -1831,15 +1358,163 @@ export async function linkCustomerAuthProvider(data: {
         providerUserId: data.providerUserId,
         providerEmail: data.providerEmail ?? null,
         providerPhone: data.providerPhone ?? null,
+        providerUsername: data.providerUsername ?? null,
+        displayName: data.displayName ?? null,
+        avatarUrl: data.avatarUrl ?? null,
+        accountType: data.accountType ?? null,
+        accessTokenEncrypted: data.accessTokenEncrypted ?? null,
+        refreshTokenEncrypted: data.refreshTokenEncrypted ?? null,
+        tokenExpiresAt: data.tokenExpiresAt ?? null,
+        grantedScopes: data.grantedScopes ? JSON.stringify(data.grantedScopes) : null,
+        rawProfileJson: data.rawProfileJson ?? null,
         isPrimary: data.isPrimary ?? false,
+        consentVersion: data.consentVersion ?? null,
+        consentedAt: data.consentedAt ?? null,
+        lastSyncedAt: data.lastSyncedAt ?? null,
+        disconnectedAt: null,
       })
-      .onDuplicateKeyUpdate({
+      .onConflictDoUpdate({
+        target: [customerAuthProviders.provider, customerAuthProviders.providerUserId],
         set: {
           providerEmail: data.providerEmail ?? null,
           providerPhone: data.providerPhone ?? null,
+          providerUsername: data.providerUsername ?? null,
+          displayName: data.displayName ?? null,
+          avatarUrl: data.avatarUrl ?? null,
+          accountType: data.accountType ?? null,
+          accessTokenEncrypted: data.accessTokenEncrypted ?? null,
+          refreshTokenEncrypted: data.refreshTokenEncrypted ?? null,
+          tokenExpiresAt: data.tokenExpiresAt ?? null,
+          grantedScopes: data.grantedScopes ? JSON.stringify(data.grantedScopes) : null,
+          rawProfileJson: data.rawProfileJson ?? null,
           isPrimary: data.isPrimary ?? false,
+          consentVersion: data.consentVersion ?? null,
+          consentedAt: data.consentedAt ?? null,
+          lastSyncedAt: data.lastSyncedAt ?? null,
+          disconnectedAt: null,
         },
       });
+  });
+}
+
+export async function getCustomerAuthProviders(userId: number) {
+  return withDbRetry((db) => db
+    .select()
+    .from(customerAuthProviders)
+    .where(and(eq(customerAuthProviders.userId, userId), isNull(customerAuthProviders.disconnectedAt)))
+    .orderBy(desc(customerAuthProviders.isPrimary), desc(customerAuthProviders.linkedAt)));
+}
+
+export async function getCustomerAuthProvider(userId: number, provider: "email" | "phone" | "google" | "apple" | "facebook" | "instagram" | "manus") {
+  return withDbRetry(async (db) => {
+    const rows = await db
+      .select()
+      .from(customerAuthProviders)
+      .where(and(
+        eq(customerAuthProviders.userId, userId),
+        eq(customerAuthProviders.provider, provider),
+        isNull(customerAuthProviders.disconnectedAt),
+      ))
+      .limit(1);
+    return rows[0];
+  });
+}
+
+export async function disconnectCustomerAuthProvider(userId: number, provider: "email" | "phone" | "google" | "apple" | "facebook" | "instagram" | "manus") {
+  await withDbRetry((db) => db
+    .update(customerAuthProviders)
+    .set({
+      accessTokenEncrypted: null,
+      refreshTokenEncrypted: null,
+      disconnectedAt: new Date(),
+      isPrimary: false,
+    })
+    .where(and(eq(customerAuthProviders.userId, userId), eq(customerAuthProviders.provider, provider))));
+}
+
+export async function recordAuthEvent(data: {
+  userId?: number | null;
+  provider?: string | null;
+  event:
+    | "login_success"
+    | "login_failure"
+    | "provider_connected"
+    | "provider_disconnected"
+    | "profile_synced"
+    | "account_deleted"
+    | "two_factor_challenge"
+    | "two_factor_failure"
+    | "two_factor_enabled"
+    | "two_factor_disabled";
+  ipAddress?: string | null;
+  userAgent?: string | null;
+  metadata?: Record<string, unknown>;
+}) {
+  await withDbRetry((db) => db.insert(authEventLogs).values({
+    userId: data.userId ?? null,
+    provider: data.provider ?? null,
+    event: data.event,
+    ipAddress: data.ipAddress ?? null,
+    userAgent: data.userAgent ?? null,
+    metadataJson: data.metadata ? JSON.stringify(data.metadata) : null,
+  }));
+}
+
+export async function recordUserConsent(data: {
+  userId: number;
+  kind: "terms" | "privacy" | "social_sync";
+  version: string;
+  granted?: boolean;
+  ipAddress?: string | null;
+  userAgent?: string | null;
+}) {
+  await withDbRetry((db) => db.insert(userConsents).values({
+    userId: data.userId,
+    kind: data.kind,
+    version: data.version,
+    granted: data.granted ?? true,
+    ipAddress: data.ipAddress ?? null,
+    userAgent: data.userAgent ?? null,
+  }));
+}
+
+export async function markUserLogin(userId: number, provider: string) {
+  await withDbRetry((db) => db
+    .update(users)
+    .set({ loginMethod: provider, lastSignedIn: new Date() })
+    .where(eq(users.id, userId)));
+}
+
+export async function anonymizeUserAccount(userId: number) {
+  const anonymized = `deleted_${userId}_${randomUUID().replace(/-/g, "").slice(0, 16)}`;
+  await withDbRetry(async (db) => {
+    await db.update(customerAuthProviders).set({
+      accessTokenEncrypted: null,
+      refreshTokenEncrypted: null,
+      providerEmail: null,
+      providerPhone: null,
+      providerUsername: null,
+      rawProfileJson: null,
+      disconnectedAt: new Date(),
+      isPrimary: false,
+    }).where(eq(customerAuthProviders.userId, userId));
+    await db.update(users).set({
+      openId: anonymized,
+      name: "Conta excluida",
+      firstName: null,
+      lastName: null,
+      email: null,
+      username: null,
+      phone: null,
+      avatarUrl: null,
+      passwordHash: null,
+      resetToken: null,
+      resetTokenExpiresAt: null,
+      savedAddress: null,
+      savedCep: null,
+      savedCity: null,
+      status: "inactive",
+    }).where(eq(users.id, userId));
   });
 }
 
@@ -1904,21 +1579,30 @@ export async function consumeOtpCode(id: number) {
 
 // --- COUPONS ------------------------------------------------------------------
 
-export async function getCouponByCode(code: string) {
+export async function getCouponByCode(code: string, storeId?: number) {
   const db = await getDb();
   if (!db) return undefined;
+  const conditions: SQL[] = [eq(coupons.code, code.toUpperCase()), eq(coupons.active, true)];
+  if (storeId !== undefined) conditions.push(eq(coupons.storeId, storeId));
   const result = await db
     .select()
     .from(coupons)
-    .where(and(eq(coupons.code, code.toUpperCase()), eq(coupons.active, true)))
+    .where(and(...conditions))
     .limit(1);
   return result[0];
+}
+
+export async function getCouponById(id: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const [coupon] = await db.select().from(coupons).where(eq(coupons.id, id)).limit(1);
+  return coupon;
 }
 
 export async function getAllCoupons(storeId?: number) {
   const db = await getDb();
   if (!db) return [];
-  if (storeId) return db.select().from(coupons).where(eq(coupons.storeId, storeId)).orderBy(desc(coupons.createdAt));
+  if (storeId !== undefined) return db.select().from(coupons).where(eq(coupons.storeId, storeId)).orderBy(desc(coupons.createdAt));
   return db.select().from(coupons).orderBy(desc(coupons.createdAt));
 }
 
@@ -1934,7 +1618,7 @@ export async function updateCoupon(id: number, data: Partial<typeof coupons.$inf
   await db.update(coupons).set(data).where(eq(coupons.id, id));
 }
 
-export async function incrementCouponUsage(code: string): Promise<boolean> {
+export async function incrementCouponUsage(couponId: number): Promise<boolean> {
   const db = await getDb();
   if (!db) return false;
   // Atomic increment: only increments if usedCount < maxUses (or maxUses is null)
@@ -1944,7 +1628,7 @@ export async function incrementCouponUsage(code: string): Promise<boolean> {
     .set({ usedCount: sql`${coupons.usedCount} + 1` })
     .where(
       and(
-        eq(coupons.code, code.toUpperCase()),
+        eq(coupons.id, couponId),
         sql`(${coupons.maxUses} IS NULL OR ${coupons.usedCount} < ${coupons.maxUses})`
       )
     );
@@ -2018,21 +1702,281 @@ export async function pickStoreForDeliveryAddress(input: {
   });
 }
 
+export type OrderRequestClaimResult =
+  | { state: "claimed" }
+  | { state: "completed"; orderId: number }
+  | { state: "processing" }
+  | { state: "failed"; orderId?: number | null; reason?: string | null }
+  | { state: "conflict" };
+
+export async function claimOrderRequest(input: {
+  idempotencyKey: string;
+  requestFingerprint: string;
+  userId: number;
+  storeId: number;
+  staleAfterMs?: number;
+}): Promise<OrderRequestClaimResult> {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  const now = new Date();
+  const inserted = await db
+    .insert(orderRequests)
+    .values({
+      idempotencyKey: input.idempotencyKey,
+      requestFingerprint: input.requestFingerprint,
+      userId: input.userId,
+      storeId: input.storeId,
+      status: "processing",
+      updatedAt: now,
+    })
+    .onConflictDoNothing({ target: orderRequests.idempotencyKey })
+    .returning({ id: orderRequests.id });
+
+  if (inserted.length > 0) return { state: "claimed" };
+
+  const [existing] = await db
+    .select({
+      id: orderRequests.id,
+      requestFingerprint: orderRequests.requestFingerprint,
+      userId: orderRequests.userId,
+      storeId: orderRequests.storeId,
+      status: orderRequests.status,
+      orderId: orderRequests.orderId,
+      updatedAt: orderRequests.updatedAt,
+    })
+    .from(orderRequests)
+    .where(eq(orderRequests.idempotencyKey, input.idempotencyKey))
+    .limit(1);
+
+  if (!existing) return { state: "processing" };
+
+  if (
+    existing.requestFingerprint !== input.requestFingerprint ||
+    existing.userId !== input.userId ||
+    existing.storeId !== input.storeId
+  ) {
+    return { state: "conflict" };
+  }
+
+  if (existing.status === "completed" && existing.orderId) {
+    return { state: "completed", orderId: existing.orderId };
+  }
+
+  if (existing.status === "failed" && existing.orderId) {
+    return { state: "failed", orderId: existing.orderId };
+  }
+
+  const staleAfterMs = input.staleAfterMs ?? 2 * 60 * 1000;
+  const staleBefore = new Date(Date.now() - staleAfterMs);
+  const canReclaim =
+    existing.status === "failed" ||
+    (existing.status === "processing" && existing.updatedAt <= staleBefore);
+
+  if (canReclaim) {
+    const [orphanOrder] = await db
+      .select({ id: orders.id, status: orders.status })
+      .from(orders)
+      .where(eq(orders.idempotencyKey, input.idempotencyKey))
+      .limit(1);
+
+    if (orphanOrder) {
+      await db
+        .update(orderRequests)
+        .set({
+          status: "failed",
+          orderId: orphanOrder.id,
+          lastError: "Pedido já criado em tentativa anterior; retry automático bloqueado para evitar duplicidade.",
+          updatedAt: now,
+        })
+        .where(eq(orderRequests.id, existing.id));
+      return { state: "failed", orderId: orphanOrder.id };
+    }
+
+    const reclaimed = await db
+      .update(orderRequests)
+      .set({ status: "processing", orderId: null, lastError: null, updatedAt: now })
+      .where(and(
+        eq(orderRequests.id, existing.id),
+        or(
+          eq(orderRequests.status, "failed"),
+          and(eq(orderRequests.status, "processing"), lte(orderRequests.updatedAt, staleBefore)),
+        ),
+      ))
+      .returning({ id: orderRequests.id });
+
+    if (reclaimed.length > 0) return { state: "claimed" };
+  }
+
+  return { state: "processing" };
+}
+
+export async function attachOrderRequest(idempotencyKey: string, orderId: number): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await db
+    .update(orderRequests)
+    .set({ orderId, updatedAt: new Date() })
+    .where(and(
+      eq(orderRequests.idempotencyKey, idempotencyKey),
+      eq(orderRequests.status, "processing"),
+    ));
+}
+
+export async function completeOrderRequest(idempotencyKey: string, orderId: number): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await db
+    .update(orderRequests)
+    .set({ status: "completed", orderId, lastError: null, updatedAt: new Date() })
+    .where(eq(orderRequests.idempotencyKey, idempotencyKey));
+}
+
+export async function failOrderRequest(idempotencyKey: string, error: unknown, orderId?: number | null): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  const message = error instanceof Error ? error.message : String(error ?? "unknown");
+  await db
+    .update(orderRequests)
+    .set({
+      status: "failed",
+      orderId: orderId ?? undefined,
+      lastError: message.slice(0, 2000),
+      updatedAt: new Date(),
+    })
+    .where(and(
+      eq(orderRequests.idempotencyKey, idempotencyKey),
+      eq(orderRequests.status, "processing"),
+    ));
+}
+
+export async function getOrderByIdempotencyKey(idempotencyKey: string) {
+  return withDbRetry(async (db) => {
+    const result = await db
+      .select()
+      .from(orders)
+      .where(eq(orders.idempotencyKey, idempotencyKey))
+      .limit(1);
+    return result[0];
+  });
+}
+
+export async function enqueueOutboxEvent(input: {
+  eventKey: string;
+  eventType: string;
+  aggregateType: string;
+  aggregateId: string;
+  storeId?: number | null;
+  payload: unknown;
+  availableAt?: Date;
+}): Promise<boolean> {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  const inserted = await db
+    .insert(eventOutbox)
+    .values({
+      eventKey: input.eventKey,
+      eventType: input.eventType,
+      aggregateType: input.aggregateType,
+      aggregateId: input.aggregateId,
+      storeId: input.storeId ?? null,
+      payload: JSON.stringify(input.payload ?? {}),
+      availableAt: input.availableAt ?? new Date(),
+    })
+    .onConflictDoNothing({ target: eventOutbox.eventKey })
+    .returning({ id: eventOutbox.id });
+  return inserted.length > 0;
+}
+
 export async function createOrder(
   orderData: InsertOrder,
   items: Omit<InsertOrderItem, 'orderId'>[]
 ): Promise<number> {
-  return withDbRetry((db) =>
+  const orderId = await withDbRetry((db) =>
     db.transaction(async (tx) => {
-      const result = await tx.insert(orders).values(orderData);
-      const resultHeader = Array.isArray(result) ? result[0] : result;
-      const orderId = (resultHeader as unknown as { insertId: number }).insertId;
+      const [insertedOrder] = await tx
+        .insert(orders)
+        .values(orderData)
+        .returning({
+          id: orders.id,
+          storeId: orders.storeId,
+          status: orders.status,
+          serviceType: orders.serviceType,
+        });
+      const orderId = insertedOrder?.id;
       if (!orderId) throw new Error("Failed to get order ID after insert");
+
+      const orderNumber = `BNT-${String(insertedOrder.storeId ?? 0).padStart(2, "0")}-${String(orderId).padStart(6, "0")}`;
+      await tx
+        .update(orders)
+        .set({ orderNumber, updatedAt: new Date() })
+        .where(eq(orders.id, orderId));
+
       const itemsWithOrderId = items.map((item) => ({ ...item, orderId }));
       await tx.insert(orderItems).values(itemsWithOrderId);
+
+      await tx.insert(orderStageLogs).values({
+        orderId,
+        previousStatus: null,
+        nextStatus: insertedOrder.status,
+        stage: "created",
+        source: "system",
+        metadata: JSON.stringify({
+          serviceType: insertedOrder.serviceType,
+          orderNumber,
+          transactional: true,
+        }),
+      });
+
+      const createdPayload = JSON.stringify({ orderId, orderNumber });
+      await tx
+        .insert(eventOutbox)
+        .values([
+          {
+            eventKey: `order.created:${orderId}`,
+            eventType: "order.created",
+            aggregateType: "order",
+            aggregateId: String(orderId),
+            storeId: insertedOrder.storeId ?? null,
+            payload: createdPayload,
+            status: "pending",
+            availableAt: new Date(),
+          },
+          {
+            eventKey: `order.created.admin_push:${orderId}`,
+            eventType: "order.created.admin_push",
+            aggregateType: "order",
+            aggregateId: String(orderId),
+            storeId: insertedOrder.storeId ?? null,
+            payload: createdPayload,
+            status: "pending",
+            availableAt: new Date(),
+          },
+          {
+            eventKey: `order.created.customer_whatsapp:${orderId}`,
+            eventType: "order.created.customer_whatsapp",
+            aggregateType: "order",
+            aggregateId: String(orderId),
+            storeId: insertedOrder.storeId ?? null,
+            payload: createdPayload,
+            status: "pending",
+            availableAt: new Date(),
+          },
+        ])
+        .onConflictDoNothing({ target: eventOutbox.eventKey });
+
       return orderId;
     })
   );
+
+  void publishOrderRealtimeEvent({
+    type: "created",
+    orderId,
+    storeId: orderData.storeId ?? null,
+    userId: orderData.userId ?? null,
+    status: orderData.status ?? "pending",
+  });
+  return orderId;
 }
 
 export async function getOrderById(id: number) {
@@ -2048,14 +1992,15 @@ export async function getOrderItems(orderId: number): Promise<OrderItem[]> {
   );
 }
 
-export async function getOrdersByUser(userId: number) {
-  return withDbRetry(async (db) =>
-    db
+export async function getOrdersByUser(userId: number, storeId?: number) {
+  return withDbRetry(async (db) => {
+    const effectiveStoreId = await getEffectiveStoreId(db, storeId);
+    return db
       .select()
       .from(orders)
-      .where(eq(orders.userId, userId))
-      .orderBy(desc(orders.createdAt))
-  );
+      .where(and(eq(orders.userId, userId), eq(orders.storeId, effectiveStoreId)))
+      .orderBy(desc(orders.createdAt));
+  });
 }
 
 export async function getAllOrders(opts?: {
@@ -2084,12 +2029,6 @@ export async function getAllOrders(opts?: {
   });
 }
 
-export async function updateOrderStatus(id: number, status: Order["status"]) {
-  await withDbRetry(async (db) => {
-    await db.update(orders).set({ status }).where(eq(orders.id, id));
-  });
-}
-
 export async function setOrderAiPaused(id: number, aiPaused: boolean) {
   await withDbRetry(async (db) => {
     await db.update(orders).set({ aiPaused }).where(eq(orders.id, id));
@@ -2103,16 +2042,62 @@ export async function updateOrderPaymentStatus(
   stripeCheckoutSessionId?: string,
   asaasPaymentId?: string
 ) {
-  await withDbRetry(async (db) => {
-    const updateFields: Record<string, unknown> = { paymentStatus };
-    if (stripePaymentIntentId) updateFields.stripePaymentIntentId = stripePaymentIntentId;
-    if (stripeCheckoutSessionId) updateFields.stripeCheckoutSessionId = stripeCheckoutSessionId;
-    if (asaasPaymentId) updateFields.asaasPaymentId = asaasPaymentId;
-    if (paymentStatus === "paid") {
-      updateFields.status = sql`CASE WHEN ${orders.status} = 'pending' THEN 'confirmed' ELSE ${orders.status} END`;
+  await withDbRetry((db) =>
+    db.transaction(async (tx) => {
+      const updateFields: Record<string, unknown> = { paymentStatus, updatedAt: new Date() };
+      if (stripePaymentIntentId) updateFields.stripePaymentIntentId = stripePaymentIntentId;
+      if (stripeCheckoutSessionId) updateFields.stripeCheckoutSessionId = stripeCheckoutSessionId;
+      if (asaasPaymentId) updateFields.asaasPaymentId = asaasPaymentId;
+
+      const [updatedOrder] = await tx
+        .update(orders)
+        .set(updateFields)
+        .where(eq(orders.id, id))
+        .returning({
+          id: orders.id,
+          storeId: orders.storeId,
+          orderNumber: orders.orderNumber,
+        });
+
+      if (!updatedOrder) throw new Error(`Order ${id} not found`);
+
+      if (paymentStatus === "paid") {
+        await tx
+          .insert(eventOutbox)
+          .values({
+            eventKey: `order.paid:${id}`,
+            eventType: "order.paid",
+            aggregateType: "order",
+            aggregateId: String(id),
+            storeId: updatedOrder.storeId ?? null,
+            payload: JSON.stringify({
+              orderId: id,
+              orderNumber: updatedOrder.orderNumber,
+              paymentStatus: "paid",
+            }),
+            status: "pending",
+            availableAt: new Date(),
+          })
+          .onConflictDoNothing({ target: eventOutbox.eventKey });
+      }
+    })
+  );
+
+  if (paymentStatus === "paid") {
+    const guard = await updateOrderStatusGuarded(id, "confirmed", ["pending"], {
+      source: "system",
+      notes: "Pagamento confirmado",
+    });
+    if (guard.ok && guard.previous) {
+      const { applyOrderStatusLifecycle } = await import("./orderLifecycle.ts");
+      await applyOrderStatusLifecycle(id, guard.previous, "confirmed", {
+        source: "system",
+        notes: "Pagamento confirmado",
+        skipStageLog: true,
+          skipStatusTimestamp: true,
+      });
     }
-    await db.update(orders).set(updateFields).where(eq(orders.id, id));
-  });
+  }
 }
 
 // --- TRANSACTIONS -------------------------------------------------------------
@@ -2222,40 +2207,35 @@ export async function getSalesOverview(startDate: Date, endDate: Date, storeId?:
   const periodMs = endDate.getTime() - startDate.getTime();
   const prevStart = new Date(startDate.getTime() - periodMs);
   const prevEnd = new Date(startDate.getTime() - 1);
-  // Usa America/Sao_Paulo para calcular início e fim do dia
   const todayStart = getTodayStartUtc();
   const todayEnd = getTodayEndUtc();
 
-  const storeFilter = storeId ? sql` AND \`storeId\` = ${storeId}` : sql``;
-  const [curr, prev, todayRes] = await Promise.all([
-    db.execute(
-      sql`SELECT COUNT(*) AS totalOrders, COALESCE(SUM(\`total\`),0) AS totalRevenue
-          FROM \`orders\`
-          WHERE \`createdAt\` >= ${startDate} AND \`createdAt\` <= ${endDate}
-            AND \`status\` != 'cancelled'${storeFilter}`
-    ),
-    db.execute(
-      sql`SELECT COUNT(*) AS totalOrders, COALESCE(SUM(\`total\`),0) AS totalRevenue
-          FROM \`orders\`
-          WHERE \`createdAt\` >= ${prevStart} AND \`createdAt\` <= ${prevEnd}
-            AND \`status\` != 'cancelled'${storeFilter}`
-    ),
-    db.execute(
-      sql`SELECT COUNT(*) AS todayOrders, COALESCE(SUM(\`total\`),0) AS todayRevenue
-          FROM \`orders\`
-          WHERE \`createdAt\` >= ${todayStart} AND \`createdAt\` <= ${todayEnd}
-            AND \`status\` != 'cancelled'${storeFilter}`
-    ),
+  const aggregatePeriod = async (from: Date, to: Date) => {
+    const [row] = await db
+      .select({
+        totalOrders: sql<number>`COUNT(*)`,
+        totalRevenue: sql<number>`COALESCE(SUM(${orders.total}), 0)`,
+      })
+      .from(orders)
+      .where(and(
+        gte(orders.createdAt, from),
+        lte(orders.createdAt, to),
+        not(eq(orders.status, "cancelled")),
+        storeId ? eq(orders.storeId, storeId) : undefined,
+      ));
+    return row ?? { totalOrders: 0, totalRevenue: 0 };
+  };
+
+  const [curr, prev, today] = await Promise.all([
+    aggregatePeriod(startDate, endDate),
+    aggregatePeriod(prevStart, prevEnd),
+    aggregatePeriod(todayStart, todayEnd),
   ]);
 
-  const c = (curr as unknown as [Array<{ totalOrders: string; totalRevenue: string }>])[0][0];
-  const p = (prev as unknown as [Array<{ totalOrders: string; totalRevenue: string }>])[0][0];
-  const td = (todayRes as unknown as [Array<{ todayOrders: string; todayRevenue: string }>])[0][0];
-
-  const totalOrders = Number(c?.totalOrders ?? 0);
-  const totalRevenue = Number(c?.totalRevenue ?? 0);
-  const prevTotalOrders = Number(p?.totalOrders ?? 0);
-  const prevTotalRevenue = Number(p?.totalRevenue ?? 0);
+  const totalOrders = Number(curr.totalOrders ?? 0);
+  const totalRevenue = Number(curr.totalRevenue ?? 0);
+  const prevTotalOrders = Number(prev.totalOrders ?? 0);
+  const prevTotalRevenue = Number(prev.totalRevenue ?? 0);
 
   return {
     totalRevenue,
@@ -2263,31 +2243,36 @@ export async function getSalesOverview(startDate: Date, endDate: Date, storeId?:
     avgTicket: totalOrders > 0 ? totalRevenue / totalOrders : 0,
     prevTotalRevenue,
     prevTotalOrders,
-    todayOrders: Number(td?.todayOrders ?? 0),
-    todayRevenue: Number(td?.todayRevenue ?? 0),
+    todayOrders: Number(today.totalOrders ?? 0),
+    todayRevenue: Number(today.totalRevenue ?? 0),
   };
 }
 
 export async function getSalesTimeSeries(startDate: Date, endDate: Date, storeId?: number, timezoneOffsetMinutes = 0) {
   const db = await getDb();
   if (!db) return [];
-  // Sempre usa America/Sao_Paulo — ignora timezoneOffset do cliente
-  const tzOffset = getBrasilTzOffset();
-  const storeFilterTs = storeId ? sql` AND \`storeId\` = ${storeId}` : sql``;
-  const rows = await db.execute(
-    sql`SELECT DATE(CONVERT_TZ(\`createdAt\`, '+00:00', ${tzOffset})) AS date,
-               COUNT(*) AS totalOrders,
-               COALESCE(SUM(\`total\`),0) AS totalRevenue
-        FROM \`orders\`
-        WHERE \`createdAt\` >= ${startDate} AND \`createdAt\` <= ${endDate}
-          AND \`status\` != 'cancelled'${storeFilterTs}
-        GROUP BY DATE(CONVERT_TZ(\`createdAt\`, '+00:00', ${tzOffset}))
-        ORDER BY DATE(CONVERT_TZ(\`createdAt\`, '+00:00', ${tzOffset}))`
-  );
-  return (rows as unknown as [Array<{ date: string; totalOrders: string; totalRevenue: string }>])[0].map((r) => ({
-    date: r.date,
-    totalOrders: Number(r.totalOrders),
-    totalRevenue: Number(r.totalRevenue ?? 0),
+
+  const localDate = sql<string>`(${orders.createdAt} AT TIME ZONE 'UTC' AT TIME ZONE 'America/Sao_Paulo')::date`;
+  const rows = await db
+    .select({
+      date: localDate,
+      totalOrders: sql<number>`COUNT(*)`,
+      totalRevenue: sql<number>`COALESCE(SUM(${orders.total}), 0)`,
+    })
+    .from(orders)
+    .where(and(
+      gte(orders.createdAt, startDate),
+      lte(orders.createdAt, endDate),
+      not(eq(orders.status, "cancelled")),
+      storeId ? eq(orders.storeId, storeId) : undefined,
+    ))
+    .groupBy(localDate)
+    .orderBy(localDate);
+
+  return rows.map((row) => ({
+    date: String(row.date),
+    totalOrders: Number(row.totalOrders ?? 0),
+    totalRevenue: Number(row.totalRevenue ?? 0),
   }));
 }
 
@@ -2364,26 +2349,30 @@ export async function getOrdersByPeriod(startDate: Date, endDate: Date, storeId?
 export async function getDailyRevenue(days = 7, storeId?: number, timezoneOffsetMinutes = 0) {
   const db = await getDb();
   if (!db) return [];
-  // Sempre usa America/Sao_Paulo — ignora timezoneOffset do cliente
-  const tzOffset = getBrasilTzOffset();
+
   const todayStartUtc = getTodayStartUtc();
   const startDate = new Date(todayStartUtc.getTime() - days * 24 * 60 * 60 * 1000);
-  // Use raw SQL with CONVERT_TZ to group by local date
-  const storeFilterDr = storeId ? sql` AND \`orders\`.\`storeId\` = ${storeId}` : sql``;
-  const rows = await db.execute(
-    sql`SELECT DATE(CONVERT_TZ(\`orders\`.\`createdAt\`, '+00:00', ${tzOffset})) AS date,
-               COUNT(*) AS totalOrders,
-               SUM(\`orders\`.\`total\`) AS totalRevenue
-        FROM \`orders\`
-        WHERE \`orders\`.\`createdAt\` >= ${startDate}
-          AND \`orders\`.\`status\` != 'cancelled'${storeFilterDr}
-        GROUP BY DATE(CONVERT_TZ(\`orders\`.\`createdAt\`, '+00:00', ${tzOffset}))
-        ORDER BY DATE(CONVERT_TZ(\`orders\`.\`createdAt\`, '+00:00', ${tzOffset}))`
-  );
-  return (rows as unknown as [Array<{ date: string; totalOrders: number; totalRevenue: string }>])[0].map((r) => ({
-    date: r.date,
-    totalOrders: Number(r.totalOrders),
-    totalRevenue: Number(r.totalRevenue ?? 0),
+  const localDate = sql<string>`(${orders.createdAt} AT TIME ZONE 'UTC' AT TIME ZONE 'America/Sao_Paulo')::date`;
+
+  const rows = await db
+    .select({
+      date: localDate,
+      totalOrders: sql<number>`COUNT(*)`,
+      totalRevenue: sql<number>`COALESCE(SUM(${orders.total}), 0)`,
+    })
+    .from(orders)
+    .where(and(
+      gte(orders.createdAt, startDate),
+      not(eq(orders.status, "cancelled")),
+      storeId ? eq(orders.storeId, storeId) : undefined,
+    ))
+    .groupBy(localDate)
+    .orderBy(localDate);
+
+  return rows.map((row) => ({
+    date: String(row.date),
+    totalOrders: Number(row.totalOrders ?? 0),
+    totalRevenue: Number(row.totalRevenue ?? 0),
   }));
 }
 
@@ -2391,7 +2380,21 @@ export async function getDailyRevenue(days = 7, storeId?: number, timezoneOffset
 
 export async function updateUserProfile(
   userId: number,
-  data: { name?: string; phone?: string; savedAddress?: string; savedCep?: string; savedCity?: string }
+  data: {
+    name?: string;
+    phone?: string;
+    savedAddress?: string | null;
+    savedStreet?: string | null;
+    savedNumber?: string | null;
+    savedComplement?: string | null;
+    savedNeighborhood?: string | null;
+    savedCep?: string | null;
+    savedCity?: string | null;
+    savedState?: string | null;
+    savedLatitude?: string | null;
+    savedLongitude?: string | null;
+    savedGeocodedAt?: Date | null;
+  }
 ) {
   await withDbRetry(async (db) => {
     await db.update(users).set(data).where(eq(users.id, userId));
@@ -2402,10 +2405,14 @@ export async function updateUserSocialProfile(
   userId: number,
   data: {
     name?: string | null;
+    firstName?: string | null;
+    lastName?: string | null;
     email?: string | null;
+    username?: string | null;
     avatarUrl?: string | null;
     loginMethod?: "email" | "phone" | "google" | "apple" | "facebook" | "instagram" | "manus";
     emailVerified?: boolean;
+    profileCompleted?: boolean;
     lastSignedIn?: Date;
   }
 ) {
@@ -2413,10 +2420,14 @@ export async function updateUserSocialProfile(
     const updateSet: Record<string, unknown> = {};
 
     if (data.name !== undefined) updateSet.name = data.name;
+    if (data.firstName !== undefined) updateSet.firstName = data.firstName;
+    if (data.lastName !== undefined) updateSet.lastName = data.lastName;
     if (data.email !== undefined) updateSet.email = data.email;
+    if (data.username !== undefined) updateSet.username = data.username;
     if (data.avatarUrl !== undefined) updateSet.avatarUrl = data.avatarUrl;
     if (data.loginMethod !== undefined) updateSet.loginMethod = data.loginMethod;
     if (data.emailVerified !== undefined) updateSet.emailVerified = data.emailVerified;
+    if (data.profileCompleted !== undefined) updateSet.profileCompleted = data.profileCompleted;
     updateSet.lastSignedIn = data.lastSignedIn ?? new Date();
 
     await db.update(users).set(updateSet).where(eq(users.id, userId));
@@ -2458,28 +2469,30 @@ export async function getAdminUsersPage(input?: AdminUsersPageInput) {
 
     const searchClause = search
       ? sql`AND (
-          u.name LIKE ${"%" + search + "%"}
-          OR u.email LIKE ${"%" + search + "%"}
-          OR u.phone LIKE ${"%" + search + "%"}
-          OR u.openId LIKE ${"%" + search + "%"}
+          u.name ILIKE ${"%" + search + "%"}
+          OR u.email ILIKE ${"%" + search + "%"}
+          OR u.phone ILIKE ${"%" + search + "%"}
+          OR u."openId" ILIKE ${"%" + search + "%"}
         )`
       : sql``;
 
     const roleClause = input?.role ? sql`AND u.role = ${input.role}` : sql``;
     const statusClause = input?.status ? sql`AND u.status = ${input.status}` : sql``;
-    const loginMethodClause = input?.loginMethod ? sql`AND u.loginMethod = ${input.loginMethod}` : sql``;
+    const loginMethodClause = input?.loginMethod ? sql`AND u."loginMethod" = ${input.loginMethod}` : sql``;
     const clubStatusClause =
       input?.clubStatus === "none"
-        ? sql`AND u.clubStatus IS NULL`
+        ? sql`AND u."clubStatus" IS NULL`
         : input?.clubStatus
-          ? sql`AND u.clubStatus = ${input.clubStatus}`
+          ? sql`AND u."clubStatus" = ${input.clubStatus}`
           : sql``;
-    const storeMembershipClause = input?.storeId ? sql`AND oa.userId IS NOT NULL` : sql``;
+    const storeMembershipClause = input?.storeId
+      ? sql`AND (oa."userId" IS NOT NULL OR usa."userId" IS NOT NULL OR u.role = 'admin')`
+      : sql``;
     const hasOrdersClause =
       input?.hasOrders === "with_orders"
-        ? sql`AND COALESCE(oa.totalOrders, 0) > 0`
+        ? sql`AND COALESCE(oa."totalOrders", 0) > 0`
         : input?.hasOrders === "without_orders"
-          ? sql`AND COALESCE(oa.totalOrders, 0) = 0`
+          ? sql`AND COALESCE(oa."totalOrders", 0) = 0`
           : sql``;
 
     const countRows = await db.execute(sql`
@@ -2487,13 +2500,17 @@ export async function getAdminUsersPage(input?: AdminUsersPageInput) {
       FROM users u
       LEFT JOIN (
         SELECT
-          o.userId,
-          COUNT(*) AS totalOrders
+          o."userId" AS "userId",
+          COUNT(*) AS "totalOrders"
         FROM orders o
-        WHERE 1 = 1
-        ${input?.storeId ? sql`AND o.storeId = ${input.storeId}` : sql``}
-        GROUP BY o.userId
-      ) oa ON oa.userId = u.id
+        WHERE o."userId" IS NOT NULL
+        ${input?.storeId ? sql`AND o."storeId" = ${input.storeId}` : sql``}
+        GROUP BY o."userId"
+      ) oa ON oa."userId" = u.id
+      LEFT JOIN user_store_access usa
+        ON usa."userId" = u.id
+       AND usa."storeId" = ${metricsStoreId}
+       AND usa.active = true
       WHERE 1 = 1
       ${searchClause}
       ${roleClause}
@@ -2504,49 +2521,53 @@ export async function getAdminUsersPage(input?: AdminUsersPageInput) {
       ${hasOrdersClause}
     `);
 
-    const total = Number((countRows as unknown as [Array<{ total: number }>])[0]?.[0]?.total ?? 0);
+    const total = Number((countRows.rows as Array<{ total: number | string }>)[0]?.total ?? 0);
 
     const rows = await db.execute(sql`
       SELECT
         u.id,
-        u.openId,
+        u."openId",
         u.name,
         u.email,
         u.phone,
         u.role,
         u.status,
-        u.loginMethod,
-        u.clubPlan,
-        u.clubStatus,
-        u.avatarUrl,
-        u.loyaltyPoints,
-        u.createdAt,
-        u.lastSignedIn,
-        COALESCE(oa.totalOrders, 0) AS totalOrders,
-        COALESCE(oa.deliveredOrders, 0) AS deliveredOrders,
-        COALESCE(oa.totalSpent, 0) AS totalSpent,
-        oa.lastOrderAt,
-        cm.averageTicket,
-        cm.favoriteNeighborhood,
-        cm.favoriteProductName,
-        cm.firstOrderAt,
-        cm.lastOrderAt AS metricsLastOrderAt
+        u."loginMethod",
+        u."clubPlan",
+        u."clubStatus",
+        u."avatarUrl",
+        u."loyaltyPoints",
+        u."createdAt",
+        u."lastSignedIn",
+        COALESCE(oa."totalOrders", 0) AS "totalOrders",
+        COALESCE(oa."deliveredOrders", 0) AS "deliveredOrders",
+        COALESCE(oa."totalSpent", 0) AS "totalSpent",
+        oa."lastOrderAt",
+        cm."averageTicket",
+        cm."favoriteNeighborhood",
+        cm."favoriteProductName",
+        cm."firstOrderAt",
+        cm."lastOrderAt" AS "metricsLastOrderAt"
       FROM users u
       LEFT JOIN (
         SELECT
-          o.userId,
-          COUNT(*) AS totalOrders,
-          SUM(CASE WHEN o.status = 'delivered' THEN 1 ELSE 0 END) AS deliveredOrders,
-          COALESCE(SUM(CASE WHEN o.status = 'delivered' THEN CAST(o.total AS DECIMAL(12,2)) ELSE 0 END), 0) AS totalSpent,
-          MAX(o.createdAt) AS lastOrderAt
+          o."userId" AS "userId",
+          COUNT(*) AS "totalOrders",
+          SUM(CASE WHEN o.status = 'delivered' THEN 1 ELSE 0 END) AS "deliveredOrders",
+          COALESCE(SUM(CASE WHEN o.status = 'delivered' THEN CAST(o.total AS DECIMAL(12,2)) ELSE 0 END), 0) AS "totalSpent",
+          MAX(o."createdAt") AS "lastOrderAt"
         FROM orders o
-        WHERE 1 = 1
-        ${input?.storeId ? sql`AND o.storeId = ${input.storeId}` : sql``}
-        GROUP BY o.userId
-      ) oa ON oa.userId = u.id
+        WHERE o."userId" IS NOT NULL
+        ${input?.storeId ? sql`AND o."storeId" = ${input.storeId}` : sql``}
+        GROUP BY o."userId"
+      ) oa ON oa."userId" = u.id
+      LEFT JOIN user_store_access usa
+        ON usa."userId" = u.id
+       AND usa."storeId" = ${metricsStoreId}
+       AND usa.active = true
       LEFT JOIN customer_metrics cm
-        ON cm.userId = u.id
-       AND cm.storeId = ${metricsStoreId}
+        ON cm."userId" = u.id
+       AND cm."storeId" = ${metricsStoreId}
       WHERE 1 = 1
       ${searchClause}
       ${roleClause}
@@ -2555,11 +2576,11 @@ export async function getAdminUsersPage(input?: AdminUsersPageInput) {
       ${clubStatusClause}
       ${storeMembershipClause}
       ${hasOrdersClause}
-      ORDER BY COALESCE(oa.lastOrderAt, u.createdAt) DESC, u.id DESC
+      ORDER BY COALESCE(oa."lastOrderAt", u."createdAt") DESC, u.id DESC
       LIMIT ${pageSize} OFFSET ${offset}
     `);
 
-    const items = (rows as unknown as [Array<{
+    const items = (rows.rows as Array<{
       id: number;
       openId: string;
       name: string | null;
@@ -2583,7 +2604,7 @@ export async function getAdminUsersPage(input?: AdminUsersPageInput) {
       favoriteProductName: string | null;
       firstOrderAt: Date | string | null;
       metricsLastOrderAt: Date | string | null;
-    }>])[0].map((row) => ({
+    }>).map((row) => ({
       ...row,
       totalOrders: Number(row.totalOrders ?? 0),
       deliveredOrders: Number(row.deliveredOrders ?? 0),
@@ -2603,16 +2624,18 @@ export async function getAdminUsersPage(input?: AdminUsersPageInput) {
 
 // --- COUPONS (EXTENDED) -------------------------------------------------------
 
-export async function getCouponsByUser(userId: number): Promise<Coupon[]> {
+export async function getCouponsByUser(userId: number, storeId?: number): Promise<Coupon[]> {
   const db = await getDb();
   if (!db) return [];
+  const effectiveStoreId = await getEffectiveStoreId(db, storeId);
   return db
     .select()
     .from(coupons)
-    .where(and(eq(coupons.userId, userId), eq(coupons.active, true)));
+    .where(and(eq(coupons.userId, userId), eq(coupons.storeId, effectiveStoreId), eq(coupons.active, true)));
 }
 
 export async function createUserCoupon(data: {
+  storeId: number;
   userId: number;
   code: string;
   discountType: "percentage" | "fixed";
@@ -2623,6 +2646,12 @@ export async function createUserCoupon(data: {
 }) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
+  const [membership] = await db
+    .select({ id: orders.id })
+    .from(orders)
+    .where(and(eq(orders.userId, data.userId), eq(orders.storeId, data.storeId)))
+    .limit(1);
+  if (!membership) throw new Error("Cliente não pertence à loja selecionada");
   await db.insert(coupons).values({
     ...data,
     active: true,
@@ -2632,20 +2661,27 @@ export async function createUserCoupon(data: {
 
 // --- UP-SELLS -----------------------------------------------------------------
 
-export async function getActiveUpsells(): Promise<Upsell[]> {
+async function getEffectiveStoreId(db: DatabaseClient, storeId?: number) {
+  if (storeId && storeId > 0) return storeId;
+  return (await db.select({ id: stores.id }).from(stores).orderBy(desc(stores.isDefault), stores.id).limit(1))[0]?.id ?? 0;
+}
+
+export async function getActiveUpsells(storeId?: number): Promise<Upsell[]> {
   const db = await getDb();
   if (!db) return [];
+  const effectiveStoreId = await getEffectiveStoreId(db, storeId);
   return db
     .select()
     .from(upsells)
-    .where(eq(upsells.active, true))
+    .where(and(eq(upsells.storeId, effectiveStoreId), eq(upsells.active, true)))
     .orderBy(upsells.sortOrder);
 }
 
-export async function getUpsellsForCart(cartProductIds: number[], cartTotal: number): Promise<(Upsell & { suggestedProduct: Product | null })[]> {
+export async function getUpsellsForCart(cartProductIds: number[], cartTotal: number, storeId?: number): Promise<(Upsell & { suggestedProduct: Product | null })[]> {
   const db = await getDb();
   if (!db) return [];
-  const all = await db.select().from(upsells).where(eq(upsells.active, true)).orderBy(upsells.sortOrder);
+  const effectiveStoreId = await getEffectiveStoreId(db, storeId);
+  const all = await db.select().from(upsells).where(and(eq(upsells.storeId, effectiveStoreId), eq(upsells.active, true))).orderBy(upsells.sortOrder);
   const filtered = all.filter((u) => {
     if (u.triggerMinTotal && parseFloat(u.triggerMinTotal) > cartTotal) return false;
     if (u.triggerProductId && !cartProductIds.includes(u.triggerProductId)) return false;
@@ -2656,7 +2692,10 @@ export async function getUpsellsForCart(cartProductIds: number[], cartTotal: num
   // Enrich with suggested product data
   const productIds = Array.from(new Set(filtered.map((u) => u.suggestedProductId)));
   const prods: Product[] = productIds.length > 0
-    ? await db.select().from(products).where(sql`${products.id} IN (${sql.join(productIds.map((id) => sql`${id}`), sql`, `)})`)
+    ? await db.select().from(products).where(and(
+      eq(products.storeId, effectiveStoreId),
+      sql`${products.id} IN (${sql.join(productIds.map((id) => sql`${id}`), sql`, `)})`,
+    ))
     : [];
   return filtered.map((u) => ({
     ...u,
@@ -2670,31 +2709,33 @@ export async function createUpsell(data: Omit<typeof upsells.$inferInsert, "id" 
   await db.insert(upsells).values(data);
 }
 
-export async function updateUpsell(id: number, data: Partial<typeof upsells.$inferInsert>) {
+export async function updateUpsell(id: number, storeId: number, data: Partial<typeof upsells.$inferInsert>) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  await db.update(upsells).set(data).where(eq(upsells.id, id));
+  await db.update(upsells).set(data).where(and(eq(upsells.id, id), eq(upsells.storeId, storeId)));
 }
 
-export async function deleteUpsell(id: number) {
+export async function deleteUpsell(id: number, storeId: number) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  await db.delete(upsells).where(eq(upsells.id, id));
+  await db.delete(upsells).where(and(eq(upsells.id, id), eq(upsells.storeId, storeId)));
 }
 
-export async function getAllUpsells(): Promise<Upsell[]> {
+export async function getAllUpsells(storeId?: number): Promise<Upsell[]> {
   const db = await getDb();
   if (!db) return [];
-  return db.select().from(upsells).orderBy(upsells.sortOrder);
+  const effectiveStoreId = await getEffectiveStoreId(db, storeId);
+  return db.select().from(upsells).where(eq(upsells.storeId, effectiveStoreId)).orderBy(upsells.sortOrder);
 }
 
 // --- PROMOTIONS ---------------------------------------------------------------
 
-export async function getActivePromotions(): Promise<Promotion[]> {
+export async function getActivePromotions(storeId?: number): Promise<Promotion[]> {
   const db = await getDb();
   if (!db) return [];
+  const effectiveStoreId = await getEffectiveStoreId(db, storeId);
   const now = new Date();
-  const all = await db.select().from(promotions).where(eq(promotions.active, true)).orderBy(desc(promotions.createdAt));
+  const all = await db.select().from(promotions).where(and(eq(promotions.storeId, effectiveStoreId), eq(promotions.active, true))).orderBy(desc(promotions.createdAt));
   return all.filter((p) => {
     if (p.endsAt && p.endsAt < now) return false;
     if (p.startsAt && p.startsAt > now) return false;
@@ -2702,10 +2743,11 @@ export async function getActivePromotions(): Promise<Promotion[]> {
   });
 }
 
-export async function getAllPromotions(): Promise<Promotion[]> {
+export async function getAllPromotions(storeId?: number): Promise<Promotion[]> {
   const db = await getDb();
   if (!db) return [];
-  return db.select().from(promotions).orderBy(desc(promotions.createdAt));
+  const effectiveStoreId = await getEffectiveStoreId(db, storeId);
+  return db.select().from(promotions).where(eq(promotions.storeId, effectiveStoreId)).orderBy(desc(promotions.createdAt));
 }
 
 export async function createPromotion(data: Omit<typeof promotions.$inferInsert, "id" | "createdAt" | "updatedAt">) {
@@ -2714,30 +2756,32 @@ export async function createPromotion(data: Omit<typeof promotions.$inferInsert,
   await db.insert(promotions).values(data);
 }
 
-export async function updatePromotion(id: number, data: Partial<typeof promotions.$inferInsert>) {
+export async function updatePromotion(id: number, storeId: number, data: Partial<typeof promotions.$inferInsert>) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  await db.update(promotions).set(data).where(eq(promotions.id, id));
+  await db.update(promotions).set(data).where(and(eq(promotions.id, id), eq(promotions.storeId, storeId)));
 }
 
-export async function deletePromotion(id: number) {
+export async function deletePromotion(id: number, storeId: number) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  await db.delete(promotions).where(eq(promotions.id, id));
+  await db.delete(promotions).where(and(eq(promotions.id, id), eq(promotions.storeId, storeId)));
 }
 
 // --- RAFFLES ------------------------------------------------------------------
 
-export async function getActiveRaffles(): Promise<Raffle[]> {
+export async function getActiveRaffles(storeId?: number): Promise<Raffle[]> {
   const db = await getDb();
   if (!db) return [];
-  return db.select().from(raffles).where(eq(raffles.status, "active")).orderBy(desc(raffles.createdAt));
+  const effectiveStoreId = await getEffectiveStoreId(db, storeId);
+  return db.select().from(raffles).where(and(eq(raffles.storeId, effectiveStoreId), eq(raffles.status, "active"))).orderBy(desc(raffles.createdAt));
 }
 
-export async function getAllRaffles(): Promise<Raffle[]> {
+export async function getAllRaffles(storeId?: number): Promise<Raffle[]> {
   const db = await getDb();
   if (!db) return [];
-  return db.select().from(raffles).orderBy(desc(raffles.createdAt));
+  const effectiveStoreId = await getEffectiveStoreId(db, storeId);
+  return db.select().from(raffles).where(eq(raffles.storeId, effectiveStoreId)).orderBy(desc(raffles.createdAt));
 }
 
 export async function createRaffle(data: Omit<typeof raffles.$inferInsert, "id" | "createdAt" | "updatedAt">) {
@@ -2746,21 +2790,26 @@ export async function createRaffle(data: Omit<typeof raffles.$inferInsert, "id" 
   await db.insert(raffles).values(data);
 }
 
-export async function updateRaffle(id: number, data: Partial<typeof raffles.$inferInsert>) {
+export async function updateRaffle(id: number, storeId: number, data: Partial<typeof raffles.$inferInsert>) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  await db.update(raffles).set(data).where(eq(raffles.id, id));
+  await db.update(raffles).set(data).where(and(eq(raffles.id, id), eq(raffles.storeId, storeId)));
 }
 
-export async function getRaffleEntries(raffleId: number): Promise<RaffleEntry[]> {
+export async function getRaffleEntries(raffleId: number, storeId: number): Promise<RaffleEntry[]> {
   const db = await getDb();
   if (!db) return [];
+  const [raffle] = await db.select({ id: raffles.id }).from(raffles).where(and(eq(raffles.id, raffleId), eq(raffles.storeId, storeId))).limit(1);
+  if (!raffle) return [];
   return db.select().from(raffleEntries).where(eq(raffleEntries.raffleId, raffleId));
 }
 
-export async function enterRaffle(raffleId: number, userId: number, userName: string): Promise<boolean> {
+export async function enterRaffle(raffleId: number, userId: number, userName: string, storeId?: number): Promise<boolean> {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
+  const effectiveStoreId = await getEffectiveStoreId(db, storeId);
+  const [raffle] = await db.select({ id: raffles.id }).from(raffles).where(and(eq(raffles.id, raffleId), eq(raffles.storeId, effectiveStoreId), eq(raffles.status, "active"))).limit(1);
+  if (!raffle) return false;
   // Check if already entered
   const existing = await db
     .select()
@@ -2772,9 +2821,11 @@ export async function enterRaffle(raffleId: number, userId: number, userName: st
   return true;
 }
 
-export async function drawRaffleWinner(raffleId: number): Promise<RaffleEntry | null> {
+export async function drawRaffleWinner(raffleId: number, storeId: number): Promise<RaffleEntry | null> {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
+  const [raffle] = await db.select({ id: raffles.id }).from(raffles).where(and(eq(raffles.id, raffleId), eq(raffles.storeId, storeId))).limit(1);
+  if (!raffle) return null;
   const entries = await db.select().from(raffleEntries).where(eq(raffleEntries.raffleId, raffleId));
   if (entries.length === 0) return null;
   const winner = entries[Math.floor(Math.random() * entries.length)];
@@ -2788,26 +2839,31 @@ export async function drawRaffleWinner(raffleId: number): Promise<RaffleEntry | 
 }
 
 // --- STORE SETTINGS -----------------------------------------------------------
-export async function getStoreSetting(key: string): Promise<string | null> {
+export async function getStoreSetting(key: string, storeId = 0): Promise<string | null> {
   return withDbRetry(async (db) => {
-    const rows = await db.select().from(storeSettings).where(eq(storeSettings.key, key)).limit(1);
+    const effectiveStoreId = storeId || (await db.select({ id: stores.id }).from(stores).orderBy(desc(stores.isDefault), stores.id).limit(1))[0]?.id || 0;
+    const rows = await db.select().from(storeSettings)
+      .where(and(eq(storeSettings.storeId, effectiveStoreId), eq(storeSettings.key, key)))
+      .limit(1);
     return rows[0]?.value ?? null;
   }).catch(() => null);
 }
 
-export async function getAllStoreSettings(): Promise<Record<string, string>> {
+export async function getAllStoreSettings(storeId = 0): Promise<Record<string, string>> {
   return withDbRetry(async (db) => {
-    const rows = await db.select().from(storeSettings);
+    const effectiveStoreId = storeId || (await db.select({ id: stores.id }).from(stores).orderBy(desc(stores.isDefault), stores.id).limit(1))[0]?.id || 0;
+    const rows = await db.select().from(storeSettings).where(eq(storeSettings.storeId, effectiveStoreId));
     return Object.fromEntries(rows.map((r) => [r.key, r.value]));
   }).catch(() => ({}));
 }
 
-export async function setStoreSetting(key: string, value: string): Promise<void> {
+export async function setStoreSetting(key: string, value: string, storeId = 0): Promise<void> {
   await withDbRetry(async (db) => {
+    const effectiveStoreId = storeId || (await db.select({ id: stores.id }).from(stores).orderBy(desc(stores.isDefault), stores.id).limit(1))[0]?.id || 0;
     await db
       .insert(storeSettings)
-      .values({ key, value })
-      .onDuplicateKeyUpdate({ set: { value } });
+      .values({ storeId: effectiveStoreId, key, value })
+      .onConflictDoUpdate({ target: [storeSettings.storeId, storeSettings.key], set: { value, updatedAt: new Date() } });
   });
 }
 
@@ -2841,9 +2897,17 @@ export async function getDriverByToken(token: string): Promise<Driver | undefine
 export async function createDriver(data: Omit<InsertDriver, "id">): Promise<number> {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  const result = await db.insert(drivers).values(data);
-  const resultHeader = Array.isArray(result) ? result[0] : result;
-  return (resultHeader as unknown as { insertId: number }).insertId;
+
+  const [created] = await db
+    .insert(drivers)
+    .values(data)
+    .returning({ id: drivers.id });
+
+  if (!created?.id) {
+    throw new Error("Driver was inserted without a returned id");
+  }
+
+  return created.id;
 }
 
 export async function updateDriver(id: number, data: Partial<InsertDriver>): Promise<void> {
@@ -2861,7 +2925,70 @@ export async function deleteDriver(id: number): Promise<void> {
 export async function assignDriverToOrder(orderId: number, driverId: number | null): Promise<void> {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  await db.update(orders).set({ driverId }).where(eq(orders.id, orderId));
+
+  const [current] = await db
+    .select({
+      driverId: orders.driverId,
+      driverAcceptedAt: orders.driverAcceptedAt,
+    })
+    .from(orders)
+    .where(eq(orders.id, orderId))
+    .limit(1);
+
+  await db
+    .update(orders)
+    .set({
+      driverId,
+      driverAcceptedAt: current?.driverId === driverId
+        ? current.driverAcceptedAt
+        : null,
+      updatedAt: new Date(),
+    })
+    .where(eq(orders.id, orderId));
+}
+
+export async function driverAcceptOrder(
+  driverId: number,
+  orderId: number,
+): Promise<{ success: boolean; error?: string; acceptedAt?: Date }> {
+  const db = await getDb();
+  if (!db) return { success: false, error: "DB not available" };
+
+  const [order] = await db
+    .select({
+      id: orders.id,
+      driverId: orders.driverId,
+      status: orders.status,
+      driverAcceptedAt: orders.driverAcceptedAt,
+    })
+    .from(orders)
+    .where(eq(orders.id, orderId))
+    .limit(1);
+
+  if (!order || order.driverId !== driverId || order.status !== "out_for_delivery") {
+    return { success: false, error: "Pedido não está disponível para este motoboy." };
+  }
+
+  if (order.driverAcceptedAt) {
+    return { success: true, acceptedAt: order.driverAcceptedAt };
+  }
+
+  const acceptedAt = new Date();
+  const [updated] = await db
+    .update(orders)
+    .set({ driverAcceptedAt: acceptedAt, updatedAt: acceptedAt })
+    .where(and(
+      eq(orders.id, orderId),
+      eq(orders.driverId, driverId),
+      eq(orders.status, "out_for_delivery"),
+    ))
+    .returning({ driverAcceptedAt: orders.driverAcceptedAt });
+
+  if (!updated?.driverAcceptedAt) {
+    return { success: false, error: "Não foi possível aceitar este pedido." };
+  }
+
+  return { success: true, acceptedAt: updated.driverAcceptedAt };
 }
 
 // --- DRIVER LOCATIONS ---------------------------------------------------------
@@ -3051,70 +3178,205 @@ export async function toggleFavorite(userId: number, productId: number): Promise
 
 // --- CLIENT NOTIFICATIONS -----------------------------------------------------
 
-export async function getClientNotifications(userId: number): Promise<ClientNotification[]> {
+export async function getClientNotifications(userId: number, storeId?: number): Promise<ClientNotification[]> {
   const db = await getDb();
   if (!db) return [];
-  return db.select().from(clientNotifications).where(eq(clientNotifications.userId, userId)).orderBy(desc(clientNotifications.createdAt)).limit(50);
+  return db.select().from(clientNotifications).where(and(
+    eq(clientNotifications.userId, userId),
+    isNull(clientNotifications.archivedAt),
+    storeId ? eq(clientNotifications.storeId, storeId) : undefined,
+  )).orderBy(desc(clientNotifications.createdAt)).limit(50);
 }
 
-export async function getUnreadNotificationCount(userId: number): Promise<number> {
+export async function getUnreadNotificationCount(userId: number, storeId?: number): Promise<number> {
   const db = await getDb();
   if (!db) return 0;
-  const result = await db.select({ count: sql<number>`count(*)` }).from(clientNotifications).where(and(eq(clientNotifications.userId, userId), eq(clientNotifications.read, false)));
+  const result = await db.select({ count: sql<number>`count(*)` }).from(clientNotifications).where(and(
+    eq(clientNotifications.userId, userId),
+    eq(clientNotifications.read, false),
+    isNull(clientNotifications.archivedAt),
+    storeId ? eq(clientNotifications.storeId, storeId) : undefined,
+  ));
   return result[0]?.count ?? 0;
 }
 
-export async function markNotificationsRead(userId: number): Promise<void> {
+export async function markNotificationsRead(userId: number, storeId?: number): Promise<void> {
   const db = await getDb();
   if (!db) return;
-  await db.update(clientNotifications).set({ read: true }).where(eq(clientNotifications.userId, userId));
+  await db.update(clientNotifications).set({ read: true }).where(and(
+    eq(clientNotifications.userId, userId),
+    storeId ? eq(clientNotifications.storeId, storeId) : undefined,
+  ));
 }
 
-export async function createClientNotification(data: { userId: number; title: string; message: string; type: 'order' | 'promo' | 'system' }): Promise<void> {
+export async function markNotificationRead(notificationId: number, userId: number, storeId?: number): Promise<void> {
   const db = await getDb();
   if (!db) return;
-  await db.insert(clientNotifications).values(data);
+  await db.update(clientNotifications).set({ read: true }).where(and(
+    eq(clientNotifications.id, notificationId),
+    eq(clientNotifications.userId, userId),
+    storeId ? eq(clientNotifications.storeId, storeId) : undefined,
+  ));
 }
 
-// // --- LOYALTY POINTS -----------------------------------------------------------
-export async function getUserLoyaltyPoints(userId: number): Promise<number> {
-  const db = await getDb();
-  if (!db) return 0;
-  const result = await db.select({ loyaltyPoints: users.loyaltyPoints }).from(users).where(eq(users.id, userId)).limit(1);
-  return result[0]?.loyaltyPoints ?? 0;
-}
-export async function addLoyaltyPoints(userId: number, points: number, orderId?: number, description?: string): Promise<void> {
+export async function archiveClientNotification(notificationId: number, userId: number, storeId?: number): Promise<void> {
   const db = await getDb();
   if (!db) return;
-  const balanceBefore = await getUserLoyaltyPoints(userId);
-  const balanceAfter = balanceBefore + points;
-  await db.update(users).set({ loyaltyPoints: sql`${users.loyaltyPoints} + ${points}` }).where(eq(users.id, userId));
-  await db.insert(loyaltyTransactions).values({
-    userId, orderId: orderId ?? null, type: 'earn', points,
-    description: description ?? `+${points} pontos por pedido #${orderId ?? ''}`,
-    balanceBefore, balanceAfter,
-  });
+  await db.update(clientNotifications).set({ archivedAt: new Date(), read: true }).where(and(
+    eq(clientNotifications.id, notificationId),
+    eq(clientNotifications.userId, userId),
+    storeId ? eq(clientNotifications.storeId, storeId) : undefined,
+  ));
 }
-export async function deductLoyaltyPoints(userId: number, points: number, orderId?: number, description?: string): Promise<{ ok: boolean; newBalance: number }> {
+
+export async function createClientNotification(data: { storeId?: number | null; userId: number; title: string; message: string; imageUrl?: string | null; url?: string | null; dedupeKey?: string | null; type: 'order' | 'promo' | 'system' }): Promise<void> {
   const db = await getDb();
-  if (!db) return { ok: false, newBalance: 0 };
-  const current = await getUserLoyaltyPoints(userId);
-  if (current < points) return { ok: false, newBalance: current };
-  const balanceAfter = current - points;
-  await db.update(users).set({ loyaltyPoints: sql`${users.loyaltyPoints} - ${points}` }).where(eq(users.id, userId));
-  await db.insert(loyaltyTransactions).values({
-    userId, orderId: orderId ?? null, type: 'redeem', points: -points,
-    description: description ?? `-${points} pontos resgatados como desconto`,
-    balanceBefore: current, balanceAfter,
-  });
-  return { ok: true, newBalance: balanceAfter };
+  if (!db) return;
+  const query = db.insert(clientNotifications).values(data);
+  if (data.dedupeKey) {
+    await query.onConflictDoNothing({
+      target: [clientNotifications.storeId, clientNotifications.userId, clientNotifications.dedupeKey],
+    });
+    return;
+  }
+  await query;
 }
-export async function getLoyaltyHistory(userId: number, limit = 30) {
+
+// --- STORE CUSTOMER ACCOUNT / LOYALTY ----------------------------------------
+export async function getStoreScope(storeId?: number | null): Promise<{ storeId: number; isDefault: boolean }> {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  const [store] = storeId
+    ? await db
+        .select({ id: stores.id, isDefault: stores.isDefault })
+        .from(stores)
+        .where(and(eq(stores.id, storeId), eq(stores.active, true)))
+        .limit(1)
+    : await db
+        .select({ id: stores.id, isDefault: stores.isDefault })
+        .from(stores)
+        .where(eq(stores.active, true))
+        .orderBy(desc(stores.isDefault), stores.id)
+        .limit(1);
+
+  if (!store) throw new Error("No active store configured");
+  return { storeId: store.id, isDefault: store.isDefault };
+}
+
+export async function getCustomerStoreAccount(userId: number, storeId?: number | null) {
+  const db = await getDb();
+  if (!db) return null;
+
+  const scope = await getStoreScope(storeId);
+  let [account] = await db
+    .select()
+    .from(customerStoreAccounts)
+    .where(and(
+      eq(customerStoreAccounts.storeId, scope.storeId),
+      eq(customerStoreAccounts.userId, userId),
+    ))
+    .limit(1);
+  if (account) return account;
+
+  const [legacyUser] = await db.select().from(users).where(eq(users.id, userId)).limit(1);
+  if (!legacyUser) return null;
+
+  await db
+    .insert(customerStoreAccounts)
+    .values({
+      storeId: scope.storeId,
+      userId,
+      loyaltyPoints: scope.isDefault ? legacyUser.loyaltyPoints : 0,
+      clubPlan: scope.isDefault ? legacyUser.clubPlan : null,
+      clubStatus: scope.isDefault ? legacyUser.clubStatus : null,
+      clubStartDate: scope.isDefault ? legacyUser.clubStartDate : null,
+      clubNextBillingDate: scope.isDefault ? legacyUser.clubNextBillingDate : null,
+      clubFreePizzaUsed: scope.isDefault ? legacyUser.clubFreePizzaUsed : false,
+      clubFreePizzaResetAt: scope.isDefault ? legacyUser.clubFreePizzaResetAt : null,
+      stripeCustomerId: scope.isDefault ? legacyUser.stripeCustomerId : null,
+    })
+    .onConflictDoNothing({
+      target: [customerStoreAccounts.storeId, customerStoreAccounts.userId],
+    });
+
+  [account] = await db
+    .select()
+    .from(customerStoreAccounts)
+    .where(and(
+      eq(customerStoreAccounts.storeId, scope.storeId),
+      eq(customerStoreAccounts.userId, userId),
+    ))
+    .limit(1);
+
+  return account ?? null;
+}
+
+export async function getUserLoyaltyPoints(userId: number, storeId?: number | null): Promise<number> {
+  return (await getCustomerStoreAccount(userId, storeId))?.loyaltyPoints ?? 0;
+}
+
+export async function addLoyaltyPoints(
+  userId: number,
+  points: number,
+  orderId?: number,
+  description?: string,
+  storeId?: number | null,
+): Promise<void> {
+  const db = await getDb();
+  if (!db || points === 0) return;
+
+  const scope = await getStoreScope(storeId);
+  const account = await getCustomerStoreAccount(userId, scope.storeId);
+  if (!account) return;
+
+  const [updated] = await db
+    .update(customerStoreAccounts)
+    .set({
+      loyaltyPoints: sql`GREATEST(0, ${customerStoreAccounts.loyaltyPoints} + ${points})`,
+      updatedAt: new Date(),
+    })
+    .where(eq(customerStoreAccounts.id, account.id))
+    .returning({ loyaltyPoints: customerStoreAccounts.loyaltyPoints });
+
+  const balanceAfter = updated?.loyaltyPoints ?? account.loyaltyPoints;
+  const balanceBefore = Math.max(0, balanceAfter - points);
+
+  await db.insert(loyaltyTransactions).values({
+    storeId: scope.storeId,
+    userId,
+    orderId: orderId ?? null,
+    type: points > 0 ? "earn" : "manual",
+    points,
+    description: description ?? `${points > 0 ? "+" : ""}${points} pontos por pedido #${orderId ?? ""}`,
+    balanceBefore,
+    balanceAfter,
+  });
+}
+
+export async function deductLoyaltyPoints(
+  userId: number,
+  points: number,
+  orderId?: number,
+  description?: string,
+  storeId?: number | null,
+): Promise<{ ok: boolean; newBalance: number }> {
+  return deductLoyaltyPointsAtomic(userId, points, orderId, description, storeId);
+}
+
+export async function getLoyaltyHistory(userId: number, limit = 30, storeId?: number | null) {
   const db = await getDb();
   if (!db) return [];
-  return db.select().from(loyaltyTransactions)
-    .where(eq(loyaltyTransactions.userId, userId))
-    .orderBy(sql`${loyaltyTransactions.createdAt} DESC`)
+  const scope = await getStoreScope(storeId);
+
+  return db
+    .select()
+    .from(loyaltyTransactions)
+    .where(and(
+      eq(loyaltyTransactions.userId, userId),
+      eq(loyaltyTransactions.storeId, scope.storeId),
+    ))
+    .orderBy(desc(loyaltyTransactions.createdAt))
     .limit(limit);
 }
 
@@ -3124,19 +3386,24 @@ export async function updateUserAvatar(userId: number, avatarUrl: string): Promi
   await db.update(users).set({ avatarUrl }).where(eq(users.id, userId));
 }
 
-export async function getUserSpendingHistory(userId: number) {
+export async function getUserSpendingHistory(userId: number, storeId?: number | null) {
   const db = await getDb();
   if (!db) return [];
+  const month = sql<string>`TO_CHAR(${orders.createdAt}, 'YYYY-MM')`;
   return db
     .select({
-      month: sql<string>`DATE_FORMAT(${orders.createdAt}, '%Y-%m')`,
-      total: sql<number>`SUM(${orders.total})`,
-      count: sql<number>`COUNT(*)`,
+      month,
+      total: sql<number>`COALESCE(SUM(${orders.total}), 0)::numeric`,
+      count: sql<number>`COUNT(*)::int`,
     })
     .from(orders)
-    .where(and(eq(orders.userId, userId), eq(orders.status, 'delivered')))
-    .groupBy(sql`DATE_FORMAT(${orders.createdAt}, '%Y-%m')`)
-    .orderBy(sql`DATE_FORMAT(${orders.createdAt}, '%Y-%m')`)
+    .where(and(
+      eq(orders.userId, userId),
+      eq(orders.status, 'delivered'),
+      storeId ? eq(orders.storeId, storeId) : undefined,
+    ))
+    .groupBy(month)
+    .orderBy(month)
     .limit(12);
 }
 
@@ -3150,9 +3417,7 @@ export async function getOrderMessages(orderId: number) {
 export async function sendOrderMessage(data: { orderId: number; userId: number; senderRole: "customer" | "admin"; message: string }) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  const [result] = await db.insert(orderMessages).values(data);
-  const id = (result as any).insertId as number;
-  const [msg] = await db.select().from(orderMessages).where(eq(orderMessages.id, id));
+  const [msg] = await db.insert(orderMessages).values(data).returning();
   return msg;
 }
 
@@ -3210,82 +3475,192 @@ export async function getCrmCustomers(opts?: {
 }) {
   const db = await getDb();
   if (!db) return [];
-  const limit = opts?.limit ?? 100;
-  const offset = opts?.offset ?? 0;
+
+  const limit = Math.min(10_000, Math.max(1, opts?.limit ?? 100));
+  const offset = Math.max(0, opts?.offset ?? 0);
   const search = opts?.search?.trim() ?? "";
+  const searchCondition = search
+    ? or(
+        ilike(users.name, `%${search}%`),
+        ilike(users.email, `%${search}%`),
+        ilike(users.phone, `%${search}%`),
+      )
+    : undefined;
 
-  const rows = await db.execute(sql`
-    SELECT
-      u.id,
-      u.name,
-      u.email,
-      u.phone,
-      u.avatarUrl,
-      u.loyaltyPoints,
-      u.createdAt,
-      u.lastSignedIn,
-      COUNT(DISTINCT o.id) AS totalOrders,
-      COALESCE(SUM(CASE WHEN o.status = 'delivered' THEN CAST(o.total AS DECIMAL(10,2)) ELSE 0 END), 0) AS totalSpent,
-      MAX(o.createdAt) AS lastOrderAt,
-      COUNT(DISTINCT CASE WHEN o.status = 'delivered' THEN o.id END) AS deliveredOrders,
-      GROUP_CONCAT(DISTINCT ct.tag ORDER BY ct.assignedAt DESC SEPARATOR ',') AS tags
-    FROM users u
-    LEFT JOIN orders o ON o.userId = u.id
-    LEFT JOIN customer_tags ct ON ct.userId = u.id
-    WHERE u.role = 'user'
-      ${search ? sql`AND (u.name LIKE ${'%' + search + '%'} OR u.email LIKE ${'%' + search + '%'} OR u.phone LIKE ${'%' + search + '%'})` : sql``}
-      ${opts?.storeId ? sql`AND u.id IN (SELECT DISTINCT userId FROM \`orders\` WHERE storeId = ${opts.storeId})` : sql``}
-    GROUP BY u.id
-    ORDER BY lastOrderAt DESC, u.createdAt DESC
-    LIMIT ${limit} OFFSET ${offset}
-  `);
-
-  return (rows as unknown as [Array<{
+  type CrmListRow = {
     id: number;
     name: string | null;
     email: string | null;
     phone: string | null;
     avatarUrl: string | null;
-    loyaltyPoints: number;
+    loyaltyPoints: number | null;
     createdAt: Date;
     lastSignedIn: Date;
-    totalOrders: number;
-    totalSpent: number;
+    totalOrders: number | null;
+    totalSpent: string | null;
     lastOrderAt: Date | null;
-    deliveredOrders: number;
-    tags: string | null;
-  }>])[0];
-}
+    deliveredOrders: number | null;
+  };
 
-/**
- * Conta total de clientes para paginação.
- */
+  let rows: CrmListRow[];
+
+  if (opts?.storeId) {
+    rows = await db
+      .select({
+        id: users.id,
+        name: users.name,
+        email: users.email,
+        phone: users.phone,
+        avatarUrl: users.avatarUrl,
+        loyaltyPoints: customerStoreAccounts.loyaltyPoints,
+        createdAt: users.createdAt,
+        lastSignedIn: users.lastSignedIn,
+        totalOrders: customerMetrics.totalOrders,
+        totalSpent: customerMetrics.totalSpent,
+        lastOrderAt: customerMetrics.lastOrderAt,
+        deliveredOrders: customerMetrics.deliveredOrders,
+      })
+      .from(users)
+      .innerJoin(
+        customerMetrics,
+        and(
+          eq(customerMetrics.userId, users.id),
+          eq(customerMetrics.storeId, opts.storeId),
+        ),
+      )
+      .leftJoin(
+        customerStoreAccounts,
+        and(
+          eq(customerStoreAccounts.userId, users.id),
+          eq(customerStoreAccounts.storeId, opts.storeId),
+        ),
+      )
+      .where(and(
+        eq(users.role, "user"),
+        gt(customerMetrics.totalOrders, 0),
+        searchCondition,
+      ))
+      .orderBy(desc(customerMetrics.lastOrderAt), desc(users.createdAt))
+      .limit(limit)
+      .offset(offset);
+  } else {
+    rows = await db
+      .select({
+        id: users.id,
+        name: users.name,
+        email: users.email,
+        phone: users.phone,
+        avatarUrl: users.avatarUrl,
+        loyaltyPoints: users.loyaltyPoints,
+        createdAt: users.createdAt,
+        lastSignedIn: users.lastSignedIn,
+        totalOrders: customerMetrics.totalOrders,
+        totalSpent: customerMetrics.totalSpent,
+        lastOrderAt: customerMetrics.lastOrderAt,
+        deliveredOrders: customerMetrics.deliveredOrders,
+      })
+      .from(users)
+      .leftJoin(
+        customerMetrics,
+        and(
+          eq(customerMetrics.userId, users.id),
+          eq(customerMetrics.storeId, 0),
+        ),
+      )
+      .where(and(eq(users.role, "user"), searchCondition))
+      .orderBy(desc(customerMetrics.lastOrderAt), desc(users.createdAt))
+      .limit(limit)
+      .offset(offset);
+  }
+
+  const userIds = rows.map((row) => row.id);
+  const tagRows = userIds.length > 0
+    ? await db
+        .select({
+          userId: customerTags.userId,
+          tag: customerTags.tag,
+          assignedAt: customerTags.assignedAt,
+        })
+        .from(customerTags)
+        .where(and(
+          inArray(customerTags.userId, userIds),
+          opts?.storeId ? eq(customerTags.storeId, opts.storeId) : undefined,
+        ))
+        .orderBy(desc(customerTags.assignedAt))
+    : [];
+
+  const tagsByUser = new Map<number, string[]>();
+  for (const tagRow of tagRows) {
+    const tags = tagsByUser.get(tagRow.userId) ?? [];
+    if (!tags.includes(tagRow.tag)) tags.push(tagRow.tag);
+    tagsByUser.set(tagRow.userId, tags);
+  }
+
+  return rows.map((row) => ({
+    ...row,
+    loyaltyPoints: Number(row.loyaltyPoints ?? 0),
+    totalOrders: Number(row.totalOrders ?? 0),
+    totalSpent: Number(row.totalSpent ?? 0),
+    deliveredOrders: Number(row.deliveredOrders ?? 0),
+    tags: tagsByUser.get(row.id)?.join(",") ?? null,
+  }));
+}
 export async function countCrmCustomers(search?: string, storeId?: number): Promise<number> {
   const db = await getDb();
   if (!db) return 0;
-  const s = search?.trim() ?? "";
-  const rows = await db.execute(sql`
-    SELECT COUNT(*) AS total FROM users u
-    WHERE u.role = 'user'
-    ${s ? sql`AND (u.name LIKE ${'%' + s + '%'} OR u.email LIKE ${'%' + s + '%'} OR u.phone LIKE ${'%' + s + '%'})` : sql``}
-    ${storeId ? sql`AND u.id IN (SELECT DISTINCT userId FROM \`orders\` WHERE storeId = ${storeId})` : sql``}
-  `);
-  const result = (rows as unknown as [Array<{ total: number }>])[0];
-  return Number(result[0]?.total ?? 0);
-}
 
-/**
- * Retorna detalhes completos de um cliente para o CRM.
- */
+  const normalized = search?.trim() ?? "";
+  const searchCondition = normalized
+    ? or(
+        ilike(users.name, `%${normalized}%`),
+        ilike(users.email, `%${normalized}%`),
+        ilike(users.phone, `%${normalized}%`),
+      )
+    : undefined;
+
+  const rows = storeId
+    ? await db
+        .select({ total: sql<number>`count(*)::int` })
+        .from(users)
+        .innerJoin(
+          customerMetrics,
+          and(
+            eq(customerMetrics.userId, users.id),
+            eq(customerMetrics.storeId, storeId),
+          ),
+        )
+        .where(and(
+          eq(users.role, "user"),
+          gt(customerMetrics.totalOrders, 0),
+          searchCondition,
+        ))
+    : await db
+        .select({ total: sql<number>`count(*)::int` })
+        .from(users)
+        .where(and(eq(users.role, "user"), searchCondition));
+
+  return Number(rows[0]?.total ?? 0);
+}
 export async function getCrmCustomerDetail(userId: number, storeId?: number) {
   const db = await getDb();
   if (!db) return null;
   const userRows = await db.select().from(users).where(eq(users.id, userId)).limit(1);
   if (!userRows.length) return null;
   // Strip sensitive fields before returning to the admin CRM view
-  const { passwordHash: _ph, resetToken: _rt, resetTokenExpiresAt: _rte, ...safeUser } = userRows[0] as typeof userRows[0] & {
+  const { passwordHash: _ph, resetToken: _rt, resetTokenExpiresAt: _rte, ...baseSafeUser } = userRows[0] as typeof userRows[0] & {
     passwordHash?: unknown; resetToken?: unknown; resetTokenExpiresAt?: unknown;
   };
+  const account = storeId ? await getCustomerStoreAccount(userId, storeId) : null;
+  const safeUser = account ? {
+    ...baseSafeUser,
+    loyaltyPoints: account.loyaltyPoints,
+    clubPlan: account.clubPlan,
+    clubStatus: account.clubStatus,
+    clubStartDate: account.clubStartDate,
+    clubNextBillingDate: account.clubNextBillingDate,
+    clubFreePizzaUsed: account.clubFreePizzaUsed,
+    clubFreePizzaResetAt: account.clubFreePizzaResetAt,
+  } : baseSafeUser;
 
   const orderRows = await db
     .select()
@@ -3300,167 +3675,203 @@ export async function getCrmCustomerDetail(userId: number, storeId?: number) {
 /**
  * Lista clientes filtrados por tag específica.
  */
-export async function getCrmCustomersByTag(tag: string) {
+export async function getCrmCustomersByTag(tag: string, storeId: number) {
   const db = await getDb();
   if (!db) return [];
-  const rows = await db.execute(sql`
-    SELECT
-      u.id,
-      u.name,
-      u.email,
-      u.phone,
-      u.avatarUrl,
-      u.loyaltyPoints,
-      u.createdAt,
-      COUNT(DISTINCT o.id) AS totalOrders,
-      COALESCE(SUM(CASE WHEN o.status = 'delivered' THEN CAST(o.total AS DECIMAL(10,2)) ELSE 0 END), 0) AS totalSpent,
-      MAX(o.createdAt) AS lastOrderAt,
-      GROUP_CONCAT(DISTINCT ct2.tag ORDER BY ct2.assignedAt DESC SEPARATOR ',') AS tags
-    FROM users u
-    INNER JOIN customer_tags ct ON ct.userId = u.id AND ct.tag = ${tag}
-    LEFT JOIN customer_tags ct2 ON ct2.userId = u.id
-    LEFT JOIN orders o ON o.userId = u.id
-    WHERE u.role = 'user'
-    GROUP BY u.id
-    ORDER BY lastOrderAt DESC
-  `);
-  return (rows as unknown as [Array<{
-    id: number; name: string | null; email: string | null; phone: string | null;
-    avatarUrl: string | null; loyaltyPoints: number; createdAt: Date;
-    totalOrders: number; totalSpent: number; lastOrderAt: Date | null;
-    tags: string | null;
-  }>])[0];
-}
 
-/**
- * Atribui uma tag manualmente a um cliente.
- */
-export async function assignTagToCustomer(userId: number, tag: string): Promise<void> {
+  const tagged = await db
+    .select({ userId: customerTags.userId })
+    .from(customerTags)
+    .where(and(
+      eq(customerTags.storeId, storeId),
+      eq(customerTags.tag, tag as typeof customerTags.$inferSelect["tag"]),
+    ));
+
+  if (tagged.length === 0) return [];
+  const ids = new Set(tagged.map((row) => row.userId));
+  const customers = await getCrmCustomers({ storeId, limit: 10_000, offset: 0 });
+  return customers.filter((customer) => ids.has(customer.id));
+}
+export async function assignTagToCustomer(userId: number, tag: string, storeId: number): Promise<void> {
   const db = await getDb();
   if (!db) return;
-  const now = new Date();
-  const existing = await db.execute(sql`
-    SELECT id FROM customer_tags WHERE userId = ${userId} AND tag = ${tag} LIMIT 1
-  `);
-  const rows = (existing as unknown as [Array<{ id: number }>])[0];
-  if (rows.length === 0) {
-    await db.execute(sql`
-      INSERT INTO customer_tags (userId, tag, assignedAt, updatedAt) VALUES (${userId}, ${tag}, ${now}, ${now})
-    `);
-  }
+  await db
+    .insert(customerTags)
+    .values({
+      storeId,
+      userId,
+      tag: tag as typeof customerTags.$inferInsert["tag"],
+      assignedAt: new Date(),
+      updatedAt: new Date(),
+    })
+    .onConflictDoUpdate({
+      target: [customerTags.storeId, customerTags.userId, customerTags.tag],
+      set: { updatedAt: new Date() },
+    });
 }
-
-/**
- * Remove uma tag de um cliente.
- */
-export async function removeTagFromCustomer(userId: number, tag: string): Promise<void> {
+export async function removeTagFromCustomer(userId: number, tag: string, storeId: number): Promise<void> {
   const db = await getDb();
   if (!db) return;
-  await db.execute(sql`DELETE FROM customer_tags WHERE userId = ${userId} AND tag = ${tag}`);
+  await db
+    .delete(customerTags)
+    .where(and(
+      eq(customerTags.storeId, storeId),
+      eq(customerTags.userId, userId),
+      eq(customerTags.tag, tag as typeof customerTags.$inferSelect["tag"]),
+    ));
 }
-
-/**
- * Retorna todas as tags de um cliente específico.
- */
-export async function getTagsForCustomer(userId: number): Promise<Array<{ tag: string; assignedAt: Date }>> {
+export async function getTagsForCustomer(
+  userId: number,
+  storeId: number,
+): Promise<Array<{ tag: string; assignedAt: Date }>> {
   const db = await getDb();
   if (!db) return [];
-  const rows = await db.execute(sql`
-    SELECT tag, assignedAt FROM customer_tags WHERE userId = ${userId} ORDER BY assignedAt DESC
-  `);
-  return (rows as unknown as [Array<{ tag: string; assignedAt: Date }>])[0];
+  return db
+    .select({
+      tag: customerTags.tag,
+      assignedAt: customerTags.assignedAt,
+    })
+    .from(customerTags)
+    .where(and(
+      eq(customerTags.storeId, storeId),
+      eq(customerTags.userId, userId),
+    ))
+    .orderBy(desc(customerTags.assignedAt));
 }
-
-/**
- * Retorna execuções de jornadas de um cliente específico.
- */
-export async function getJourneyExecutionsByUser(userId: number) {
+export async function getJourneyExecutionsByUser(userId: number, storeId: number) {
   const db = await getDb();
   if (!db) return [];
-  const rows = await db.execute(sql`
-    SELECT je.*, j.name AS journeyName
-    FROM journey_executions je
-    LEFT JOIN journeys j ON j.id = je.journeyId
-    WHERE je.userId = ${userId}
-    ORDER BY je.startedAt DESC
-    LIMIT 20
-  `);
-  return (rows as unknown as [Array<{
-    id: number; journeyId: number; journeyName: string | null;
-    status: string; currentStep: number; startedAt: Date;
-    completedAt: Date | null; logs: string | null;
-  }>])[0];
+  return db
+    .select({
+      id: journeyExecutions.id,
+      journeyId: journeyExecutions.journeyId,
+      journeyName: journeys.name,
+      status: journeyExecutions.status,
+      currentStep: journeyExecutions.currentStep,
+      startedAt: journeyExecutions.startedAt,
+      completedAt: journeyExecutions.completedAt,
+      logs: journeyExecutions.logs,
+    })
+    .from(journeyExecutions)
+    .leftJoin(journeys, eq(journeys.id, journeyExecutions.journeyId))
+    .where(and(
+      eq(journeyExecutions.storeId, storeId),
+      eq(journeyExecutions.userId, userId),
+    ))
+    .orderBy(desc(journeyExecutions.startedAt))
+    .limit(20);
 }
-
-/**
- * Retorna carrinhos abandonados de um cliente específico.
- */
-export async function getAbandonedCartsByUser(userId: number) {
+export async function getAbandonedCartsByUser(userId: number, storeId: number) {
   const db = await getDb();
   if (!db) return [];
-  const rows = await db.execute(sql`
-    SELECT * FROM abandoned_carts WHERE userId = ${userId} ORDER BY createdAt DESC LIMIT 10
-  `);
-  return (rows as unknown as [Array<{
-    id: number; status: string; total: string; items: string;
-    createdAt: Date; firstReminderSentAt: Date | null; secondReminderSentAt: Date | null;
-  }>])[0];
+  return db
+    .select({
+      id: abandonedCarts.id,
+      status: abandonedCarts.status,
+      total: abandonedCarts.total,
+      items: abandonedCarts.items,
+      createdAt: abandonedCarts.createdAt,
+      firstReminderSentAt: abandonedCarts.firstReminderSentAt,
+      secondReminderSentAt: abandonedCarts.secondReminderSentAt,
+    })
+    .from(abandonedCarts)
+    .where(and(
+      eq(abandonedCarts.storeId, storeId),
+      eq(abandonedCarts.userId, userId),
+    ))
+    .orderBy(desc(abandonedCarts.createdAt))
+    .limit(10);
 }
-
-/**
- * Retorna estatísticas gerais do CRM para o dashboard.
- */
 export async function getCrmStats(storeId?: number) {
   const db = await getDb();
   if (!db) return null;
-  const rows = storeId
-    ? await db.execute(sql`
-      SELECT
-        (SELECT COUNT(DISTINCT o.userId) FROM orders o WHERE o.storeId = ${storeId} AND o.userId IS NOT NULL) AS totalCustomers,
-        (SELECT COUNT(*) FROM customer_tags ct WHERE ct.tag = 'novo' AND EXISTS (SELECT 1 FROM orders o WHERE o.userId = ct.userId AND o.storeId = ${storeId})) AS tagNovo,
-        (SELECT COUNT(*) FROM customer_tags ct WHERE ct.tag = 'recorrente' AND EXISTS (SELECT 1 FROM orders o WHERE o.userId = ct.userId AND o.storeId = ${storeId})) AS tagRecorrente,
-        (SELECT COUNT(*) FROM customer_tags ct WHERE ct.tag = 'indeciso' AND EXISTS (SELECT 1 FROM orders o WHERE o.userId = ct.userId AND o.storeId = ${storeId})) AS tagIndeciso,
-        (SELECT COUNT(*) FROM customer_tags ct WHERE ct.tag = 'inativo_15' AND EXISTS (SELECT 1 FROM orders o WHERE o.userId = ct.userId AND o.storeId = ${storeId})) AS tagInativo15,
-        (SELECT COUNT(*) FROM customer_tags ct WHERE ct.tag = 'inativo_30' AND EXISTS (SELECT 1 FROM orders o WHERE o.userId = ct.userId AND o.storeId = ${storeId})) AS tagInativo30,
-        (SELECT COUNT(*) FROM customer_tags ct WHERE ct.tag = 'inativo_60' AND EXISTS (SELECT 1 FROM orders o WHERE o.userId = ct.userId AND o.storeId = ${storeId})) AS tagInativo60,
-        (SELECT COUNT(*) FROM abandoned_carts ac WHERE ac.status = 'pending' AND EXISTS (SELECT 1 FROM orders o WHERE o.userId = ac.userId AND o.storeId = ${storeId})) AS carrinhosPendentes,
-        (SELECT COUNT(*) FROM journey_executions je WHERE je.status = 'running' AND EXISTS (SELECT 1 FROM orders o WHERE o.userId = je.userId AND o.storeId = ${storeId})) AS jornadasAtivas
-    `)
-    : await db.execute(sql`
-      SELECT
-        (SELECT COUNT(*) FROM users WHERE role = 'user') AS totalCustomers,
-        (SELECT COUNT(*) FROM customer_tags WHERE tag = 'novo') AS tagNovo,
-        (SELECT COUNT(*) FROM customer_tags WHERE tag = 'recorrente') AS tagRecorrente,
-        (SELECT COUNT(*) FROM customer_tags WHERE tag = 'indeciso') AS tagIndeciso,
-        (SELECT COUNT(*) FROM customer_tags WHERE tag = 'inativo_15') AS tagInativo15,
-        (SELECT COUNT(*) FROM customer_tags WHERE tag = 'inativo_30') AS tagInativo30,
-        (SELECT COUNT(*) FROM customer_tags WHERE tag = 'inativo_60') AS tagInativo60,
-        (SELECT COUNT(*) FROM abandoned_carts WHERE status = 'pending') AS carrinhosPendentes,
-        (SELECT COUNT(*) FROM journey_executions WHERE status = 'running') AS jornadasAtivas
-    `);
-  const result = (rows as unknown as [Array<{
-    totalCustomers: number; tagNovo: number; tagRecorrente: number; tagIndeciso: number;
-    tagInativo15: number; tagInativo30: number; tagInativo60: number;
-    carrinhosPendentes: number; jornadasAtivas: number;
-  }>])[0];
-  return result[0] ?? null;
+
+  const metricsStoreId = storeId ?? 0;
+  const [lifetime] = await db
+    .select({
+      totalCustomers: sql<number>`count(*)::int`,
+      repeatCustomers: sql<number>`count(*) FILTER (WHERE ${customerMetrics.deliveredOrders} > 1)::int`,
+      totalLifetimeRevenue: sql<string>`COALESCE(SUM(${customerMetrics.totalSpent}), 0)`,
+      avgLtv: sql<string>`COALESCE(AVG(${customerMetrics.totalSpent}), 0)`,
+    })
+    .from(customerMetrics)
+    .where(and(
+      eq(customerMetrics.storeId, metricsStoreId),
+      gt(customerMetrics.totalOrders, 0),
+    ));
+
+  const countTag = async (tag: typeof customerTags.$inferSelect["tag"]) => {
+    const [row] = await db
+      .select({ total: sql<number>`count(*)::int` })
+      .from(customerTags)
+      .where(and(
+        storeId ? eq(customerTags.storeId, storeId) : undefined,
+        eq(customerTags.tag, tag),
+      ));
+    return Number(row?.total ?? 0);
+  };
+
+  const [
+    tagNovo,
+    tagRecorrente,
+    tagIndeciso,
+    tagInativo15,
+    tagInativo30,
+    tagInativo60,
+    cartRows,
+    journeyRows,
+  ] = await Promise.all([
+    countTag("novo"),
+    countTag("recorrente"),
+    countTag("indeciso"),
+    countTag("inativo_15"),
+    countTag("inativo_30"),
+    countTag("inativo_60"),
+    db
+      .select({ total: sql<number>`count(*)::int` })
+      .from(abandonedCarts)
+      .where(and(
+        eq(abandonedCarts.status, "pending"),
+        storeId ? eq(abandonedCarts.storeId, storeId) : undefined,
+      )),
+    db
+      .select({ total: sql<number>`count(*)::int` })
+      .from(journeyExecutions)
+      .where(and(
+        eq(journeyExecutions.status, "running"),
+        storeId ? eq(journeyExecutions.storeId, storeId) : undefined,
+      )),
+  ]);
+
+  const totalCustomers = Number(lifetime?.totalCustomers ?? 0);
+  const repeatCustomers = Number(lifetime?.repeatCustomers ?? 0);
+
+  return {
+    totalCustomers,
+    repeatCustomers,
+    retentionRate: totalCustomers > 0 ? (repeatCustomers / totalCustomers) * 100 : 0,
+    totalLifetimeRevenue: Number(lifetime?.totalLifetimeRevenue ?? 0),
+    avgLtv: Number(lifetime?.avgLtv ?? 0),
+    tagNovo,
+    tagRecorrente,
+    tagIndeciso,
+    tagInativo15,
+    tagInativo30,
+    tagInativo60,
+    carrinhosPendentes: Number(cartRows[0]?.total ?? 0),
+    jornadasAtivas: Number(journeyRows[0]?.total ?? 0),
+  };
 }
-
-// ─── Notification Templates ───────────────────────────────────────────────────
-
-
-
-/**
- * Lista todos os templates de notificação, opcionalmente filtrados por event/channel.
- */
-export async function listNotificationTemplates(opts?: { event?: string; channel?: string }) {
+export async function listNotificationTemplates(opts?: { storeId?: number; event?: string; channel?: string }) {
   const db = await getDb();
   if (!db) return [];
-  let query = db.select().from(notificationTemplates).$dynamic();
-  if (opts?.event) {
-    query = query.where(eq((notificationTemplates as any).event, opts.event));
-  }
-  return query.orderBy((notificationTemplates as any).event, (notificationTemplates as any).channel);
+  const storeId = await getEffectiveStoreId(db, opts?.storeId);
+  const conditions: SQL[] = [eq(notificationTemplates.storeId, storeId)];
+  if (opts?.event) conditions.push(eq(notificationTemplates.event, opts.event as NotificationTemplate["event"]));
+  if (opts?.channel) conditions.push(eq(notificationTemplates.channel, opts.channel as NotificationTemplate["channel"]));
+  return db.select().from(notificationTemplates)
+    .where(and(...conditions))
+    .orderBy(notificationTemplates.event, notificationTemplates.channel);
 }
 
 /**
@@ -3477,19 +3888,21 @@ export async function createNotificationTemplate(data: InsertNotificationTemplat
 /**
  * Atualiza um template existente.
  */
-export async function updateNotificationTemplate(id: number, data: Partial<InsertNotificationTemplate>) {
+export async function updateNotificationTemplate(id: number, storeId: number, data: Partial<InsertNotificationTemplate>) {
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
-  await db.update(notificationTemplates).set(data).where(eq((notificationTemplates as any).id, id));
+  await db.update(notificationTemplates).set(data)
+    .where(and(eq(notificationTemplates.id, id), eq(notificationTemplates.storeId, storeId)));
 }
 
 /**
  * Remove um template.
  */
-export async function deleteNotificationTemplate(id: number) {
+export async function deleteNotificationTemplate(id: number, storeId: number) {
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
-  await db.delete(notificationTemplates).where(eq((notificationTemplates as any).id, id));
+  await db.delete(notificationTemplates)
+    .where(and(eq(notificationTemplates.id, id), eq(notificationTemplates.storeId, storeId)));
 }
 
 /**
@@ -3499,138 +3912,156 @@ export async function deleteNotificationTemplate(id: number) {
  */
 export async function pickRandomTemplate(
   event: string,
-  channel: "push" | "whatsapp"
-): Promise<{ title: string; body: string } | null> {
+  channel: "push" | "whatsapp",
+  requestedStoreId?: number,
+): Promise<{ title: string; body: string; imageUrl: string | null } | null> {
   const db = await getDb();
   if (!db) return null;
-  const rows = await db.execute(sql`
-    SELECT title, body FROM notification_templates
-    WHERE event = ${event}
-      AND (channel = ${channel} OR channel = 'both')
-      AND isActive = 1
-    ORDER BY RAND()
-    LIMIT 1
-  `);
-  const result = (rows as unknown as [Array<{ title: string; body: string }>])[0];
-  return result[0] ?? null;
+  const storeId = await getEffectiveStoreId(db, requestedStoreId);
+  const rows = await db
+    .select({
+      title: notificationTemplates.title,
+      body: notificationTemplates.body,
+      imageUrl: notificationTemplates.imageUrl,
+    })
+    .from(notificationTemplates)
+    .where(and(
+      eq(notificationTemplates.storeId, storeId),
+      eq(notificationTemplates.event, event as typeof notificationTemplates.$inferSelect["event"]),
+      or(
+        eq(notificationTemplates.channel, channel),
+        eq(notificationTemplates.channel, "both"),
+      ),
+      eq(notificationTemplates.isActive, true),
+    ))
+    .orderBy(sql`RANDOM()`)
+    .limit(1);
+  return rows[0] ?? null;
 }
 
 /**
  * Seed de templates variados por status. Só insere se a tabela estiver vazia.
  */
-export async function seedNotificationTemplates() {
+export async function seedNotificationTemplates(requestedStoreId?: number) {
   const db = await getDb();
   if (!db) return;
-  const existing = await db.select().from(notificationTemplates).limit(1);
+  const storeId = await getEffectiveStoreId(db, requestedStoreId);
+  const existing = await db.select({ id: notificationTemplates.id })
+    .from(notificationTemplates)
+    .where(eq(notificationTemplates.storeId, storeId))
+    .limit(1);
   if (existing.length > 0) return;
 
   const templates: InsertNotificationTemplate[] = [
     // ── order_confirmed ──
-    { event: "order_confirmed", channel: "push", title: "✅ Pedido confirmado!", body: "Oba! Seu pedido #{{orderId}} foi confirmado. Já estamos separando tudo com carinho!" },
-    { event: "order_confirmed", channel: "push", title: "🍕 Recebemos seu pedido!", body: "Pedido #{{orderId}} confirmado! A equipe da Bonatto já entrou em ação." },
-    { event: "order_confirmed", channel: "push", title: "👌 Tá na fila, {{clientName}}!", body: "Seu pedido #{{orderId}} foi aceito. Em breve começa a magia!" },
-    { event: "order_confirmed", channel: "whatsapp", title: "Pedido confirmado", body: "Olá, {{clientName}}! 🎉 Seu pedido #{{orderId}} foi confirmado. Estamos preparando tudo com muito carinho pra você. Qualquer dúvida é só chamar!" },
-    { event: "order_confirmed", channel: "whatsapp", title: "Pedido confirmado", body: "Oi, {{clientName}}! ✅ Recebemos seu pedido #{{orderId}} e já estamos de olho nele. Logo logo sua pizza sai do forno!" },
-    { event: "order_confirmed", channel: "whatsapp", title: "Pedido confirmado", body: "{{clientName}}, seu pedido #{{orderId}} está confirmado! 🍕 Nossa equipe já foi avisada. Aguarda que vem coisa boa aí!" },
+    { event: "order_confirmed", channel: "push", title: "✅ Pedido confirmado", body: "Seu pedido #{{orderId}} foi confirmado pela loja." },
+    { event: "order_confirmed", channel: "push", title: "🍕 Pedido recebido", body: "Recebemos o pedido #{{orderId}} e ele já entrou na fila." },
+    { event: "order_confirmed", channel: "push", title: "👌 Pedido aceito", body: "{{clientName}}, seu pedido #{{orderId}} foi aceito pela loja." },
+    { event: "order_confirmed", channel: "whatsapp", title: "Pedido confirmado", body: "Oi, {{clientName}}! Seu pedido #{{orderId}} foi confirmado. Se precisar falar com a loja, responda por aqui." },
+    { event: "order_confirmed", channel: "whatsapp", title: "Pedido confirmado", body: "Oi, {{clientName}}! Recebemos seu pedido #{{orderId}}. Você pode acompanhar o andamento pelo site." },
+    { event: "order_confirmed", channel: "whatsapp", title: "Pedido confirmado", body: "{{clientName}}, o pedido #{{orderId}} está confirmado e já foi enviado para a equipe da loja." },
 
     // ── order_preparing ──
-    { event: "order_preparing", channel: "push", title: "👨‍🍳 Mãos na massa!", body: "Seu pedido #{{orderId}} está sendo preparado. O cheirinho já deve estar chegando aí!" },
-    { event: "order_preparing", channel: "push", title: "🔥 Forno ligado!", body: "Pedido #{{orderId}} no forno! Daqui a pouco vai estar pronto." },
-    { event: "order_preparing", channel: "push", title: "🍕 Preparando com amor", body: "Seu pedido #{{orderId}} está nas mãos dos nossos pizzaiolos. Quase lá!" },
-    { event: "order_preparing", channel: "whatsapp", title: "Preparando", body: "{{clientName}}, seu pedido #{{orderId}} está sendo preparado agora! 🍕🔥 O forno já está quente e a pizza vai sair perfeita. Aguenta um pouquinho!" },
-    { event: "order_preparing", channel: "whatsapp", title: "Preparando", body: "Oi {{clientName}}! 👨‍🍳 Nosso time já está com as mãos na massa do seu pedido #{{orderId}}. Em breve fica pronto!" },
-    { event: "order_preparing", channel: "whatsapp", title: "Preparando", body: "{{clientName}}, o pedido #{{orderId}} entrou em produção! 🎯 Estamos caprichando em cada detalhe pra você. Logo logo sai!" },
+    { event: "order_preparing", channel: "push", title: "👨‍🍳 Pedido em preparo", body: "Seu pedido #{{orderId}} está sendo preparado." },
+    { event: "order_preparing", channel: "push", title: "🔥 Em preparo", body: "O pedido #{{orderId}} está em preparo na loja." },
+    { event: "order_preparing", channel: "push", title: "🍕 Preparando seu pedido", body: "A equipe está preparando o pedido #{{orderId}}." },
+    { event: "order_preparing", channel: "whatsapp", title: "Preparando", body: "{{clientName}}, seu pedido #{{orderId}} está sendo preparado pela loja." },
+    { event: "order_preparing", channel: "whatsapp", title: "Preparando", body: "Oi, {{clientName}}! O pedido #{{orderId}} está em preparo. Avisaremos quando ele sair para entrega." },
+    { event: "order_preparing", channel: "whatsapp", title: "Preparando", body: "{{clientName}}, o pedido #{{orderId}} entrou em preparo na loja." },
 
     // ── order_out_for_delivery ──
-    { event: "order_out_for_delivery", channel: "push", title: "🛵 Saiu pra entrega!", body: "Seu pedido #{{orderId}} está a caminho! Fique de olho na porta." },
-    { event: "order_out_for_delivery", channel: "push", title: "🚀 Voando até você!", body: "Pedido #{{orderId}} saiu! Nosso motoboy já está na estrada." },
-    { event: "order_out_for_delivery", channel: "push", title: "📍 A caminho!", body: "Pedido #{{orderId}} em rota de entrega. Pode deixar o apetite crescer!" },
-    { event: "order_out_for_delivery", channel: "whatsapp", title: "Saiu para entrega", body: "{{clientName}}, seu pedido #{{orderId}} saiu para entrega! 🛵💨 Nosso motoboy está a caminho. Fique de olho na porta!" },
-    { event: "order_out_for_delivery", channel: "whatsapp", title: "Saiu para entrega", body: "Oi {{clientName}}! 🍕🛵 O pedido #{{orderId}} está voando até você. Pode ir abrindo a porta!" },
-    { event: "order_out_for_delivery", channel: "whatsapp", title: "Saiu para entrega", body: "{{clientName}}, boa notícia! 🎉 Seu pedido #{{orderId}} saiu agora. Daqui a pouco você vai estar saboreando uma pizza incrível!" },
+    { event: "order_out_for_delivery", channel: "push", title: "🛵 Saiu para entrega", body: "Seu pedido #{{orderId}} está a caminho." },
+    { event: "order_out_for_delivery", channel: "push", title: "🛵 Pedido a caminho", body: "O pedido #{{orderId}} saiu para entrega." },
+    { event: "order_out_for_delivery", channel: "push", title: "📍 Em rota de entrega", body: "O pedido #{{orderId}} está em rota de entrega." },
+    { event: "order_out_for_delivery", channel: "whatsapp", title: "Saiu para entrega", body: "{{clientName}}, seu pedido #{{orderId}} saiu para entrega e está a caminho." },
+    { event: "order_out_for_delivery", channel: "whatsapp", title: "Saiu para entrega", body: "Oi, {{clientName}}! O pedido #{{orderId}} está em rota de entrega." },
+    { event: "order_out_for_delivery", channel: "whatsapp", title: "Saiu para entrega", body: "{{clientName}}, seu pedido #{{orderId}} saiu para entrega." },
 
     // ── order_delivered ──
-    { event: "order_delivered", channel: "push", title: "🎉 Entregue! Bom apetite!", body: "Seu pedido #{{orderId}} foi entregue. Aproveite muito!" },
-    { event: "order_delivered", channel: "push", title: "🍕 Chegou! Hora de comer!", body: "Pedido #{{orderId}} entregue. Bom apetite, {{clientName}}!" },
-    { event: "order_delivered", channel: "push", title: "✅ Entregue com sucesso!", body: "Pedido #{{orderId}} na sua mão! Que seja delicioso." },
-    { event: "order_delivered", channel: "whatsapp", title: "Entregue", body: "{{clientName}}, seu pedido #{{orderId}} foi entregue! 🎉🍕 Esperamos que você aproveite muito. Bom apetite e até a próxima!" },
-    { event: "order_delivered", channel: "whatsapp", title: "Entregue", body: "Oi {{clientName}}! ✅ Pedido #{{orderId}} entregue com sucesso. Que a pizza esteja deliciosa! Qualquer coisa, estamos aqui. 😊" },
-    { event: "order_delivered", channel: "whatsapp", title: "Entregue", body: "{{clientName}}, chegou! 🍕🔥 Pedido #{{orderId}} entregue. Obrigado pela preferência! Nos vemos no próximo pedido. 🙏" },
+    { event: "order_delivered", channel: "push", title: "🎉 Entregue! Bom apetite!", body: "Seu pedido #{{orderId}} foi entregue. Bom apetite!" },
+    { event: "order_delivered", channel: "push", title: "🍕 Pedido entregue", body: "Pedido #{{orderId}} entregue. Bom apetite, {{clientName}}!" },
+    { event: "order_delivered", channel: "push", title: "✅ Pedido entregue", body: "O pedido #{{orderId}} foi entregue." },
+    { event: "order_delivered", channel: "whatsapp", title: "Entregue", body: "{{clientName}}, seu pedido #{{orderId}} foi entregue. 🍕 Bom apetite!" },
+    { event: "order_delivered", channel: "whatsapp", title: "Entregue", body: "Oi, {{clientName}}! O pedido #{{orderId}} foi entregue. Bom apetite!" },
+    { event: "order_delivered", channel: "whatsapp", title: "Entregue", body: "{{clientName}}, o pedido #{{orderId}} foi entregue. Obrigado pelo pedido!" },
 
     // ── order_cancelled ──
-    { event: "order_cancelled", channel: "push", title: "❌ Pedido cancelado", body: "Seu pedido #{{orderId}} foi cancelado. Sentimos muito!" },
-    { event: "order_cancelled", channel: "push", title: "😔 Ops, pedido cancelado", body: "Pedido #{{orderId}} cancelado. Qualquer dúvida, entre em contato." },
-    { event: "order_cancelled", channel: "whatsapp", title: "Cancelado", body: "{{clientName}}, infelizmente seu pedido #{{orderId}} precisou ser cancelado. 😔 Sentimos muito pelo inconveniente. Entre em contato conosco para mais informações." },
-    { event: "order_cancelled", channel: "whatsapp", title: "Cancelado", body: "Oi {{clientName}}, seu pedido #{{orderId}} foi cancelado. 😢 Pedimos desculpas! Estamos à disposição para resolver qualquer situação." },
+    { event: "order_cancelled", channel: "push", title: "❌ Pedido cancelado", body: "Seu pedido #{{orderId}} foi cancelado." },
+    { event: "order_cancelled", channel: "push", title: "Pedido cancelado", body: "O pedido #{{orderId}} foi cancelado. Entre em contato com a loja se precisar de ajuda." },
+    { event: "order_cancelled", channel: "whatsapp", title: "Cancelado", body: "{{clientName}}, o pedido #{{orderId}} foi cancelado. Entre em contato com a loja se precisar de mais informações." },
+    { event: "order_cancelled", channel: "whatsapp", title: "Cancelado", body: "Oi, {{clientName}}. Seu pedido #{{orderId}} foi cancelado. Se precisar de ajuda, fale com a loja." },
 
     // ── cart_abandoned_step1 (10 min — urgência) ──
-    { event: "cart_abandoned_step1", channel: "push", title: "🍕 Sua pizza está esperando!", body: "Finalize seu pedido de R$ {{total}} antes que esfrie!" },
-    { event: "cart_abandoned_step1", channel: "push", title: "⚡ Esqueceu alguma coisa?", body: "Seu carrinho de R$ {{total}} ainda está salvo. Finaliza aí!" },
-    { event: "cart_abandoned_step1", channel: "push", title: "🔥 Seu pedido está te esperando!", body: "R$ {{total}} no carrinho. Não deixa esfriar, {{clientName}}!" },
-    { event: "cart_abandoned_step1", channel: "whatsapp", title: "Carrinho abandonado - etapa 1", body: "Olá, {{clientName}}! 🍕\n\nVocê deixou sua pizza no forno! 😅\n\n*Total: R$ {{total}}*\n\nFinalize agora antes que esfrie:\n👉 https://bonattopizza.manus.space" },
-    { event: "cart_abandoned_step1", channel: "whatsapp", title: "Carrinho abandonado - etapa 1", body: "Oi {{clientName}}! 👋\n\nEsqueceu de finalizar seu pedido? 🍕\n\nSeu carrinho de *R$ {{total}}* ainda está salvo pra você!\n\n👉 https://bonattopizza.manus.space" },
+    { event: "cart_abandoned_step1", channel: "push", title: "🍕 Seu carrinho está salvo", body: "Seu pedido de R$ {{total}} continua no carrinho." },
+    { event: "cart_abandoned_step1", channel: "push", title: "Seu carrinho continua aqui", body: "Você ainda pode finalizar o pedido de R$ {{total}}." },
+    { event: "cart_abandoned_step1", channel: "push", title: "Carrinho salvo", body: "{{clientName}}, seu carrinho de R$ {{total}} continua disponível." },
+    { event: "cart_abandoned_step1", channel: "whatsapp", title: "Carrinho abandonado - etapa 1", body: "Oi, {{clientName}}! Seu carrinho ainda está salvo.\n\n*Total: R$ {{total}}*\n\nSe quiser concluir o pedido, continue por aqui:\nhttps://bonattopizza.manus.space" },
+    { event: "cart_abandoned_step1", channel: "whatsapp", title: "Carrinho abandonado - etapa 1", body: "Oi, {{clientName}}! Seu carrinho de *R$ {{total}}* continua salvo.\n\nSe quiser finalizar, acesse:\nhttps://bonattopizza.manus.space" },
 
     // ── cart_abandoned_step2 (20 min — benefício) ──
-    { event: "cart_abandoned_step2", channel: "push", title: "🛵 Entrega em 40 minutos!", body: "Seu pedido de R$ {{total}} ainda está salvo. Finalize agora!" },
-    { event: "cart_abandoned_step2", channel: "push", title: "⏱️ Ainda dá tempo!", body: "Pedido de R$ {{total}} aguardando. Entregamos em até 40 min!" },
-    { event: "cart_abandoned_step2", channel: "push", title: "🍕 Não perca sua pizza!", body: "Carrinho salvo: R$ {{total}}. Finalize e receba em 40 minutos!" },
-    { event: "cart_abandoned_step2", channel: "whatsapp", title: "Carrinho abandonado - etapa 2", body: "{{clientName}}, ainda dá tempo! 🔥\n\nSeu pedido de *R$ {{total}}* ainda está salvo.\n\n🛵 Entregamos em até 40 minutos!\n\nNão perca sua pizza favorita:\n👉 https://bonattopizza.manus.space" },
-    { event: "cart_abandoned_step2", channel: "whatsapp", title: "Carrinho abandonado - etapa 2", body: "Oi {{clientName}}! 🍕\n\nSeu carrinho de *R$ {{total}}* ainda está te esperando.\n\n🛵 Pedido rápido, entrega em até 40 min!\n\n👉 https://bonattopizza.manus.space" },
+    { event: "cart_abandoned_step2", channel: "push", title: "Seu carrinho ainda está salvo", body: "O pedido de R$ {{total}} continua disponível para finalizar." },
+    { event: "cart_abandoned_step2", channel: "push", title: "Pedido salvo", body: "Seu carrinho de R$ {{total}} continua disponível." },
+    { event: "cart_abandoned_step2", channel: "push", title: "🍕 Carrinho salvo", body: "Seu pedido de R$ {{total}} ainda pode ser finalizado." },
+    { event: "cart_abandoned_step2", channel: "whatsapp", title: "Carrinho abandonado - etapa 2", body: "Oi, {{clientName}}! Seu pedido de *R$ {{total}}* continua no carrinho.\n\nSe quiser finalizar, use o link abaixo:\nhttps://bonattopizza.manus.space" },
+    { event: "cart_abandoned_step2", channel: "whatsapp", title: "Carrinho abandonado - etapa 2", body: "Oi, {{clientName}}! Seu carrinho de *R$ {{total}}* continua disponível.\n\nPara finalizar, acesse:\nhttps://bonattopizza.manus.space" },
 
     // ── cart_abandoned_step3 (30 min — escassez + cupom) ──
-    { event: "cart_abandoned_step3", channel: "push", title: "⏰ Última chance! 10% OFF", body: "Cupom {{coupon}} — válido 48h. Finalize agora!" },
-    { event: "cart_abandoned_step3", channel: "push", title: "🎁 Desconto exclusivo para você!", body: "Use {{coupon}} e ganhe 10% OFF. Carrinho expira em breve!" },
-    { event: "cart_abandoned_step3", channel: "push", title: "🚨 Carrinho expirando!", body: "Última chance: R$ {{total}} com cupom {{coupon}} — 10% OFF!" },
-    { event: "cart_abandoned_step3", channel: "whatsapp", title: "Carrinho abandonado - etapa 3", body: "⏰ {{clientName}}, última chance!\n\nSeu carrinho expira em breve e não queremos que você perca sua pizza! 🍕\n\n🎁 Use o cupom exclusivo *{{coupon}}* e ganhe *10% de desconto*!\n\n⚡ Válido por apenas 48 horas!\n\n👉 https://bonattopizza.manus.space" },
-    { event: "cart_abandoned_step3", channel: "whatsapp", title: "Carrinho abandonado - etapa 3", body: "{{clientName}}, não deixa passar! 😱\n\nSeu pedido de *R$ {{total}}* ainda está salvo e temos um presente pra você:\n\n🎟️ Cupom *{{coupon}}* — *10% de desconto*\n\n⏰ Expira em 48h!\n\n👉 https://bonattopizza.manus.space" },
+    { event: "cart_abandoned_step3", channel: "push", title: "🎁 Cupom de 10% para seu carrinho", body: "Use {{coupon}} nas próximas 48 horas." },
+    { event: "cart_abandoned_step3", channel: "push", title: "🎁 10% de desconto no carrinho", body: "Use o cupom {{coupon}} nas próximas 48 horas." },
+    { event: "cart_abandoned_step3", channel: "push", title: "Seu carrinho tem cupom", body: "Use {{coupon}} para ter 10% de desconto no pedido de R$ {{total}}." },
+    { event: "cart_abandoned_step3", channel: "whatsapp", title: "Carrinho abandonado - etapa 3", body: "Oi, {{clientName}}! Seu carrinho ainda está salvo.\n\nUse o cupom *{{coupon}}* para ter *10% de desconto*.\n\nVálido por 48 horas.\n\nhttps://bonattopizza.manus.space" },
+    { event: "cart_abandoned_step3", channel: "whatsapp", title: "Carrinho abandonado - etapa 3", body: "Oi, {{clientName}}! Seu pedido de *R$ {{total}}* continua salvo.\n\nCupom: *{{coupon}}*\nDesconto: *10%*\nValidade: 48 horas.\n\nhttps://bonattopizza.manus.space" },
 
     // ── reactivation_15 (inativo 15 dias — 5% OFF) ──
-    { event: "reactivation_15", channel: "push", title: "🍕 Sentimos sua falta!", body: "5% OFF no seu próximo pedido — válido 72h. Cupom: {{coupon}}" },
-    { event: "reactivation_15", channel: "push", title: "👋 Olá, {{clientName}}! Temos saudades!", body: "Volte a pedir e ganhe 5% de desconto com o cupom {{coupon}}!" },
-    { event: "reactivation_15", channel: "whatsapp", title: "Reativação 15 dias", body: "Oi, {{clientName}}! 👋\n\nFaz uns dias que você não pede na Bonatto Pizza e a gente sentiu falta!\n\n🍕 Que tal uma pizza hoje? Use o cupom *{{coupon}}* e ganhe *5% de desconto* no seu próximo pedido!\n\n⏰ Válido por 72 horas.\n\n👉 https://bonattopizza.manus.space" },
-    { event: "reactivation_15", channel: "whatsapp", title: "Reativação 15 dias", body: "{{clientName}}, a Bonatto sente sua falta! 🍕\n\nQue tal voltar com um desconto especial? Use *{{coupon}}* e ganhe *5% OFF* no seu próximo pedido!\n\n⏰ Válido por 72h.\n\n👉 https://bonattopizza.manus.space" },
+    { event: "reactivation_15", channel: "push", title: "🍕 5% de desconto no próximo pedido", body: "Cupom {{coupon}}, válido por 72 horas." },
+    { event: "reactivation_15", channel: "push", title: "👋 Cupom para {{clientName}}", body: "Use {{coupon}} e tenha 5% de desconto no próximo pedido." },
+    { event: "reactivation_15", channel: "whatsapp", title: "Reativação 15 dias", body: "Oi, {{clientName}}! Temos um cupom de *5% de desconto* para seu próximo pedido.\n\nCupom: *{{coupon}}*\nVálido por 72 horas.\n\nhttps://bonattopizza.manus.space" },
+    { event: "reactivation_15", channel: "whatsapp", title: "Reativação 15 dias", body: "{{clientName}}, use o cupom *{{coupon}}* para ter *5% de desconto* no próximo pedido.\n\nVálido por 72 horas.\n\nhttps://bonattopizza.manus.space" },
 
     // ── reactivation_30 (inativo 30 dias — 10% OFF) ──
-    { event: "reactivation_30", channel: "push", title: "🎁 10% OFF — Oferta exclusiva!", body: "Volte a pedir com desconto especial. Cupom: {{coupon}}" },
-    { event: "reactivation_30", channel: "push", title: "🎯 Oferta especial para você!", body: "Está com saudade? 10% OFF com o cupom {{coupon}} — só por tempo limitado!" },
-    { event: "reactivation_30", channel: "whatsapp", title: "Reativação 30 dias", body: "{{clientName}}, temos uma oferta especial para você! 🎁\n\nSabemos que faz um tempinho que você não pede na Bonatto Pizza. Que tal voltar com *10% de desconto*?\n\n🎟️ Cupom exclusivo: *{{coupon}}*\n\n⏰ Oferta por tempo limitado!\n\n👉 https://bonattopizza.manus.space" },
-    { event: "reactivation_30", channel: "whatsapp", title: "Reativação 30 dias", body: "Oi {{clientName}}! 😊\n\nA Bonatto tem um presente especial pra você: *10% de desconto* no seu próximo pedido!\n\n🎟️ Use o cupom *{{coupon}}* e aproveite!\n\n⏰ Válido por 48h.\n\n👉 https://bonattopizza.manus.space" },
+    { event: "reactivation_30", channel: "push", title: "🎁 10% de desconto no próximo pedido", body: "Use o cupom {{coupon}}." },
+    { event: "reactivation_30", channel: "push", title: "Cupom de 10% para sua conta", body: "Use {{coupon}} no próximo pedido enquanto estiver válido." },
+    { event: "reactivation_30", channel: "whatsapp", title: "Reativação 30 dias", body: "Oi, {{clientName}}! Seu próximo pedido tem *10% de desconto* com o cupom abaixo.\n\nCupom: *{{coupon}}*\nVálido por 48 horas.\n\nhttps://bonattopizza.manus.space" },
+    { event: "reactivation_30", channel: "whatsapp", title: "Reativação 30 dias", body: "Oi, {{clientName}}! Use o cupom *{{coupon}}* para ter *10% de desconto* no próximo pedido.\n\nVálido por 48 horas.\n\nhttps://bonattopizza.manus.space" },
 
     // ── reactivation_60 (inativo 60 dias — 15% OFF) ──
-    { event: "reactivation_60", channel: "push", title: "😢 Voltamos para você! 15% OFF", body: "Cupom especial de 15% para seu retorno: {{coupon}}" },
-    { event: "reactivation_60", channel: "push", title: "🙏 Sua volta vale 15% OFF!", body: "Sentimos muito sua falta. Use {{coupon}} e volte com desconto!" },
-    { event: "reactivation_60", channel: "whatsapp", title: "Reativação 60 dias", body: "{{clientName}}! 😢\n\nA gente sente muito a sua falta na Bonatto Pizza.\n\nPara te receber de volta, preparamos um cupom especial de *15% de desconto*:\n\n🎟️ *{{coupon}}*\n\n🍕 Novidades no cardápio te esperam!\n\n👉 https://bonattopizza.manus.space" },
-    { event: "reactivation_60", channel: "whatsapp", title: "Reativação 60 dias", body: "{{clientName}}, sua volta é muito especial pra gente! 🥰\n\nComo presente de boas-vindas, aqui vai *15% de desconto*:\n\n🎟️ Cupom: *{{coupon}}*\n\n⏰ Válido por 24h. Corre!\n\n👉 https://bonattopizza.manus.space" },
+    { event: "reactivation_60", channel: "push", title: "🍕 15% de desconto no próximo pedido", body: "Use o cupom {{coupon}}." },
+    { event: "reactivation_60", channel: "push", title: "Cupom de 15% disponível", body: "Use {{coupon}} no seu próximo pedido." },
+    { event: "reactivation_60", channel: "whatsapp", title: "Reativação 60 dias", body: "Oi, {{clientName}}! Temos um cupom de *15% de desconto* para seu próximo pedido.\n\nCupom: *{{coupon}}*\n\nhttps://bonattopizza.manus.space" },
+    { event: "reactivation_60", channel: "whatsapp", title: "Reativação 60 dias", body: "{{clientName}}, use o cupom *{{coupon}}* para ter *15% de desconto* no próximo pedido.\n\nVálido por 24 horas.\n\nhttps://bonattopizza.manus.space" },
   ];
 
-  await db.insert(notificationTemplates).values(templates);
+  await db.insert(notificationTemplates).values(templates.map((template) => ({ ...template, storeId })));
 }
 
 // --- DELIVERY ZONES (BAIRROS) -------------------------------------------------
 
-export async function getAllDeliveryZones(activeOnly = false) {
+export async function getAllDeliveryZones(activeOnly = false, storeId?: number) {
   const db = await getDb();
   if (!db) return [];
+  const effectiveStoreId = await getEffectiveStoreId(db, storeId);
   if (activeOnly) {
     return db.select().from(deliveryZones)
-      .where(eq(deliveryZones.isActive, true))
+      .where(and(eq(deliveryZones.storeId, effectiveStoreId), eq(deliveryZones.isActive, true)))
       .orderBy(deliveryZones.neighborhood);
   }
-  return db.select().from(deliveryZones).orderBy(deliveryZones.neighborhood);
+  return db.select().from(deliveryZones).where(eq(deliveryZones.storeId, effectiveStoreId)).orderBy(deliveryZones.neighborhood);
 }
 
-export async function getDeliveryZoneByNeighborhood(neighborhood: string) {
+export async function getDeliveryZoneByNeighborhood(neighborhood: string, storeId?: number) {
   const db = await getDb();
   if (!db) return null;
+  const effectiveStoreId = await getEffectiveStoreId(db, storeId);
   // Busca case-insensitive: normaliza removendo acentos via LOWER
   const rows = await db.execute(
-    sql`SELECT * FROM delivery_zones WHERE LOWER(neighborhood) = LOWER(${neighborhood}) AND isActive = 1 LIMIT 1`
+    sql`SELECT * FROM delivery_zones WHERE storeId = ${effectiveStoreId} AND LOWER(neighborhood) = LOWER(${neighborhood}) AND isActive = 1 LIMIT 1`
   );
   const list = (rows as unknown as [Array<Record<string, unknown>>])[0];
   if (!list || list.length === 0) return null;
   const r = list[0];
   return {
     id: Number(r.id),
+    storeId: Number(r.storeId),
     neighborhood: String(r.neighborhood),
     city: String(r.city ?? ""),
     deliveryFee: String(r.deliveryFee ?? "0.00"),
@@ -3639,16 +4070,18 @@ export async function getDeliveryZoneByNeighborhood(neighborhood: string) {
   };
 }
 
-export async function searchDeliveryZones(query: string) {
+export async function searchDeliveryZones(query: string, storeId?: number) {
   const db = await getDb();
   if (!db) return [];
+  const effectiveStoreId = await getEffectiveStoreId(db, storeId);
   const like = `%${query}%`;
   const rows = await db.execute(
-    sql`SELECT * FROM delivery_zones WHERE LOWER(neighborhood) LIKE LOWER(${like}) AND isActive = 1 ORDER BY neighborhood LIMIT 10`
+    sql`SELECT * FROM delivery_zones WHERE storeId = ${effectiveStoreId} AND LOWER(neighborhood) LIKE LOWER(${like}) AND isActive = 1 ORDER BY neighborhood LIMIT 10`
   );
   const list = (rows as unknown as [Array<Record<string, unknown>>])[0];
   return (list ?? []).map((r) => ({
     id: Number(r.id),
+    storeId: Number(r.storeId),
     neighborhood: String(r.neighborhood),
     city: String(r.city ?? ""),
     deliveryFee: String(r.deliveryFee ?? "0.00"),
@@ -3658,6 +4091,7 @@ export async function searchDeliveryZones(query: string) {
 }
 
 export async function createDeliveryZone(data: {
+  storeId: number;
   neighborhood: string;
   city?: string;
   deliveryFee: string;
@@ -3666,6 +4100,7 @@ export async function createDeliveryZone(data: {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
   const result = await db.insert(deliveryZones).values({
+    storeId: data.storeId,
     neighborhood: data.neighborhood.trim(),
     city: data.city?.trim() ?? "",
     deliveryFee: data.deliveryFee,
@@ -3675,7 +4110,7 @@ export async function createDeliveryZone(data: {
   return (result as unknown as { insertId: number }).insertId;
 }
 
-export async function updateDeliveryZone(id: number, data: Partial<{
+export async function updateDeliveryZone(id: number, storeId: number, data: Partial<{
   neighborhood: string;
   city: string;
   deliveryFee: string;
@@ -3684,28 +4119,32 @@ export async function updateDeliveryZone(id: number, data: Partial<{
 }>) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  await db.update(deliveryZones).set(data).where(eq(deliveryZones.id, id));
+  await db.update(deliveryZones).set(data).where(and(eq(deliveryZones.id, id), eq(deliveryZones.storeId, storeId)));
 }
 
-export async function deleteDeliveryZone(id: number) {
+export async function deleteDeliveryZone(id: number, storeId: number) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  await db.delete(deliveryZones).where(eq(deliveryZones.id, id));
+  await db.delete(deliveryZones).where(and(eq(deliveryZones.id, id), eq(deliveryZones.storeId, storeId)));
 }
 
 // ─── MENU SLIDES ──────────────────────────────────────────────────────────────
-export async function getMenuSlides(activeOnly = true) {
+export async function getMenuSlides(activeOnly = true, storeId?: number) {
   const db = await getDb();
   if (!db) return [];
+  const effectiveStoreId = await getEffectiveStoreId(db, storeId);
+  const conditions = [eq(menuSlides.storeId, effectiveStoreId)];
+  if (activeOnly) conditions.push(eq(menuSlides.isActive, true));
   const rows = await db
     .select()
     .from(menuSlides)
-    .where(activeOnly ? eq(menuSlides.isActive, true) : undefined)
+    .where(and(...conditions))
     .orderBy(menuSlides.sortOrder, menuSlides.id);
   return rows;
 }
 
 export async function createMenuSlide(data: {
+  storeId: number;
   title: string;
   subtitle?: string | null;
   imageUrl?: string | null;
@@ -3718,6 +4157,7 @@ export async function createMenuSlide(data: {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
   const result = await db.insert(menuSlides).values({
+    storeId: data.storeId,
     title: data.title,
     subtitle: data.subtitle ?? null,
     imageUrl: data.imageUrl ?? null,
@@ -3733,7 +4173,7 @@ export async function createMenuSlide(data: {
   return row;
 }
 
-export async function updateMenuSlide(id: number, data: Partial<{
+export async function updateMenuSlide(id: number, storeId: number, data: Partial<{
   title: string;
   subtitle: string | null;
   imageUrl: string | null;
@@ -3746,22 +4186,23 @@ export async function updateMenuSlide(id: number, data: Partial<{
 }>) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  await db.update(menuSlides).set(data).where(eq(menuSlides.id, id));
-  const [row] = await db.select().from(menuSlides).where(eq(menuSlides.id, id));
+  await db.update(menuSlides).set(data).where(and(eq(menuSlides.id, id), eq(menuSlides.storeId, storeId)));
+  const [row] = await db.select().from(menuSlides).where(and(eq(menuSlides.id, id), eq(menuSlides.storeId, storeId)));
   return row;
 }
 
-export async function deleteMenuSlide(id: number) {
+export async function deleteMenuSlide(id: number, storeId: number) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  await db.delete(menuSlides).where(eq(menuSlides.id, id));
+  await db.delete(menuSlides).where(and(eq(menuSlides.id, id), eq(menuSlides.storeId, storeId)));
   return { success: true };
 }
 
-export async function seedMenuSlides() {
+export async function seedMenuSlides(storeId?: number) {
   const db = await getDb();
   if (!db) return { seeded: false, count: 0 };
-  const existing = await db.select().from(menuSlides);
+  const effectiveStoreId = await getEffectiveStoreId(db, storeId);
+  const existing = await db.select().from(menuSlides).where(eq(menuSlides.storeId, effectiveStoreId));
   if (existing.length > 0) return { seeded: false, count: existing.length };
   const slides = [
     {
@@ -3790,7 +4231,7 @@ export async function seedMenuSlides() {
     },
   ];
   for (const slide of slides) {
-    await db.insert(menuSlides).values({ ...slide, isActive: true });
+    await db.insert(menuSlides).values({ ...slide, storeId: effectiveStoreId, isActive: true });
   }
   return { seeded: true, count: slides.length };
 }
@@ -3798,86 +4239,87 @@ export async function seedMenuSlides() {
 // ─── TAGS PERSONALIZADAS ──────────────────────────────────────────────────────
 
 /** Lista todas as tags personalizadas criadas pelo admin */
-export async function listCustomTags(): Promise<CustomTag[]> {
+export async function listCustomTags(storeId: number): Promise<CustomTag[]> {
   const db = await getDb();
   if (!db) return [];
-  return db.select().from(customTags).orderBy(customTags.name);
+  return db.select().from(customTags).where(eq(customTags.storeId, storeId)).orderBy(customTags.name);
 }
 
 /** Cria uma nova tag personalizada */
-export async function createCustomTag(data: { name: string; color: string; description?: string }): Promise<number> {
+export async function createCustomTag(data: { storeId: number; name: string; color: string; description?: string }): Promise<number> {
   const db = await getDb();
   if (!db) return -1;
-  const result = await db.insert(customTags).values({
+  const [created] = await db.insert(customTags).values({
+    storeId: data.storeId,
     name: data.name.trim().toLowerCase().replace(/\s+/g, "_"),
     color: data.color,
     description: data.description ?? null,
     createdAt: new Date(),
-  });
-  return Number((result[0] as { insertId: number }).insertId);
+  }).returning({ id: customTags.id });
+  return created.id;
 }
 
 /** Atualiza uma tag personalizada */
-export async function updateCustomTag(id: number, data: { name?: string; color?: string; description?: string }): Promise<void> {
+export async function updateCustomTag(id: number, storeId: number, data: { name?: string; color?: string; description?: string }): Promise<void> {
   const db = await getDb();
   if (!db) return;
   const updates: Record<string, unknown> = {};
   if (data.name) updates.name = data.name.trim().toLowerCase().replace(/\s+/g, "_");
   if (data.color) updates.color = data.color;
   if (data.description !== undefined) updates.description = data.description;
-  await db.update(customTags).set(updates).where(eq(customTags.id, id));
+  await db.update(customTags).set(updates).where(and(eq(customTags.id, id), eq(customTags.storeId, storeId)));
 }
 
 /** Remove uma tag personalizada e todas as atribuições */
-export async function deleteCustomTag(id: number): Promise<void> {
+export async function deleteCustomTag(id: number, storeId: number): Promise<void> {
   const db = await getDb();
   if (!db) return;
-  await db.delete(customCustomerTags).where(eq(customCustomerTags.tagId, id));
-  await db.delete(customTags).where(eq(customTags.id, id));
+  await db.delete(customCustomerTags).where(and(eq(customCustomerTags.tagId, id), eq(customCustomerTags.storeId, storeId)));
+  await db.delete(customTags).where(and(eq(customTags.id, id), eq(customTags.storeId, storeId)));
 }
 
 /** Atribui uma tag personalizada a um cliente */
-export async function assignCustomTagToCustomer(userId: number, tagId: number): Promise<void> {
+export async function assignCustomTagToCustomer(userId: number, tagId: number, storeId: number): Promise<void> {
   const db = await getDb();
   if (!db) return;
   const existing = await db.select().from(customCustomerTags)
-    .where(and(eq(customCustomerTags.userId, userId), eq(customCustomerTags.tagId, tagId)))
+    .where(and(eq(customCustomerTags.storeId, storeId), eq(customCustomerTags.userId, userId), eq(customCustomerTags.tagId, tagId)))
     .limit(1);
   if (existing.length === 0) {
-    await db.insert(customCustomerTags).values({ userId, tagId, assignedAt: new Date() });
+    await db.insert(customCustomerTags).values({ storeId, userId, tagId, assignedAt: new Date() });
   }
 }
 
 /** Remove uma tag personalizada de um cliente */
-export async function removeCustomTagFromCustomer(userId: number, tagId: number): Promise<void> {
+export async function removeCustomTagFromCustomer(userId: number, tagId: number, storeId: number): Promise<void> {
   const db = await getDb();
   if (!db) return;
   await db.delete(customCustomerTags)
-    .where(and(eq(customCustomerTags.userId, userId), eq(customCustomerTags.tagId, tagId)));
+    .where(and(eq(customCustomerTags.storeId, storeId), eq(customCustomerTags.userId, userId), eq(customCustomerTags.tagId, tagId)));
 }
 
 /** Retorna as tags personalizadas de um cliente com detalhes */
-export async function getCustomTagsForCustomer(userId: number): Promise<Array<CustomTag & { assignedAt: Date }>> {
+export async function getCustomTagsForCustomer(userId: number, storeId: number): Promise<Array<CustomTag & { assignedAt: Date }>> {
   const db = await getDb();
   if (!db) return [];
   const rows = await db
-    .select({ id: customTags.id, name: customTags.name, color: customTags.color, description: customTags.description, createdAt: customTags.createdAt, assignedAt: customCustomerTags.assignedAt })
+    .select({ id: customTags.id, storeId: customTags.storeId, name: customTags.name, color: customTags.color, description: customTags.description, createdAt: customTags.createdAt, assignedAt: customCustomerTags.assignedAt })
     .from(customCustomerTags)
     .innerJoin(customTags, eq(customCustomerTags.tagId, customTags.id))
-    .where(eq(customCustomerTags.userId, userId))
+    .where(and(eq(customCustomerTags.storeId, storeId), eq(customCustomerTags.userId, userId)))
     .orderBy(customCustomerTags.assignedAt);
   return rows;
 }
 
 /** Retorna todos os clientes com uma tag personalizada específica (por nome) */
-export async function getCustomersByCustomTagName(tagName: string): Promise<number[]> {
+export async function getCustomersByCustomTagName(tagName: string, storeId: number): Promise<number[]> {
   const db = await getDb();
   if (!db) return [];
-  const tag = await db.select().from(customTags).where(eq(customTags.name, tagName)).limit(1);
+  const tag = await db.select().from(customTags).where(and(eq(customTags.storeId, storeId), eq(customTags.name, tagName))).limit(1);
   if (!tag[0]) return [];
   const rows = await db.select({ userId: customCustomerTags.userId })
     .from(customCustomerTags)
-    .where(eq(customCustomerTags.tagId, tag[0].id));
+    .where(and(eq(customCustomerTags.storeId, storeId), eq(customCustomerTags.tagId, tag[0].id)));
   return rows.map((r) => r.userId);
 }
 
@@ -3898,24 +4340,28 @@ export async function createScheduledNotification(data: InsertScheduledNotificat
   return (resultHeader as unknown as { insertId: number }).insertId;
 }
 
-export async function listScheduledNotifications(): Promise<ScheduledNotification[]> {
+export async function listScheduledNotifications(requestedStoreId?: number): Promise<ScheduledNotification[]> {
   const db = await getDb();
   if (!db) return [];
-  return db.select().from(scheduledNotifications).orderBy(desc(scheduledNotifications.scheduledAt));
+  const storeId = await getEffectiveStoreId(db, requestedStoreId);
+  return db.select().from(scheduledNotifications)
+    .where(eq(scheduledNotifications.storeId, storeId))
+    .orderBy(desc(scheduledNotifications.scheduledAt));
 }
 
-export async function cancelScheduledNotification(id: number): Promise<void> {
+export async function cancelScheduledNotification(id: number, storeId: number): Promise<void> {
   const db = await getDb();
   if (!db) return;
   await db.update(scheduledNotifications)
     .set({ status: "cancelled" })
-    .where(eq(scheduledNotifications.id, id));
+    .where(and(eq(scheduledNotifications.id, id), eq(scheduledNotifications.storeId, storeId)));
 }
 
-export async function deleteScheduledNotification(id: number): Promise<void> {
+export async function deleteScheduledNotification(id: number, storeId: number): Promise<void> {
   const db = await getDb();
   if (!db) return;
-  await db.delete(scheduledNotifications).where(eq(scheduledNotifications.id, id));
+  await db.delete(scheduledNotifications)
+    .where(and(eq(scheduledNotifications.id, id), eq(scheduledNotifications.storeId, storeId)));
 }
 
 export async function getPendingScheduledNotifications(): Promise<ScheduledNotification[]> {
@@ -3941,32 +4387,52 @@ export async function markScheduledNotificationSent(id: number, sentCount: numbe
 
 
 // --- CARROSSEL HERO ---
-export async function getCarouselImages(activeOnly = true) {
+export async function getCarouselImages(activeOnly = true, storeId?: number) {
   const db = await getDb();
   if (!db) return [];
+  const effectiveStoreId = await getEffectiveStoreId(db, storeId);
+  const conditions = [eq(carouselImages.storeId, effectiveStoreId)];
+  if (activeOnly) conditions.push(eq(carouselImages.active, true));
   return db.select().from(carouselImages)
-    .where(activeOnly ? eq(carouselImages.active, true) : undefined)
+    .where(and(...conditions))
     .orderBy(carouselImages.sortOrder, carouselImages.id);
 }
-export async function createCarouselImage(data: { imageUrl: string; title?: string | null; sortOrder?: number }) {
+export async function createCarouselImage(data: {
+  storeId: number;
+  imageUrl: string;
+  title?: string | null;
+  destinationType?: "none" | "product" | "category" | "internal" | "external";
+  destinationValue?: string | null;
+  sortOrder?: number;
+}) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
   await db.insert(carouselImages).values({
+    storeId: data.storeId,
     imageUrl: data.imageUrl,
     title: data.title ?? null,
+    destinationType: data.destinationType ?? "none",
+    destinationValue: data.destinationValue ?? null,
     sortOrder: data.sortOrder ?? 0,
     active: true,
   });
 }
-export async function updateCarouselImage(id: number, data: Partial<{ imageUrl: string; title: string | null; sortOrder: number; active: boolean }>) {
+export async function updateCarouselImage(id: number, storeId: number, data: Partial<{
+  imageUrl: string;
+  title: string | null;
+  destinationType: "none" | "product" | "category" | "internal" | "external";
+  destinationValue: string | null;
+  sortOrder: number;
+  active: boolean;
+}>) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  await db.update(carouselImages).set(data).where(eq(carouselImages.id, id));
+  await db.update(carouselImages).set(data).where(and(eq(carouselImages.id, id), eq(carouselImages.storeId, storeId)));
 }
-export async function deleteCarouselImage(id: number) {
+export async function deleteCarouselImage(id: number, storeId: number) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  await db.delete(carouselImages).where(eq(carouselImages.id, id));
+  await db.delete(carouselImages).where(and(eq(carouselImages.id, id), eq(carouselImages.storeId, storeId)));
 }
 
 /** Lista pedidos que têm mensagens, com contagem de não lidas para o admin */
@@ -4118,7 +4584,8 @@ export async function getDriverActiveOrderDetails(driverId: number) {
     .select()
     .from(orderItems)
     .where(eq(orderItems.orderId, order.id));
-  return { order, items };
+  const { deliveryConfirmationCode: _privateDeliveryCode, ...safeOrder } = order;
+  return { order: safeOrder, items };
 }
 
 // --- DRIVER ALL ASSIGNED ORDERS (lista completa) --------------------------------
@@ -4144,7 +4611,8 @@ export async function getDriverAssignedOrders(driverId: number) {
         .select()
         .from(orderItems)
         .where(eq(orderItems.orderId, order.id));
-      return { order, items };
+      const { deliveryConfirmationCode: _privateDeliveryCode, ...safeOrder } = order;
+      return { order: safeOrder, items };
     })
   );
   return results;
@@ -4154,7 +4622,8 @@ export async function getDriverAssignedOrders(driverId: number) {
 
 export async function driverConfirmDelivery(
   driverId: number,
-  orderId: number
+  orderId: number,
+  confirmationCode: string,
 ): Promise<{ success: boolean; error?: string; customerId?: number | null }> {
   const db = await getDb();
   if (!db) return { success: false, error: "DB not available" };
@@ -4173,10 +4642,23 @@ export async function driverConfirmDelivery(
     return { success: false, error: "Pedido não encontrado ou já foi finalizado" };
   }
   const order = orderResult[0];
-  await db
-    .update(orders)
-    .set({ status: "delivered", updatedAt: new Date() })
-    .where(eq(orders.id, orderId));
+  if (!order.driverAcceptedAt) {
+    return { success: false, error: "Aceite o pedido antes de confirmar a entrega." };
+  }
+  if (!order.deliveryConfirmationCode) {
+    return { success: false, error: "Este pedido não possui código de entrega. Solicite apoio ao administrador." };
+  }
+  if (confirmationCode !== order.deliveryConfirmationCode) {
+    return { success: false, error: "Código de entrega incorreto." };
+  }
+
+  const transition = await updateOrderStatusGuarded(orderId, "delivered", ["out_for_delivery"], {
+    source: "driver",
+    notes: "Entrega confirmada pelo motoboy",
+  });
+  if (!transition.ok) {
+    return { success: false, error: "Pedido já foi finalizado ou mudou de status" };
+  }
   // Limpa o orderId da localização do motoboy
   await db
     .update(driverLocations)
@@ -4219,6 +4701,7 @@ export async function createClientAlert(data: {
   type: "promotion" | "raffle" | "coupon" | "club" | "custom";
   title: string;
   message: string;
+  imageUrl?: string;
   icon?: string;
   url?: string;
   storeId?: number;
@@ -4226,21 +4709,22 @@ export async function createClientAlert(data: {
 }): Promise<number> {
   const db = await getDb();
   if (!db) return 0;
-  const [result] = await db.insert(clientAlerts).values({
+  const [created] = await db.insert(clientAlerts).values({
     type: data.type,
     title: data.title,
     message: data.message,
+    imageUrl: data.imageUrl ?? null,
     icon: data.icon ?? "🔔",
     url: data.url,
     storeId: data.storeId,
     active: true,
     expiresAt: data.expiresAt,
-  });
-  return (result as any).insertId as number;
+  }).returning({ id: clientAlerts.id });
+  return created.id;
 }
 
 /** Lista alertas ativos não lidos pelo usuário (máx 20) */
-export async function listClientAlerts(userId: number): Promise<(ClientAlert & { read: boolean })[]> {
+export async function listClientAlerts(userId: number, storeId: number): Promise<(ClientAlert & { read: boolean })[]> {
   const db = await getDb();
   if (!db) return [];
   const now = new Date();
@@ -4251,6 +4735,7 @@ export async function listClientAlerts(userId: number): Promise<(ClientAlert & {
     .where(
       and(
         eq(clientAlerts.active, true),
+        eq(clientAlerts.storeId, storeId),
         or(isNull(clientAlerts.expiresAt), gt(clientAlerts.expiresAt, now))
       )
     )
@@ -4270,9 +4755,12 @@ export async function listClientAlerts(userId: number): Promise<(ClientAlert & {
 }
 
 /** Marca um alerta como lido para o usuário */
-export async function dismissClientAlert(alertId: number, userId: number): Promise<void> {
+export async function dismissClientAlert(alertId: number, userId: number, storeId: number): Promise<void> {
   const db = await getDb();
   if (!db) return;
+  const [alert] = await db.select({ id: clientAlerts.id }).from(clientAlerts)
+    .where(and(eq(clientAlerts.id, alertId), eq(clientAlerts.storeId, storeId))).limit(1);
+  if (!alert) return;
   try {
     await db.insert(clientAlertReads).values({ alertId, userId });
   } catch {
@@ -4281,7 +4769,7 @@ export async function dismissClientAlert(alertId: number, userId: number): Promi
 }
 
 /** Conta alertas não lidos pelo usuário */
-export async function countUnreadClientAlerts(userId: number): Promise<number> {
+export async function countUnreadClientAlerts(userId: number, storeId: number): Promise<number> {
   const db = await getDb();
   if (!db) return 0;
   const now = new Date();
@@ -4291,6 +4779,7 @@ export async function countUnreadClientAlerts(userId: number): Promise<number> {
     .where(
       and(
         eq(clientAlerts.active, true),
+        eq(clientAlerts.storeId, storeId),
         or(isNull(clientAlerts.expiresAt), gt(clientAlerts.expiresAt, now))
       )
     );
@@ -4403,26 +4892,125 @@ export async function getAdminDashboardSnapshot(storeId?: number) {
 // coupon redemption ledger, atomic loyalty debit and order status guard.
 // ============================================================================
 
-/**
- * Record a webhook event id (Stripe or Asaas). Returns `true` when the event
- * is being processed for the first time, `false` if it was already processed.
- * Uses the UNIQUE(provider, eventId) constraint to provide atomic idempotency.
- */
-export async function recordWebhookEventOnce(
+export type WebhookEventClaim = "claimed" | "duplicate" | "processing";
+
+export async function claimWebhookEvent(
   provider: "stripe" | "asaas",
   eventId: string,
-  eventType?: string
-): Promise<boolean> {
+  eventType?: string,
+  staleAfterMs = 5 * 60 * 1000,
+): Promise<WebhookEventClaim> {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  try {
-    await db.insert(webhookEvents).values({ provider, eventId, eventType: eventType ?? null });
-    return true;
-  } catch (err) {
-    const msg = (err as { message?: string } | undefined)?.message ?? "";
-    if (msg.includes("Duplicate") || msg.includes("ER_DUP_ENTRY")) return false;
-    throw err;
-  }
+
+  const now = new Date();
+  const [inserted] = await db
+    .insert(webhookEvents)
+    .values({
+      provider,
+      eventId,
+      eventType: eventType ?? null,
+      status: "processing",
+      attempts: 1,
+      lockedAt: now,
+      processedAt: null,
+      updatedAt: now,
+    })
+    .onConflictDoNothing({ target: [webhookEvents.provider, webhookEvents.eventId] })
+    .returning({ id: webhookEvents.id });
+
+  if (inserted) return "claimed";
+
+  const [existing] = await db
+    .select({
+      status: webhookEvents.status,
+      lockedAt: webhookEvents.lockedAt,
+    })
+    .from(webhookEvents)
+    .where(and(
+      eq(webhookEvents.provider, provider),
+      eq(webhookEvents.eventId, eventId),
+    ))
+    .limit(1);
+
+  if (!existing) return "processing";
+  if (existing.status === "processed") return "duplicate";
+
+  const staleBefore = new Date(now.getTime() - staleAfterMs);
+  const reclaimable = existing.status === "failed"
+    || (existing.status === "processing" && (!existing.lockedAt || existing.lockedAt <= staleBefore));
+
+  if (!reclaimable) return "processing";
+
+  const [claimed] = await db
+    .update(webhookEvents)
+    .set({
+      eventType: eventType ?? null,
+      status: "processing",
+      attempts: sql`${webhookEvents.attempts} + 1`,
+      lastError: null,
+      lockedAt: now,
+      updatedAt: now,
+    })
+    .where(and(
+      eq(webhookEvents.provider, provider),
+      eq(webhookEvents.eventId, eventId),
+      or(
+        eq(webhookEvents.status, "failed"),
+        and(
+          eq(webhookEvents.status, "processing"),
+          or(isNull(webhookEvents.lockedAt), lte(webhookEvents.lockedAt, staleBefore)),
+        ),
+      ),
+    ))
+    .returning({ id: webhookEvents.id });
+
+  return claimed ? "claimed" : "processing";
+}
+
+export async function completeWebhookEvent(
+  provider: "stripe" | "asaas",
+  eventId: string,
+): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await db
+    .update(webhookEvents)
+    .set({
+      status: "processed",
+      processedAt: new Date(),
+      lockedAt: null,
+      lastError: null,
+      updatedAt: new Date(),
+    })
+    .where(and(
+      eq(webhookEvents.provider, provider),
+      eq(webhookEvents.eventId, eventId),
+      eq(webhookEvents.status, "processing"),
+    ));
+}
+
+export async function failWebhookEvent(
+  provider: "stripe" | "asaas",
+  eventId: string,
+  error: unknown,
+): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  const message = error instanceof Error ? error.message : String(error);
+  await db
+    .update(webhookEvents)
+    .set({
+      status: "failed",
+      lastError: message.slice(0, 2000),
+      lockedAt: null,
+      updatedAt: new Date(),
+    })
+    .where(and(
+      eq(webhookEvents.provider, provider),
+      eq(webhookEvents.eventId, eventId),
+      eq(webhookEvents.status, "processing"),
+    ));
 }
 
 /**
@@ -4434,30 +5022,26 @@ export async function creditLoyaltyForOrderIdempotent(
   orderId: number,
   userId: number,
   points: number,
-  description?: string
+  description?: string,
+  storeId?: number | null,
 ): Promise<boolean> {
   if (points <= 0) return false;
   const db = await getDb();
   if (!db) return false;
-  try {
-    await db.insert(loyaltyOrderCredits).values({ orderId, userId, points });
-  } catch (err) {
-    const msg = (err as { message?: string } | undefined)?.message ?? "";
-    if (msg.includes("Duplicate") || msg.includes("ER_DUP_ENTRY")) return false;
-    throw err;
-  }
-  const balanceBefore = await getUserLoyaltyPoints(userId);
-  const balanceAfter = balanceBefore + points;
-  await db.update(users).set({ loyaltyPoints: sql`${users.loyaltyPoints} + ${points}` }).where(eq(users.id, userId));
-  await db.insert(loyaltyTransactions).values({
-    userId,
-    orderId,
-    type: "earn",
-    points,
-    description: description ?? `+${points} pontos pelo pedido #${orderId}`,
-    balanceBefore,
-    balanceAfter,
-  });
+  const scope = await getStoreScope(storeId);
+  const inserted = await db
+    .insert(loyaltyOrderCredits)
+    .values({
+      storeId: scope.storeId,
+      orderId,
+      userId,
+      points,
+    })
+    .onConflictDoNothing({ target: loyaltyOrderCredits.orderId })
+    .returning({ id: loyaltyOrderCredits.id });
+
+  if (!inserted.length) return false;
+  await addLoyaltyPoints(userId, points, orderId, description ?? `+${points} pontos pelo pedido #${orderId}`, scope.storeId);
   return true;
 }
 
@@ -4470,19 +5054,35 @@ export async function deductLoyaltyPointsAtomic(
   userId: number,
   points: number,
   orderId?: number,
-  description?: string
+  description?: string,
+  storeId?: number | null,
 ): Promise<{ ok: boolean; newBalance: number }> {
-  if (points <= 0) return { ok: true, newBalance: await getUserLoyaltyPoints(userId) };
+  if (points <= 0) return { ok: true, newBalance: await getUserLoyaltyPoints(userId, storeId) };
   const db = await getDb();
   if (!db) return { ok: false, newBalance: 0 };
-  const result = await db
-    .update(users)
-    .set({ loyaltyPoints: sql`${users.loyaltyPoints} - ${points}` })
-    .where(and(eq(users.id, userId), gte(users.loyaltyPoints, points)));
-  const affected = (result as any)?.rowsAffected ?? (result as any)?.[0]?.affectedRows ?? 0;
-  if (!affected) return { ok: false, newBalance: await getUserLoyaltyPoints(userId) };
-  const newBalance = await getUserLoyaltyPoints(userId);
+  const scope = await getStoreScope(storeId);
+  const account = await getCustomerStoreAccount(userId, scope.storeId);
+  if (!account) return { ok: false, newBalance: 0 };
+
+  const [updated] = await db
+    .update(customerStoreAccounts)
+    .set({
+      loyaltyPoints: sql`${customerStoreAccounts.loyaltyPoints} - ${points}`,
+      updatedAt: new Date(),
+    })
+    .where(and(
+      eq(customerStoreAccounts.id, account.id),
+      gte(customerStoreAccounts.loyaltyPoints, points),
+    ))
+    .returning({ loyaltyPoints: customerStoreAccounts.loyaltyPoints });
+
+  if (!updated) {
+    return { ok: false, newBalance: await getUserLoyaltyPoints(userId, scope.storeId) };
+  }
+
+  const newBalance = updated.loyaltyPoints;
   await db.insert(loyaltyTransactions).values({
+    storeId: scope.storeId,
     userId,
     orderId: orderId ?? null,
     type: "redeem",
@@ -4502,7 +5102,7 @@ export async function refundLoyaltyPointsForOrder(orderId: number): Promise<numb
   const db = await getDb();
   if (!db) return 0;
   const order = await getOrderById(orderId);
-  if (!order || !order.userId) return 0;
+  if (!order || !order.userId || !order.storeId) return 0;
   const pointsUsed = order.pointsUsed ?? 0;
   if (pointsUsed <= 0) return 0;
   // Check if we already refunded (to prevent double-refund)
@@ -4511,22 +5111,16 @@ export async function refundLoyaltyPointsForOrder(orderId: number): Promise<numb
     .from(loyaltyTransactions)
     .where(and(
       eq(loyaltyTransactions.orderId, orderId),
-      eq(loyaltyTransactions.type, "manual"),
+      eq(loyaltyTransactions.storeId, order.storeId),
     ))
-    .limit(1);
-  if (existing.length > 0 && existing[0].description?.startsWith("refund:")) return 0;
-  const balanceBefore = await getUserLoyaltyPoints(order.userId);
-  const balanceAfter = balanceBefore + pointsUsed;
-  await db.update(users).set({ loyaltyPoints: sql`${users.loyaltyPoints} + ${pointsUsed}` }).where(eq(users.id, order.userId));
-  await db.insert(loyaltyTransactions).values({
-    userId: order.userId,
+  if (existing.some((transaction) => transaction.description?.startsWith("refund:"))) return 0;
+  await addLoyaltyPoints(
+    order.userId,
+    pointsUsed,
     orderId,
-    type: "manual",
-    points: pointsUsed,
-    description: `refund: estorno de pontos por cancelamento do pedido #${orderId}`,
-    balanceBefore,
-    balanceAfter,
-  });
+    `refund: estorno de pontos por cancelamento do pedido #${orderId}`,
+    order.storeId,
+  );
   return pointsUsed;
 }
 
@@ -4571,20 +5165,168 @@ export async function revertCouponRedemption(orderId: number): Promise<boolean> 
 export async function updateOrderStatusGuarded(
   id: number,
   nextStatus: Order["status"],
-  allowedCurrent: Order["status"][]
+  allowedCurrent: Order["status"][],
+  opts?: {
+    actorUserId?: number | null;
+    source?: "system" | "admin" | "manager" | "driver" | "automation" | "customer";
+    notes?: string | null;
+    cancellationReasonCode?: NonNullable<Order["cancellationReasonCode"]>;
+    cancellationReason?: string | null;
+  },
 ): Promise<{ ok: boolean; previous?: Order["status"] }> {
-  const db = await getDb();
-  if (!db) throw new Error("DB not available");
-  const current = await db.select({ status: orders.status }).from(orders).where(eq(orders.id, id)).limit(1);
-  if (!current[0]) return { ok: false };
-  const previous = current[0].status;
-  if (!allowedCurrent.includes(previous)) return { ok: false, previous };
-  const result = await db
-    .update(orders)
-    .set({ status: nextStatus })
-    .where(and(eq(orders.id, id), eq(orders.status, previous)));
-  const affected = (result as any)?.rowsAffected ?? (result as any)?.[0]?.affectedRows ?? 0;
-  return { ok: affected > 0, previous };
+  const result = await withDbRetry((db) =>
+    db.transaction(async (tx) => {
+      const current = await tx
+        .select({
+          status: orders.status,
+          storeId: orders.storeId,
+          orderNumber: orders.orderNumber,
+          userId: orders.userId,
+        })
+        .from(orders)
+        .where(eq(orders.id, id))
+        .limit(1);
+
+      if (!current[0]) return { ok: false };
+      const previous = current[0].status;
+      if (!allowedCurrent.includes(previous)) return { ok: false, previous };
+
+      const transitionedAt = new Date();
+      const statusPatch: Partial<typeof orders.$inferInsert> = {
+        status: nextStatus,
+        updatedAt: transitionedAt,
+      };
+      if (nextStatus === "confirmed") statusPatch.confirmedAt = transitionedAt;
+      if (nextStatus === "preparing") statusPatch.preparingAt = transitionedAt;
+      if (nextStatus === "out_for_delivery") statusPatch.outForDeliveryAt = transitionedAt;
+      if (nextStatus === "delivered") statusPatch.deliveredAt = transitionedAt;
+      if (nextStatus === "cancelled") {
+        statusPatch.cancelledAt = transitionedAt;
+        statusPatch.cancellationReasonCode = opts?.cancellationReasonCode ?? null;
+        statusPatch.cancellationReason = opts?.cancellationReason?.trim().slice(0, 500) ?? null;
+        statusPatch.cancelledByUserId = opts?.actorUserId ?? null;
+      }
+
+      const updated = await tx
+        .update(orders)
+        .set(statusPatch)
+        .where(and(eq(orders.id, id), eq(orders.status, previous)))
+        .returning({ id: orders.id });
+
+      if (updated.length === 0) return { ok: false, previous };
+
+      const stage =
+        nextStatus === "pending"
+          ? "created"
+          : nextStatus === "confirmed"
+            ? "confirmed"
+            : nextStatus === "preparing"
+              ? "preparing"
+              : nextStatus === "out_for_delivery"
+                ? "out_for_delivery"
+                : nextStatus === "delivered"
+                  ? "delivered"
+                  : "cancelled";
+
+      await tx.insert(orderStageLogs).values({
+        orderId: id,
+        previousStatus: previous,
+        nextStatus,
+        stage,
+        source: opts?.source ?? "system",
+        changedByUserId: opts?.actorUserId ?? null,
+        notes: opts?.notes ?? null,
+        metadata: JSON.stringify({
+          previousStatus: previous,
+          nextStatus,
+          transactional: true,
+        }),
+      });
+
+      const statusPayload = JSON.stringify({
+        orderId: id,
+        orderNumber: current[0].orderNumber,
+        previousStatus: previous,
+        nextStatus,
+        actorUserId: opts?.actorUserId ?? null,
+        source: opts?.source ?? "system",
+      });
+      const statusKey = `${id}:${previous}:${nextStatus}`;
+      await tx
+        .insert(eventOutbox)
+        .values([
+          {
+            eventKey: `order.status_changed:${statusKey}`,
+            eventType: "order.status_changed",
+            aggregateType: "order",
+            aggregateId: String(id),
+            storeId: current[0].storeId ?? null,
+            payload: statusPayload,
+            status: "pending",
+            availableAt: new Date(),
+          },
+          {
+            eventKey: `order.status_changed.customer_push:${statusKey}`,
+            eventType: "order.status_changed.customer_push",
+            aggregateType: "order",
+            aggregateId: String(id),
+            storeId: current[0].storeId ?? null,
+            payload: statusPayload,
+            status: "pending",
+            availableAt: new Date(),
+          },
+          {
+            eventKey: `order.status_changed.customer_whatsapp:${statusKey}`,
+            eventType: "order.status_changed.customer_whatsapp",
+            aggregateType: "order",
+            aggregateId: String(id),
+            storeId: current[0].storeId ?? null,
+            payload: statusPayload,
+            status: "pending",
+            availableAt: new Date(),
+          },
+        ])
+        .onConflictDoNothing({ target: eventOutbox.eventKey });
+
+      if (current[0].storeId) {
+        await tx.insert(storeAuditLogs).values({
+          storeId: current[0].storeId,
+          actorUserId: opts?.actorUserId ?? null,
+          action: "order.status_changed",
+          resourceType: "order",
+          resourceId: String(id),
+          metadata: JSON.stringify({
+            orderNumber: current[0].orderNumber,
+            previousStatus: previous,
+            nextStatus,
+            source: opts?.source ?? "system",
+            notes: opts?.notes ?? null,
+            cancellationReasonCode: nextStatus === "cancelled" ? opts?.cancellationReasonCode ?? null : null,
+            cancellationReason: nextStatus === "cancelled" ? opts?.cancellationReason ?? null : null,
+          }),
+        });
+      }
+
+      return {
+        ok: true,
+        previous,
+        storeId: current[0].storeId,
+        userId: current[0].userId,
+      };
+    })
+  );
+
+  if (result.ok) {
+    void publishOrderRealtimeEvent({
+      type: "status_changed",
+      orderId: id,
+      storeId: result.storeId ?? null,
+      userId: result.userId ?? null,
+      status: nextStatus,
+      previousStatus: result.previous ?? null,
+    });
+  }
+  return { ok: result.ok, previous: result.previous };
 }
 
 /**
@@ -4615,7 +5357,12 @@ export async function cancelStaleUnpaidOrders(olderThanMinutes = 120): Promise<n
     );
   const cancelled: number[] = [];
   for (const row of stale) {
-    const guard = await updateOrderStatusGuarded(row.id, "cancelled", ["pending"]);
+    const guard = await updateOrderStatusGuarded(row.id, "cancelled", ["pending"], {
+      source: "system",
+      notes: "Pagamento não confirmado dentro do prazo.",
+      cancellationReasonCode: "payment",
+      cancellationReason: "Pagamento não confirmado dentro do prazo.",
+    });
     if (guard.ok) {
       cancelled.push(row.id);
       try {

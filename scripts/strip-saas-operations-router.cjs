@@ -1,0 +1,13 @@
+const fs=require("fs"); const path=require("path");
+const file=path.resolve(__dirname,"../server/routers/platform.ts");
+let src=fs.readFileSync(file,"utf8");
+for (const name of ["  tenantAuditLogs,\n","  tenantDomains,\n","  tenantPlans,\n","  tenantSubscriptions,\n","  tenants,\n"]) src=src.replace(name,"");
+src=src.replace('import { recordTenantAudit } from "../tenantAudit.ts";\n', "");
+src=src.replace("platformAdminProcedure, ", "");
+src=src.replace("export const platformRouter = router({", "export const operationsRouter = router({");
+const tenancyStart=src.indexOf("  tenancy: router({");
+const commerceStart=src.indexOf("  commerce: router({");
+if(tenancyStart<0||commerceStart<0) throw new Error("tenancy/commerce markers not found");
+src=src.slice(0,tenancyStart)+src.slice(commerceStart);
+fs.writeFileSync(file,src);
+console.log("Removed SaaS tenancy subrouter");

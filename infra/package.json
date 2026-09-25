@@ -1,0 +1,16 @@
+{
+  "name": "bonatto-infra",
+  "private": true,
+  "scripts": {
+    "cdk": "cdk"
+  },
+  "dependencies": {
+    "aws-cdk-lib": "^2.215.0",
+    "constructs": "^10.4.2",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.9.2"
+  },
+  "devDependencies": {
+    "aws-cdk": "^2.1029.0"
+  }
+}

@@ -39,15 +39,94 @@ export interface StorageResult {
   provider: string;
 }
 
-function resolveStorageProvider(): "manus" | "s3" | "r2" | "minio" | "vercel_blob" {
+type StorageProvider = "local" | "manus" | "s3" | "r2" | "minio" | "vercel_blob";
+
+function hasManusStorageConfig(): boolean {
+  return Boolean(
+    process.env.BUILT_IN_FORGE_API_URL?.trim() &&
+    process.env.BUILT_IN_FORGE_API_KEY?.trim()
+  );
+}
+
+function isVercelRuntime(): boolean {
+  return process.env.VERCEL === "1" || Boolean(process.env.VERCEL_ENV);
+}
+
+export function resolveStorageProvider(): StorageProvider {
   const explicit = (process.env.STORAGE_PROVIDER ?? "").trim().toLowerCase();
+  if (explicit === "local") return "local";
   if (explicit === "vercel_blob" || explicit === "vercel-blob") return "vercel_blob";
   if (explicit === "s3" || explicit === "r2" || explicit === "minio" || explicit === "manus") {
     return explicit;
   }
 
   if (process.env.BLOB_READ_WRITE_TOKEN?.trim()) return "vercel_blob";
+  if (hasManusStorageConfig()) return "manus";
+  if (!isVercelRuntime()) return "local";
   return "manus";
+}
+
+export function getStorageHealthSummary() {
+  const provider = resolveStorageProvider();
+  const configured =
+    provider === "local"
+      ? !isVercelRuntime()
+      : provider === "vercel_blob"
+        ? Boolean(process.env.BLOB_READ_WRITE_TOKEN?.trim())
+        : provider === "manus"
+          ? hasManusStorageConfig()
+          : provider === "s3"
+            ? Boolean(process.env.AWS_S3_BUCKET?.trim())
+            : provider === "r2"
+              ? Boolean(
+                  process.env.R2_ACCOUNT_ID?.trim()
+                  && process.env.R2_BUCKET?.trim()
+                  && process.env.R2_ACCESS_KEY_ID?.trim()
+                  && process.env.R2_SECRET_ACCESS_KEY?.trim()
+                )
+              : Boolean(process.env.MINIO_ENDPOINT?.trim() && process.env.MINIO_BUCKET?.trim());
+
+  return { provider, configured };
+}
+
+async function putLocal(
+  relKey: string,
+  data: Buffer | Uint8Array | string,
+  _contentType: string
+): Promise<StorageResult> {
+  const { mkdir, writeFile } = await import("node:fs/promises");
+  const path = await import("node:path");
+  const crypto = await import("node:crypto");
+  const normalized = relKey.replace(/\\/g, "/").replace(/^\/+/, "");
+
+  if (!normalized || normalized.split("/").includes("..")) {
+    throw new Error("Invalid local storage path");
+  }
+
+  const parsed = path.posix.parse(normalized);
+  const key = path.posix.join(
+    parsed.dir,
+    `${parsed.name}-${crypto.randomUUID().slice(0, 8)}${parsed.ext}`
+  );
+  const root = path.resolve(process.cwd(), ".local-uploads");
+  const filePath = path.resolve(root, ...key.split("/"));
+
+  if (!filePath.startsWith(`${root}${path.sep}`)) {
+    throw new Error("Invalid local storage path");
+  }
+
+  await mkdir(path.dirname(filePath), { recursive: true });
+  const body = typeof data === "string" ? Buffer.from(data) : Buffer.from(data);
+  await writeFile(filePath, body);
+  return { key, url: `/uploads/${key}`, provider: "local" };
+}
+
+async function getLocal(relKey: string): Promise<StorageResult> {
+  const key = relKey.replace(/\\/g, "/").replace(/^\/+/, "");
+  if (!key || key.split("/").includes("..")) {
+    throw new Error("Invalid local storage path");
+  }
+  return { key, url: `/uploads/${key}`, provider: "local" };
 }
 
 // ─── Manus built-in ──────────────────────────────────────────────────────────
@@ -139,7 +218,9 @@ async function putS3Compatible(
   const client = new S3Client({
     region: cfg.region,
     endpoint: provider !== "s3" ? cfg.endpoint : undefined,
-    credentials: { accessKeyId: cfg.accessKeyId, secretAccessKey: cfg.secretAccessKey },
+    ...(cfg.accessKeyId && cfg.secretAccessKey
+      ? { credentials: { accessKeyId: cfg.accessKeyId, secretAccessKey: cfg.secretAccessKey } }
+      : {}),
     forcePathStyle: provider === "minio",
   });
 
@@ -173,7 +254,9 @@ async function getS3Compatible(
   const client = new S3Client({
     region: cfg.region,
     endpoint: provider !== "s3" ? cfg.endpoint : undefined,
-    credentials: { accessKeyId: cfg.accessKeyId, secretAccessKey: cfg.secretAccessKey },
+    ...(cfg.accessKeyId && cfg.secretAccessKey
+      ? { credentials: { accessKeyId: cfg.accessKeyId, secretAccessKey: cfg.secretAccessKey } }
+      : {}),
     forcePathStyle: provider === "minio",
   });
 
@@ -192,6 +275,8 @@ export async function storagePutAdapter(
   const provider = resolveStorageProvider();
 
   switch (provider) {
+    case "local":
+      return putLocal(relKey, data, contentType);
     case "vercel_blob":
       return putVercelBlob(relKey, data, contentType);
     case "s3":
@@ -210,6 +295,8 @@ export async function storageGetAdapter(relKey: string): Promise<StorageResult> 
   const provider = resolveStorageProvider();
 
   switch (provider) {
+    case "local":
+      return getLocal(relKey);
     case "vercel_blob":
       return getVercelBlob(relKey);
     case "s3":

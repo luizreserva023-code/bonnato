@@ -14,6 +14,10 @@
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
+import {
+  buildDriverNavigationUrl,
+  type DriverNavigationProvider,
+} from "@/lib/driverNavigation";
 import { useDriverPushNotifications } from "@/hooks/useDriverPushNotifications";
 import { useDriverPWA } from "@/hooks/useDriverPWA";
 import {
@@ -45,7 +49,7 @@ import { Link } from "wouter";
 const LOGO_URL =
   "/brand/bonatto-logo-driver.jpg";
 
-const NOTIFICATION_SOUND_URL = "/manus-storage/notification-motoboy_31cd6501.mp3";
+const NOTIFICATION_SOUND_URL = "";
 
 //  Hook: Notificao Sonora de Novo Pedido 
 
@@ -55,6 +59,11 @@ function useNewOrderSound(assignedOrderIds: number[]) {
 
   // Pr-carrega o udio uma vez
   useEffect(() => {
+    if (!NOTIFICATION_SOUND_URL) {
+      audioRef.current = null;
+      return;
+    }
+
     const audio = new Audio(NOTIFICATION_SOUND_URL);
     audio.preload = "auto";
     audioRef.current = audio;
@@ -211,6 +220,13 @@ interface OrderCardProps {
     customerPhone: string | null;
     deliveryAddress: string | null;
     deliveryComplement: string | null;
+    deliveryNeighborhood: string | null;
+    deliveryCity: string | null;
+    deliveryState: string | null;
+    deliveryCep: string | null;
+    deliveryLatitude: string | number | null;
+    deliveryLongitude: string | number | null;
+    driverAcceptedAt: Date | string | null;
     total: string | number;
     paymentMethod: string | null;
     paymentStatus: string | null;
@@ -221,25 +237,28 @@ interface OrderCardProps {
     productName: string;
     subtotal: string | number;
   }>;
-  onConfirm: (orderId: number) => void;
+  onAccept: (orderId: number) => void;
+  onConfirm: (orderId: number, confirmationCode: string) => void;
+  isAccepting: boolean;
   isConfirming: boolean;
 }
 
-function OrderCard({ order, items, onConfirm, isConfirming }: OrderCardProps) {
+function OrderCard({
+  order,
+  items,
+  onAccept,
+  onConfirm,
+  isAccepting,
+  isConfirming,
+}: OrderCardProps) {
   const [expanded, setExpanded] = useState(false);
+  const [confirmationCode, setConfirmationCode] = useState("");
+  const accepted = Boolean(order.driverAcceptedAt);
 
-  function openMaps(address: string) {
-    window.open(
-      `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}`,
-      "_blank"
-    );
-  }
-
-  function openWaze(address: string) {
-    window.open(
-      `https://waze.com/ul?q=${encodeURIComponent(address)}&navigate=yes`,
-      "_blank"
-    );
+  function openNavigation(provider: DriverNavigationProvider) {
+    localStorage.setItem("driverNavigationProvider", provider);
+    const url = buildDriverNavigationUrl(order, provider);
+    window.location.href = url;
   }
 
   return (
@@ -254,8 +273,11 @@ function OrderCard({ order, items, onConfirm, isConfirming }: OrderCardProps) {
           <span className="font-bold text-sm">Pedido #{order.id}</span>
         </div>
         <div className="flex items-center gap-2">
-          <Badge className="bg-blue-900/50 text-blue-300 border-0 text-xs">
-            Em entrega
+          <Badge className={accepted
+            ? "bg-emerald-900/50 text-emerald-300 border-0 text-xs"
+            : "bg-amber-900/50 text-amber-300 border-0 text-xs"
+          }>
+            {accepted ? "Pedido aceito" : "Novo pedido"}
           </Badge>
           <ChevronRight
             className={`w-4 h-4 text-white/40 transition-transform ${expanded ? "rotate-90" : ""}`}
@@ -283,6 +305,57 @@ function OrderCard({ order, items, onConfirm, isConfirming }: OrderCardProps) {
           </p>
         </div>
       </div>
+
+      {!accepted ? (
+        <div className="px-4 pb-4">
+          <button
+            onClick={() => onAccept(order.id)}
+            disabled={isAccepting}
+            className="w-full rounded-xl bg-[#DA1923] hover:bg-[#b9151d] disabled:opacity-60 font-black text-base flex items-center justify-center gap-3 transition-all active:scale-95 shadow-lg shadow-red-950/40"
+            style={{ minHeight: 64 }}
+          >
+            {isAccepting ? (
+              <Loader2 className="w-5 h-5 animate-spin" />
+            ) : (
+              <CheckCircle2 className="w-6 h-6" />
+            )}
+            {isAccepting ? "Aceitando..." : "Aceitar pedido"}
+          </button>
+          <p className="mt-2 text-center text-[11px] text-white/40">
+            Depois do aceite, a rota do cliente fica disponível aqui.
+          </p>
+        </div>
+      ) : (
+        <div className="px-4 pb-4">
+          <div className="rounded-xl border border-emerald-700/30 bg-emerald-950/20 p-3">
+            <div className="mb-2.5 flex items-center gap-2">
+              <Navigation className="h-4 w-4 text-emerald-400" />
+              <div>
+                <p className="text-sm font-bold text-white">Iniciar rota</p>
+                <p className="text-[11px] text-white/50">
+                  O destino já está preenchido com a localização do cliente.
+                </p>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                onClick={() => openNavigation("google_maps")}
+                className="flex min-h-12 items-center justify-center gap-2 rounded-xl border border-blue-700/40 bg-blue-900/40 px-2 py-3 text-sm font-semibold text-blue-300 transition-colors hover:bg-blue-900/60 active:scale-95"
+              >
+                <ExternalLink className="w-4 h-4" />
+                Google Maps
+              </button>
+              <button
+                onClick={() => openNavigation("waze")}
+                className="flex min-h-12 items-center justify-center gap-2 rounded-xl border border-cyan-700/40 bg-cyan-900/40 px-2 py-3 text-sm font-semibold text-cyan-300 transition-colors hover:bg-cyan-900/60 active:scale-95"
+              >
+                <Navigation className="w-4 h-4" />
+                Waze
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Detalhes expandveis */}
       {expanded && (
@@ -346,42 +419,46 @@ function OrderCard({ order, items, onConfirm, isConfirming }: OrderCardProps) {
             </span>
           </div>
 
-          {/* Botes de navegao */}
-          <div className="grid grid-cols-2 gap-2">
-            <button
-              onClick={() => openMaps(order.deliveryAddress ?? "")}
-              className="flex items-center justify-center gap-2 bg-blue-900/40 hover:bg-blue-900/60 border border-blue-700/40 rounded-xl py-3 text-blue-300 text-sm font-semibold transition-colors active:scale-95"
-            >
-              <ExternalLink className="w-4 h-4" />
-              Google Maps
-            </button>
-            <button
-              onClick={() => openWaze(order.deliveryAddress ?? "")}
-              className="flex items-center justify-center gap-2 bg-cyan-900/40 hover:bg-cyan-900/60 border border-cyan-700/40 rounded-xl py-3 text-cyan-300 text-sm font-semibold transition-colors active:scale-95"
-            >
-              <Navigation className="w-4 h-4" />
-              Waze
-            </button>
-          </div>
         </div>
       )}
 
-      {/* Boto Confirmar Entrega */}
-      <div className="px-4 pb-4 pt-2">
-        <button
-          onClick={() => onConfirm(order.id)}
-          disabled={isConfirming}
-          className="w-full rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 font-black text-base flex items-center justify-center gap-3 transition-all active:scale-95 shadow-lg shadow-emerald-900/50"
-          style={{ minHeight: 64 }}
-        >
-          {isConfirming ? (
-            <Loader2 className="w-5 h-5 animate-spin" />
-          ) : (
-            <CheckCircle2 className="w-6 h-6" />
-          )}
-          {isConfirming ? "Confirmando..." : "Confirmar Entrega"}
-        </button>
-      </div>
+      {/* Confirmar entrega somente depois do aceite e do código do cliente */}
+      {accepted && (
+        <div className="px-4 pb-4 pt-1">
+          <div className="mb-3 rounded-xl border border-white/10 bg-white/5 p-3">
+            <label className="mb-1.5 block text-xs font-bold text-white/80">
+              Código de entrega do cliente
+            </label>
+            <p className="mb-2 text-[11px] leading-relaxed text-white/45">
+              Peça ao cliente o código de 4 dígitos. Sem ele, a entrega não pode ser concluída.
+            </p>
+            <input
+              value={confirmationCode}
+              onChange={(event) => setConfirmationCode(event.target.value.replace(/\D/g, "").slice(0, 4))}
+              inputMode="numeric"
+              autoComplete="one-time-code"
+              pattern="[0-9]*"
+              maxLength={4}
+              placeholder="0000"
+              className="h-14 w-full rounded-xl border border-white/15 bg-black/25 px-4 text-center font-mono text-2xl font-black tracking-[0.45em] text-white outline-none focus:border-emerald-500"
+              aria-label="Código de entrega de 4 dígitos"
+            />
+          </div>
+          <button
+            onClick={() => onConfirm(order.id, confirmationCode)}
+            disabled={isConfirming || confirmationCode.length !== 4}
+            className="w-full rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-40 font-black text-base flex items-center justify-center gap-3 transition-all active:scale-95 shadow-lg shadow-emerald-900/50"
+            style={{ minHeight: 60 }}
+          >
+            {isConfirming ? (
+              <Loader2 className="w-5 h-5 animate-spin" />
+            ) : (
+              <CheckCircle2 className="w-6 h-6" />
+            )}
+            {isConfirming ? "Validando código..." : "Confirmar entrega"}
+          </button>
+        </div>
+      )}
     </div>
   );
 }
@@ -394,7 +471,8 @@ export default function DriverApp() {
   );
   const [tokenInput, setTokenInput] = useState("");
   const [activeTab, setActiveTab] = useState<"home" | "history">("home");
-  // Rastrear quais pedidos esto sendo confirmados individualmente
+  // Rastrear operações individuais sem bloquear os outros pedidos da lista.
+  const [acceptingOrders, setAcceptingOrders] = useState<Set<number>>(new Set());
   const [confirmingOrders, setConfirmingOrders] = useState<Set<number>>(new Set());
 
   // Auth query
@@ -423,10 +501,15 @@ export default function DriverApp() {
   );
 
   // Mutations
+  const acceptOrder = trpc.drivers.acceptOrder.useMutation();
   const confirmDelivery = trpc.drivers.confirmDelivery.useMutation();
 
-  // GPS  passa o primeiro pedido da lista como referncia de localizao
-  const firstOrderId = assignedOrdersQuery.data?.[0]?.order?.id ?? null;
+  // GPS acompanha primeiro um pedido já aceito; se ainda não houver aceite,
+  // mantém o primeiro atribuído como fallback.
+  const firstAcceptedOrderId = assignedOrdersQuery.data
+    ?.find((entry) => Boolean(entry.order.driverAcceptedAt))
+    ?.order?.id;
+  const firstOrderId = firstAcceptedOrderId ?? assignedOrdersQuery.data?.[0]?.order?.id ?? null;
   const { gps, toggle: toggleGps } = useGps(token || null, firstOrderId);
 
   // WakeLock: manter tela ativa quando GPS ligado
@@ -474,12 +557,36 @@ export default function DriverApp() {
     setTokenInput("");
   }
 
+  // Aceitar pedido individual
+
+  async function handleAcceptOrder(orderId: number) {
+    setAcceptingOrders((prev) => new Set(prev).add(orderId));
+    try {
+      await acceptOrder.mutateAsync({ token, orderId });
+      if (navigator.vibrate) navigator.vibrate([120, 70, 180]);
+      toast.success("Pedido aceito.", {
+        description: "Escolha Google Maps ou Waze para iniciar a rota.",
+      });
+      await assignedOrdersQuery.refetch();
+      await meQuery.refetch();
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Erro desconhecido";
+      toast.error("Não foi possível aceitar o pedido", { description: message });
+    } finally {
+      setAcceptingOrders((prev) => {
+        const next = new Set(prev);
+        next.delete(orderId);
+        return next;
+      });
+    }
+  }
+
   //  Confirmar entrega individual 
 
-  async function handleConfirmDelivery(orderId: number) {
+  async function handleConfirmDelivery(orderId: number, confirmationCode: string) {
     setConfirmingOrders((prev) => new Set(prev).add(orderId));
     try {
-      await confirmDelivery.mutateAsync({ token, orderId });
+      await confirmDelivery.mutateAsync({ token, orderId, confirmationCode });
       if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
       toast.success("Entrega confirmada! <", {
         description: `Pedido #${orderId} entregue. timo trabalho!`,
@@ -569,8 +676,8 @@ export default function DriverApp() {
   return (
     <div className="min-h-screen bg-[#0f0204] text-white flex flex-col max-w-md mx-auto">
 
-      {/*  Header com gradiente Bonatto  */}
-      <div className="bg-gradient-to-b from-[#6E0D12] to-[#4a0809] px-4 pt-8 pb-6 relative overflow-hidden">
+      {/* Header oficial da marca, compartilhado com as demais experiências. */}
+      <div className="bg-[var(--bonatto-header,#DA1923)] px-4 pt-8 pb-6 relative overflow-hidden">
         {/* Grid decorativo */}
         <div
           className="absolute inset-0 opacity-10"
@@ -829,7 +936,7 @@ export default function DriverApp() {
                 {/* Cabealho da lista */}
                 <div className="flex items-center justify-between px-1">
                   <p className="text-white/60 text-xs font-semibold uppercase tracking-wide">
-                    {assignedOrders.length} {assignedOrders.length === 1 ? "pedido em rota" : "pedidos em rota"}
+                    {assignedOrders.length} {assignedOrders.length === 1 ? "pedido atribuído" : "pedidos atribuídos"}
                   </p>
                   <p className="text-white/30 text-xs">Toque para expandir</p>
                 </div>
@@ -840,7 +947,9 @@ export default function DriverApp() {
                     key={order.id}
                     order={order}
                     items={items}
+                    onAccept={handleAcceptOrder}
                     onConfirm={handleConfirmDelivery}
+                    isAccepting={acceptingOrders.has(order.id)}
                     isConfirming={confirmingOrders.has(order.id)}
                   />
                 ))}

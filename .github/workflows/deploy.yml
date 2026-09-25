@@ -1,0 +1,91 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      deploy_production:
+        description: "Deploy production after staging passes"
+        type: boolean
+        required: true
+        default: false
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  AWS_REGION: sa-east-1
+
+jobs:
+  staging:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment: staging
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install app dependencies
+        run: npm ci
+
+      - name: Install infrastructure dependencies
+        run: npm ci --prefix infra
+
+      - name: Validate and prepare bundle
+        run: npm run deploy:bundle
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Deploy staging
+        run: npm --prefix infra run cdk -- deploy BonattoStaging --require-approval never
+
+      - name: Smoke test staging
+        shell: bash
+        run: |
+          URL="$(aws cloudformation describe-stacks --stack-name BonattoStaging --query "Stacks[0].Outputs[?OutputKey=='PublicUrl'].OutputValue | [0]" --output text)"
+          test -n "$URL"
+          curl --fail --retry 12 --retry-delay 10 --max-time 20 "$URL/health"
+          curl --fail --retry 5 --retry-delay 3 --max-time 20 "$URL/api/trpc/stores.list"
+
+  production:
+    if: github.event_name == 'workflow_dispatch' && inputs.deploy_production == true
+    needs: staging
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+      - run: npm ci --prefix infra
+      - run: npm run deploy:bundle
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Deploy production
+        run: npm --prefix infra run cdk -- deploy BonattoProduction --require-approval never
+
+      - name: Smoke test production
+        shell: bash
+        run: |
+          URL="$(aws cloudformation describe-stacks --stack-name BonattoProduction --query "Stacks[0].Outputs[?OutputKey=='PublicUrl'].OutputValue | [0]" --output text)"
+          curl --fail --retry 12 --retry-delay 10 --max-time 20 "$URL/health"
+          curl --fail --retry 5 --retry-delay 3 --max-time 20 "$URL/api/trpc/stores.list"

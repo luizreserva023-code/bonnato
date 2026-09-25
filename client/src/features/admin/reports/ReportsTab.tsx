@@ -116,7 +116,7 @@ export function ReportsTab() {
       )}
 
       <div className="flex items-center gap-2 flex-wrap">
-        {isManager ? (
+        {isManager && stores.length <= 1 ? (
           <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#fce8e8] border border-[#6E0D12]/20">
             <Store className="w-3.5 h-3.5 text-[#6E0D12]" />
             <span className="text-xs font-semibold text-[#6E0D12]">{selectedStoreName}</span>
@@ -126,15 +126,14 @@ export function ReportsTab() {
           <div className="flex items-center gap-2">
             <span className="text-xs text-muted-foreground font-medium">Filtrar por unidade:</span>
             <Select
-              value={selectedStoreId ? String(selectedStoreId) : "all"}
-              onValueChange={(value) => setSelectedStoreId(value === "all" ? undefined : Number(value))}
+              value={selectedStoreId ? String(selectedStoreId) : undefined}
+              onValueChange={(value) => setSelectedStoreId(Number(value))}
             >
               <SelectTrigger className="h-8 text-xs w-44 border-[#6E0D12]/30 focus:ring-[#6E0D12]/20">
                 <Store className="w-3.5 h-3.5 text-[#6E0D12] mr-1 shrink-0" />
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">Todas as unidades</SelectItem>
                 {stores.map((store) => (
                   <SelectItem key={store.id} value={String(store.id)}>
                     {store.name}

@@ -2,25 +2,6 @@ export { COOKIE_NAME, ONE_YEAR_MS } from "@shared/const";
 
 export type SocialProvider = "google" | "facebook" | "apple" | "instagram";
 
-export const hasOAuthPortalConfig = () =>
-  Boolean(import.meta.env.VITE_OAUTH_PORTAL_URL && import.meta.env.VITE_APP_ID);
-
-export const hasGoogleOAuthConfig = () =>
-  Boolean(import.meta.env.VITE_GOOGLE_CLIENT_ID);
-
-export const isSocialProviderEnabled = (provider: SocialProvider) => {
-  if (provider === "google") {
-    return hasGoogleOAuthConfig() || hasOAuthPortalConfig();
-  }
-
-  return hasOAuthPortalConfig();
-};
-
-export const hasSocialAuthConfig = () =>
-  (["google", "facebook", "apple", "instagram"] as const).some((provider) =>
-    isSocialProviderEnabled(provider)
-  );
-
 export const getCurrentReturnPath = () => {
   if (typeof window === "undefined") return "/";
   return `${window.location.pathname}${window.location.search}${window.location.hash}`;
@@ -29,8 +10,8 @@ export const getCurrentReturnPath = () => {
 // Generate login URL at runtime so redirect URI reflects the current origin.
 // Pass returnPath (e.g. "/checkout") to redirect back after login.
 export const getLoginUrl = (returnPath?: string, provider?: SocialProvider) => {
-  if (provider === "google" && hasGoogleOAuthConfig()) {
-    const url = new URL("/api/oauth/google/start", window.location.origin);
+  if (provider) {
+    const url = new URL(`/api/oauth/${provider}/start`, window.location.origin);
     if (returnPath) {
       url.searchParams.set("returnTo", returnPath);
     }
@@ -57,5 +38,12 @@ export const getLoginUrl = (returnPath?: string, provider?: SocialProvider) => {
     url.searchParams.set("provider", provider);
   }
 
+  return url.toString();
+};
+
+export const getSocialConnectUrl = (provider: SocialProvider, returnPath = "/minha-conta?tab=perfil") => {
+  const url = new URL(`/api/oauth/${provider}/start`, window.location.origin);
+  url.searchParams.set("mode", "connect");
+  url.searchParams.set("returnTo", returnPath);
   return url.toString();
 };

@@ -24,7 +24,7 @@ export default function PagamentoSucesso() {
   );
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-green-50 to-white flex items-center justify-center p-4">
+    <div className="min-h-[70dvh] bg-[#f5eee6] flex items-center justify-center p-4">
       <div
         className={`max-w-md w-full text-center space-y-6 transition-all duration-700 ${
           visible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-8"
@@ -32,7 +32,7 @@ export default function PagamentoSucesso() {
       >
         {/* Ícone animado */}
         <div className="flex justify-center">
-          <div className="w-28 h-28 rounded-full bg-green-100 flex items-center justify-center shadow-lg">
+          <div className="w-28 h-28 rounded-[2rem] bg-[#191412] flex items-center justify-center shadow-lg rotate-3">
             <CheckCircle className="w-14 h-14 text-green-500" strokeWidth={2} />
           </div>
         </div>
@@ -83,7 +83,7 @@ export default function PagamentoSucesso() {
         ) : null}
 
         {/* Mensagem de próximos passos */}
-        <div className="bg-orange-50 border border-orange-100 rounded-xl p-4 text-left">
+        <div className="bg-white border border-[#eadbd2] rounded-2xl p-5 text-left shadow-sm">
           <p className="text-sm text-orange-700 font-medium mb-1">🍕 O que acontece agora?</p>
           <ul className="text-sm text-orange-600 space-y-1">
             <li>• Seu pedido foi confirmado automaticamente</li>

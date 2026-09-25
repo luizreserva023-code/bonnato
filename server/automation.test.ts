@@ -1,6 +1,18 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { appRouter } from "./routers.ts";
 import type { TrpcContext } from "./_core/context.ts";
+// Estes testes isolam o Workflow Builder. O isolamento/autorização por loja
+// possui suíte própria em storeUtils.test.ts.
+vi.mock("./storeUtils", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./storeUtils.ts")>();
+  return {
+    ...actual,
+    resolveStoreId: vi.fn(async (_user: unknown, requestedStoreId?: number) => requestedStoreId),
+    resolveRequiredStoreId: vi.fn(async (_user: unknown, requestedStoreId?: number) => requestedStoreId ?? 1),
+    assertStoreEntityAccess: vi.fn(async () => undefined),
+  };
+});
+
 
 // ─── Mock DB calls ────────────────────────────────────────────────────────────
 vi.mock("./automation", async (importOriginal) => {
@@ -60,7 +72,7 @@ describe("automations router", () => {
   });
 
   it("listJourneys returns journey list", async () => {
-    const result = await caller.automations.listJourneys();
+    const result = await caller.automations.listJourneys({ storeId: 1 });
     expect(Array.isArray(result)).toBe(true);
     expect(result[0]).toHaveProperty("id");
     expect(result[0]).toHaveProperty("trigger");
@@ -68,6 +80,7 @@ describe("automations router", () => {
 
   it("createJourney returns new journey id", async () => {
     const result = await caller.automations.createJourney({
+      storeId: 1,
       name: "Nova Jornada",
       description: "",
       trigger: "checkout_abandoned",
@@ -79,6 +92,7 @@ describe("automations router", () => {
 
   it("updateJourney accepts steps array", async () => {
     const result = await caller.automations.updateJourney({
+      storeId: 1,
       id: 1,
       steps: [{ id: "step-1", type: "send_whatsapp", label: "Msg 1", message: "Olá {nome}!" }],
     });
@@ -87,6 +101,7 @@ describe("automations router", () => {
 
   it("toggleJourney sets status to active", async () => {
     const result = await caller.automations.toggleJourney({
+      storeId: 1,
       id: 1,
       status: "active",
     });
@@ -95,6 +110,7 @@ describe("automations router", () => {
 
   it("toggleJourney sets status to paused", async () => {
     const result = await caller.automations.toggleJourney({
+      storeId: 1,
       id: 1,
       status: "paused",
     });
@@ -102,22 +118,22 @@ describe("automations router", () => {
   });
 
   it("listExecutions returns array", async () => {
-    const result = await caller.automations.listExecutions({ journeyId: 1 });
+    const result = await caller.automations.listExecutions({ storeId: 1, journeyId: 1 });
     expect(Array.isArray(result)).toBe(true);
   });
 
   it("processExecutions returns ok", async () => {
-    const result = await caller.automations.processExecutions();
+    const result = await caller.automations.processExecutions({ storeId: 1 });
     expect(result).toEqual({ ok: true });
   });
 
   it("deleteJourney returns ok", async () => {
-    const result = await caller.automations.deleteJourney({ id: 1 });
+    const result = await caller.automations.deleteJourney({ storeId: 1, id: 1 });
     expect(result).toEqual({ ok: true });
   });
 
   it("duplicateJourney returns new id", async () => {
-    const result = await caller.automations.duplicateJourney({ id: 1 });
+    const result = await caller.automations.duplicateJourney({ storeId: 1, id: 1 });
     expect(result).toHaveProperty("id");
   });
 });

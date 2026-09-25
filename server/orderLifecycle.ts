@@ -1,21 +1,24 @@
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, isNotNull, lte, sql } from "drizzle-orm";
 
 import {
   customerMetrics,
   deliveryPredictions,
   orderStageLogs,
+  orderItems,
   orders,
   productivityEvents,
+  eventOutbox,
   type Order,
 } from "../drizzle/schema.ts";
 import {
   consumeInventoryForOrder,
   getDb,
   getAllStoreSettings,
-  getDeliveryZoneByNeighborhood,
   getOrderById,
   reverseInventoryForOrder,
+  updateOrderStatusGuarded,
 } from "./db.ts";
+import { getReviewCashbackConfig } from "./services/reviewCashback.ts";
 
 type OrderStatus = Order["status"];
 type OrderStage = typeof orderStageLogs.$inferInsert["stage"];
@@ -86,12 +89,13 @@ async function computePredictionWindow(order: Order) {
   let deliveryMinutes = 0;
 
   if (order.serviceType === "delivery") {
-    let zoneMinutes = 0;
-    if (order.deliveryNeighborhood) {
-      const zone = await getDeliveryZoneByNeighborhood(order.deliveryNeighborhood);
-      zoneMinutes = zone?.estimatedMinutes ?? 0;
-    }
-    deliveryMinutes = Math.max(baseDeliveryMinutes, zoneMinutes);
+    // O prazo comercial aplicado no checkout fica congelado no pedido.
+    // Para a previsão operacional, separamos aproximadamente o preparo-base
+    // para não somar duas vezes o tempo total da faixa.
+    const quotedTotalMinutes = order.deliveryEstimatedMinutes ?? null;
+    deliveryMinutes = quotedTotalMinutes != null
+      ? Math.max(0, quotedTotalMinutes - basePrepMinutes)
+      : baseDeliveryMinutes;
   } else if (order.serviceType === "pickup") {
     deliveryMinutes = 5;
   } else if (order.serviceType === "dine_in") {
@@ -118,98 +122,109 @@ async function syncCustomerMetricsForScope(userId: number, scopeStoreId: number)
   const db = await getDb();
   if (!db) return;
 
-  const rows = await db.execute(sql`
-    SELECT
-      MIN(CASE WHEN status = 'delivered' THEN createdAt END) AS firstOrderAt,
-      MAX(createdAt) AS lastOrderAt,
-      COUNT(*) AS totalOrders,
-      SUM(CASE WHEN status = 'delivered' THEN 1 ELSE 0 END) AS deliveredOrders,
-      SUM(CASE WHEN status = 'cancelled' THEN 1 ELSE 0 END) AS cancelledOrders,
-      COALESCE(SUM(CASE WHEN status = 'delivered' THEN CAST(total AS DECIMAL(12,2)) ELSE 0 END), 0) AS totalSpent,
-      COALESCE(AVG(CASE WHEN status = 'delivered' THEN CAST(total AS DECIMAL(12,2)) END), 0) AS averageTicket,
-      (
-        SELECT deliveryNeighborhood
-        FROM orders o2
-        WHERE o2.userId = ${userId}
-          AND (${scopeStoreId} = 0 OR o2.storeId = ${scopeStoreId})
-          AND o2.deliveryNeighborhood IS NOT NULL
-          AND o2.deliveryNeighborhood <> ''
-        GROUP BY o2.deliveryNeighborhood
-        ORDER BY COUNT(*) DESC, MAX(o2.createdAt) DESC
-        LIMIT 1
-      ) AS favoriteNeighborhood,
-      (
-        SELECT DAYNAME(o3.createdAt)
-        FROM orders o3
-        WHERE o3.userId = ${userId}
-          AND (${scopeStoreId} = 0 OR o3.storeId = ${scopeStoreId})
-        GROUP BY DAYNAME(o3.createdAt)
-        ORDER BY COUNT(*) DESC, MAX(o3.createdAt) DESC
-        LIMIT 1
-      ) AS favoriteOrderDay,
-      (
-        SELECT HOUR(o4.createdAt)
-        FROM orders o4
-        WHERE o4.userId = ${userId}
-          AND (${scopeStoreId} = 0 OR o4.storeId = ${scopeStoreId})
-        GROUP BY HOUR(o4.createdAt)
-        ORDER BY COUNT(*) DESC
-        LIMIT 1
-      ) AS favoriteOrderHour,
-      (
-        SELECT oi.productName
-        FROM order_items oi
-        INNER JOIN orders o5 ON o5.id = oi.orderId
-        WHERE o5.userId = ${userId}
-          AND (${scopeStoreId} = 0 OR o5.storeId = ${scopeStoreId})
-        GROUP BY oi.productName
-        ORDER BY SUM(oi.quantity) DESC, MAX(o5.createdAt) DESC
-        LIMIT 1
-      ) AS favoriteProductName
-    FROM orders
-    WHERE userId = ${userId}
-      AND (${scopeStoreId} = 0 OR storeId = ${scopeStoreId})
-  `);
+  const orderRows = await db
+    .select({
+      id: orders.id,
+      status: orders.status,
+      total: orders.total,
+      createdAt: orders.createdAt,
+      deliveryNeighborhood: orders.deliveryNeighborhood,
+    })
+    .from(orders)
+    .where(and(
+      eq(orders.userId, userId),
+      scopeStoreId > 0 ? eq(orders.storeId, scopeStoreId) : undefined,
+    ));
 
-  const stats = (rows as unknown as [Array<Record<string, unknown>>])[0]?.[0];
-  if (!stats) return;
+  const totalOrders = orderRows.length;
+  const delivered = orderRows.filter((order) => order.status === "delivered");
+  const cancelledOrders = orderRows.filter((order) => order.status === "cancelled").length;
+  const deliveredOrders = delivered.length;
+  const deliveredDates = delivered
+    .map((order) => new Date(order.createdAt))
+    .sort((a, b) => a.getTime() - b.getTime());
+  const firstOrderAt = deliveredDates[0] ?? null;
+  const lastOrderAt = deliveredDates[deliveredDates.length - 1] ?? null;
+  const totalSpent = delivered.reduce((sum, order) => sum + Number(order.total ?? 0), 0);
+  const averageTicket = deliveredOrders > 0 ? totalSpent / deliveredOrders : 0;
 
-  const totalOrders = Number(stats.totalOrders ?? 0);
-  const deliveredOrders = Number(stats.deliveredOrders ?? 0);
-  const cancelledOrders = Number(stats.cancelledOrders ?? 0);
-  const totalSpent = Number(stats.totalSpent ?? 0);
-  const averageTicket = Number(stats.averageTicket ?? 0);
-  const firstOrderCount = deliveredOrders > 0 ? 1 : 0;
+  const favoriteByCount = <T extends string | number>(values: T[]): T | null => {
+    if (values.length === 0) return null;
+    const counts = new Map<T, number>();
+    for (const value of values) counts.set(value, (counts.get(value) ?? 0) + 1);
+    return [...counts.entries()]
+      .sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
+  };
 
-  const existing = await db
-    .select({ id: customerMetrics.id })
-    .from(customerMetrics)
-    .where(and(eq(customerMetrics.userId, userId), eq(customerMetrics.storeId, scopeStoreId)))
-    .limit(1);
+  const favoriteNeighborhood = favoriteByCount(
+    delivered
+      .map((order) => order.deliveryNeighborhood?.trim())
+      .filter((value): value is string => Boolean(value)),
+  );
+
+  const weekdayFormatter = new Intl.DateTimeFormat("pt-BR", {
+    timeZone: "America/Sao_Paulo",
+    weekday: "long",
+  });
+  const hourFormatter = new Intl.DateTimeFormat("pt-BR", {
+    timeZone: "America/Sao_Paulo",
+    hour: "2-digit",
+    hour12: false,
+  });
+  const favoriteOrderDay = favoriteByCount(
+    delivered.map((order) => weekdayFormatter.format(new Date(order.createdAt))),
+  );
+  const favoriteOrderHour = favoriteByCount(
+    delivered.map((order) => Number(hourFormatter.format(new Date(order.createdAt)))),
+  );
+
+  const productRows = deliveredOrders > 0
+    ? await db
+        .select({
+          productName: orderItems.productName,
+          quantity: orderItems.quantity,
+        })
+        .from(orderItems)
+        .innerJoin(orders, eq(orderItems.orderId, orders.id))
+        .where(and(
+          eq(orders.userId, userId),
+          eq(orders.status, "delivered"),
+          scopeStoreId > 0 ? eq(orders.storeId, scopeStoreId) : undefined,
+        ))
+    : [];
+
+  const productCounts = new Map<string, number>();
+  for (const item of productRows) {
+    productCounts.set(item.productName, (productCounts.get(item.productName) ?? 0) + item.quantity);
+  }
+  const favoriteProductName = [...productCounts.entries()]
+    .sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
 
   const payload = {
     userId,
     storeId: scopeStoreId,
-    firstOrderAt: toDateOrNull(stats.firstOrderAt),
-    lastOrderAt: toDateOrNull(stats.lastOrderAt),
+    firstOrderAt,
+    lastOrderAt,
     totalOrders,
     deliveredOrders,
     cancelledOrders,
-    firstOrderCount,
+    firstOrderCount: deliveredOrders > 0 ? 1 : 0,
     totalSpent: totalSpent.toFixed(2),
     averageTicket: averageTicket.toFixed(2),
-    favoriteNeighborhood: (stats.favoriteNeighborhood as string | null) ?? null,
-    favoriteOrderDay: (stats.favoriteOrderDay as string | null) ?? null,
-    favoriteOrderHour: stats.favoriteOrderHour == null ? null : Number(stats.favoriteOrderHour),
-    favoriteProductName: (stats.favoriteProductName as string | null) ?? null,
+    favoriteNeighborhood,
+    favoriteOrderDay,
+    favoriteOrderHour,
+    favoriteProductName,
+    updatedAt: new Date(),
   };
 
-  if (existing.length > 0) {
-    await db.update(customerMetrics).set(payload).where(eq(customerMetrics.id, existing[0].id));
-    return;
-  }
-
-  await db.insert(customerMetrics).values(payload);
+  await db
+    .insert(customerMetrics)
+    .values(payload)
+    .onConflictDoUpdate({
+      target: [customerMetrics.userId, customerMetrics.storeId],
+      set: payload,
+    });
 }
 
 async function recordProductivityEvent(order: Order, nextStatus: OrderStatus, now: Date) {
@@ -260,6 +275,29 @@ async function recordProductivityEvent(order: Order, nextStatus: OrderStatus, no
   );
 }
 
+async function scheduleReviewCashbackNotification(order: Order) {
+  if (!order.userId || !order.storeId || order.status !== "delivered") return;
+  const db = await getDb();
+  if (!db) return;
+
+  const config = await getReviewCashbackConfig(order.storeId);
+  if (!config.enabled) return;
+
+  await db
+    .insert(eventOutbox)
+    .values({
+      eventKey: `order.review_cashback.customer_push:${order.id}`,
+      eventType: "order.review_cashback.customer_push",
+      aggregateType: "order",
+      aggregateId: String(order.id),
+      storeId: order.storeId,
+      payload: JSON.stringify({ orderId: order.id }),
+      status: "pending",
+      availableAt: new Date(Date.now() + config.notificationDelayMinutes * 60_000),
+    })
+    .onConflictDoNothing({ target: eventOutbox.eventKey });
+}
+
 export async function syncCustomerMetricsForOrder(order: Order) {
   if (!order.userId) return;
   try {
@@ -270,6 +308,39 @@ export async function syncCustomerMetricsForOrder(order: Order) {
   } catch (error) {
     console.warn("[orderLifecycle] syncCustomerMetricsForOrder skipped:", error);
   }
+}
+
+export async function rebuildCustomerMetrics(storeId?: number): Promise<number> {
+  const db = await getDb();
+  if (!db) return 0;
+
+  const scopes = await db
+    .selectDistinct({
+      userId: orders.userId,
+      storeId: orders.storeId,
+    })
+    .from(orders)
+    .where(and(
+      isNotNull(orders.userId),
+      isNotNull(orders.storeId),
+      storeId ? eq(orders.storeId, storeId) : undefined,
+    ));
+
+  const globalUsers = new Set<number>();
+  let rebuilt = 0;
+
+  for (const scope of scopes) {
+    if (!scope.userId || !scope.storeId) continue;
+    if (!globalUsers.has(scope.userId)) {
+      await syncCustomerMetricsForScope(scope.userId, 0);
+      globalUsers.add(scope.userId);
+      rebuilt += 1;
+    }
+    await syncCustomerMetricsForScope(scope.userId, scope.storeId);
+    rebuilt += 1;
+  }
+
+  return rebuilt;
 }
 
 export async function bootstrapOrderLifecycle(
@@ -323,7 +394,8 @@ export async function bootstrapOrderLifecycle(
             method: "heuristic",
             computedAt: now,
           })
-          .onDuplicateKeyUpdate({
+          .onConflictDoUpdate({
+            target: deliveryPredictions.orderId,
             set: {
               predictionLabel: prediction.predictionLabel,
               minMinutes: prediction.minMinutes,
@@ -365,6 +437,8 @@ export async function applyOrderStatusLifecycle(
     notes?: string | null;
     skipPrediction?: boolean;
     skipCustomerMetrics?: boolean;
+    skipStageLog?: boolean;
+    skipStatusTimestamp?: boolean;
   }
 ) {
   try {
@@ -374,28 +448,31 @@ export async function applyOrderStatusLifecycle(
     if (!order) return;
 
     const now = new Date();
-    const patch: Partial<typeof orders.$inferInsert> = {};
+    if (!opts?.skipStatusTimestamp) {
+      const patch: Partial<typeof orders.$inferInsert> = {};
+      if (nextStatus === "confirmed") patch.confirmedAt = now;
+      if (nextStatus === "preparing") patch.preparingAt = now;
+      if (nextStatus === "out_for_delivery") patch.outForDeliveryAt = now;
+      if (nextStatus === "delivered") patch.deliveredAt = now;
+      if (nextStatus === "cancelled") patch.cancelledAt = now;
 
-    if (nextStatus === "confirmed") patch.confirmedAt = now;
-    if (nextStatus === "preparing") patch.preparingAt = now;
-    if (nextStatus === "out_for_delivery") patch.outForDeliveryAt = now;
-    if (nextStatus === "delivered") patch.deliveredAt = now;
-    if (nextStatus === "cancelled") patch.cancelledAt = now;
-
-    if (Object.keys(patch).length > 0) {
-      await db.update(orders).set(patch).where(eq(orders.id, orderId));
+      if (Object.keys(patch).length > 0) {
+        await db.update(orders).set(patch).where(eq(orders.id, orderId));
+      }
     }
 
-    await db.insert(orderStageLogs).values({
-      orderId,
-      previousStatus,
-      nextStatus,
-      stage: STAGE_BY_STATUS[nextStatus],
-      source: opts?.source ?? "system",
-      changedByUserId: opts?.actorUserId ?? null,
-      notes: opts?.notes ?? null,
-      metadata: JSON.stringify({ previousStatus, nextStatus }),
-    });
+    if (!opts?.skipStageLog) {
+      await db.insert(orderStageLogs).values({
+        orderId,
+        previousStatus,
+        nextStatus,
+        stage: STAGE_BY_STATUS[nextStatus],
+        source: opts?.source ?? "system",
+        changedByUserId: opts?.actorUserId ?? null,
+        notes: opts?.notes ?? null,
+        metadata: JSON.stringify({ previousStatus, nextStatus }),
+      });
+    }
 
     const freshOrder = await getOrderById(orderId);
     if (freshOrder) {
@@ -413,8 +490,50 @@ export async function applyOrderStatusLifecycle(
       if (!opts?.skipCustomerMetrics) {
         await syncCustomerMetricsForOrder(freshOrder);
       }
+      if (nextStatus === "delivered") {
+        await scheduleReviewCashbackNotification(freshOrder);
+      }
     }
   } catch (error) {
     console.warn("[orderLifecycle] applyOrderStatusLifecycle skipped:", error);
   }
+}
+
+export async function completeStaleOutForDeliveryOrders(olderThanHours = 12): Promise<number[]> {
+  const db = await getDb();
+  if (!db) return [];
+
+  const cutoff = new Date(Date.now() - olderThanHours * 60 * 60 * 1000);
+  const candidates = await db
+    .select({ id: orders.id })
+    .from(orders)
+    .where(and(
+      eq(orders.status, "out_for_delivery"),
+      isNotNull(orders.outForDeliveryAt),
+      lte(orders.outForDeliveryAt, cutoff),
+    ));
+
+  const completed: number[] = [];
+  for (const candidate of candidates) {
+    const result = await updateOrderStatusGuarded(
+      candidate.id,
+      "delivered",
+      ["out_for_delivery"],
+      {
+        source: "automation",
+        notes: `Conclusão automática após ${olderThanHours}h em rota`,
+      },
+    );
+    if (!result.ok || !result.previous) continue;
+
+    await applyOrderStatusLifecycle(candidate.id, result.previous, "delivered", {
+      source: "automation",
+      notes: `Conclusão automática após ${olderThanHours}h em rota`,
+      skipStageLog: true,
+      skipStatusTimestamp: true,
+    });
+    completed.push(candidate.id);
+  }
+
+  return completed;
 }

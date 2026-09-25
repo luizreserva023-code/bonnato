@@ -6,16 +6,19 @@ export const ADMIN_TABS = [
   "staff",
   "dining",
   "coupons",
+  "reviews",
   "reports",
   "promotions",
   "raffles",
   "upsells",
   "users",
   "drivers",
+  "whatsapp",
   "marketplaces",
   "settings",
   "stores",
   "recovery",
+  "growth",
 ] as const;
 
 export type AdminTabId = (typeof ADMIN_TABS)[number];

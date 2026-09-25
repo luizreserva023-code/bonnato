@@ -15,7 +15,7 @@ export default function PagamentoCancelado() {
   }, []);
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-[#fdf2f2] to-white flex items-center justify-center p-4">
+    <div className="min-h-[70dvh] bg-[#f5eee6] flex items-center justify-center p-4">
       <div
         className={`max-w-md w-full text-center space-y-6 transition-all duration-700 ${
           visible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-8"
@@ -23,7 +23,7 @@ export default function PagamentoCancelado() {
       >
         {/* Ícone */}
         <div className="flex justify-center">
-          <div className="w-28 h-28 rounded-full bg-[#fce8e8] flex items-center justify-center shadow-lg">
+          <div className="w-28 h-28 rounded-[2rem] bg-[#191412] flex items-center justify-center shadow-lg -rotate-3">
             <XCircle className="w-14 h-14 text-[#a01218]" strokeWidth={2} />
           </div>
         </div>
@@ -46,7 +46,7 @@ export default function PagamentoCancelado() {
         )}
 
         {/* Opções */}
-        <div className="bg-blue-50 border border-blue-100 rounded-xl p-4 text-left">
+        <div className="bg-white border border-[#eadbd2] rounded-2xl p-5 text-left shadow-sm">
           <p className="text-sm text-blue-700 font-medium mb-1">💡 O que você pode fazer?</p>
           <ul className="text-sm text-blue-600 space-y-1">
             <li>• Tentar novamente com outro cartão</li>

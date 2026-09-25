@@ -4,8 +4,10 @@ import axios, { type AxiosInstance } from "axios";
 import { parse as parseCookieHeader } from "cookie";
 import type { Request } from "express";
 import { SignJWT, jwtVerify } from "jose";
+import { randomUUID } from "node:crypto";
 import type { User } from "../../drizzle/schema.ts";
 import * as db from "../db.ts";
+import { createAuthSession, getActiveAuthSession, touchAuthSession } from "../authSessions.ts";
 import { ENV } from "./env.ts";
 import type {
   ExchangeTokenRequest,
@@ -22,6 +24,7 @@ export type SessionPayload = {
   openId: string;
   appId: string;
   name: string;
+  sessionId?: string;
 };
 
 const EXCHANGE_TOKEN_PATH = `/webdev.v1.WebDevAuthPublicService/ExchangeToken`;
@@ -169,15 +172,38 @@ class SDKServer {
    */
   async createSessionToken(
     openId: string,
-    options: { expiresInMs?: number; name?: string } = {}
+    options: {
+      expiresInMs?: number;
+      name?: string;
+      trackSession?: boolean;
+      ipAddress?: string | null;
+      userAgent?: string | null;
+    } = {}
   ): Promise<string> {
+    const expiresInMs = options.expiresInMs ?? DEFAULT_SESSION_MS;
+    let sessionId: string | undefined;
+
+    if (options.trackSession) {
+      const user = await db.getUserByOpenId(openId);
+      if (!user) throw new Error("Cannot create managed session for unknown user");
+      sessionId = `ses_${randomUUID().replaceAll("-", "")}`;
+      await createAuthSession({
+        id: sessionId,
+        userId: user.id,
+        ipAddress: options.ipAddress,
+        userAgent: options.userAgent,
+        expiresAt: new Date(Date.now() + expiresInMs),
+      });
+    }
+
     return this.signSession(
       {
         openId,
         appId: ENV.sessionAppId,
         name: options.name || "",
+        sessionId,
       },
-      options
+      { expiresInMs },
     );
   }
 
@@ -194,15 +220,18 @@ class SDKServer {
       openId: payload.openId,
       appId: payload.appId,
       name: payload.name,
+      ...(payload.sessionId ? { sid: payload.sessionId } : {}),
+      iatMs: issuedAt,
     })
       .setProtectedHeader({ alg: "HS256", typ: "JWT" })
+      .setIssuedAt(Math.floor(issuedAt / 1000))
       .setExpirationTime(expirationSeconds)
       .sign(secretKey);
   }
 
   async verifySession(
     cookieValue: string | undefined | null
-  ): Promise<{ openId: string; appId: string; name: string } | null> {
+  ): Promise<{ openId: string; appId: string; name: string; sessionId?: string; issuedAt?: Date } | null> {
     if (!cookieValue) {
       console.warn("[Auth] Missing session cookie");
       return null;
@@ -213,7 +242,7 @@ class SDKServer {
       const { payload } = await jwtVerify(cookieValue, secretKey, {
         algorithms: ["HS256"],
       });
-      const { openId, appId, name } = payload as Record<string, unknown>;
+      const { openId, appId, name, sid, iat, iatMs } = payload as Record<string, unknown>;
 
       if (!isNonEmptyString(openId)) {
         console.warn("[Auth] Session payload missing openId");
@@ -224,11 +253,22 @@ class SDKServer {
         openId,
         appId: normalizeSessionAppId(appId),
         name: typeof name === "string" ? name : "",
+        sessionId: isNonEmptyString(sid) ? sid : undefined,
+        issuedAt: typeof iatMs === "number"
+          ? new Date(iatMs)
+          : typeof iat === "number"
+            ? new Date(iat * 1000)
+            : undefined,
       };
     } catch (error) {
       console.warn("[Auth] Session verification failed", String(error));
       return null;
     }
+  }
+
+  async getRequestSession(req: Request) {
+    const cookies = this.parseCookies(req.headers.cookie);
+    return this.verifySession(cookies.get(COOKIE_NAME));
   }
 
   async getUserInfoWithJwt(
@@ -289,6 +329,27 @@ class SDKServer {
 
     if (!user) {
       throw ForbiddenError("User not found");
+    }
+
+    if (!session.sessionId && user.sessionInvalidBefore) {
+      throw ForbiddenError("Legacy session invalidated");
+    }
+
+    if (user.sessionInvalidBefore) {
+      const issuedAt = session.issuedAt?.getTime() ?? 0;
+      if (!issuedAt || issuedAt <= user.sessionInvalidBefore.getTime()) {
+        throw ForbiddenError("Session invalidated");
+      }
+    }
+
+    if (session.sessionId) {
+      const managedSession = await getActiveAuthSession(session.sessionId);
+      if (!managedSession || managedSession.userId !== user.id) {
+        throw ForbiddenError("Session revoked or expired");
+      }
+      void touchAuthSession(session.sessionId).catch((error) => {
+        console.error("[Auth] Failed to update session activity", error);
+      });
     }
 
     await db.upsertUser({

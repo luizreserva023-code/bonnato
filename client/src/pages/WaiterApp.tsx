@@ -19,7 +19,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { useTenantConfig } from "@/shared/tenant/use-tenant-config";
+import { useBonattoConfig } from "@/hooks/use-bonatto-config";
 
 const LOGO_URL = "/brand/bonatto-logo-driver.jpg";
 
@@ -78,7 +78,7 @@ function useSessionAlerts(sessions: Array<any>) {
 }
 
 export default function WaiterApp() {
-  const tenant = useTenantConfig();
+  const tenant = useBonattoConfig();
   const [token, setToken] = useState(() => localStorage.getItem("waiterToken") ?? "");
   const [tokenInput, setTokenInput] = useState("");
   const [tableId, setTableId] = useState("");
@@ -247,7 +247,7 @@ export default function WaiterApp() {
 
   return (
     <div className="min-h-screen mx-auto max-w-md bg-[#0f0204] text-white">
-      <div className="bg-gradient-to-b from-[#6E0D12] to-[#43080b] px-4 pb-6 pt-8">
+      <div className="bg-[var(--bonatto-header,#DA1923)] px-4 pb-6 pt-8">
         <div className="flex items-start justify-between gap-3">
           <div className="flex items-center gap-3">
             <img src={tenant.brand.logos.waiter || LOGO_URL} alt={tenant.brand.shortName} className="h-11 w-11 rounded-full border-2 border-white/25 object-cover" />

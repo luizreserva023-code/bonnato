@@ -212,19 +212,18 @@ function VendasDashboardContent() {
 
           <div className="flex items-center gap-2">
             {/* Filtro de loja: badge para manager, seletor para admin */}
-            {isManager ? (
+            {isManager && stores.length <= 1 ? (
               <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[#fce8e8] border border-[#6E0D12]/20">
                 <Store className="w-3 h-3 text-[#6E0D12]" />
                 <span className="text-xs font-semibold text-[#6E0D12]">{selectedStoreName}</span>
               </div>
-            ) : isAdmin && stores.length > 0 ? (
+            ) : stores.length > 0 ? (
               <select
                 value={selectedStoreId ?? ""}
-                onChange={(e) => setSelectedStoreId(e.target.value ? Number(e.target.value) : undefined)}
+                onChange={(e) => setSelectedStoreId(Number(e.target.value))}
                 aria-label="Filtrar vendas por loja"
                 className="text-xs border border-border rounded-lg px-2 py-1.5 bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-[#6E0D12]/30 h-8"
               >
-                <option value="">Todas as unidades</option>
                 {stores.map((s) => (
                   <option key={s.id} value={s.id}>{s.name}</option>
                 ))}

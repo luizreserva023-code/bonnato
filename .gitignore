@@ -100,6 +100,8 @@ jspm_packages/
 # Temporary folders
 tmp/
 temp/
+.tmp/
+.deploy-bundle/
 load-test-results/
 
 # Database
@@ -118,3 +120,5 @@ client/public/__manus__/version.json
 .vercel.bak-deploy*/
 .env*
 vercel.production.env
+
+.env*

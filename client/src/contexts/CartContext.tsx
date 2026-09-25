@@ -1,4 +1,7 @@
-import React, { createContext, useCallback, useContext, useEffect, useState } from "react";
+import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
+import type { ConfiguredProductSelection } from "../../../shared/catalog";
+import { trackMetaEvent } from "@/lib/storeTracking";
+import { emitAnalyticsEvent } from "@/lib/analyticsTracking";
 
 export interface CartItem {
   lineId?: string;
@@ -9,6 +12,7 @@ export interface CartItem {
   notes?: string;
   imageUrl?: string;
   configKey?: string;
+  catalogSelection?: Omit<ConfiguredProductSelection, "quantity" | "channel" | "now">;
 }
 
 interface CartContextType {
@@ -27,6 +31,20 @@ interface CartContextType {
 }
 
 const CartContext = createContext<CartContextType | null>(null);
+const MAX_CART_ITEM_QUANTITY = 99;
+
+function normalizeQuantity(quantity: unknown) {
+  const parsed = typeof quantity === "number" ? quantity : Number(quantity);
+  if (!Number.isFinite(parsed)) return 1;
+  return Math.min(MAX_CART_ITEM_QUANTITY, Math.max(1, Math.floor(parsed)));
+}
+
+function normalizeCartItems(value: unknown): CartItem[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter((item): item is CartItem => Boolean(item && typeof item === "object" && Number((item as CartItem).productId) > 0))
+    .map((item) => ({ ...item, quantity: normalizeQuantity(item.quantity) }));
+}
 
 function createLineId(item: Pick<CartItem, "productId" | "configKey">) {
   return `${item.productId}-${item.configKey ?? "default"}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -40,12 +58,37 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   const [items, setItems] = useState<CartItem[]>(() => {
     try {
       const saved = localStorage.getItem("bonatto_cart");
-      return saved ? JSON.parse(saved) : [];
+      return saved ? normalizeCartItems(JSON.parse(saved)) : [];
     } catch {
       return [];
     }
   });
-  const [isOpen, setIsOpen] = useState(false);
+  const [isOpen, setIsOpenState] = useState(false);
+  const itemsRef = useRef(items);
+
+  useEffect(() => {
+    itemsRef.current = items;
+  }, [items]);
+
+  const setIsOpen = useCallback((open: boolean) => {
+    setIsOpenState(open);
+    if (open) {
+      emitAnalyticsEvent({
+        eventType: "CART_VIEW",
+        metadata: {
+          item_count: itemsRef.current.reduce((sum, item) => sum + item.quantity, 0),
+        },
+      });
+    }
+  }, []);
+
+  useEffect(() => {
+    setItems((current) => {
+      const normalized = normalizeCartItems(current);
+      const changed = normalized.some((item, index) => item.quantity !== current[index]?.quantity);
+      return changed ? normalized : current;
+    });
+  }, []);
 
   useEffect(() => {
     localStorage.setItem("bonatto_cart", JSON.stringify(items));
@@ -59,25 +102,56 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       if (existing) {
         return prev.map((i) =>
           resolveItemIdentity(i) === resolveItemIdentity(existing)
-            ? { ...i, quantity: i.quantity + (item.quantity ?? 1) }
+            ? { ...i, quantity: normalizeQuantity(i.quantity + normalizeQuantity(item.quantity ?? 1)) }
             : i
         );
       }
-      return [...prev, { ...item, lineId: item.lineId ?? createLineId(item), quantity: item.quantity ?? 1 }];
+      return [...prev, { ...item, lineId: item.lineId ?? createLineId(item), quantity: normalizeQuantity(item.quantity ?? 1) }];
+    });
+    trackMetaEvent("AddToCart", {
+      content_ids: [String(item.productId)],
+      content_name: item.productName,
+      content_type: "product",
+      value: Number(item.productPrice) * normalizeQuantity(item.quantity ?? 1),
+      currency: "BRL",
+    });
+    emitAnalyticsEvent({
+      eventType: "ADD_TO_CART",
+      productId: item.productId,
+      metadata: {
+        quantity: normalizeQuantity(item.quantity ?? 1),
+        value: Number(item.productPrice) * normalizeQuantity(item.quantity ?? 1),
+      },
     });
     setIsOpen(true);
   }, []);
 
   const removeItem = useCallback((lineIdOrProductId: string | number) => {
+    const item = itemsRef.current.find((entry) => resolveItemIdentity(entry) === lineIdOrProductId);
+    if (item) {
+      emitAnalyticsEvent({
+        eventType: "REMOVE_FROM_CART",
+        productId: item.productId,
+        metadata: { quantity: item.quantity },
+      });
+    }
     setItems((prev) => prev.filter((i) => resolveItemIdentity(i) !== lineIdOrProductId));
   }, []);
 
   const updateQuantity = useCallback((lineIdOrProductId: string | number, quantity: number) => {
     if (quantity <= 0) {
+      const item = itemsRef.current.find((entry) => resolveItemIdentity(entry) === lineIdOrProductId);
+      if (item) {
+        emitAnalyticsEvent({
+          eventType: "REMOVE_FROM_CART",
+          productId: item.productId,
+          metadata: { quantity: item.quantity },
+        });
+      }
       setItems((prev) => prev.filter((i) => resolveItemIdentity(i) !== lineIdOrProductId));
     } else {
       setItems((prev) =>
-        prev.map((i) => (resolveItemIdentity(i) === lineIdOrProductId ? { ...i, quantity } : i))
+        prev.map((i) => (resolveItemIdentity(i) === lineIdOrProductId ? { ...i, quantity: normalizeQuantity(quantity) } : i))
       );
     }
   }, []);
@@ -94,11 +168,20 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
 
   const replaceCart = useCallback((newItems: CartItem[]) => {
     setItems(
-      newItems.map((item) => ({
+      normalizeCartItems(newItems).map((item) => ({
         ...item,
         lineId: item.lineId ?? createLineId(item),
       })),
     );
+  }, []);
+
+  useEffect(() => {
+    const clearForStoreChange = () => {
+      setItems([]);
+      setIsOpenState(false);
+    };
+    window.addEventListener("cart:clear", clearForStoreChange);
+    return () => window.removeEventListener("cart:clear", clearForStoreChange);
   }, []);
 
   // Listen for cart:addItem custom events (used by Checkout upsell/downsell)

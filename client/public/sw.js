@@ -1,14 +1,43 @@
 // Service Worker - Bonatto Pizza Web Push
-// Versao 4.0 - push com notificacao nativa + ponte para som customizado em abas abertas
+// Versao 10.0 - push com imagem + deduplicação + cache de assets versionados.
+// v10 mantém popup apenas em background e aceita imagem rica no Web Push.
 
-const DEFAULT_PUSH_SOUND_URL = "/manus-storage/notification-motoboy_31cd6501.mp3";
+const DEFAULT_PUSH_SOUND_URL = "";
+const ASSET_CACHE = "bonatto-assets-v10";
 
 self.addEventListener("install", () => {
   self.skipWaiting();
 });
 
 self.addEventListener("activate", (event) => {
-  event.waitUntil(self.clients.claim());
+  event.waitUntil((async () => {
+    await caches.keys().then((keys) =>
+      Promise.all(keys.filter((key) => key.startsWith("bonatto-assets-") && key !== ASSET_CACHE).map((key) => caches.delete(key)))
+    );
+    await self.clients.claim();
+  })());
+});
+
+self.addEventListener("fetch", (event) => {
+  const request = event.request;
+  if (request.method !== "GET") return;
+
+  const url = new URL(request.url);
+  if (url.origin !== self.location.origin || url.pathname.startsWith("/api/")) return;
+
+  const isVersionedAsset = url.pathname.startsWith("/assets/");
+  if (!isVersionedAsset) return;
+
+  event.respondWith(
+    caches.open(ASSET_CACHE).then(async (cache) => {
+      const cached = await cache.match(request);
+      if (cached) return cached;
+
+      const response = await fetch(request);
+      if (response.ok) cache.put(request, response.clone());
+      return response;
+    })
+  );
 });
 
 function buildPushMetadata(tag) {
@@ -61,6 +90,7 @@ self.addEventListener("push", (event) => {
     const url = data.url || "/";
     const icon = data.icon || "/icon-192.png";
     const badge = data.badge || "/icon-192.png";
+    const image = data.image || data.imageUrl || "";
     const soundUrl = data.soundUrl || DEFAULT_PUSH_SOUND_URL;
 
     const meta = buildPushMetadata(tag);
@@ -74,20 +104,27 @@ self.addEventListener("push", (event) => {
         body,
         tag,
         url,
+        image,
         soundUrl,
       });
     }
+
+    // When the app is already visible, the in-app notification center
+    // handles the update. Showing an OS notification as well creates a duplicate.
+    if (hasVisibleClient) return;
 
     const options = {
       body,
       icon,
       badge,
+      ...(image ? { image } : {}),
       tag,
-      data: { url, soundUrl },
+      data: { url, soundUrl, image },
       requireInteraction: meta.requireInteraction,
       actions: meta.actions,
-      silent: hasVisibleClient,
-      ...(hasVisibleClient ? {} : { vibrate: meta.vibrate }),
+      silent: false,
+      vibrate: meta.vibrate,
+      renotify: false,
     };
 
     await self.registration.showNotification(title, options);

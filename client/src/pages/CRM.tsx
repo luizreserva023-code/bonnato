@@ -165,9 +165,15 @@ function CustomerDetailDialog({
   const [triggerJourneyId, setTriggerJourneyId] = useState("");
 
   const { data, isLoading, refetch } = trpc.crm.getCustomerDetail.useQuery({ userId, storeId });
-  const { data: journeysData } = trpc.automations.listJourneys.useQuery();
-  const { data: allCustomTags } = trpc.crm.listCustomTags.useQuery();
-  const { data: customerCustomTags, refetch: refetchCustomTags } = trpc.crm.getCustomTagsForCustomer.useQuery({ userId });
+  const { data: journeysData } = trpc.automations.listJourneys.useQuery(
+    { storeId },
+    { enabled: Boolean(storeId) },
+  );
+  const { data: allCustomTags } = trpc.crm.listCustomTags.useQuery({ storeId }, { enabled: Boolean(storeId) });
+  const { data: customerCustomTags, refetch: refetchCustomTags } = trpc.crm.getCustomTagsForCustomer.useQuery(
+    { userId, storeId },
+    { enabled: Boolean(storeId) },
+  );
 
   const triggerJourneyForCustomer = trpc.crm.triggerJourneyForCustomer.useMutation({
     onSuccess: () => {
@@ -290,7 +296,7 @@ function CustomerDetailDialog({
                 <div key={t.tag} className="flex items-center gap-1">
                   <TagBadge tag={t.tag} />
                   <button
-                    onClick={() => removeTag.mutate({ userId, tag: t.tag })}
+                    onClick={() => removeTag.mutate({ userId, tag: t.tag, storeId })}
                     className="text-gray-400 hover:text-[#7d0f14] transition-colors"
                     title="Remover tag"
                   >
@@ -316,7 +322,7 @@ function CustomerDetailDialog({
                 disabled={!addTagValue || assignTag.isPending}
                 onClick={() => {
                   if (addTagValue) {
-                    assignTag.mutate({ userId, tag: addTagValue });
+                    assignTag.mutate({ userId, tag: addTagValue, storeId });
                     setAddTagValue("");
                   }
                 }}
@@ -339,7 +345,7 @@ function CustomerDetailDialog({
                     #{ct.name}
                   </span>
                   <button
-                    onClick={() => removeCustomTag.mutate({ userId, tagId: ct.id })}
+                    onClick={() => removeCustomTag.mutate({ userId, tagId: ct.id, storeId })}
                     className="text-gray-400 hover:text-[#7d0f14] transition-colors"
                     title="Remover tag"
                   >
@@ -369,7 +375,7 @@ function CustomerDetailDialog({
                 variant="outline"
                 disabled={!addCustomTagId || assignCustomTag.isPending}
                 onClick={() => {
-                  if (addCustomTagId) assignCustomTag.mutate({ userId, tagId: Number(addCustomTagId) });
+                  if (addCustomTagId) assignCustomTag.mutate({ userId, tagId: Number(addCustomTagId), storeId });
                 }}
               >
                 <Plus className="w-3 h-3 mr-1" /> Adicionar
@@ -402,7 +408,7 @@ function CustomerDetailDialog({
                 disabled={!triggerJourneyId || triggerJourneyForCustomer.isPending}
                 onClick={() => {
                   if (triggerJourneyId) {
-                    triggerJourneyForCustomer.mutate({ journeyId: Number(triggerJourneyId), userId });
+                    triggerJourneyForCustomer.mutate({ journeyId: Number(triggerJourneyId), userId, storeId });
                   }
                 }}
               >
@@ -503,9 +509,16 @@ function ClubTab() {
   const [showPromoModal, setShowPromoModal] = useState(false);
   const [planFilter, setPlanFilter] = useState<"all" | "bonattao" | "basico">("all");
   const utils = trpc.useUtils();
+  const { selectedStoreId } = useAdminStore();
 
-  const { data: members, isLoading: membersLoading, refetch: refetchMembers } = trpc.club.getMembers.useQuery();
-  const { data: pendingPayments, isLoading: paymentsLoading, refetch: refetchPayments } = trpc.club.getPendingPayments.useQuery();
+  const { data: members, isLoading: membersLoading, refetch: refetchMembers } = trpc.club.getMembers.useQuery(
+    { storeId: selectedStoreId },
+    { enabled: Boolean(selectedStoreId) },
+  );
+  const { data: pendingPayments, isLoading: paymentsLoading, refetch: refetchPayments } = trpc.club.getPendingPayments.useQuery(
+    { storeId: selectedStoreId },
+    { enabled: Boolean(selectedStoreId) },
+  );
 
   const confirmPayment = trpc.club.confirmPayment.useMutation({
     onSuccess: () => {
@@ -617,7 +630,7 @@ function ClubTab() {
                             size="sm"
                             className="bg-[#6E0D12] hover:bg-[#5a0a0f] text-white text-xs"
                             disabled={confirmPayment.isPending}
-                            onClick={() => confirmPayment.mutate({ paymentId: p.id })}
+                            onClick={() => confirmPayment.mutate({ paymentId: p.id, storeId: selectedStoreId })}
                           >
                             <CheckCircle2 className="w-3 h-3 mr-1" />
                             Confirmar PIX
@@ -772,7 +785,7 @@ function ClubTab() {
               <textarea
                 className="w-full border border-gray-200 rounded-xl p-3 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-[#7d0f14]"
                 rows={5}
-                placeholder="Ex: 🍕 Hoje tem 30% OFF em todas as pizzas especiais! Só para membros do Clube do Bonatto. Peça agora!"
+                placeholder="Ex: 🍕 Membros do Clube têm 30% de desconto nas pizzas especiais hoje."
                 value={promoMessage}
                 onChange={(e) => setPromoMessage(e.target.value)}
               />
@@ -788,7 +801,7 @@ function ClubTab() {
               <Button
                 className="flex-1 bg-[#6E0D12] hover:bg-[#5a0a0f] text-white"
                 disabled={!promoMessage.trim() || sendPromotion.isPending}
-                onClick={() => sendPromotion.mutate({ message: promoMessage })}
+                onClick={() => sendPromotion.mutate({ message: promoMessage, storeId: selectedStoreId })}
               >
                 {sendPromotion.isPending ? (
                   <RefreshCw className="w-4 h-4 animate-spin mr-1" />
@@ -847,7 +860,10 @@ function CRMContent() {
     storeId: selectedStoreId,
   });
 
-  const { data: journeysData } = trpc.automations.listJourneys.useQuery();
+  const { data: journeysData } = trpc.automations.listJourneys.useQuery(
+    { storeId: selectedStoreId },
+    { enabled: Boolean(selectedStoreId) },
+  );
 
   const refreshTags = trpc.automations.refreshTags.useMutation({
     onSuccess: () => {
@@ -859,7 +875,10 @@ function CRMContent() {
   });
 
   // Queries e mutations de tags personalizadas
-  const { data: customTagsData, refetch: refetchCustomTags } = trpc.crm.listCustomTags.useQuery();
+  const { data: customTagsData, refetch: refetchCustomTags } = trpc.crm.listCustomTags.useQuery(
+    { storeId: selectedStoreId },
+    { enabled: Boolean(selectedStoreId) },
+  );
   const customTags = customTagsData ?? [];
 
   const createCustomTag = trpc.crm.createCustomTag.useMutation({
@@ -934,20 +953,19 @@ function CRMContent() {
           </p>
         </div>
         <div className="flex gap-2">
-          {isManager ? (
+          {isManager && stores.length <= 1 ? (
             <div className="hidden md:flex items-center rounded-lg border bg-[#fce8e8] px-3 py-2 text-xs font-semibold text-[#6E0D12]">
               Loja: {selectedStoreName}
             </div>
           ) : (
             <Select
-              value={selectedStoreId ? String(selectedStoreId) : "all"}
-              onValueChange={(value) => setSelectedStoreId(value === "all" ? undefined : Number(value))}
+              value={selectedStoreId ? String(selectedStoreId) : undefined}
+              onValueChange={(value) => setSelectedStoreId(Number(value))}
             >
               <SelectTrigger className="w-[220px]">
-                <SelectValue placeholder="Todas as lojas" />
+                <SelectValue placeholder="Selecione uma loja" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">Todas as lojas</SelectItem>
                 {stores.map((store) => (
                   <SelectItem key={store.id} value={String(store.id)}>
                     {store.name}
@@ -959,7 +977,7 @@ function CRMContent() {
           <Button
             variant="outline"
             size="sm"
-            onClick={() => refreshTags.mutate()}
+            onClick={() => refreshTags.mutate({ storeId: selectedStoreId })}
             disabled={refreshTags.isPending}
           >
             <RefreshCw className={`w-4 h-4 mr-1 ${refreshTags.isPending ? "animate-spin" : ""}`} />
@@ -1174,7 +1192,7 @@ function CRMContent() {
                   <Button
                     className="bg-[#6E0D12] hover:bg-[#5a0a0f] text-white whitespace-nowrap"
                     disabled={!newTagName.trim() || createCustomTag.isPending}
-                    onClick={() => createCustomTag.mutate({ name: newTagName.trim(), color: newTagColor, description: newTagDescription || undefined })}
+                    onClick={() => createCustomTag.mutate({ name: newTagName.trim(), color: newTagColor, description: newTagDescription || undefined, storeId: selectedStoreId })}
                   >
                     {createCustomTag.isPending ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4 mr-1" />}
                     Criar Tag
@@ -1221,7 +1239,7 @@ function CRMContent() {
                             />
                             <Button size="sm" className="bg-[#6E0D12] hover:bg-[#5a0a0f] text-white h-8"
                               disabled={updateCustomTag.isPending}
-                              onClick={() => updateCustomTag.mutate({ id: editingTag.id, name: editingTag.name, color: editingTag.color, description: editingTag.description })}
+                              onClick={() => updateCustomTag.mutate({ id: editingTag.id, name: editingTag.name, color: editingTag.color, description: editingTag.description, storeId: selectedStoreId })}
                             >
                               Salvar
                             </Button>
@@ -1251,7 +1269,7 @@ function CRMContent() {
                             <Button
                               size="sm" variant="ghost" className="h-8 w-8 p-0 text-gray-400 hover:text-[#6E0D12]"
                               disabled={deleteCustomTag.isPending}
-                              onClick={() => { if (confirm(`Excluir a tag "${tag.name}"? Ela será removida de todos os clientes.`)) deleteCustomTag.mutate({ id: tag.id }); }}
+                              onClick={() => { if (confirm(`Excluir a tag "${tag.name}"? Ela será removida de todos os clientes.`)) deleteCustomTag.mutate({ id: tag.id, storeId: selectedStoreId }); }}
                             >
                               <Trash2 className="w-4 h-4" />
                             </Button>
@@ -1281,7 +1299,7 @@ function CRMContent() {
               <Input placeholder="Nome da tag..." value={newTagName} onChange={(e) => setNewTagName(e.target.value)} className="flex-1" maxLength={100} />
               <input type="color" value={newTagColor} onChange={(e) => setNewTagColor(e.target.value)} className="w-10 h-9 rounded cursor-pointer border border-gray-200" />
               <Button className="bg-[#6E0D12] hover:bg-[#5a0a0f] text-white" disabled={!newTagName.trim() || createCustomTag.isPending}
-                onClick={() => createCustomTag.mutate({ name: newTagName.trim(), color: newTagColor, description: undefined })}>
+                onClick={() => createCustomTag.mutate({ name: newTagName.trim(), color: newTagColor, description: undefined, storeId: selectedStoreId })}>
                 <Plus className="w-4 h-4" />
               </Button>
             </div>
@@ -1291,7 +1309,7 @@ function CRMContent() {
                 <div key={tag.id} className="flex items-center justify-between p-2 rounded border">
                   <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold text-white" style={{ backgroundColor: tag.color }}>#{tag.name}</span>
                   <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-gray-400 hover:text-[#6E0D12]" disabled={deleteCustomTag.isPending}
-                    onClick={() => { if (confirm(`Excluir "${tag.name}"?`)) deleteCustomTag.mutate({ id: tag.id }); }}>
+                    onClick={() => { if (confirm(`Excluir "${tag.name}"?`)) deleteCustomTag.mutate({ id: tag.id, storeId: selectedStoreId }); }}>
                     <Trash2 className="w-3.5 h-3.5" />
                   </Button>
                 </div>
@@ -1372,6 +1390,7 @@ function CRMContent() {
                     triggerJourneyForTag.mutate({
                       journeyId: Number(selectedJourneyId),
                       tag: selectedTagForJourney,
+                      storeId: selectedStoreId,
                     });
                   }
                 }}

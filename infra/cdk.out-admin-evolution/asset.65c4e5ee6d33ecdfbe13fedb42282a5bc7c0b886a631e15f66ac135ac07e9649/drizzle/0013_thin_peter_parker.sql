@@ -1,0 +1,2 @@
+ALTER TABLE `notification_templates` MODIFY COLUMN `event` enum('order_confirmed','order_preparing','order_out_for_delivery','order_delivered','order_cancelled','custom') NOT NULL;--> statement-breakpoint
+ALTER TABLE `notification_templates` ADD `redirectUrl` varchar(500);

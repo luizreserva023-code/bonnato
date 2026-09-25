@@ -1,0 +1,36 @@
+{
+  "version": "54.0.0",
+  "files": {
+    "9dd0496af921a363a065e82427af22a05dd6976f2941fb7f04c4ebd5cdbcacd1": {
+      "displayName": "ApplicationBundle",
+      "source": {
+        "path": "asset.9dd0496af921a363a065e82427af22a05dd6976f2941fb7f04c4ebd5cdbcacd1",
+        "packaging": "zip"
+      },
+      "destinations": {
+        "473041657536-sa-east-1-7e3493fe": {
+          "bucketName": "cdk-hnb659fds-assets-473041657536-sa-east-1",
+          "objectKey": "9dd0496af921a363a065e82427af22a05dd6976f2941fb7f04c4ebd5cdbcacd1.zip",
+          "region": "sa-east-1",
+          "assumeRoleArn": "arn:${AWS::Partition}:iam::473041657536:role/cdk-hnb659fds-file-publishing-role-473041657536-sa-east-1"
+        }
+      }
+    },
+    "900dfeda481099dbc55ad04e12e53b874d9a490809f86b99221355ab062e3c04": {
+      "displayName": "BonattoProduction Template",
+      "source": {
+        "path": "BonattoProduction.template.json",
+        "packaging": "file"
+      },
+      "destinations": {
+        "473041657536-sa-east-1-1ae2c58e": {
+          "bucketName": "cdk-hnb659fds-assets-473041657536-sa-east-1",
+          "objectKey": "900dfeda481099dbc55ad04e12e53b874d9a490809f86b99221355ab062e3c04.json",
+          "region": "sa-east-1",
+          "assumeRoleArn": "arn:${AWS::Partition}:iam::473041657536:role/cdk-hnb659fds-file-publishing-role-473041657536-sa-east-1"
+        }
+      }
+    }
+  },
+  "dockerImages": {}
+}

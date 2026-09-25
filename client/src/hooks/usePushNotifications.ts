@@ -61,7 +61,7 @@ export function usePushNotifications() {
     setPermission(Notification.permission as PushPermission);
 
     navigator.serviceWorker
-      .register("/sw.js")
+      .register("/sw.js?v=10")
       .catch(() => null)
       .then(() => navigator.serviceWorker.ready)
       .then((reg) => reg.pushManager.getSubscription())
@@ -105,7 +105,7 @@ export function usePushNotifications() {
         return;
       }
 
-      const reg = await navigator.serviceWorker.register("/sw.js");
+      const reg = await navigator.serviceWorker.register("/sw.js?v=10");
       await navigator.serviceWorker.ready;
       await reg.update().catch(() => undefined);
 

@@ -1,0 +1,15 @@
+node_modules
+dist
+.git
+.gitignore
+.env
+.env.*
+!.env.example
+.tmp
+coverage
+*.log
+_checkpoints
+drizzle/*.sql
+drizzle/meta
+**/*.test.ts
+**/*.spec.ts

@@ -129,8 +129,8 @@ export function getPaymentAvailability(
   };
 }
 
-export async function getPaymentSettingsAdmin() {
-  const settings = await getAllStoreSettings();
+export async function getPaymentSettingsAdmin(storeId?: number) {
+  const settings = await getAllStoreSettings(storeId);
   const config = normalizePaymentConfig(settings[PAYMENT_CONFIG_KEY]);
   const pixKey = settings.pixKey ?? "";
   const runtime = getPaymentRuntimeStatus(pixKey);
@@ -144,8 +144,8 @@ export async function getPaymentSettingsAdmin() {
   };
 }
 
-export async function getPaymentSettingsPublic() {
-  const { config, runtime, availability } = await getPaymentSettingsAdmin();
+export async function getPaymentSettingsPublic(storeId?: number) {
+  const { config, runtime, availability } = await getPaymentSettingsAdmin(storeId);
   return {
     config: {
       orders: {
@@ -174,7 +174,7 @@ export async function getPaymentSettingsPublic() {
 export async function savePaymentSettings(input: {
   config: PaymentConfig;
   pixKey: string;
-}) {
-  await setStoreSetting(PAYMENT_CONFIG_KEY, JSON.stringify(input.config));
-  await setStoreSetting("pixKey", input.pixKey.trim());
+}, storeId?: number) {
+  await setStoreSetting(PAYMENT_CONFIG_KEY, JSON.stringify(input.config), storeId);
+  await setStoreSetting("pixKey", input.pixKey.trim(), storeId);
 }

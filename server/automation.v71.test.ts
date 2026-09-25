@@ -10,6 +10,18 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { appRouter } from "./routers.ts";
 import type { TrpcContext } from "./_core/context.ts";
+// Estes testes isolam o Workflow Builder. O isolamento/autorização por loja
+// possui suíte própria em storeUtils.test.ts.
+vi.mock("./storeUtils", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./storeUtils.ts")>();
+  return {
+    ...actual,
+    resolveStoreId: vi.fn(async (_user: unknown, requestedStoreId?: number) => requestedStoreId),
+    resolveRequiredStoreId: vi.fn(async (_user: unknown, requestedStoreId?: number) => requestedStoreId ?? 1),
+    assertStoreEntityAccess: vi.fn(async () => undefined),
+  };
+});
+
 
 // ─── Mock automation module ───────────────────────────────────────────────────
 vi.mock("./automation", async (importOriginal) => {
@@ -70,6 +82,7 @@ describe("Workflow Builder v71 — novos triggers e steps", () => {
       name: "Avaliação Negativa",
       description: "",
       trigger: "rating_negative",
+      storeId: 1,
       steps: [],
     });
     expect(result).toHaveProperty("id");
@@ -81,6 +94,7 @@ describe("Workflow Builder v71 — novos triggers e steps", () => {
       name: "Primeiro Pedido do Mês",
       description: "",
       trigger: "first_order_month",
+      storeId: 1,
       steps: [],
     });
     expect(result).toHaveProperty("id");
@@ -93,6 +107,7 @@ describe("Workflow Builder v71 — novos triggers e steps", () => {
       trigger: "tag_inativo_custom",
       steps: [],
       daysInactive: 20,
+      storeId: 1,
     });
     expect(result).toHaveProperty("id");
   });
@@ -105,6 +120,7 @@ describe("Workflow Builder v71 — novos triggers e steps", () => {
       trigger: "tag_inativo_custom",
       steps: [],
       daysInactive: 0,
+      storeId: 1,
     });
     expect(result).toHaveProperty("id");
   });
@@ -115,6 +131,7 @@ describe("Workflow Builder v71 — novos triggers e steps", () => {
       name: "Reativação com saída",
       description: "",
       trigger: "tag_inativo_30",
+      storeId: 1,
       steps: [],
       exitOnOrder: true,
     });
@@ -125,6 +142,7 @@ describe("Workflow Builder v71 — novos triggers e steps", () => {
   it("updateJourney aceita step pause_journey", async () => {
     const result = await caller.automations.updateJourney({
       id: 1,
+      storeId: 1,
       steps: [
         {
           id: "step-pause",
@@ -139,6 +157,7 @@ describe("Workflow Builder v71 — novos triggers e steps", () => {
   it("updateJourney aceita step notify_admin com prioridade", async () => {
     const result = await caller.automations.updateJourney({
       id: 1,
+      storeId: 1,
       steps: [
         {
           id: "step-notify",
@@ -155,6 +174,7 @@ describe("Workflow Builder v71 — novos triggers e steps", () => {
   it("updateJourney aceita step send_coupon com validade", async () => {
     const result = await caller.automations.updateJourney({
       id: 1,
+      storeId: 1,
       steps: [
         {
           id: "step-coupon",
@@ -172,6 +192,7 @@ describe("Workflow Builder v71 — novos triggers e steps", () => {
   it("updateJourney aceita step update_loyalty com pontos negativos (remoção)", async () => {
     const result = await caller.automations.updateJourney({
       id: 1,
+      storeId: 1,
       steps: [
         {
           id: "step-loyalty",
@@ -188,6 +209,7 @@ describe("Workflow Builder v71 — novos triggers e steps", () => {
   it("updateJourney aceita step split_ab com canal push", async () => {
     const result = await caller.automations.updateJourney({
       id: 1,
+      storeId: 1,
       steps: [
         {
           id: "step-ab",
@@ -204,7 +226,7 @@ describe("Workflow Builder v71 — novos triggers e steps", () => {
 
   // ── Stats e histórico (retornam vazio com DB null) ──────────────────────────
   it("getAbStats retorna zeros quando DB indisponível", async () => {
-    const result = await caller.automations.getAbStats({ journeyId: 1 });
+    const result = await caller.automations.getAbStats({ storeId: 1, journeyId: 1 });
     expect(result).toHaveProperty("groupA");
     expect(result).toHaveProperty("groupB");
     expect(result.groupA).toBe(0);
@@ -212,7 +234,7 @@ describe("Workflow Builder v71 — novos triggers e steps", () => {
   });
 
   it("getGlobalMetrics retorna estrutura válida quando DB indisponível", async () => {
-    const result = await caller.automations.getGlobalMetrics();
+    const result = await caller.automations.getGlobalMetrics({ storeId: 1 });
     expect(result).toHaveProperty("totalExecutions");
     expect(result).toHaveProperty("completedExecutions");
     expect(result).toHaveProperty("conversionRate");
@@ -224,7 +246,7 @@ describe("Workflow Builder v71 — novos triggers e steps", () => {
   });
 
   it("getCustomerJourneyHistory retorna array vazio quando DB indisponível", async () => {
-    const result = await caller.automations.getCustomerJourneyHistory({ userId: 1 });
+    const result = await caller.automations.getCustomerJourneyHistory({ storeId: 1, userId: 1 });
     expect(Array.isArray(result)).toBe(true);
     expect(result).toHaveLength(0);
   });
@@ -236,6 +258,7 @@ describe("Workflow Builder v71 — novos triggers e steps", () => {
         name: "Inválido",
         description: "",
         trigger: "trigger_inexistente" as never,
+        storeId: 1,
         steps: [],
       })
     ).rejects.toThrow();
@@ -245,6 +268,7 @@ describe("Workflow Builder v71 — novos triggers e steps", () => {
     await expect(
       caller.automations.updateJourney({
         id: 1,
+        storeId: 1,
         steps: [{ id: "s1", type: "tipo_inexistente" as never, label: "Inválido" }],
       })
     ).rejects.toThrow();

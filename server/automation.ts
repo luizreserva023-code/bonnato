@@ -5,7 +5,7 @@
  * - Registro e recuperação de carrinhos abandonados
  */
 
-import { getDb } from "./db.ts";
+import { addLoyaltyPoints, getDb, getUserLoyaltyPoints } from "./db.ts";
 import {
   customerTags,
   abandonedCarts,
@@ -17,11 +17,11 @@ import {
   customCustomerTags,
   automationEvents,
   coupons,
-  loyaltyTransactions,
   clientAlerts,
   clientNotifications,
+  customerMetrics,
 } from "../drizzle/schema.ts";
-import { eq, and, lt, gte, sql, inArray, isNull, or } from "drizzle-orm";
+import { eq, and, lt, gte, gt, sql, inArray, isNull, or } from "drizzle-orm";
 import { sendWhatsApp } from "./whatsapp.ts";
 import { sendPushToUser } from "./push.ts";
 import { pickRandomTemplate } from "./db.ts";
@@ -96,155 +96,140 @@ export type CustomerTagValue = "novo" | "recorrente" | "indeciso" | "inativo_15"
  * Calcula e atualiza as tags de todos os clientes com base no histórico de pedidos.
  * Deve ser chamado periodicamente (ex: a cada hora).
  */
-export async function refreshCustomerTags(): Promise<void> {
+export async function refreshCustomerTags(storeId?: number): Promise<void> {
   const db = await getDb();
   if (!db) return;
+
   const now = new Date();
-  const newInactivityTriggers: Array<{ trigger: typeof journeys.$inferInsert["trigger"]; userId: number }> = [];
-
-  // Buscar todos os usuários com estatísticas de pedidos entregues
-  // Nota: LAG() OVER não é compatível com GROUP BY no TiDB/MySQL 5.x
-  // Calculamos avgDaysBetween via subquery: (MAX - MIN) / (COUNT - 1)
-  const userOrderStats = await db.execute(sql`
-    SELECT
-      u.id AS userId,
-      COUNT(o.id) AS totalOrders,
-      MAX(o.createdAt) AS lastOrderAt,
-      MIN(o.createdAt) AS firstOrderAt,
-      CASE
-        WHEN COUNT(o.id) > 1
-        THEN DATEDIFF(MAX(o.createdAt), MIN(o.createdAt)) / (COUNT(o.id) - 1)
-        ELSE NULL
-      END AS avgDaysBetween
-    FROM users u
-    LEFT JOIN orders o ON o.userId = u.id AND o.status = 'delivered'
-    WHERE u.role = 'user'
-    GROUP BY u.id
-  `);
-
-  const rows = (userOrderStats as unknown as [Array<{
+  const newInactivityTriggers: Array<{
+    trigger: typeof journeys.$inferInsert["trigger"];
     userId: number;
-    totalOrders: number;
-    lastOrderAt: Date | null;
-    firstOrderAt: Date | null;
-    avgDaysBetween: number | null;
-  }>])[0];
+    storeId: number;
+  }> = [];
 
-  for (const row of rows) {
-    const tags: CustomerTagValue[] = [];
-    const total = Number(row.totalOrders ?? 0);
-    const lastOrder = row.lastOrderAt ? new Date(row.lastOrderAt) : null;
-    const daysSinceLast = lastOrder
-      ? Math.floor((now.getTime() - lastOrder.getTime()) / (1000 * 60 * 60 * 24))
+  const metricRows = await db
+    .select()
+    .from(customerMetrics)
+    .where(and(
+      storeId ? eq(customerMetrics.storeId, storeId) : gt(customerMetrics.storeId, 0),
+      gt(customerMetrics.deliveredOrders, 0),
+    ));
+
+  for (const metric of metricRows) {
+    const total = Number(metric.deliveredOrders ?? 0);
+    if (total <= 0 || !metric.lastOrderAt) continue;
+
+    const lastOrder = new Date(metric.lastOrderAt);
+    const firstOrder = metric.firstOrderAt ? new Date(metric.firstOrderAt) : lastOrder;
+    const daysSinceLast = Math.max(
+      0,
+      Math.floor((now.getTime() - lastOrder.getTime()) / (1000 * 60 * 60 * 24)),
+    );
+    const avgDaysBetween = total > 1
+      ? (lastOrder.getTime() - firstOrder.getTime()) / (1000 * 60 * 60 * 24) / (total - 1)
       : null;
-    const avg = row.avgDaysBetween ? Number(row.avgDaysBetween) : null;
 
-    if (total === 0) continue; // sem pedidos entregues, sem tag
+    const tags: CustomerTagValue[] = [];
 
-    // Inatividade
-    if (daysSinceLast !== null) {
-      if (daysSinceLast >= 60) tags.push("inativo_60");
-      else if (daysSinceLast >= 30) tags.push("inativo_30");
-      else if (daysSinceLast >= 15) tags.push("inativo_15");
+    if (daysSinceLast >= 60) tags.push("inativo_60");
+    else if (daysSinceLast >= 30) tags.push("inativo_30");
+    else if (daysSinceLast >= 15) tags.push("inativo_15");
+
+    if (total <= 5) tags.push("novo");
+    if (total > 10 && daysSinceLast < 30) tags.push("recorrente");
+    if (avgDaysBetween !== null && avgDaysBetween >= 12 && avgDaysBetween <= 20 && total > 2) {
+      tags.push("indeciso");
     }
 
-    // Novo: até 5 pedidos
-    if (total <= 5) tags.push("novo");
+    const existingRows = await db
+      .select({ tag: customerTags.tag })
+      .from(customerTags)
+      .where(and(
+        eq(customerTags.storeId, metric.storeId),
+        eq(customerTags.userId, metric.userId),
+      ));
+    const existingTags = new Set(existingRows.map((row) => row.tag));
 
-    // Recorrente: mais de 10 pedidos e pediu nos últimos 30 dias
-    if (total > 10 && daysSinceLast !== null && daysSinceLast < 30) tags.push("recorrente");
-
-    // Indeciso: compra com intervalo médio entre 12 e 20 dias
-    if (avg !== null && avg >= 12 && avg <= 20 && total > 2) tags.push("indeciso");
-
-    // Upsert tags
     for (const tag of tags) {
-      const existing = await db
-        .select()
-        .from(customerTags)
-        .where(and(eq(customerTags.userId, row.userId), eq(customerTags.tag, tag)))
-        .limit(1);
-
-      if (existing.length === 0) {
+      if (!existingTags.has(tag)) {
         await db.insert(customerTags).values({
-          userId: row.userId,
+          storeId: metric.storeId,
+          userId: metric.userId,
           tag,
           assignedAt: now,
           updatedAt: now,
         });
+
+        if (tag === "inativo_15" || tag === "inativo_30" || tag === "inativo_60") {
+          newInactivityTriggers.push({
+            trigger: `tag_${tag}` as typeof journeys.$inferInsert["trigger"],
+            userId: metric.userId,
+            storeId: metric.storeId,
+          });
+        }
       } else {
         await db
           .update(customerTags)
           .set({ updatedAt: now })
-          .where(and(eq(customerTags.userId, row.userId), eq(customerTags.tag, tag)));
+          .where(and(
+            eq(customerTags.storeId, metric.storeId),
+            eq(customerTags.userId, metric.userId),
+            eq(customerTags.tag, tag),
+          ));
       }
     }
 
-    // Remover tags que não se aplicam mais
-    const allTags: CustomerTagValue[] = ["novo", "recorrente", "indeciso", "inativo_15", "inativo_30", "inativo_60"];
-    const toRemove = allTags.filter(t => !tags.includes(t));
+    const allTags: CustomerTagValue[] = [
+      "novo",
+      "recorrente",
+      "indeciso",
+      "inativo_15",
+      "inativo_30",
+      "inativo_60",
+    ];
+    const toRemove = allTags.filter((tag) => !tags.includes(tag));
     if (toRemove.length > 0) {
       await db
         .delete(customerTags)
-        .where(
-          and(
-            eq(customerTags.userId, row.userId),
-            inArray(customerTags.tag, toRemove)
-          )
-        );
+        .where(and(
+          eq(customerTags.userId, metric.userId),
+          eq(customerTags.storeId, metric.storeId),
+          inArray(customerTags.tag, toRemove),
+        ));
     }
 
-    // Fire automation triggers for inactivity tags (only when newly assigned)
-    for (const tag of tags) {
-      if (tag === "inativo_15" || tag === "inativo_30" || tag === "inativo_60") {
-        const triggerName = `tag_${tag}` as typeof journeys.$inferInsert["trigger"];
-        // Check if this tag was already present before (to avoid re-triggering)
-        const wasAlreadyTagged = await db
-          .select()
-          .from(customerTags)
-          .where(and(eq(customerTags.userId, row.userId), eq(customerTags.tag, tag)))
-          .limit(1);
-        if (!wasAlreadyTagged.length) {
-          // Tag is new — fire the trigger (deferred to avoid circular call during iteration)
-          newInactivityTriggers.push({ trigger: triggerName, userId: row.userId });
-        }
-      }
-    }
+    const customJourneys = await db
+      .select()
+      .from(journeys)
+      .where(and(
+        eq(journeys.storeId, metric.storeId),
+        eq(journeys.trigger, "tag_inativo_custom"),
+        eq(journeys.status, "active"),
+      ));
 
-    // ── tag_inativo_custom: verificar jornadas com N dias configurável ──────────
-    if (row.lastOrderAt) {
-      const daysSinceLast = Math.floor(
-        (now.getTime() - new Date(row.lastOrderAt).getTime()) / (1000 * 60 * 60 * 24)
-      );
-      const customJourneys = await db
-        .select()
-        .from(journeys)
-        .where(and(eq(journeys.trigger, "tag_inativo_custom"), eq(journeys.status, "active")));
-      for (const cj of customJourneys) {
-        const requiredDays = cj.daysInactive ?? 0;
-        if (requiredDays > 0 && daysSinceLast >= requiredDays) {
-          // Verificar se já existe execução ativa para este usuário nesta jornada
-          const existingExec = await db
-            .select({ id: journeyExecutions.id })
-            .from(journeyExecutions)
-            .where(and(
-              eq(journeyExecutions.journeyId, cj.id),
-              eq(journeyExecutions.userId, row.userId),
-              inArray(journeyExecutions.status, ["running", "completed"])
-            ))
-            .limit(1);
-          if (!existingExec.length) {
-            await startJourneyExecution(cj.id, row.userId);
-          }
-        }
+    for (const journey of customJourneys) {
+      const requiredDays = journey.daysInactive ?? 0;
+      if (requiredDays <= 0 || daysSinceLast < requiredDays) continue;
+
+      const existingExecution = await db
+        .select({ id: journeyExecutions.id })
+        .from(journeyExecutions)
+        .where(and(
+          eq(journeyExecutions.journeyId, journey.id),
+          eq(journeyExecutions.userId, metric.userId),
+          inArray(journeyExecutions.status, ["running", "completed"]),
+        ))
+        .limit(1);
+
+      if (existingExecution.length === 0) {
+        await startJourneyExecution(journey.id, metric.userId);
       }
     }
   }
 
-  // Fire inactivity triggers after all tags are processed
-  for (const { trigger, userId } of newInactivityTriggers) {
-    fireJourneyTrigger(trigger, userId).catch((err: unknown) =>
-      console.error(`[Automation] inactivity trigger ${trigger} failed for user ${userId}:`, err)
+  for (const { trigger, userId, storeId: triggerStoreId } of newInactivityTriggers) {
+    fireJourneyTrigger(trigger, userId, undefined, triggerStoreId).catch((error: unknown) =>
+      console.error(`[Automation] inactivity trigger ${trigger} failed for user ${userId}:`, error)
     );
   }
 }
@@ -252,6 +237,7 @@ export async function refreshCustomerTags(): Promise<void> {
 // ─── Abandoned Cart ───────────────────────────────────────────────────────────
 
 export async function registerAbandonedCart(data: {
+  storeId: number;
   userId: number;
   customerName: string;
   customerPhone?: string;
@@ -267,7 +253,11 @@ export async function registerAbandonedCart(data: {
   const existing = await db
     .select()
     .from(abandonedCarts)
-    .where(and(eq(abandonedCarts.userId, data.userId), eq(abandonedCarts.status, "pending")))
+    .where(and(
+      eq(abandonedCarts.storeId, data.storeId),
+      eq(abandonedCarts.userId, data.userId),
+      eq(abandonedCarts.status, "pending"),
+    ))
     .limit(1);
 
   if (existing.length > 0) {
@@ -284,7 +274,8 @@ export async function registerAbandonedCart(data: {
     return existing[0].id;
   }
 
-  const result = await db.insert(abandonedCarts).values({
+  const [created] = await db.insert(abandonedCarts).values({
+    storeId: data.storeId,
     userId: data.userId,
     customerName: data.customerName,
     customerPhone: data.customerPhone,
@@ -293,17 +284,17 @@ export async function registerAbandonedCart(data: {
     status: "pending",
     createdAt: now,
     expiresAt,
-  });
-  return Number((result[0] as { insertId: number }).insertId);
+  }).returning({ id: abandonedCarts.id });
+  return created.id;
 }
 
-export async function markCartRecovered(userId: number): Promise<void> {
+export async function markCartRecovered(userId: number, storeId: number): Promise<void> {
   const db = await getDb();
   if (!db) return;
   await db
     .update(abandonedCarts)
     .set({ status: "recovered", recoveredAt: new Date() })
-    .where(and(eq(abandonedCarts.userId, userId), eq(abandonedCarts.status, "pending")));
+    .where(and(eq(abandonedCarts.storeId, storeId), eq(abandonedCarts.userId, userId), eq(abandonedCarts.status, "pending")));
 }
 
 // ─── Journey Engine ───────────────────────────────────────────────────────────
@@ -344,7 +335,8 @@ export async function startJourneyExecution(
     ? new Date(Date.now() + firstStep.delayMinutes * 60 * 1000)
     : new Date();
 
-  const result = await db.insert(journeyExecutions).values({
+  const [created] = await db.insert(journeyExecutions).values({
+    storeId: journey[0].storeId,
     journeyId,
     userId,
     phone: phone ?? null,
@@ -354,16 +346,16 @@ export async function startJourneyExecution(
     startedAt: new Date(),
     nextStepAt,
     logs: JSON.stringify([{ at: new Date().toISOString(), msg: "Jornada iniciada" }]),
-  });
+  }).returning({ id: journeyExecutions.id });
 
-  return Number((result[0] as { insertId: number }).insertId);
+  return created.id;
 }
 
 /**
  * Processa todas as execuções pendentes (nextStepAt <= agora).
  * Deve ser chamado periodicamente (ex: a cada 5 minutos).
  */
-export async function processJourneyExecutions(): Promise<void> {
+export async function processJourneyExecutions(storeId?: number): Promise<void> {
   const db = await getDb();
   if (!db) return;
   const now = new Date();
@@ -374,6 +366,7 @@ export async function processJourneyExecutions(): Promise<void> {
     .where(
       and(
         eq(journeyExecutions.status, "running"),
+        storeId ? eq(journeyExecutions.storeId, storeId) : undefined,
         lt(journeyExecutions.nextStepAt!, now)
       )
     )
@@ -416,6 +409,7 @@ async function processExecution(exec: typeof journeyExecutions.$inferSelect): Pr
         .from(orders)
         .where(
           and(
+            eq(orders.storeId, exec.storeId),
             eq(orders.userId, exec.userId),
             gte(orders.createdAt, exec.startedAt),
             inArray(orders.status, ["pending", "confirmed", "preparing", "out_for_delivery", "delivered"])
@@ -464,10 +458,10 @@ async function processExecution(exec: typeof journeyExecutions.$inferSelect): Pr
           const existingCustom = await db
             .select()
             .from(customCustomerTags)
-            .where(and(eq(customCustomerTags.userId, exec.userId), eq(customCustomerTags.tagId, tagIdNum)))
+            .where(and(eq(customCustomerTags.storeId, exec.storeId), eq(customCustomerTags.userId, exec.userId), eq(customCustomerTags.tagId, tagIdNum)))
             .limit(1);
           if (!existingCustom.length) {
-            await db.insert(customCustomerTags).values({ userId: exec.userId, tagId: tagIdNum, assignedAt: new Date() });
+            await db.insert(customCustomerTags).values({ storeId: exec.storeId, userId: exec.userId, tagId: tagIdNum, assignedAt: new Date() });
           }
           log(`Tag personalizada adicionada: id=${tagIdNum}`);
         } else {
@@ -476,10 +470,10 @@ async function processExecution(exec: typeof journeyExecutions.$inferSelect): Pr
           const existing = await db
             .select()
             .from(customerTags)
-            .where(and(eq(customerTags.userId, exec.userId), eq(customerTags.tag, tag)))
+            .where(and(eq(customerTags.storeId, exec.storeId), eq(customerTags.userId, exec.userId), eq(customerTags.tag, tag)))
             .limit(1);
           if (!existing.length) {
-            await db.insert(customerTags).values({ userId: exec.userId, tag, assignedAt: new Date(), updatedAt: new Date() });
+            await db.insert(customerTags).values({ storeId: exec.storeId, userId: exec.userId, tag, assignedAt: new Date(), updatedAt: new Date() });
           }
           log(`Tag do sistema adicionada: ${tag}`);
         }
@@ -492,13 +486,13 @@ async function processExecution(exec: typeof journeyExecutions.$inferSelect): Pr
           // Custom tag by ID
           await db
             .delete(customCustomerTags)
-            .where(and(eq(customCustomerTags.userId, exec.userId), eq(customCustomerTags.tagId, tagIdNum)));
+            .where(and(eq(customCustomerTags.storeId, exec.storeId), eq(customCustomerTags.userId, exec.userId), eq(customCustomerTags.tagId, tagIdNum)));
           log(`Tag personalizada removida: id=${tagIdNum}`);
         } else {
           // System tag by name
           await db
             .delete(customerTags)
-            .where(and(eq(customerTags.userId, exec.userId), eq(customerTags.tag, step.tag as CustomerTagValue)));
+            .where(and(eq(customerTags.storeId, exec.storeId), eq(customerTags.userId, exec.userId), eq(customerTags.tag, step.tag as CustomerTagValue)));
           log(`Tag do sistema removida: ${step.tag}`);
         }
       }
@@ -513,6 +507,7 @@ async function processExecution(exec: typeof journeyExecutions.$inferSelect): Pr
           .from(orders)
           .where(
             and(
+              eq(orders.storeId, exec.storeId),
               eq(orders.userId, exec.userId),
               gte(orders.createdAt, exec.startedAt),
               inArray(orders.status, ["pending", "confirmed", "preparing", "out_for_delivery", "delivered"])
@@ -524,7 +519,7 @@ async function processExecution(exec: typeof journeyExecutions.$inferSelect): Pr
         const tagRow = await db
           .select()
           .from(customerTags)
-          .where(and(eq(customerTags.userId, exec.userId), eq(customerTags.tag, step.conditionTag as CustomerTagValue)))
+          .where(and(eq(customerTags.storeId, exec.storeId), eq(customerTags.userId, exec.userId), eq(customerTags.tag, step.conditionTag as CustomerTagValue)))
           .limit(1);
         conditionMet = tagRow.length > 0;
       }
@@ -555,6 +550,7 @@ async function processExecution(exec: typeof journeyExecutions.$inferSelect): Pr
 
       // 1. Persistir o cupom no banco (exclusivo para este usuário)
       await db.insert(coupons).values({
+        storeId: exec.storeId,
         code,
         discountType: discountType as "percentage" | "fixed",
         discountValue: String(discountValue),
@@ -568,8 +564,9 @@ async function processExecution(exec: typeof journeyExecutions.$inferSelect): Pr
 
       // 2. Notificação no app (painel do cliente)
       await db.insert(clientNotifications).values({
+        storeId: exec.storeId,
         userId: exec.userId,
-        title: "🎁 Cupom exclusivo para você!",
+        title: "🎁 Cupom disponível na sua conta",
         message: `Use o código ${code} e ganhe ${discountLabel}${validityLabel}. Válido no próximo pedido.`,
         type: "promo",
         read: false,
@@ -577,10 +574,12 @@ async function processExecution(exec: typeof journeyExecutions.$inferSelect): Pr
 
       // 3. Push notification
       await sendPushToUser(exec.userId, {
-        title: "🎁 Cupom exclusivo para você!",
+        storeId: exec.storeId,
+        title: "🎁 Cupom disponível na sua conta",
         body: `Use ${code} e ganhe ${discountLabel}${validityLabel}.`,
         url: "/cardapio",
         tag: `coupon-${code}`,
+        persistInAppFallback: false,
       });
 
       // 4. WhatsApp (se tiver telefone cadastrado)
@@ -588,7 +587,7 @@ async function processExecution(exec: typeof journeyExecutions.$inferSelect): Pr
         const appUrl = process.env.PUBLIC_APP_URL ?? "";
         await sendWhatsApp(
           exec.phone,
-          `🎁 *Bonatto Pizza* — Olá! Preparamos um cupom exclusivo para você:\n\n` +
+          `🎁 *Bonatto Pizza*\n\nVocê recebeu um cupom para o próximo pedido:\n\n` +
           `*Código:* ${code}\n` +
           `*Desconto:* ${discountLabel}${validityLabel}\n\n` +
           `Use no seu próximo pedido: ${appUrl}/cardapio`
@@ -601,27 +600,14 @@ async function processExecution(exec: typeof journeyExecutions.$inferSelect): Pr
       // ── Adicionar ou remover pontos de fidelidade ────────────────────────────
       const points = step.loyaltyPoints ?? 0;
       if (points !== 0) {
-        const userRow = await db.select({ loyaltyPoints: users.loyaltyPoints }).from(users).where(eq(users.id, exec.userId)).limit(1);
-        const currentPoints = userRow[0]?.loyaltyPoints ?? 0;
-        const newBalance = Math.max(0, currentPoints + points);
         const description = step.loyaltyDescription ?? `Automação: ${points > 0 ? "+" : ""}${points} pontos`;
-
-        // 1. Atualizar saldo do usuário
-        await db.update(users).set({ loyaltyPoints: newBalance }).where(eq(users.id, exec.userId));
-
-        // 2. Registrar transação de fidelidade
-        await db.insert(loyaltyTransactions).values({
-          userId: exec.userId,
-          type: "manual",
-          points,
-          description,
-          balanceBefore: currentPoints,
-          balanceAfter: newBalance,
-        });
+        await addLoyaltyPoints(exec.userId, points, undefined, description, exec.storeId);
+        const newBalance = await getUserLoyaltyPoints(exec.userId, exec.storeId);
 
         // 3. Notificação no app
         const pointsLabel = points > 0 ? `+${points} pontos adicionados` : `${points} pontos removidos`;
         await db.insert(clientNotifications).values({
+          storeId: exec.storeId,
           userId: exec.userId,
           title: points > 0 ? "⭐ Pontos adicionados!" : "📉 Pontos removidos",
           message: `${pointsLabel}. Seu saldo atual é de ${newBalance} pontos. ${description}`,
@@ -631,10 +617,12 @@ async function processExecution(exec: typeof journeyExecutions.$inferSelect): Pr
 
         // 4. Push notification
         await sendPushToUser(exec.userId, {
+          storeId: exec.storeId,
           title: points > 0 ? "⭐ Você ganhou pontos!" : "📉 Pontos atualizados",
           body: `${pointsLabel}. Saldo atual: ${newBalance} pontos.`,
           url: "/minha-conta",
           tag: `loyalty-${exec.userId}-${Date.now()}`,
+          persistInAppFallback: false,
         });
 
         log(`Pontos de fidelidade: ${points > 0 ? "+" : ""}${points} (saldo: ${newBalance})`);
@@ -649,6 +637,7 @@ async function processExecution(exec: typeof journeyExecutions.$inferSelect): Pr
 
       // 1. Notificação no app (específica para este usuário)
       await db.insert(clientNotifications).values({
+        storeId: exec.storeId,
         userId: exec.userId,
         title: `${alertIcon} ${alertTitle}`,
         message: alertMsg,
@@ -659,10 +648,12 @@ async function processExecution(exec: typeof journeyExecutions.$inferSelect): Pr
       // 2. Push notification (se tiver mensagem)
       if (alertMsg) {
         await sendPushToUser(exec.userId, {
+          storeId: exec.storeId,
           title: `${alertIcon} ${alertTitle}`,
           body: alertMsg,
           url: alertUrl ?? "/",
           tag: `alert-${exec.journeyId}-${exec.id}`,
+          persistInAppFallback: false,
         });
       }
 
@@ -683,6 +674,7 @@ async function processExecution(exec: typeof journeyExecutions.$inferSelect): Pr
         } else if (channel === "push") {
           // Push A/B
           await sendPushToUser(exec.userId, {
+            storeId: exec.storeId,
             title: titleToSend,
             body: msgToSend,
             url: "/",
@@ -704,7 +696,7 @@ async function processExecution(exec: typeof journeyExecutions.$inferSelect): Pr
         await db
           .update(journeys)
           .set({ status: "paused", updatedAt: new Date() })
-          .where(and(eq(journeys.id, step.pauseJourneyId), eq(journeys.status, "active")));
+          .where(and(eq(journeys.id, step.pauseJourneyId), eq(journeys.storeId, exec.storeId), eq(journeys.status, "active")));
         log(`Jornada #${step.pauseJourneyId} pausada automaticamente`);
       }
       currentStepIdx++;
@@ -747,27 +739,28 @@ async function processExecution(exec: typeof journeyExecutions.$inferSelect): Pr
 
 // ─── DB Helpers ───────────────────────────────────────────────────────────────
 
-export async function getCustomerTagsForUser(userId: number) {
+export async function getCustomerTagsForUser(userId: number, storeId: number) {
   const db = await getDb();
   if (!db) return [];
-  return db.select().from(customerTags).where(eq(customerTags.userId, userId));
+  return db.select().from(customerTags).where(and(eq(customerTags.userId, userId), eq(customerTags.storeId, storeId)));
 }
 
-export async function getAllCustomerTagsWithUsers() {
+export async function getAllCustomerTagsWithUsers(storeId: number) {
   const db = await getDb();
   if (!db) return [[], []];
   return db.execute(sql`
     SELECT ct.userId, ct.tag, ct.assignedAt, u.name, u.email, u.phone
     FROM customer_tags ct
     JOIN users u ON u.id = ct.userId
+    WHERE ct.storeId = ${storeId}
     ORDER BY ct.assignedAt DESC
   `);
 }
 
-export async function listJourneys() {
+export async function listJourneys(storeId: number) {
   const db = await getDb();
   if (!db) return [];
-  const list = await db.select().from(journeys).orderBy(journeys.createdAt);
+  const list = await db.select().from(journeys).where(eq(journeys.storeId, storeId)).orderBy(journeys.createdAt);
   // Enrich with execution stats
   const enriched = await Promise.all(list.map(async (j) => {
     const execs = await db
@@ -786,14 +779,15 @@ export async function listJourneys() {
   return enriched;
 }
 
-export async function getJourneyById(id: number) {
+export async function getJourneyById(id: number, storeId?: number) {
   const db = await getDb();
   if (!db) return null;
-  const rows = await db.select().from(journeys).where(eq(journeys.id, id)).limit(1);
+  const rows = await db.select().from(journeys).where(and(eq(journeys.id, id), storeId ? eq(journeys.storeId, storeId) : undefined)).limit(1);
   return rows[0] ?? null;
 }
 
 export async function createJourney(data: {
+  storeId: number;
   name: string;
   description?: string;
   trigger: typeof journeys.$inferInsert["trigger"];
@@ -802,7 +796,8 @@ export async function createJourney(data: {
 }) {
   const db = await getDb();
   if (!db) return -1;
-  const result = await db.insert(journeys).values({
+  const [created] = await db.insert(journeys).values({
+    storeId: data.storeId,
     name: data.name,
     description: data.description ?? null,
     trigger: data.trigger,
@@ -811,8 +806,8 @@ export async function createJourney(data: {
     daysInactive: data.daysInactive ?? null,
     createdAt: new Date(),
     updatedAt: new Date(),
-  });
-  return Number((result[0] as { insertId: number }).insertId);
+  }).returning({ id: journeys.id });
+  return created.id;
 }
 
 export async function updateJourney(id: number, data: Partial<{
@@ -821,29 +816,30 @@ export async function updateJourney(id: number, data: Partial<{
   trigger: typeof journeys.$inferInsert["trigger"];
   status: "active" | "paused" | "draft";
   steps: JourneyStep[];
-}>) {
+}>, storeId?: number) {
   const db = await getDb();
   if (!db) return;
   await db.update(journeys).set({
     ...data,
     steps: data.steps ? JSON.stringify(data.steps) : undefined,
     updatedAt: new Date(),
-  }).where(eq(journeys.id, id));
+  }).where(and(eq(journeys.id, id), storeId ? eq(journeys.storeId, storeId) : undefined));
 }
 
-export async function deleteJourney(id: number) {
+export async function deleteJourney(id: number, storeId?: number) {
   const db = await getDb();
   if (!db) return;
-  await db.delete(journeyExecutions).where(eq(journeyExecutions.journeyId, id));
-  await db.delete(journeys).where(eq(journeys.id, id));
+  await db.delete(journeyExecutions).where(and(eq(journeyExecutions.journeyId, id), storeId ? eq(journeyExecutions.storeId, storeId) : undefined));
+  await db.delete(journeys).where(and(eq(journeys.id, id), storeId ? eq(journeys.storeId, storeId) : undefined));
 }
 
-export async function duplicateJourney(id: number): Promise<number> {
+export async function duplicateJourney(id: number, storeId?: number): Promise<number> {
   const db = await getDb();
   if (!db) return -1;
-  const original = await db.select().from(journeys).where(eq(journeys.id, id)).limit(1);
+  const original = await db.select().from(journeys).where(and(eq(journeys.id, id), storeId ? eq(journeys.storeId, storeId) : undefined)).limit(1);
   if (!original[0]) return -1;
-  const result = await db.insert(journeys).values({
+  const [created] = await db.insert(journeys).values({
+    storeId: original[0].storeId,
     name: `${original[0].name} (cópia)`,
     description: original[0].description,
     trigger: original[0].trigger,
@@ -851,32 +847,32 @@ export async function duplicateJourney(id: number): Promise<number> {
     steps: original[0].steps,
     createdAt: new Date(),
     updatedAt: new Date(),
-  });
-  return Number((result[0] as { insertId: number }).insertId);
+  }).returning({ id: journeys.id });
+  return created.id;
 }
 
-export async function listExecutions(journeyId?: number) {
+export async function listExecutions(journeyId?: number, storeId?: number) {
   const db = await getDb();
   if (!db) return [];
   if (journeyId) {
-    return db.select().from(journeyExecutions).where(eq(journeyExecutions.journeyId, journeyId)).orderBy(journeyExecutions.startedAt);
+    return db.select().from(journeyExecutions).where(and(eq(journeyExecutions.journeyId, journeyId), storeId ? eq(journeyExecutions.storeId, storeId) : undefined)).orderBy(journeyExecutions.startedAt);
   }
-  return db.select().from(journeyExecutions).orderBy(journeyExecutions.startedAt);
+  return db.select().from(journeyExecutions).where(storeId ? eq(journeyExecutions.storeId, storeId) : undefined).orderBy(journeyExecutions.startedAt);
 }
 
-export async function cancelExecution(id: number) {
+export async function cancelExecution(id: number, storeId?: number) {
   const db = await getDb();
   if (!db) return;
-  await db.update(journeyExecutions).set({ status: "cancelled", completedAt: new Date() }).where(eq(journeyExecutions.id, id));
+  await db.update(journeyExecutions).set({ status: "cancelled", completedAt: new Date() }).where(and(eq(journeyExecutions.id, id), storeId ? eq(journeyExecutions.storeId, storeId) : undefined));
 }
 
-export async function listAbandonedCarts(status?: "pending" | "recovered" | "expired") {
+export async function listAbandonedCarts(status: "pending" | "recovered" | "expired" | undefined, storeId: number) {
   const db = await getDb();
   if (!db) return [];
   if (status) {
-    return db.select().from(abandonedCarts).where(eq(abandonedCarts.status, status)).orderBy(abandonedCarts.createdAt);
+    return db.select().from(abandonedCarts).where(and(eq(abandonedCarts.status, status), eq(abandonedCarts.storeId, storeId))).orderBy(abandonedCarts.createdAt);
   }
-  return db.select().from(abandonedCarts).orderBy(abandonedCarts.createdAt);
+  return db.select().from(abandonedCarts).where(eq(abandonedCarts.storeId, storeId)).orderBy(abandonedCarts.createdAt);
 }
 
 /**
@@ -886,9 +882,11 @@ export async function listAbandonedCarts(status?: "pending" | "recovered" | "exp
 export async function fireJourneyTrigger(
   trigger: typeof journeys.$inferInsert["trigger"],
   userId: number,
-  phone?: string
+  phone?: string,
+  storeId?: number,
 ): Promise<void> {
-  const activeJourneys = await getActiveJourneysForTrigger(trigger);
+  if (!storeId) return;
+  const activeJourneys = await getActiveJourneysForTrigger(trigger, storeId);
   for (const journey of activeJourneys) {
     try {
       await startJourneyExecution(journey.id, userId, phone);
@@ -898,10 +896,10 @@ export async function fireJourneyTrigger(
   }
 }
 
-export async function getActiveJourneysForTrigger(trigger: typeof journeys.$inferInsert["trigger"]) {
+export async function getActiveJourneysForTrigger(trigger: typeof journeys.$inferInsert["trigger"], storeId: number) {
   const db = await getDb();
   if (!db) return [];
-  return db.select().from(journeys).where(and(eq(journeys.trigger, trigger), eq(journeys.status, "active")));
+  return db.select().from(journeys).where(and(eq(journeys.trigger, trigger), eq(journeys.status, "active"), eq(journeys.storeId, storeId)));
 }
 
 // ─── Automation Events (auditoria anti-duplicação) ───────────────────────────
@@ -912,6 +910,7 @@ export async function getActiveJourneysForTrigger(trigger: typeof journeys.$infe
 async function logAutomationEvent(
   db: Awaited<ReturnType<typeof getDb>>,
   params: {
+    storeId: number;
     type: string;
     userId?: number;
     cartId?: number;
@@ -925,6 +924,7 @@ async function logAutomationEvent(
 ): Promise<void> {
   if (!db) return;
   await db.insert(automationEvents).values({
+    storeId: params.storeId,
     type: params.type,
     userId: params.userId,
     cartId: params.cartId,
@@ -946,11 +946,12 @@ async function alreadySent(
   db: Awaited<ReturnType<typeof getDb>>,
   type: string,
   step: number,
+  storeId: number,
   cartId?: number,
   userId?: number
 ): Promise<boolean> {
   if (!db) return false;
-  const conditions = [eq(automationEvents.type, type), eq(automationEvents.step, step)];
+  const conditions = [eq(automationEvents.storeId, storeId), eq(automationEvents.type, type), eq(automationEvents.step, step)];
   if (cartId) conditions.push(eq(automationEvents.cartId, cartId));
   if (userId) conditions.push(eq(automationEvents.userId, userId));
   const existing = await db.select({ id: automationEvents.id }).from(automationEvents).where(and(...conditions)).limit(1);
@@ -961,6 +962,7 @@ async function alreadySent(
 
 async function generateRecoveryCoupon(
   db: Awaited<ReturnType<typeof getDb>>,
+  storeId: number,
   userId: number,
   discountPercent: number,
   suffix: string
@@ -968,10 +970,11 @@ async function generateRecoveryCoupon(
   if (!db) return "VOLTA10";
   const code = `VOLTA${discountPercent}-${suffix.toUpperCase().replace(/\W/g, "").slice(0, 6)}`;
   // Verificar se já existe
-  const existing = await db.select().from(coupons).where(eq(coupons.code, code)).limit(1);
+  const existing = await db.select().from(coupons).where(and(eq(coupons.storeId, storeId), eq(coupons.code, code))).limit(1);
   if (existing.length > 0) return code;
   const expiresAt = new Date(Date.now() + 48 * 60 * 60 * 1000); // 48h
   await db.insert(coupons).values({
+    storeId,
     code,
     discountType: "percentage",
     discountValue: String(discountPercent),
@@ -1009,30 +1012,23 @@ export async function processAbandonedCarts(): Promise<void> {
 
     // ── Etapa 1: 10 minutos — Urgência ──────────────────────────────────────
     if (minutesSinceCreated >= 10 && !cart.firstReminderSentAt) {
-      const isDuplicate = await alreadySent(db, "cart_step1", 1, cart.id);
+      const isDuplicate = await alreadySent(db, "cart_step1", 1, cart.storeId, cart.id);
       if (!isDuplicate) {
         const items = JSON.parse(cart.items) as Array<{ productName: string; quantity: number }>;
         const itemsList = items.map(i => `• ${i.productName} x${i.quantity}`).join("\n");
-        const msg = `Olá, ${cart.customerName}! 🍕\n\nVocê deixou sua pizza no forno! 😅\n\n${itemsList}\n\n*Total: R$ ${cart.total}*\n\nFinalize agora antes que esfrie:\n👉 https://bonattopizza.manus.space`;
+        const msg = `Oi, ${cart.customerName}! Seu carrinho ainda está salvo.\n\n${itemsList}\n\n*Total: R$ ${cart.total}*\n\nSe quiser concluir o pedido, continue por aqui:\nhttps://bonattopizza.manus.space`;
 
         if (cart.customerPhone) {
           await sendWhatsApp(cart.customerPhone, msg);
-          await logAutomationEvent(db, { type: "cart_step1", userId: cart.userId, cartId: cart.id, channel: "whatsapp", step: 1, status: "sent" });
+          await logAutomationEvent(db, { storeId: cart.storeId, type: "cart_step1", userId: cart.userId, cartId: cart.id, channel: "whatsapp", step: 1, status: "sent" });
         }
-        // Push notification (usa template configurado no admin, com fallback)
-        {
-          const tpl = await pickRandomTemplate("cart_abandoned_step1", "push");
-          const interpolate = (t: string) => t.replace(/\{\{total\}\}/g, cart.total).replace(/\{\{clientName\}\}/g, cart.customerName ?? "cliente");
-          const pushTitle = tpl ? interpolate(tpl.title) : "🍕 Sua pizza está esperando!";
-          const pushBody = tpl ? interpolate(tpl.body) : `Finalize seu pedido de R$ ${cart.total}`;
-          await sendPushToUser(cart.userId, { title: pushTitle, body: pushBody, url: `/checkout?restore=${cart.id}`, tag: `abandoned-cart-${cart.id}` });
-        }
-        await logAutomationEvent(db, { type: "cart_step1", userId: cart.userId, cartId: cart.id, channel: "push", step: 1, status: "sent" });
+        // Push automático de carrinho abandonado desativado.
+        // Marketing push deve ser configurado explicitamente em uma jornada/campanha.
 
         await db.update(abandonedCarts).set({ firstReminderSentAt: now, currentStep: 1 }).where(eq(abandonedCarts.id, cart.id));
 
         // Disparar jornadas de checkout_abandoned
-        const activeJourneys = await getActiveJourneysForTrigger("checkout_abandoned");
+        const activeJourneys = await getActiveJourneysForTrigger("checkout_abandoned", cart.storeId);
         for (const j of activeJourneys) {
           await startJourneyExecution(j.id, cart.userId, cart.customerPhone ?? undefined, { cartId: cart.id, total: cart.total });
         }
@@ -1041,22 +1037,15 @@ export async function processAbandonedCarts(): Promise<void> {
 
     // ── Etapa 2: 20 minutos — Benefício ─────────────────────────────────────
     if (minutesSinceCreated >= 20 && cart.firstReminderSentAt && !cart.secondReminderSentAt) {
-      const isDuplicate = await alreadySent(db, "cart_step2", 2, cart.id);
+      const isDuplicate = await alreadySent(db, "cart_step2", 2, cart.storeId, cart.id);
       if (!isDuplicate) {
-        const msg = `${cart.customerName}, ainda dá tempo! 🔥\n\nSeu pedido de *R$ ${cart.total}* ainda está salvo.\n\n🛵 Entregamos em até 40 minutos!\n\nNão perca sua pizza favorita:\n👉 https://bonattopizza.manus.space`;
+        const msg = `Oi, ${cart.customerName}! Seu pedido de *R$ ${cart.total}* continua no carrinho.\n\nSe quiser finalizar, use o link abaixo:\nhttps://bonattopizza.manus.space`;
 
         if (cart.customerPhone) {
           await sendWhatsApp(cart.customerPhone, msg);
-          await logAutomationEvent(db, { type: "cart_step2", userId: cart.userId, cartId: cart.id, channel: "whatsapp", step: 2, status: "sent" });
+          await logAutomationEvent(db, { storeId: cart.storeId, type: "cart_step2", userId: cart.userId, cartId: cart.id, channel: "whatsapp", step: 2, status: "sent" });
         }
-        {
-          const tpl = await pickRandomTemplate("cart_abandoned_step2", "push");
-          const interpolate = (t: string) => t.replace(/\{\{total\}\}/g, cart.total).replace(/\{\{clientName\}\}/g, cart.customerName ?? "cliente");
-          const pushTitle = tpl ? interpolate(tpl.title) : "🛵 Entrega em 40 minutos!";
-          const pushBody = tpl ? interpolate(tpl.body) : `Seu pedido de R$ ${cart.total} está salvo`;
-          await sendPushToUser(cart.userId, { title: pushTitle, body: pushBody, url: `/checkout?restore=${cart.id}`, tag: `abandoned-cart-${cart.id}` });
-        }
-        await logAutomationEvent(db, { type: "cart_step2", userId: cart.userId, cartId: cart.id, channel: "push", step: 2, status: "sent" });
+        // Sem push automático nesta etapa.
 
         await db.update(abandonedCarts).set({ secondReminderSentAt: now, currentStep: 2 }).where(eq(abandonedCarts.id, cart.id));
       }
@@ -1064,25 +1053,18 @@ export async function processAbandonedCarts(): Promise<void> {
 
     // ── Etapa 3: 30 minutos — Escassez + Cupom ───────────────────────────────
     if (minutesSinceCreated >= 30 && cart.secondReminderSentAt && !cart.thirdReminderSentAt) {
-      const isDuplicate = await alreadySent(db, "cart_step3", 3, cart.id);
+      const isDuplicate = await alreadySent(db, "cart_step3", 3, cart.storeId, cart.id);
       if (!isDuplicate) {
         // Gerar cupom personalizado de 10% para este usuário
-        const couponCode = await generateRecoveryCoupon(db, cart.userId, 10, cart.customerName);
+        const couponCode = await generateRecoveryCoupon(db, cart.storeId, cart.userId, 10, cart.customerName);
 
-        const msg = `⏰ ${cart.customerName}, última chance!\n\nSeu carrinho expira em breve e não queremos que você perca sua pizza! 🍕\n\n🎁 Use o cupom exclusivo *${couponCode}* e ganhe *10% de desconto*!\n\n⚡ Válido por apenas 48 horas!\n\n👉 https://bonattopizza.manus.space`;
+        const msg = `Oi, ${cart.customerName}! Seu carrinho ainda está salvo.\n\nUse o cupom *${couponCode}* para ter *10% de desconto*.\n\nVálido por 48 horas.\n\nhttps://bonattopizza.manus.space`;
 
         if (cart.customerPhone) {
           await sendWhatsApp(cart.customerPhone, msg);
-          await logAutomationEvent(db, { type: "cart_step3", userId: cart.userId, cartId: cart.id, channel: "whatsapp", step: 3, status: "sent", metadata: { couponCode } });
+          await logAutomationEvent(db, { storeId: cart.storeId, type: "cart_step3", userId: cart.userId, cartId: cart.id, channel: "whatsapp", step: 3, status: "sent", metadata: { couponCode } });
         }
-        {
-          const tpl = await pickRandomTemplate("cart_abandoned_step3", "push");
-          const interpolate = (t: string) => t.replace(/\{\{total\}\}/g, cart.total).replace(/\{\{clientName\}\}/g, cart.customerName ?? "cliente").replace(/\{\{coupon\}\}/g, couponCode);
-          const pushTitle = tpl ? interpolate(tpl.title) : "⏰ Última chance! 10% OFF";
-          const pushBody = tpl ? interpolate(tpl.body) : `Cupom ${couponCode} — válido 48h`;
-          await sendPushToUser(cart.userId, { title: pushTitle, body: pushBody, url: `/checkout?restore=${cart.id}`, tag: `abandoned-cart-${cart.id}` });
-        }
-        await logAutomationEvent(db, { type: "cart_step3", userId: cart.userId, cartId: cart.id, channel: "push", step: 3, status: "sent", metadata: { couponCode } });
+        // Sem push automático nesta etapa. O cupom continua disponível pela automação/WhatsApp.
 
         await db.update(abandonedCarts).set({ thirdReminderSentAt: now, couponCode, currentStep: 3 }).where(eq(abandonedCarts.id, cart.id));
       }
@@ -1099,22 +1081,22 @@ export async function processAbandonedCarts(): Promise<void> {
 
 const REACTIVATION_COPY: Record<string, { title: string; whatsapp: (name: string, coupon: string) => string; push: { title: string; body: string } }> = {
   inativo_15: {
-    title: "Sentimos sua falta!",
+    title: "Cupom de 5% para seu próximo pedido",
     whatsapp: (name, coupon) =>
-      `Oi, ${name}! 👋\n\nFaz uns dias que você não pede na Bonatto Pizza e a gente sentiu falta!\n\n🍕 Que tal uma pizza hoje? Use o cupom *${coupon}* e ganhe *5% de desconto* no seu próximo pedido!\n\n⏰ Válido por 72 horas.\n\n👉 https://bonattopizza.manus.space`,
-    push: { title: "🍕 Sentimos sua falta!", body: "5% OFF no seu próximo pedido — válido 72h" },
+      `Oi, ${name}! Temos um cupom de *5% de desconto* para seu próximo pedido.\n\nCupom: *${coupon}*\nVálido por 72 horas.\n\nhttps://bonattopizza.manus.space`,
+    push: { title: "🍕 5% de desconto no próximo pedido", body: "Use seu cupom nas próximas 72 horas." },
   },
   inativo_30: {
-    title: "Oferta especial para você",
+    title: "Cupom de 10% para seu próximo pedido",
     whatsapp: (name, coupon) =>
-      `${name}, temos uma oferta especial para você! 🎁\n\nSabemos que faz um tempinho que você não pede na Bonatto Pizza. Que tal voltar com *10% de desconto*?\n\n🎟️ Cupom exclusivo: *${coupon}*\n\n⏰ Oferta por tempo limitado!\n\n👉 https://bonattopizza.manus.space`,
-    push: { title: "🎁 10% OFF — Oferta exclusiva!", body: "Volte a pedir com desconto especial" },
+      `Oi, ${name}! Seu próximo pedido tem *10% de desconto* com o cupom abaixo.\n\nCupom: *${coupon}*\nVálido por 48 horas.\n\nhttps://bonattopizza.manus.space`,
+    push: { title: "🎁 10% de desconto no próximo pedido", body: "Use o cupom disponível para sua conta." },
   },
   inativo_60: {
-    title: "Voltamos para você!",
+    title: "Cupom de 15% para seu próximo pedido",
     whatsapp: (name, coupon) =>
-      `${name}! 😢\n\nA gente sente muito a sua falta na Bonatto Pizza.\n\nPara te receber de volta, preparamos um cupom especial de *15% de desconto*:\n\n🎟️ *${coupon}*\n\n🍕 Novidades no cardápio te esperam!\n\n👉 https://bonattopizza.manus.space`,
-    push: { title: "😢 Voltamos para você! 15% OFF", body: "Cupom especial de 15% para seu retorno" },
+      `Oi, ${name}! Temos um cupom de *15% de desconto* para seu próximo pedido.\n\nCupom: *${coupon}*\n\nVeja o cardápio em:\nhttps://bonattopizza.manus.space`,
+    push: { title: "🍕 15% de desconto no próximo pedido", body: "Seu cupom está disponível para usar no cardápio." },
   },
 };
 
@@ -1137,7 +1119,7 @@ export async function processReactivation(): Promise<void> {
   for (const segment of segments) {
     // Buscar clientes com esta tag que ainda não receberam mensagem nas últimas 30 dias
     const taggedUsers = await db
-      .select({ userId: customerTags.userId, assignedAt: customerTags.assignedAt })
+      .select({ storeId: customerTags.storeId, userId: customerTags.userId, assignedAt: customerTags.assignedAt })
       .from(customerTags)
       .where(eq(customerTags.tag, segment.tag))
       .limit(30);
@@ -1150,6 +1132,7 @@ export async function processReactivation(): Promise<void> {
         .where(
           and(
             eq(automationEvents.type, segment.type),
+            eq(automationEvents.storeId, tagged.storeId),
             eq(automationEvents.userId, tagged.userId),
             gte(automationEvents.createdAt, new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000))
           )
@@ -1167,7 +1150,7 @@ export async function processReactivation(): Promise<void> {
 
       // Gerar cupom personalizado
       const suffix = `${user.id}-${segment.tag.replace("_", "")}`;
-      const couponCode = await generateRecoveryCoupon(db, user.id, segment.discount, suffix);
+      const couponCode = await generateRecoveryCoupon(db, tagged.storeId, user.id, segment.discount, suffix);
       const name = user.name ?? "cliente";
 
       // Mapear tag para evento de template
@@ -1182,23 +1165,19 @@ export async function processReactivation(): Promise<void> {
          .replace(/\{\{coupon\}\}/g, couponCode);
 
       // Enviar WhatsApp (usa template configurado no admin, com fallback)
-      const waTpl = await pickRandomTemplate(templateEvent, "whatsapp");
+      const waTpl = await pickRandomTemplate(templateEvent, "whatsapp", tagged.storeId);
       const copy = REACTIVATION_COPY[segment.tag];
       const waMsg = waTpl ? interpolate(waTpl.body) : (copy ? copy.whatsapp(name, couponCode) : "");
       if (waMsg) {
         await sendWhatsApp(phone, waMsg);
-        await logAutomationEvent(db, { type: segment.type, userId: user.id, channel: "whatsapp", step: 1, status: "sent", metadata: { couponCode, tag: segment.tag } });
+        await logAutomationEvent(db, { storeId: tagged.storeId, type: segment.type, userId: user.id, channel: "whatsapp", step: 1, status: "sent", metadata: { couponCode, tag: segment.tag } });
       }
 
-      // Enviar Push (usa template configurado no admin, com fallback)
-      const pushTpl = await pickRandomTemplate(templateEvent, "push");
-      const pushTitle = pushTpl ? interpolate(pushTpl.title) : (copy?.push.title ?? "🍕 Sentimos sua falta!");
-      const pushBody = pushTpl ? interpolate(pushTpl.body) : (copy?.push.body ?? "Temos uma oferta especial para você!");
-      await sendPushToUser(user.id, { title: pushTitle, body: pushBody, url: "/" });
-      await logAutomationEvent(db, { type: segment.type, userId: user.id, channel: "push", step: 1, status: "sent", metadata: { couponCode, tag: segment.tag } });
+      // Push automático de reativação desativado.
+      // Caso desejado, configure uma jornada/campanha explícita no Admin.
 
       // Disparar jornada de reativação se existir
-      await fireJourneyTrigger(segment.tag as typeof journeys.$inferInsert["trigger"], user.id, phone);
+      await fireJourneyTrigger(segment.tag as typeof journeys.$inferInsert["trigger"], user.id, phone, tagged.storeId);
 
       console.log(`[Reactivation] Enviado para userId=${user.id} (${segment.tag}) cupom=${couponCode}`);
     }
@@ -1209,22 +1188,23 @@ export async function processReactivation(): Promise<void> {
  * Marca conversões: quando um cliente que tinha carrinho abandonado ou estava inativo faz um pedido,
  * atualiza journeyExecutions com convertedAt e conversionOrderId.
  */
-export async function markConversions(userId: number, orderId: number): Promise<void> {
+export async function markConversions(userId: number, orderId: number, storeId: number): Promise<void> {
   const db = await getDb();
   if (!db) return;
   const now = new Date();
 
   // Marcar carrinho como recuperado
-  await markCartRecovered(userId);
+  await markCartRecovered(userId, storeId);
 
   // Atualizar execuções de jornada em andamento para este usuário
   await db
     .update(journeyExecutions)
     .set({ convertedAt: now, conversionOrderId: orderId, status: "completed", completedAt: now })
-    .where(and(eq(journeyExecutions.userId, userId), eq(journeyExecutions.status, "running")));
+    .where(and(eq(journeyExecutions.storeId, storeId), eq(journeyExecutions.userId, userId), eq(journeyExecutions.status, "running")));
 
   // Registrar evento de conversão
   await db.insert(automationEvents).values({
+    storeId,
     type: "conversion",
     userId,
     orderId,
