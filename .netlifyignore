@@ -11,3 +11,13 @@ dist
 .codex-homepage-mobile.png
 android
 ios
+infra
+.tmp
+.deploy-bundle
+tmp
+.local-uploads
+load-test-results
+tmppdfssugestao-app
+.agents
+.claude
+agent
