@@ -11,19 +11,33 @@ export function HomePopup() {
   const [visible, setVisible] = useState(false);
   const [copied, setCopied] = useState(false);
   const [countdown, setCountdown] = useState(15);
+  const [couponQueryEnabled, setCouponQueryEnabled] = useState(false);
   const [, setLocation] = useLocation();
 
   const { data: couponData } = trpc.coupons.getHomePopupCoupon.useQuery(undefined, {
+    enabled: couponQueryEnabled,
     staleTime: Infinity,
   });
 
   useEffect(() => {
     if (sessionStorage.getItem(POPUP_SESSION_KEY)) return;
-    const timer = window.setTimeout(() => {
+
+    // The popup only appears after one minute. Do not spend critical startup
+    // bandwidth on its coupon; prefetch shortly before it can become visible.
+    const prefetchTimer = window.setTimeout(
+      () => setCouponQueryEnabled(true),
+      Math.max(0, POPUP_DELAY_MS - 10_000),
+    );
+    const showTimer = window.setTimeout(() => {
+      setCouponQueryEnabled(true);
       setVisible(true);
       sessionStorage.setItem(POPUP_SESSION_KEY, "1");
     }, POPUP_DELAY_MS);
-    return () => window.clearTimeout(timer);
+
+    return () => {
+      window.clearTimeout(prefetchTimer);
+      window.clearTimeout(showTimer);
+    };
   }, []);
 
   useEffect(() => {
@@ -62,11 +76,11 @@ export function HomePopup() {
       <div
         role="dialog"
         aria-modal="true"
-        aria-label="Oferta exclusiva"
+        aria-label="Cupom de primeiro pedido"
         className="fixed inset-0 z-[9999] flex items-end justify-center p-0 sm:items-center sm:p-4"
       >
         <div className="flex max-h-[calc(100dvh-0.75rem)] w-full max-w-md animate-in flex-col overflow-hidden rounded-t-[28px] bg-white shadow-2xl slide-in-from-bottom-4 duration-300 sm:max-h-[min(92dvh,680px)] sm:rounded-[28px] sm:zoom-in-95">
-          <header className="relative flex-shrink-0 overflow-hidden bg-[var(--tenant-header,#DA1923)] px-5 pb-5 pt-7 text-center text-white sm:px-8 sm:pb-7 sm:pt-8">
+          <header className="relative flex-shrink-0 overflow-hidden bg-[var(--bonatto-header,#DA1923)] px-5 pb-5 pt-7 text-center text-white sm:px-8 sm:pb-7 sm:pt-8">
             <div className="absolute -right-10 -top-12 h-32 w-32 rounded-full bg-[#b51620]" />
             <button
               type="button"
@@ -79,7 +93,7 @@ export function HomePopup() {
 
             <div className="relative mb-3 inline-flex items-center gap-1.5 rounded-full bg-[#ffca32] px-3 py-1 text-[10px] font-bold uppercase tracking-wide text-[#5c3400] sm:text-xs">
               <Clock className="h-3.5 w-3.5" />
-              Oferta por tempo limitado
+              Cupom de boas-vindas
             </div>
             <h2 className="relative mx-auto flex max-w-full flex-col items-center uppercase">
               <span className="text-[2.65rem] font-black leading-none tracking-[-0.035em] text-[#ffca32] sm:text-[3.25rem]">
@@ -90,14 +104,14 @@ export function HomePopup() {
               </span>
             </h2>
             <p className="relative mx-auto mt-3 max-w-[32ch] text-xs leading-relaxed text-white/75 sm:text-sm">
-              Seu primeiro sabor Bonatto ficou ainda melhor.
+              Use o cupom abaixo no checkout do seu primeiro pedido.
             </p>
           </header>
 
           <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
             <section className="bg-[#fff5f1] px-4 py-4 sm:px-6">
               <p className="mb-2 text-center text-[10px] font-semibold uppercase tracking-[0.14em] text-[#786966]">
-                Seu cupom exclusivo
+                Seu cupom
               </p>
               <button
                 type="button"

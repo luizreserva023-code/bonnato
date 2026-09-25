@@ -1,0 +1,8 @@
+[build]
+publish = "public"
+
+[[redirects]]
+from = "/*"
+to = "https://d1q30vgy0qynvj.cloudfront.net/:splat"
+status = 200
+force = true

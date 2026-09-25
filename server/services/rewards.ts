@@ -10,10 +10,10 @@ import {
   rewardCoupons,
   rewardRedemptions,
   stores,
-  tenantCustomerAccounts,
+  customerStoreAccounts,
   users,
 } from "../../drizzle/schema.ts";
-import { getDb, getTenantCustomerAccount, getTenantScope, getUserLoyaltyPoints } from "../db.ts";
+import { getDb, getCustomerStoreAccount, getUserLoyaltyPoints } from "../db.ts";
 
 export type RewardAvailability =
   | "available"
@@ -274,7 +274,7 @@ export async function createReward(storeId: number, input: RewardInput) {
   const db = await getDb();
   requireDatabase(db);
   validateRewardRules(input);
-  const [result] = await db.insert(rewardCatalog).values({
+  const [created] = await db.insert(rewardCatalog).values({
     storeId,
     name: input.name,
     description: input.description ?? null,
@@ -294,8 +294,8 @@ export async function createReward(storeId: number, input: RewardInput) {
     sortOrder: input.sortOrder ?? 0,
     startsAt: input.startsAt ?? null,
     expiresAt: input.expiresAt ?? null,
-  });
-  return Number((result as { insertId?: number }).insertId ?? 0);
+  }).returning({ id: rewardCatalog.id });
+  return created.id;
 }
 
 export async function updateReward(storeId: number, rewardId: number, input: Partial<RewardInput>) {
@@ -466,8 +466,7 @@ export async function redeemReward(input: {
 }) {
   const db = await getDb();
   requireDatabase(db);
-  const scope = await getTenantScope(input.storeId);
-  await getTenantCustomerAccount(input.userId, input.storeId);
+  await getCustomerStoreAccount(input.userId, input.storeId);
 
   const [existing] = await db.select({ id: rewardRedemptions.id }).from(rewardRedemptions)
     .where(and(
@@ -498,8 +497,11 @@ export async function redeemReward(input: {
         throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Recompensa esgotada." });
       }
 
-      const [account] = await tx.select().from(tenantCustomerAccounts)
-        .where(and(eq(tenantCustomerAccounts.tenantKey, scope.tenantKey), eq(tenantCustomerAccounts.userId, input.userId)))
+      const [account] = await tx.select().from(customerStoreAccounts)
+        .where(and(
+          eq(customerStoreAccounts.storeId, input.storeId),
+          eq(customerStoreAccounts.userId, input.userId),
+        ))
         .limit(1)
         .for("update");
       if (!account || account.loyaltyPoints < reward.pointsCost) {
@@ -538,7 +540,7 @@ export async function redeemReward(input: {
 
       const balanceBefore = account.loyaltyPoints;
       const balanceAfter = balanceBefore - reward.pointsCost;
-      const [insertResult] = await tx.insert(rewardRedemptions).values({
+      const [createdRedemption] = await tx.insert(rewardRedemptions).values({
         storeId: input.storeId,
         rewardId: reward.id,
         userId: input.userId,
@@ -546,17 +548,13 @@ export async function redeemReward(input: {
         status: "pending",
         idempotencyKey: input.idempotencyKey,
         expiresAt: coupon.expiresAt ?? reward.expiresAt ?? null,
-      });
-      const redemptionId = Number((insertResult as { insertId?: number }).insertId ?? 0);
-      if (!redemptionId) throw new Error("Falha ao criar o resgate.");
+      }).returning({ id: rewardRedemptions.id });
+      const redemptionId = createdRedemption.id;
 
-      await tx.update(tenantCustomerAccounts).set({ loyaltyPoints: balanceAfter })
-        .where(eq(tenantCustomerAccounts.id, account.id));
-      if (scope.tenantKey === "bonatto") {
-        await tx.update(users).set({ loyaltyPoints: balanceAfter }).where(eq(users.id, input.userId));
-      }
+      await tx.update(customerStoreAccounts)
+        .set({ loyaltyPoints: balanceAfter, updatedAt: now })
+        .where(eq(customerStoreAccounts.id, account.id));
       await tx.insert(loyaltyTransactions).values({
-        tenantKey: scope.tenantKey,
         storeId: input.storeId,
         userId: input.userId,
         type: "redeem",
@@ -806,7 +804,6 @@ export async function cancelRewardRedemption(input: {
 }) {
   const db = await getDb();
   requireDatabase(db);
-  const scope = await getTenantScope(input.storeId);
   return db.transaction(async (tx) => {
     const [redemption] = await tx.select().from(rewardRedemptions)
       .where(and(eq(rewardRedemptions.id, input.redemptionId), eq(rewardRedemptions.storeId, input.storeId)))
@@ -822,19 +819,20 @@ export async function cancelRewardRedemption(input: {
         .where(eq(rewardCouponUsages.couponId, redemption.couponId)).limit(1);
       if (usage) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Cupom já utilizado em um pedido." });
     }
-    const [account] = await tx.select().from(tenantCustomerAccounts)
-      .where(and(eq(tenantCustomerAccounts.tenantKey, scope.tenantKey), eq(tenantCustomerAccounts.userId, redemption.userId)))
+    const [account] = await tx.select().from(customerStoreAccounts)
+      .where(and(
+        eq(customerStoreAccounts.storeId, input.storeId),
+        eq(customerStoreAccounts.userId, redemption.userId),
+      ))
       .limit(1)
       .for("update");
     if (!account) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Conta de pontos não encontrada." });
     const balanceBefore = account.loyaltyPoints;
     const balanceAfter = balanceBefore + redemption.pointsSpent;
-    await tx.update(tenantCustomerAccounts).set({ loyaltyPoints: balanceAfter }).where(eq(tenantCustomerAccounts.id, account.id));
-    if (scope.tenantKey === "bonatto") {
-      await tx.update(users).set({ loyaltyPoints: balanceAfter }).where(eq(users.id, redemption.userId));
-    }
+    await tx.update(customerStoreAccounts)
+      .set({ loyaltyPoints: balanceAfter, updatedAt: new Date() })
+      .where(eq(customerStoreAccounts.id, account.id));
     await tx.insert(loyaltyTransactions).values({
-      tenantKey: scope.tenantKey,
       storeId: input.storeId,
       userId: redemption.userId,
       type: "refund",
@@ -854,3 +852,4 @@ export async function cancelRewardRedemption(input: {
     return { alreadyCancelled: false, refundedPoints: redemption.pointsSpent, balanceAfter };
   });
 }
+

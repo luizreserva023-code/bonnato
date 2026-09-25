@@ -1,6 +1,6 @@
-import { describe, expect, it } from "vitest";
+﻿import { describe, expect, it } from "vitest";
 
-import { sanitizeAuditValue } from "./tenantAudit";
+import { sanitizeAuditValue } from "./storeAudit";
 
 describe("tenant audit metadata", () => {
   it("redacts credentials recursively", () => {
@@ -20,3 +20,4 @@ describe("tenant audit metadata", () => {
     expect(JSON.stringify(value)).toContain("[truncated]");
   });
 });
+

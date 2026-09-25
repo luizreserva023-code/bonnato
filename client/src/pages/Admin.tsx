@@ -11,6 +11,7 @@ import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { trpc } from "@/lib/trpc";
+import { uploadImageFile } from "@/lib/imageUpload";
 import { toast } from "sonner";
 import {
   BarChart3,
@@ -52,6 +53,8 @@ import {
   PlugZap,
   Truck,
   GripVertical,
+  MessageCircle,
+  Star,
 } from "lucide-react";
 import { lazy, Suspense, useState, useEffect, useRef, useCallback, useMemo, createContext, useContext, type CSSProperties } from "react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -74,15 +77,18 @@ import { Link } from "wouter";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, PieChart, Pie, Legend, AreaChart, Area, ComposedChart, ReferenceLine } from "recharts";
 import { ArrowUp, ArrowDown, Minus } from "lucide-react";
 import { useNewOrderAlert } from "@/hooks/useNewOrderAlert";
+import { useOrderRealtime } from "@/hooks/useOrderRealtime";
 import { usePushNotifications } from "@/hooks/usePushNotifications";
 import { Bell, BellOff } from "lucide-react";
 import { JoinedPagination } from "@/components/ui/joined-pagination";
-import { MarketplacesTab } from "./admin/MarketplacesTab";
-import { NetworkFinanceTab } from "./admin/NetworkFinanceTab";
-import GrowthCenter from "./GrowthCenter";
-import { StoresTab } from "./admin/StoresTab";
 import { Building2, Store, ChevronDown, ChevronLeft, ChevronRight } from "lucide-react";
 import { AdminStoreProvider, useAdminStore } from "@/contexts/AdminStoreContext";
+import { useTheme } from "@/contexts/ThemeContext";
+import { UiPreferencesMenu } from "@/components/UiPreferencesMenu";
+import { OPEN_COMMAND_PALETTE_EVENT } from "@/components/GlobalCommandPalette";
+import { AdminOnboarding } from "@/components/AdminOnboarding";
+import { AdminHelpButton, AdminHelpProvider } from "@/components/admin/AdminHelpCenter";
+import { AppStatusPage } from "@/components/AppStatusPage";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { CATEGORY_ICON_OPTIONS, getCategoryIcon, getCategoryImage } from "@/lib/category-visuals";
 import { BRAND_ASSETS } from "@/lib/brand";
@@ -103,21 +109,40 @@ import {
   AdminEmptyState,
   AdminPill,
   AdminSectionLabel,
+  AdminInsightCard,
+  AdminDataTableShell,
+  AdminCardSkeleton,
+  AdminChartSkeleton,
+  AdminSkeleton,
 } from "@/components/admin/ui";
-import type { WhiteLabelAdminTab } from "@shared/whiteLabel";
-import type { TenantRuntimeConfig } from "@/shared/tenant/tenant-config";
+import type { BonattoAdminTab } from "@shared/bonattoConfig";
+import type { BonattoRuntimeConfig } from "@/config/bonatto";
+import type { StoreAccessRole, StorePermission } from "@shared/permissions";
 import { DEFAULT_HOME_APP_CONFIG, type HomeAppConfig } from "@/components/home/HomeAppHub";
-import { ProductCatalogEditor } from "@/features/admin/catalog/ProductCatalogEditor";
+import "@/styles/admin-system.css";
 
 const RewardsAdminTab = lazy(() => import("@/features/admin/rewards/RewardsAdminTab"));
+const ReviewsAdminTab = lazy(() => import("@/features/admin/marketing/ReviewsAdminTab"));
+const WhatsAppAdminTab = lazy(() => import("@/features/admin/whatsapp/WhatsAppAdminTab"));
+const MarketplacesTab = lazy(() => import("./admin/MarketplacesTab").then((m) => ({ default: m.MarketplacesTab })));
+const NetworkFinanceTab = lazy(() => import("./admin/NetworkFinanceTab").then((m) => ({ default: m.NetworkFinanceTab })));
+const GrowthCenter = lazy(() => import("./GrowthCenter"));
+const StoresTab = lazy(() => import("./admin/StoresTab").then((m) => ({ default: m.StoresTab })));
+const ProductCatalogEditor = lazy(() => import("@/features/admin/catalog/ProductCatalogEditor").then((m) => ({ default: m.ProductCatalogEditor })));
+const CatalogReplicationDialog = lazy(() => import("@/features/admin/catalog/CatalogReplicationDialog").then((m) => ({ default: m.CatalogReplicationDialog })));
+const MenuStructurePanel = lazy(() => import("@/features/admin/catalog/MenuStructurePanel").then((m) => ({ default: m.MenuStructurePanel })));
+const ProductsManagementPanel = lazy(() => import("@/features/admin/catalog/ProductsManagementPanel").then((m) => ({ default: m.ProductsManagementPanel })));
+const ModifierGroupsPanel = lazy(() => import("@/features/admin/catalog/ModifierGroupsPanel").then((m) => ({ default: m.ModifierGroupsPanel })));
+const MenuPerformancePanel = lazy(() => import("@/features/admin/catalog/MenuPerformancePanel").then((m) => ({ default: m.MenuPerformancePanel })));
+const PerformanceTab = lazy(() => import("@/features/admin/reports/PerformanceTab").then((m) => ({ default: m.PerformanceTab })));
 
 const STATUS_LABELS: Record<string, { label: string; color: string; next?: string }> = {
-  pending: { label: "Aguardando", color: "bg-[#fce8e8] text-[#6E0D12]", next: "confirmed" },
-  confirmed: { label: "Confirmado", color: "bg-[#fdf5f5] text-[#5a0a0f]", next: "preparing" },
-  preparing: { label: "Preparando", color: "bg-[#f9d0d0] text-[#450709]", next: "out_for_delivery" },
-  out_for_delivery: { label: "Saiu p/ Entrega", color: "bg-[#f5b8b8] text-[#2d0508]", next: "delivered" },
-  delivered: { label: "Entregue", color: "bg-[#f0fdf4] text-[#166534]" },
-  cancelled: { label: "Cancelado", color: "bg-[#fce8e8] text-[#450709]" },
+  pending: { label: "Aguardando", color: "bg-[#EFF6FF] text-[#3578E5]", next: "confirmed" },
+  confirmed: { label: "Confirmado", color: "bg-[#FCF5F5] text-[#631014]", next: "preparing" },
+  preparing: { label: "Preparando", color: "bg-[#FFFAEB] text-[#D97706]", next: "out_for_delivery" },
+  out_for_delivery: { label: "Saiu p/ Entrega", color: "bg-[#F6E9E9] text-[#73151B]", next: "delivered" },
+  delivered: { label: "Entregue", color: "bg-[#ECFDF5] text-[#16A36A]" },
+  cancelled: { label: "Cancelado", color: "bg-[#FEF3F2] text-[#D92D20]" },
 };
 
 const PAYMENT_LABELS: Record<string, string> = {
@@ -127,14 +152,18 @@ const PAYMENT_LABELS: Record<string, string> = {
   cash: "Dinheiro",
 };
 
-type AdminTab = "dashboard" | "orders" | "menu" | "club" | "rewards" | "coupons" | "reports" | "network" | "distribution" | "promotions" | "raffles" | "upsells" | "users" | "drivers" | "settings" | "payments" | "marketplaces" | "stores" | "recovery" | "platform";
+type AdminTab = "dashboard" | "orders" | "menu" | "inventory" | "staff" | "dining" | "club" | "rewards" | "coupons" | "reviews" | "reports" | "network" | "distribution" | "promotions" | "raffles" | "upsells" | "users" | "drivers" | "settings" | "payments" | "whatsapp" | "marketplaces" | "stores" | "recovery" | "growth";
 
-const ADMIN_TAB_FEATURE: Partial<Record<AdminTab, WhiteLabelAdminTab>> = {
+const ADMIN_TAB_FEATURE: Partial<Record<AdminTab, BonattoAdminTab>> = {
   dashboard: "dashboard",
   orders: "orders",
   menu: "menu",
+  inventory: "inventory",
+  staff: "staff",
+  dining: "dining",
   club: "club",
   coupons: "coupons",
+  reviews: "reviews",
   reports: "reports",
   network: "network",
   distribution: "distribution",
@@ -145,14 +174,50 @@ const ADMIN_TAB_FEATURE: Partial<Record<AdminTab, WhiteLabelAdminTab>> = {
   drivers: "drivers",
   settings: "settings",
   payments: "payments",
+  whatsapp: "whatsapp",
   marketplaces: "marketplaces",
   stores: "stores",
   recovery: "recovery",
-  platform: "platform",
+  growth: "growth",
 };
 
-function isAdminTabAvailable(tab: AdminTab, tenant: TenantRuntimeConfig, isPlatformAdmin: boolean) {
-  if (tab === "stores") return isPlatformAdmin;
+const ADMIN_TAB_PERMISSION: Partial<Record<AdminTab, StorePermission>> = {
+  dashboard: "dashboard:view",
+  orders: "orders:view",
+  menu: "catalog:view",
+  inventory: "inventory:view",
+  staff: "staff:view",
+  dining: "dining:view",
+  club: "marketing:view",
+  rewards: "marketing:view",
+  coupons: "marketing:view",
+  reviews: "marketing:view",
+  promotions: "marketing:view",
+  raffles: "marketing:view",
+  upsells: "marketing:view",
+  recovery: "marketing:view",
+  growth: "marketing:view",
+  users: "customers:view",
+  reports: "reports:view",
+  network: "network:view",
+  distribution: "network:view",
+  drivers: "delivery:view",
+  payments: "payments:view",
+  whatsapp: "marketing:view",
+  marketplaces: "integrations:view",
+  settings: "settings:view",
+  stores: "stores:manage",
+};
+
+function isAdminTabAvailable(
+  tab: AdminTab,
+  tenant: BonattoRuntimeConfig,
+  isPlatformAdmin: boolean,
+  can?: (permission: StorePermission) => boolean,
+) {
+  if (tab === "stores" && !isPlatformAdmin) return false;
+  const permission = ADMIN_TAB_PERMISSION[tab];
+  if (permission && can && !can(permission)) return false;
   if (tab === "rewards") return tenant.features.loyalty && tenant.features.adminTabs.club;
   const feature = ADMIN_TAB_FEATURE[tab];
   if (!feature || tenant.features.adminTabs[feature] === false) return false;
@@ -212,6 +277,7 @@ const NAV_ITEMS: NavItem[] = [
     id: "coupons" as AdminTab, label: "Marketing", icon: <Megaphone className="w-[18px] h-[18px]" />,
     children: [
       { id: "coupons" as AdminTab, label: "Cupons", icon: <Tag className="w-4 h-4" /> },
+      { id: "reviews" as AdminTab, label: "Avaliações", icon: <Star className="w-4 h-4" /> },
       { id: "promotions" as AdminTab, label: "Promoções", icon: <Gift className="w-4 h-4" /> },
       { id: "raffles" as AdminTab, label: "Sorteios", icon: <Ticket className="w-4 h-4" /> },
       { id: "upsells" as AdminTab, label: "Up-sells", icon: <Zap className="w-4 h-4" /> },
@@ -224,8 +290,8 @@ const NAV_ITEMS: NavItem[] = [
       { id: "users" as AdminTab, label: "Usuários", icon: <Users className="w-4 h-4" /> },
     ],
   },
-  { id: "reports" as AdminTab, label: "Relatórios", icon: <TrendingUp className="w-[18px] h-[18px]" /> },
-  { id: "platform" as AdminTab, label: "Central de Crescimento", icon: <Zap className="w-[18px] h-[18px]" /> },
+  { id: "reports" as AdminTab, label: "Desempenho", icon: <TrendingUp className="w-[18px] h-[18px]" /> },
+  { id: "growth" as AdminTab, label: "Central de Crescimento", icon: <Zap className="w-[18px] h-[18px]" /> },
   { id: "network" as AdminTab, label: "Rede & Financeiro", icon: <Building2 className="w-[18px] h-[18px]" /> },
   { id: "distribution" as AdminTab, label: "Centro de Distribuição", icon: <Package className="w-[18px] h-[18px]" /> },
   {
@@ -236,6 +302,7 @@ const NAV_ITEMS: NavItem[] = [
     ],
   },
   { id: "payments" as AdminTab, label: "Pagamentos", icon: <DollarSign className="w-[18px] h-[18px]" /> },
+  { id: "whatsapp" as AdminTab, label: "WhatsApp", icon: <MessageCircle className="w-[18px] h-[18px]" /> },
   { id: "marketplaces" as AdminTab, label: "Integrações", icon: <PlugZap className="w-[18px] h-[18px]" /> },
   { id: "settings" as AdminTab, label: "Configurações", icon: <Settings className="w-[18px] h-[18px]" /> },
 ];
@@ -272,6 +339,8 @@ function AdminSidebar({
   subscribePush,
   unsubscribePush,
   isAdmin,
+  accessRole,
+  can,
   collapsed,
   onToggleCollapse,
 }: {
@@ -286,13 +355,13 @@ function AdminSidebar({
   subscribePush: () => void;
   unsubscribePush: () => void;
   isAdmin: boolean;
+  accessRole?: StoreAccessRole;
+  can: (permission: StorePermission) => boolean;
   collapsed?: boolean;
   onToggleCollapse?: () => void;
 }) {
-  const { tenantConfig } = useAdminStore();
-  // Sidebar sempre expandida — sem hover-expand
-  const isHovered = true;
-  const isCollapsed = false;
+  const { bonattoConfig } = useAdminStore();
+  const isCollapsed = Boolean(collapsed);
 
   function handleNav(id: AdminTab) {
     setActiveTab(id);
@@ -304,15 +373,15 @@ function AdminSidebar({
     { href: '/vendas', label: 'Painel de Vendas', icon: <BarChart3 className="w-4 h-4" /> },
     { href: '/crm', label: 'CRM', icon: <Users className="w-4 h-4" /> },
     { href: '/notificacoes', label: 'Notificações', icon: <Megaphone className="w-4 h-4" /> },
-    { href: '/zonas-entrega', label: 'Zonas de Entrega', icon: <MapPin className="w-4 h-4" /> },
+    { href: '/admin/configuracoes/entrega', label: 'Configurações de entrega', icon: <MapPin className="w-4 h-4" /> },
     { href: '/automacoes', label: 'Automações', icon: <Bot className="w-4 h-4" /> },
   ];
   const visibleTools = TOOLS.filter((tool) => {
-    if (tool.href === "/vendas") return tenantConfig.features.salesDashboard;
-    if (tool.href === "/crm") return tenantConfig.features.crm;
-    if (tool.href === "/notificacoes") return tenantConfig.features.notifications;
-    if (tool.href === "/zonas-entrega") return tenantConfig.features.deliveryZones;
-    if (tool.href === "/automacoes") return tenantConfig.features.automations;
+    if (tool.href === "/vendas") return bonattoConfig.features.salesDashboard;
+    if (tool.href === "/crm") return bonattoConfig.features.crm;
+    if (tool.href === "/notificacoes") return bonattoConfig.features.notifications;
+    if (tool.href === "/admin/configuracoes/entrega") return bonattoConfig.features.deliveryZones;
+    if (tool.href === "/automacoes") return bonattoConfig.features.automations;
     return false;
   });
 
@@ -338,16 +407,47 @@ function AdminSidebar({
   return (
     <div
       className="flex flex-col h-full overflow-hidden"
-      style={{ background: sidebarBg, color: textMuted, borderRight: `1px solid var(--admin-sidebar-border)`, width: '224px', boxShadow: '2px 0 12px rgba(0,0,0,0.15)' }}
+      style={{
+        background: sidebarBg,
+        color: textMuted,
+        borderRight: `1px solid var(--admin-sidebar-border)`,
+        width: isCollapsed ? "72px" : "248px",
+        boxShadow: "6px 0 24px rgba(32, 7, 10, 0.08)",
+        transition: "width 160ms cubic-bezier(.2,.8,.2,1)",
+      }}
     >
       {/* ── Header: logo ── */}
-      <div className="flex items-center px-3 pt-4 pb-3 overflow-hidden" style={{ borderBottom: `1px solid ${dividerColor}`, minHeight: 60 }}>
-        <div className="flex items-center gap-2 min-w-0">
-          {tenantConfig.brand.logos.icon ? <img src={tenantConfig.brand.logos.icon} alt={tenantConfig.brand.name} className="w-10 h-10 object-contain shrink-0 rounded-full" /> : <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white/15 text-xs font-black text-white">{tenantConfig.brand.shortName.slice(0, 2).toUpperCase()}</div>}
-          <div className="min-w-0 overflow-hidden flex items-center">
-            {tenantConfig.brand.logos.wordmark ? <img src={tenantConfig.brand.logos.wordmark} alt={tenantConfig.brand.name} className="h-8 w-auto object-contain" /> : <span className="truncate text-sm font-black text-white">{tenantConfig.brand.shortName}</span>}
-          </div>
+      <div className="relative flex items-center justify-between gap-2 px-3 py-3 overflow-visible" style={{ borderBottom: `1px solid ${dividerColor}`, minHeight: 64 }}>
+        <div className={`flex items-center min-w-0 ${isCollapsed ? "justify-center w-full" : "gap-2"}`}>
+          {bonattoConfig.brand.logos.icon ? <img src={bonattoConfig.brand.logos.icon} alt={bonattoConfig.brand.name} className="w-9 h-9 object-contain shrink-0 rounded-full bg-white/10" /> : <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white/15 text-xs font-black text-white">{bonattoConfig.brand.shortName.slice(0, 2).toUpperCase()}</div>}
+          {!isCollapsed && (
+            <div className="min-w-0 overflow-hidden flex items-center">
+              {bonattoConfig.brand.logos.wordmark ? <img src={bonattoConfig.brand.logos.wordmark} alt={bonattoConfig.brand.name} className="h-7 w-auto object-contain" /> : <span className="truncate text-sm font-black text-white">{bonattoConfig.brand.shortName}</span>}
+            </div>
+          )}
         </div>
+        {!isCollapsed && onToggleCollapse && (
+          <button
+            data-help-id="navigation.collapse"
+            type="button"
+            onClick={onToggleCollapse}
+            aria-label="Recolher menu"
+            className="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-white/65 transition-colors hover:bg-white/10 hover:text-white"
+          >
+            <ChevronLeft className="h-4 w-4" />
+          </button>
+        )}
+        {isCollapsed && onToggleCollapse && (
+          <button
+            data-help-id="navigation.expand"
+            type="button"
+            onClick={onToggleCollapse}
+            aria-label="Expandir menu"
+            className="absolute left-[52px] top-5 z-10 grid h-7 w-7 place-items-center rounded-full border border-white/10 bg-[#631014] text-white shadow-md"
+          >
+            <ChevronRight className="h-3.5 w-3.5" />
+          </button>
+        )}
       </div>
 
       {/* ── Seletor de loja (apenas expandido) ── */}
@@ -362,8 +462,8 @@ function AdminSidebar({
         <div className="space-y-0.5">
           {NAV_ITEMS.map((item) => {
             if (item.adminOnly && !isAdmin) return null;
-            const visibleChildren = item.children?.filter((child) => (!child.adminOnly || isAdmin) && isAdminTabAvailable(child.id, tenantConfig, isAdmin));
-            if (!isAdminTabAvailable(item.id, tenantConfig, isAdmin) && (!visibleChildren || visibleChildren.length === 0)) return null;
+            const visibleChildren = item.children?.filter((child) => (!child.adminOnly || isAdmin) && isAdminTabAvailable(child.id, bonattoConfig, isAdmin, can));
+            if (!isAdminTabAvailable(item.id, bonattoConfig, isAdmin, can) && (!visibleChildren || visibleChildren.length === 0)) return null;
             const hasChildren = visibleChildren && visibleChildren.length > 0;
             const childIds = visibleChildren?.map(c => c.id) ?? [];
             const isParentActive = hasChildren && childIds.includes(activeTab);
@@ -462,6 +562,7 @@ function AdminSidebar({
       <div className="px-2 pb-3 pt-2 space-y-1" style={{ borderTop: `1px solid ${dividerColor}` }}>
         {pushSupported && (
           <button
+            data-help-id="settings.push"
             onClick={isSubscribed ? unsubscribePush : subscribePush}
             disabled={pushLoading}
             title={isCollapsed ? (isSubscribed ? 'Push ativo' : 'Ativar Push') : undefined}
@@ -479,6 +580,7 @@ function AdminSidebar({
           </button>
         )}
         <Link href="/" onClick={onClose}
+          data-help-id="navigation.site"
           title={isCollapsed ? 'Ver Site' : undefined}
           className={`transition-all ${
             isCollapsed
@@ -503,7 +605,7 @@ function AdminSidebar({
           </div>
           {!isCollapsed && (
             <div className="flex-1 min-w-0">
-              <p className="text-[12px] font-medium truncate" style={{ color: '#ffffff' }}>{isAdmin ? 'Administrador' : 'Gerente'}</p>
+              <p className="text-[12px] font-medium truncate" style={{ color: '#ffffff' }}>{isAdmin ? "Administrador" : accessRole === "cashier" ? "Caixa" : accessRole === "kitchen" ? "Cozinha" : accessRole === "marketing" ? "Marketing" : accessRole === "finance" ? "Financeiro" : accessRole === "viewer" ? "Visualizador" : "Gerente"}</p>
               <p className="text-[10px] truncate" style={{ color: 'rgba(255,255,255,0.55)' }}>{isAdmin ? 'Acesso total' : 'Acesso da loja'}</p>
             </div>
           )}
@@ -514,7 +616,8 @@ function AdminSidebar({
 }
 function AdminContent() {
   const { user, isAuthenticated, loading } = useAuth();
-  const { tenantConfig, selectedStoreId, isLoading: storeContextLoading } = useAdminStore();
+  const { bonattoConfig, selectedStoreId, isLoading: storeContextLoading, isStaff, accessRole, can } = useAdminStore();
+  const { resolvedTheme } = useTheme();
   const [activeTab, setActiveTabState] = useState<AdminTab>(() => {
     try {
       const tab = new URLSearchParams(window.location.search).get("tab") as AdminTab | null;
@@ -532,22 +635,37 @@ function AdminContent() {
     } catch {}
   }, []);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+  const realtimeUtils = trpc.useUtils();
+  const realtimeEnabled = !loading && isAuthenticated && Boolean(selectedStoreId) && can("orders:view");
+  const { connected: orderRealtimeConnected } = useOrderRealtime({
+    enabled: realtimeEnabled,
+    storeId: selectedStoreId,
+    onEvent: () => {
+      void realtimeUtils.orders.list.invalidate();
+      void realtimeUtils.operations.operations.board.invalidate();
+      void realtimeUtils.reports.todaySummary.invalidate();
+    },
+    onFallback: () => {
+      void realtimeUtils.orders.list.invalidate();
+      void realtimeUtils.operations.operations.board.invalidate();
+    },
+    fallbackIntervalMs: 5_000,
+  });
 
-  // Polling de pedidos para detectar novos (apenas quando autenticado como admin)
   const { data: allOrdersForAlert } = trpc.orders.list.useQuery(
     { limit: 100, storeId: selectedStoreId },
-    { refetchInterval: 15000, enabled: !loading && isAuthenticated && Boolean(selectedStoreId) }
+    { refetchInterval: orderRealtimeConnected ? false : 30_000, enabled: realtimeEnabled }
   );
   const alertOrderIds = allOrdersForAlert?.map(o => o.id);
-  const { stopAlert } = useNewOrderAlert(alertOrderIds, !loading && isAuthenticated && (user?.role === "admin" || user?.role === "manager"));
+  const { stopAlert } = useNewOrderAlert(alertOrderIds, !loading && isAuthenticated && can("orders:view"));
   const { isSubscribed, isLoading: pushLoading, isSupported: pushSupported, subscribe: subscribePush, unsubscribe: unsubscribePush } = usePushNotifications();
   const pendingCount = allOrdersForAlert?.filter(o => o.status === "pending").length ?? 0;
 
   const isAdmin = user?.role === "admin";
   const fallbackTab = (["dashboard", "orders", "menu", "settings"] as AdminTab[])
-    .find((tab) => isAdminTabAvailable(tab, tenantConfig, Boolean(isAdmin))) ?? "dashboard";
+    .find((tab) => isAdminTabAvailable(tab, bonattoConfig, Boolean(isAdmin), can)) ?? "dashboard";
   const accessContextLoading = loading || storeContextLoading;
-  const resolvedActiveTab = accessContextLoading || isAdminTabAvailable(activeTab, tenantConfig, Boolean(isAdmin)) ? activeTab : fallbackTab;
+  const resolvedActiveTab = accessContextLoading || isAdminTabAvailable(activeTab, bonattoConfig, Boolean(isAdmin), can) ? activeTab : fallbackTab;
 
   useEffect(() => {
     if (!accessContextLoading && activeTab !== resolvedActiveTab) setActiveTab(resolvedActiveTab);
@@ -565,8 +683,6 @@ function AdminContent() {
     });
   }
 
-  // Dark mode removed — always light
-
   const sidebarProps = {
     activeTab: resolvedActiveTab,
     setActiveTab,
@@ -578,23 +694,44 @@ function AdminContent() {
     subscribePush,
     unsubscribePush,
     isAdmin,
+    accessRole,
+    can,
     collapsed: sidebarCollapsed,
     onToggleCollapse: toggleSidebar,
   };
 
   // Label da aba ativa para o header mobile
-  const activeLabel = NAV_ITEMS.flatMap(item => item.children ? [item, ...item.children] : [item]).find(i => i.id === resolvedActiveTab)?.label ?? tenantConfig.brand.adminTitle;
-  const tenantAdminStyle = {
+  const activeLabel = NAV_ITEMS.flatMap(item => item.children ? [item, ...item.children] : [item]).find(i => i.id === resolvedActiveTab)?.label ?? bonattoConfig.brand.adminTitle;
+  const bonattoAdminStyle = {
     background: "var(--admin-bg)",
-    color: "var(--admin-text)",
-    "--admin-sidebar-bg": `linear-gradient(180deg, ${tenantConfig.brand.colors.primary} 0%, ${tenantConfig.brand.colors.primaryDark} 100%)`,
-    "--admin-active-text": tenantConfig.brand.colors.primary,
-    "--admin-badge-text": tenantConfig.brand.colors.primary,
-    "--admin-chart-bar-max": tenantConfig.brand.colors.primary,
-    "--admin-icon-color": tenantConfig.brand.colors.primary,
-    "--admin-mobile-header-bg": "var(--tenant-header, #DA1923)",
-    "--admin-mobile-header-border": "rgba(255, 255, 255, 0.18)",
-    "--admin-mobile-header-text": "#ffffff",
+    color: "var(--admin-text-primary)",
+    ...(resolvedTheme === "dark" ? {
+      "--admin-bg": "#111315",
+      "--admin-surface": "#191c20",
+      "--admin-surface-alt": "#20242a",
+      "--admin-card-bg": "#191c20",
+      "--admin-card-border": "#2a2f35",
+      "--admin-border": "#2a2f35",
+      "--admin-border-strong": "#3b424b",
+      "--admin-divider": "#2a2f35",
+      "--admin-hover-bg": "#20242a",
+      "--admin-text-primary": "#f7f8fa",
+      "--admin-text-heading": "#f7f8fa",
+      "--admin-text": "#d6d9de",
+      "--admin-text-secondary": "#b8bec8",
+      "--admin-text-muted": "#8f98a6",
+      "--admin-input-bg": "#15181c",
+      "--admin-input-border": "#343941",
+      "--admin-mobile-header-bg": "rgba(25,28,32,0.97)",
+      "--admin-mobile-header-border": "#2a2f35",
+      "--admin-mobile-header-text": "#f7f8fa",
+      "--admin-tooltip-bg": "#20242a",
+      "--admin-chart-grid": "rgba(255,255,255,0.08)",
+      "--admin-chart-tick": "#929aa6",
+      "--admin-filter-inactive-bg": "#252a30",
+      "--admin-filter-inactive-text": "#b6bdc7",
+      "--admin-header-bg": "rgba(17,19,21,0.94)",
+    } : {}),
   } as CSSProperties;
 
   if (accessContextLoading) {
@@ -605,25 +742,23 @@ function AdminContent() {
     );
   }
 
-  if (!isAuthenticated || (user?.role !== "admin" && user?.role !== "manager")) {
-    return (
-      <div className="min-h-screen flex flex-col items-center justify-center gap-4 p-8">
-        <ChefHat className="w-16 h-16 text-muted-foreground opacity-30" />
-        <h2 className="text-2xl font-bold">Acesso Restrito</h2>
-        <p className="text-muted-foreground">Você não tem permissão para acessar esta área.</p>
-        <Link href="/"><Button variant="outline">Voltar ao Início</Button></Link>
-      </div>
-    );
+  if (!isAuthenticated || !isStaff) {
+    return <AppStatusPage kind="forbidden" />;
   }
 
   return (
-    <>
+    <AdminHelpProvider activeTab={resolvedActiveTab} activeLabel={activeLabel}>
     {/* Grid background wrapper */}
-    <div data-admin-theme="light" className="min-h-screen flex" style={tenantAdminStyle}>
+    <AdminOnboarding />
+    <div
+      data-admin-theme={resolvedTheme}
+      className={`bonatto-admin min-h-screen flex ${resolvedTheme === "dark" ? "admin-dark" : "admin-light"}`}
+      style={bonattoAdminStyle}
+    >
       {/* ── Desktop Sidebar fixa expandida (lg+) ── */}
       <aside
         className="hidden lg:flex shrink-0 sticky top-0 h-screen flex-col"
-        style={{ width: 224, zIndex: 50 }}
+        style={{ width: sidebarCollapsed ? 72 : 248, zIndex: 50, transition: "width 160ms cubic-bezier(.2,.8,.2,1)" }}
       >
         <AdminSidebar {...sidebarProps} />
       </aside>
@@ -632,22 +767,50 @@ function AdminContent() {
       <Sheet open={mobileSidebarOpen} onOpenChange={setMobileSidebarOpen}>
         <SheetContent side="left" className="p-0 w-64" style={{ background: 'var(--admin-sidebar-bg)' }}>
           <SheetTitle className="sr-only">Menu de navegação do painel admin</SheetTitle>
-          <AdminSidebar {...sidebarProps} onClose={() => setMobileSidebarOpen(false)} />
+          <AdminSidebar {...sidebarProps} collapsed={false} onToggleCollapse={undefined} onClose={() => setMobileSidebarOpen(false)} />
         </SheetContent>
       </Sheet>
 
       {/* ── Main content ── */}
       <div className="flex-1 flex flex-col min-w-0">
+        {/* Desktop utility bar */}
+        <header
+          className="sticky top-0 z-30 hidden min-h-14 items-center gap-3 border-b px-6 lg:flex"
+          style={{ background: "var(--admin-mobile-header-bg)", borderColor: "var(--admin-mobile-header-border)", backdropFilter: "blur(14px)" }}
+        >
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-xs font-semibold uppercase tracking-[0.12em]" style={{ color: "var(--admin-text-muted)" }}>Painel administrativo</p>
+            <p className="truncate text-sm font-semibold" style={{ color: "var(--admin-text-heading)" }}>{activeLabel}</p>
+          </div>
+          <Button
+            data-help-id="common.commandPalette"
+            type="button"
+            variant="outline"
+            size="sm"
+            className="h-9 min-w-[210px] justify-between gap-3 border-[var(--admin-input-border)] bg-[var(--admin-input-bg)] text-[var(--admin-text-secondary)]"
+            onClick={() => window.dispatchEvent(new Event(OPEN_COMMAND_PALETTE_EVENT))}
+            aria-label="Abrir busca global e paleta de comandos"
+          >
+            <span className="truncate">Buscar ou executar comando</span>
+            <kbd className="rounded border px-1.5 py-0.5 text-[10px] font-semibold opacity-70">Ctrl K</kbd>
+          </Button>
+          <AdminStoreSelectorMobile />
+          <AdminHelpButton />
+          <UiPreferencesMenu compact />
+        </header>
+
         {/* Mobile topbar */}
-        <header className="lg:hidden sticky top-0 z-30 flex items-center gap-3 px-4 py-3" style={{ background: 'var(--admin-mobile-header-bg)', borderBottom: `1px solid var(--admin-mobile-header-border)`, boxShadow: '0 2px 8px rgba(0,0,0,0.08)' }}>
-          <button onClick={() => setMobileSidebarOpen(true)} className="p-1.5 rounded-lg transition-colors" style={{ color: 'var(--admin-mobile-header-text)' }}>
+        <header className="lg:hidden sticky top-0 z-30 flex items-center gap-3 px-4 py-3" style={{ background: 'var(--admin-mobile-header-bg)', borderBottom: `1px solid var(--admin-mobile-header-border)`, boxShadow: '0 1px 8px rgba(16,24,40,0.04)', backdropFilter: 'blur(12px)' }}>
+          <button data-help-id="navigation.mobileMenu" aria-label="Abrir menu administrativo" onClick={() => setMobileSidebarOpen(true)} className="p-1.5 rounded-lg transition-colors" style={{ color: 'var(--admin-mobile-header-text)' }}>
             <Menu className="w-5 h-5" />
           </button>
           <div className="flex items-center gap-2 flex-1">
-            {tenantConfig.brand.logos.icon ? <img src={tenantConfig.brand.logos.icon} alt={tenantConfig.brand.name} className="w-7 h-7 object-contain rounded-full" /> : <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-[#6E0D12] text-[9px] font-black text-white">{tenantConfig.brand.shortName.slice(0, 2).toUpperCase()}</div>}
+            {bonattoConfig.brand.logos.icon ? <img src={bonattoConfig.brand.logos.icon} alt={bonattoConfig.brand.name} className="w-7 h-7 object-contain rounded-full" /> : <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-[#6E0D12] text-[9px] font-black text-white">{bonattoConfig.brand.shortName.slice(0, 2).toUpperCase()}</div>}
             <span className="font-semibold text-sm" style={{ fontFamily: "'Inter', sans-serif", color: 'var(--admin-mobile-header-text)' }}>{activeLabel}</span>
           </div>
           <AdminStoreSelectorMobile />
+          <AdminHelpButton compact />
+          <UiPreferencesMenu compact />
           {pendingCount > 0 && (
             <span className="flex h-5 w-5 items-center justify-center">
               <span className="animate-ping absolute inline-flex h-4 w-4 rounded-full bg-[#a01218] opacity-75" />
@@ -657,8 +820,9 @@ function AdminContent() {
         </header>
 
         {/* Page content */}
-        <main className="min-w-0 max-w-full flex-1 overflow-x-hidden p-4 lg:p-8" style={{ background: 'var(--admin-bg)' }}>
-          <div className="min-w-0 max-w-full" key={resolvedActiveTab} style={{ animation: 'adminFadeIn 0.18s ease-out' }}>
+        <main className="admin-main min-w-0 max-w-full flex-1 overflow-x-hidden">
+          <div className="admin-content-frame" key={resolvedActiveTab} style={{ animation: 'adminFadeIn 0.18s ease-out' }}>
+            <Suspense fallback={<div className="grid min-h-64 place-items-center"><Loader2 className="size-7 animate-spin text-primary" /></div>}>
             {resolvedActiveTab === "dashboard" && <DeliveryDashboardTab />}
             {resolvedActiveTab === "orders" && <OrdersTab onOpenOrder={stopAlert} />}
             {resolvedActiveTab === "menu" && <MenuTab />}
@@ -669,25 +833,32 @@ function AdminContent() {
               </Suspense>
             )}
             {resolvedActiveTab === "coupons" && <CouponsTab />}
+            {resolvedActiveTab === "reviews" && <ReviewsAdminTab />}
             {resolvedActiveTab === "promotions" && <PromotionsTab />}
             {resolvedActiveTab === "raffles" && <RafflesTab />}
             {resolvedActiveTab === "upsells" && <UpsellsTab />}
             {resolvedActiveTab === "users" && <UsersTab />}
-            {resolvedActiveTab === "reports" && <ReportsTab />}
+            {resolvedActiveTab === "reports" && <PerformanceTab />}
             {resolvedActiveTab === "network" && <NetworkFinanceTab />}
             {resolvedActiveTab === "distribution" && <NetworkFinanceTab mode="distribution" />}
             {resolvedActiveTab === "drivers" && <DriversTab />}
             {resolvedActiveTab === "payments" && <PaymentsTab />}
+            {resolvedActiveTab === "whatsapp" && (
+              <Suspense fallback={<div className="grid min-h-64 place-items-center"><Loader2 className="size-7 animate-spin text-primary" /></div>}>
+                <WhatsAppAdminTab />
+              </Suspense>
+            )}
             {resolvedActiveTab === "marketplaces" && <MarketplacesTab />}
             {resolvedActiveTab === "settings" && <SettingsTab />}
             {resolvedActiveTab === "stores" && isAdmin && <StoresTab />}
             {resolvedActiveTab === "recovery" && <RecoveryTab />}
-            {resolvedActiveTab === "platform" && <GrowthCenter />}
+            {resolvedActiveTab === "growth" && <GrowthCenter />}
+            </Suspense>
           </div>
         </main>
       </div>
     </div>
-    </>
+    </AdminHelpProvider>
   );
 }
 
@@ -732,7 +903,7 @@ function AdminStoreSelectorSidebarDark() {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <button className="w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-xs font-medium transition-all" style={{ background: 'rgba(255,255,255,0.12)', color: 'rgba(255,255,255,0.85)' }}
+        <button data-help-id="navigation.store" aria-label="Selecionar loja" className="w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-xs font-medium transition-all" style={{ background: 'rgba(255,255,255,0.12)', color: 'rgba(255,255,255,0.85)' }}
           onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = 'rgba(255,255,255,0.20)'; (e.currentTarget as HTMLButtonElement).style.color = '#ffffff'; }}
           onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = 'rgba(255,255,255,0.12)'; (e.currentTarget as HTMLButtonElement).style.color = 'rgba(255,255,255,0.85)'; }}
         >
@@ -757,7 +928,7 @@ function AdminStoreSelectorMobile() {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant="outline" size="sm" className="h-7 text-xs gap-1" style={{ background: 'rgba(0,0,0,0.06)', borderColor: 'rgba(0,0,0,0.12)', color: '#3a3a3a' }}>
+        <Button data-help-id="navigation.store" aria-label="Selecionar loja" variant="outline" size="sm" className="h-7 text-xs gap-1" style={{ background: 'rgba(0,0,0,0.06)', borderColor: 'rgba(0,0,0,0.12)', color: '#3a3a3a' }}>
           <Store className="w-3 h-3" />
           <span className="max-w-[100px] truncate">{selectedStoreName}</span>
           <ChevronDown className="w-3 h-3 opacity-50" />
@@ -1105,7 +1276,7 @@ function DashboardTab() {
 
 function DeliveryDashboardTab() {
   const utils = trpc.useUtils();
-  const { selectedStoreId } = useAdminStore();
+  const { selectedStoreId, selectedStoreName } = useAdminStore();
   const { user } = useAuth();
   const [searchQuery, setSearchQuery] = useState("");
   const [periodPreset, setPeriodPreset] = useState<"today" | "yesterday" | "7d" | "30d" | "custom">("7d");
@@ -1169,6 +1340,15 @@ function DeliveryDashboardTab() {
     { storeId: selectedStoreId },
     { refetchInterval: 30000 }
   );
+  const { data: kitchenBoard, isLoading: loadingKitchenBoard } = trpc.operations.operations.board.useQuery(
+    { storeId: selectedStoreId ?? 0 },
+    {
+      enabled: Boolean(selectedStoreId),
+      refetchInterval: 5000,
+      refetchIntervalInBackground: false,
+      staleTime: 2500,
+    },
+  );
 
   const userName = user?.name ?? (user?.role === "admin" ? "Administrador" : "Gerente");
   const firstNameOnly = userName.split(" ")[0];
@@ -1183,12 +1363,12 @@ function DeliveryDashboardTab() {
 
   const activeStatuses = new Set(["pending", "confirmed", "preparing", "out_for_delivery"]);
   const statusTone: Record<string, string> = {
-    pending: "bg-[#fff2df] text-[#8a4c00]",
-    confirmed: "bg-[#fce8e8] text-[#7d0f14]",
-    preparing: "bg-[#f8d9d9] text-[#661014]",
-    out_for_delivery: "bg-[#7d0f14] text-white",
-    delivered: "bg-[#edf9f0] text-[#166534]",
-    cancelled: "bg-[#f2f4f7] text-[#667085]",
+    pending: "bg-[#EFF6FF] text-[#3578E5]",
+    confirmed: "bg-[#FCF5F5] text-[#631014]",
+    preparing: "bg-[#FFFAEB] text-[#D97706]",
+    out_for_delivery: "bg-[#F6E9E9] text-[#73151B]",
+    delivered: "bg-[#ECFDF5] text-[#16A36A]",
+    cancelled: "bg-[#FEF3F2] text-[#D92D20]",
   };
   const sourceLabels: Record<string, string> = {
     app: "App",
@@ -1209,7 +1389,7 @@ function DeliveryDashboardTab() {
     pix: "PIX",
     cash: "Dinheiro",
   };
-  const chartPalette = ["#7d0f14", "#b42318", "#d92d20", "#f97066", "#fda29b", "#fecdc9"];
+  const chartPalette = ["#631014", "#B25E62", "#D7A7A9", "#D7D9DF", "#979AA3", "#676A73"];
   const formatCurrency = (value: number) =>
     new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(value || 0);
   const formatCompactCurrency = (value: number) =>
@@ -1248,16 +1428,30 @@ function DeliveryDashboardTab() {
     outForDelivery: activeOrders.filter((order) => order.status === "out_for_delivery").length,
   };
   const statusRows = [
-    { key: "pending", label: "Novos", value: periodOrdersAll.filter((order) => order.status === "pending").length, color: "#f79009" },
-    { key: "confirmed", label: "Confirmados", value: periodOrdersAll.filter((order) => order.status === "confirmed").length, color: "#d92d20" },
-    { key: "preparing", label: "Em preparo", value: periodOrdersAll.filter((order) => order.status === "preparing").length, color: "#b42318" },
-    { key: "out_for_delivery", label: "Em entrega", value: periodOrdersAll.filter((order) => order.status === "out_for_delivery").length, color: "#7d0f14" },
-    { key: "delivered", label: "Concluídos", value: periodOrdersAll.filter((order) => order.status === "delivered").length, color: "#027a48" },
-    { key: "cancelled", label: "Cancelados", value: cancelledOrders.length, color: "#667085" },
+    { key: "pending", label: "Novos", value: periodOrdersAll.filter((order) => order.status === "pending").length, color: "#3578E5" },
+    { key: "confirmed", label: "Confirmados", value: periodOrdersAll.filter((order) => order.status === "confirmed").length, color: "#631014" },
+    { key: "preparing", label: "Em preparo", value: periodOrdersAll.filter((order) => order.status === "preparing").length, color: "#D97706" },
+    { key: "out_for_delivery", label: "Em entrega", value: periodOrdersAll.filter((order) => order.status === "out_for_delivery").length, color: "#8A3439" },
+    { key: "delivered", label: "Concluídos", value: periodOrdersAll.filter((order) => order.status === "delivered").length, color: "#16A36A" },
+    { key: "cancelled", label: "Cancelados", value: cancelledOrders.length, color: "#D92D20" },
   ];
   const activeDrivers = drivers?.filter((driver) => driver.active).length ?? 0;
   const assignedDrivers = new Set(activeOrders.map((order) => order.driverId).filter(Boolean)).size;
   const loadPerDriver = activeDrivers > 0 ? activeOrders.length / activeDrivers : activeOrders.length;
+  const kitchenTickets = kitchenBoard ?? [];
+  const kitchenNow = {
+    queued: kitchenTickets.filter((ticket) => ticket.status === "queued").length,
+    preparing: kitchenTickets.filter((ticket) => ticket.status === "preparing").length,
+    ready: kitchenTickets.filter((ticket) => ticket.status === "ready").length,
+    delayed: kitchenTickets.filter((ticket) => ticket.delayed).length,
+    waitingDriver: kitchenTickets.filter((ticket) =>
+      ticket.status === "ready" &&
+      ticket.order?.serviceType === "delivery" &&
+      !ticket.order?.driverId
+    ).length,
+  };
+  const mostUrgentTicket = [...kitchenTickets]
+    .sort((a, b) => a.slaRemainingMinutes - b.slaRemainingMinutes)[0] ?? null;
   const criticalOrders = activeOrders
     .map((order) => ({
       ...order,
@@ -1444,12 +1638,12 @@ function DeliveryDashboardTab() {
     .map((order) => ({ ...order, ageMinutes: safeMinutesDiff(order.createdAt, new Date()) ?? 0 }))
     .sort((a, b) => b.ageMinutes - a.ageMinutes)[0];
   const recommendations = [
-    peakHour.pedidos > 0 ? `Reforce equipe perto de ${peakHour.label}; este é o maior pico do período.` : "Quando houver volume, o sistema indicará o melhor horário de reforço.",
-    criticalOrders.length > 0 ? `Acompanhe ${criticalOrders.length} pedido(s) acima de 35 minutos agora.` : "Fila sob controle: mantenha confirmação rápida para preservar SLA.",
-    neighborhoodRows.some((row) => row.status !== "bom") ? "Revise entregas para bairros com tempo médio acima do ideal." : "Bairros seguem saudáveis; mantenha raio e taxa atuais.",
-    topProducts?.[0] ? `Destaque ${topProducts[0].productName} no cardápio e em combos.` : "Assim que houver ranking, destaque o item campeão no cardápio.",
-    paymentMix[0]?.key === "pix" ? "PIX lidera pagamentos: mantenha essa opção destacada no checkout." : "Monitore o método de pagamento líder para reduzir fricção no checkout.",
-  ].slice(0, 5);
+    peakHour.pedidos > 0 ? `O maior volume do período ocorreu perto de ${peakHour.label}, com ${peakHour.pedidos} pedido(s).` : null,
+    criticalOrders.length > 0 ? `${criticalOrders.length} pedido(s) ativo(s) já ultrapassaram 35 minutos.` : null,
+    neighborhoodRows.some((row) => row.status !== "bom") ? "Há bairros com tempo médio de entrega acima do ideal neste período." : null,
+    topProducts?.[0] ? `${topProducts[0].productName} lidera o ranking de itens vendidos no período.` : null,
+    paymentMix[0] ? `${paymentMix[0].label} concentra o maior volume financeiro entre os métodos de pagamento.` : null,
+  ].filter((item): item is string => Boolean(item)).slice(0, 5);
   const healthRows = [
     { label: "Velocidade de confirmação", value: queueNow.pending <= 2 ? "Saudável" : queueNow.pending <= 5 ? "Atenção" : "Crítico", tone: queueNow.pending <= 2 ? "bg-[#ecfdf3] text-[#027a48]" : queueNow.pending <= 5 ? "bg-[#fff7ed] text-[#c2410c]" : "bg-[#fef3f2] text-[#b42318]" },
     { label: "Preparo dentro da meta", value: prepStatus.label, tone: prepStatus.tone },
@@ -1464,383 +1658,260 @@ function DeliveryDashboardTab() {
     utils.analytics.salesTimeSeries.invalidate();
     utils.analytics.recentOrders.invalidate();
     utils.reports.topProducts.invalidate();
+    utils.operations.operations.board.invalidate();
     setLastUpdated(new Date());
   };
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 20, fontFamily: "var(--admin-font)", color: "var(--admin-text)" }}>
-      <div
-        style={{
-          ...cardStyle,
-          padding: "18px 20px",
-          background: "linear-gradient(135deg, rgba(125,15,20,0.97) 0%, rgba(79,9,13,0.96) 100%)",
-          color: "#fff8f6",
-          border: "1px solid rgba(255,255,255,0.08)",
-        }}
-      >
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-          <div className="flex items-start gap-3">
-            <div
-              className="w-11 h-11 rounded-2xl flex items-center justify-center text-white shrink-0"
-              style={{ background: "rgba(255,255,255,0.12)" }}
-            >
-              <Bike className="w-5 h-5" />
-            </div>
-            <div>
-              <div className="flex flex-wrap items-center gap-2">
-                <p className="text-xs uppercase tracking-[0.18em] text-white/60">Cockpit do delivery</p>
-                <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-[10px] font-bold ${opsStatus.tone}`}>
-                  {opsStatus.label}
-                </span>
-              </div>
-              <h2 className="mt-2 text-2xl font-black tracking-[-0.03em]">
-                Ola, {firstNameOnly}. Aqui estao os sinais que pedem decisao rapida.
-              </h2>
-              <p className="mt-2 max-w-3xl text-sm text-white/72">
-                Fila ativa, risco de SLA, carga de motoboys, horarios quentes e bairros que mais puxam a operacao.
-              </p>
-            </div>
-          </div>
+    <AdminPage>
+      <AdminTopbar
+        title="Visão geral"
+        subtitle={`${selectedStoreName} • ${periodLabel} • Atualizado às ${lastUpdated.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}`}
+        onRefresh={handleRefresh}
+        refreshing={loadingOverview || loadingPeriod || loadingSeries}
+        actions={
+          <AdminChipGroup
+            size="sm"
+            value={periodPreset}
+            onChange={setPeriodPreset}
+            items={[
+              { value: "today", label: "Hoje" },
+              { value: "yesterday", label: "Ontem" },
+              { value: "7d", label: "7 dias" },
+              { value: "30d", label: "30 dias" },
+              { value: "custom", label: "Personalizado" },
+            ]}
+          />
+        }
+      />
 
-          <div className="flex flex-col gap-3 lg:items-end">
-            <div className="flex flex-wrap items-center gap-2">
+      {periodPreset === "custom" && (
+        <div className="flex flex-wrap items-center gap-2 rounded-[14px] border border-[var(--admin-border)] bg-white p-3">
+          <span className="mr-1 text-xs font-semibold text-[var(--admin-text-secondary)]">Período personalizado</span>
+          <Input type="date" value={customStart} onChange={(event) => setCustomStart(event.target.value)} className="h-9 w-auto rounded-[10px]" />
+          <span className="text-xs text-[var(--admin-text-muted)]">até</span>
+          <Input type="date" value={customEnd} onChange={(event) => setCustomEnd(event.target.value)} className="h-9 w-auto rounded-[10px]" />
+        </div>
+      )}
+
+      {loadingOverview ? (
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-5">
+          {Array.from({ length: 5 }).map((_, index) => <AdminCardSkeleton key={index} />)}
+        </div>
+      ) : (
+        <AdminStatGrid className="xl:grid-cols-5">
+          <AdminStat
+            label="Pedidos"
+            value={totalOrders}
+            icon={<ShoppingBag className="h-4 w-4" />}
+            trend={ordersDelta > 0 ? "up" : ordersDelta < 0 ? "down" : "neutral"}
+            trendLabel={`${ordersDelta > 0 ? "+" : ""}${ordersDelta.toFixed(1)}%`}
+            sub="vs. período anterior"
+          />
+          <AdminStat
+            label="Receita"
+            value={formatCompactCurrency(totalRevenue)}
+            icon={<DollarSign className="h-4 w-4" />}
+            trend={revenueDelta > 0 ? "up" : revenueDelta < 0 ? "down" : "neutral"}
+            trendLabel={`${revenueDelta > 0 ? "+" : ""}${revenueDelta.toFixed(1)}%`}
+            sub="vs. período anterior"
+          />
+          <AdminStat
+            label="Ticket médio"
+            value={formatCompactCurrency(avgTicket)}
+            icon={<TrendingUp className="h-4 w-4" />}
+            sub={`${deliveryShare.toFixed(0)}% do volume em delivery`}
+          />
+          <AdminStat
+            label="Cancelamentos"
+            value={`${cancelRate.toFixed(1)}%`}
+            icon={<XCircle className="h-4 w-4" />}
+            trend={cancelRate >= 4 ? "down" : "neutral"}
+            trendLabel={cancelRate >= 4 ? "Atenção" : "Normal"}
+            sub={`${cancelledOrders.length} de ${periodOrdersAll.length} pedidos`}
+          />
+          <AdminStat
+            label="Tempo de preparo"
+            value={kitchenLeadTimes.length ? `${averagePrepMinutes.toFixed(0)} min` : "—"}
+            icon={<ChefHat className="h-4 w-4" />}
+            trend={averagePrepMinutes > prepGoalMinutes ? "down" : "neutral"}
+            trendLabel={kitchenLeadTimes.length ? prepStatus.label : undefined}
+            sub={`Meta operacional: ${prepGoalMinutes} min`}
+          />
+        </AdminStatGrid>
+      )}
+
+      <AdminSurface
+        title="Central operacional agora"
+        subtitle="Fila da cozinha atualizada a cada 5 segundos, com SLA e gargalos da unidade."
+        actions={
+          <div className="flex items-center gap-2">
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-[var(--admin-success-bg)] px-2.5 py-1 text-[11px] font-semibold text-[var(--admin-success)]">
+              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-[var(--admin-success)]" />
+              Ao vivo
+            </span>
+            {mostUrgentTicket && (
+              <AdminPill tone={mostUrgentTicket.delayed ? "danger" : mostUrgentTicket.slaRemainingMinutes <= 10 ? "warning" : "neutral"}>
+                {mostUrgentTicket.delayed
+                  ? `${Math.abs(mostUrgentTicket.slaRemainingMinutes)} min atrasado`
+                  : `menor SLA: ${mostUrgentTicket.slaRemainingMinutes} min`}
+              </AdminPill>
+            )}
+          </div>
+        }
+      >
+        {loadingKitchenBoard ? (
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+            {Array.from({ length: 5 }).map((_, index) => <AdminSkeleton key={index} className="h-20" />)}
+          </div>
+        ) : (
+          <div className="space-y-4">
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
               {[
-                { value: "today", label: "Hoje" },
-                { value: "yesterday", label: "Ontem" },
-                { value: "7d", label: "7 dias" },
-                { value: "30d", label: "30 dias" },
-                { value: "custom", label: "Personalizado" },
-              ].map((period) => {
-                const active = periodPreset === period.value;
-                return (
-                  <button
-                    key={period.value}
-                    type="button"
-                    onClick={() => setPeriodPreset(period.value as typeof periodPreset)}
-                    className="rounded-full px-3 py-1.5 text-xs font-bold transition-all"
-                    style={{
-                      background: active ? "#fff5f3" : "rgba(255,255,255,0.10)",
-                      color: active ? "#7d0f14" : "#fff8f6",
-                      border: active ? "1px solid rgba(255,255,255,0.35)" : "1px solid rgba(255,255,255,0.16)",
-                    }}
-                  >
-                    {period.label}
-                  </button>
-                );
-              })}
-              <button
-                onClick={handleRefresh}
-                className="w-9 h-9 rounded-full flex items-center justify-center transition-colors"
-                style={{ background: "rgba(255,255,255,0.10)", border: "1px solid rgba(255,255,255,0.16)" }}
-                title="Atualizar dashboard"
-              >
-                <RefreshCw className="w-4 h-4 text-white" />
-              </button>
+                { label: "Aguardando cozinha", value: kitchenNow.queued, tone: "info" as const },
+                { label: "Em preparo", value: kitchenNow.preparing, tone: "warning" as const },
+                { label: "Prontos", value: kitchenNow.ready, tone: "success" as const },
+                { label: "Atrasados", value: kitchenNow.delayed, tone: kitchenNow.delayed ? "danger" as const : "neutral" as const },
+                { label: "Aguardando motoboy", value: kitchenNow.waitingDriver, tone: kitchenNow.waitingDriver ? "warning" as const : "neutral" as const },
+              ].map((item) => (
+                <div key={item.label} className="rounded-[14px] border border-[var(--admin-border)] bg-[var(--admin-surface-alt)] p-4">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-[11px] font-semibold text-[var(--admin-text-secondary)]">{item.label}</p>
+                    <AdminPill tone={item.tone}>{item.value}</AdminPill>
+                  </div>
+                  <p className="mt-2 text-2xl font-semibold tracking-[-.03em] text-[var(--admin-text-primary)]">{item.value}</p>
+                </div>
+              ))}
             </div>
-            {periodPreset === "custom" && (
-              <div className="flex flex-wrap items-center justify-end gap-2">
-                <input
-                  type="date"
-                  value={customStart}
-                  onChange={(event) => setCustomStart(event.target.value)}
-                  className="rounded-full border border-white/20 bg-white/10 px-3 py-1.5 text-xs text-white outline-none"
-                />
-                <input
-                  type="date"
-                  value={customEnd}
-                  onChange={(event) => setCustomEnd(event.target.value)}
-                  className="rounded-full border border-white/20 bg-white/10 px-3 py-1.5 text-xs text-white outline-none"
-                />
+
+            {kitchenTickets.length > 0 && (
+              <div className="overflow-hidden rounded-[14px] border border-[var(--admin-border)]">
+                <div className="grid grid-cols-[1fr_auto_auto_auto] gap-3 bg-[var(--admin-surface-alt)] px-4 py-2.5 text-[11px] font-semibold text-[var(--admin-text-secondary)]">
+                  <span>Pedido</span><span>Etapa</span><span>Decorrido</span><span>SLA</span>
+                </div>
+                {[...kitchenTickets]
+                  .sort((a, b) => a.slaRemainingMinutes - b.slaRemainingMinutes)
+                  .slice(0, 6)
+                  .map((ticket) => (
+                    <div key={ticket.id} className="grid grid-cols-[1fr_auto_auto_auto] items-center gap-3 border-t border-[var(--admin-border)] px-4 py-3 text-[12px]">
+                      <div className="min-w-0">
+                        <p className="truncate font-semibold text-[var(--admin-text-primary)]">
+                          {ticket.order?.orderNumber ?? `#${ticket.orderId}`}
+                        </p>
+                        <p className="truncate text-[11px] text-[var(--admin-text-muted)]">{ticket.order?.customerName ?? "Cliente"}</p>
+                      </div>
+                      <AdminPill tone={ticket.status === "ready" ? "success" : ticket.status === "preparing" ? "warning" : "info"}>
+                        {ticket.status === "ready" ? "Pronto" : ticket.status === "preparing" ? "Em preparo" : "Fila"}
+                      </AdminPill>
+                      <span className="font-medium text-[var(--admin-text-secondary)]">{ticket.elapsedMinutes} min</span>
+                      <span className={`font-semibold ${ticket.delayed ? "text-[var(--admin-danger)]" : ticket.slaRemainingMinutes <= 10 ? "text-[var(--admin-warning)]" : "text-[var(--admin-text-primary)]"}`}>
+                        {ticket.delayed ? `+${Math.abs(ticket.slaRemainingMinutes)} min` : `${ticket.slaRemainingMinutes} min`}
+                      </span>
+                    </div>
+                  ))}
               </div>
             )}
-            <p className="text-xs text-white/55">
-              Período: {periodLabel} • Última atualização: {lastUpdated.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
-            </p>
+          </div>
+        )}
+      </AdminSurface>
 
-            <div className="relative w-full lg:w-[280px]">
-              <input
-                type="text"
-                placeholder="Buscar pedido ou cliente..."
-                value={searchQuery}
-                onChange={(event) => setSearchQuery(event.target.value)}
-                className="w-full rounded-full border-0 bg-white/10 pl-9 pr-4 py-2.5 text-sm text-white outline-none placeholder:text-white/45"
+      <div className="admin-dashboard-grid">
+        {loadingSeries ? (
+          <AdminChartSkeleton />
+        ) : (
+          <AdminSurface
+            title="Receita e pedidos"
+            subtitle="Evolução conjunta do faturamento e do volume no período selecionado."
+            actions={<AdminPill tone="brand">{periodLabel}</AdminPill>}
+          >
+            {chartData.length === 0 ? (
+              <AdminEmptyState
+                icon={<BarChart3 className="h-8 w-8" />}
+                title="Sem pedidos neste período"
+                description="Assim que novos pedidos entrarem, a evolução de receita e volume aparecerá aqui."
               />
-              <svg className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-white/55" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-                <circle cx="11" cy="11" r="8" />
-                <path d="m21 21-4.35-4.35" />
-              </svg>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
-        {[
-          {
-            label: "Pedidos hoje",
-            value: todayOrders,
-            helper: `${ordersDelta > 0 ? "+" : ""}${ordersDelta.toFixed(1)}% vs período anterior`,
-            badge: ordersDelta >= 0 ? "Crescimento" : "Queda",
-            tone: ordersDelta >= 0 ? "#027a48" : "#b42318",
-          },
-          {
-            label: "Receita",
-            value: formatCompactCurrency(totalRevenue),
-            helper: `Ticket médio ${formatCompactCurrency(avgTicket)}`,
-            badge: `${revenueDelta > 0 ? "+" : ""}${revenueDelta.toFixed(1)}%`,
-            tone: revenueDelta >= 0 ? "#027a48" : "#b42318",
-          },
-          {
-            label: "Tempo de preparo",
-            value: `${averagePrepMinutes.toFixed(0)} min`,
-            helper: `Meta ${prepGoalMinutes} min`,
-            badge: prepStatus.label,
-            tone: averagePrepMinutes > prepGoalMinutes ? "#c2410c" : "#027a48",
-          },
-          {
-            label: "Tempo de entrega",
-            value: `${averageDeliveryMinutes.toFixed(0)} min`,
-            helper: `Meta ${deliveryGoalMinutes} min`,
-            badge: deliveryStatus.label,
-            tone: averageDeliveryMinutes > deliveryGoalMinutes ? "#c2410c" : "#027a48",
-          },
-          {
-            label: "Cancelamentos",
-            value: cancelledOrders.length,
-            helper: `${cancelRate.toFixed(1)}% sobre pedidos`,
-            badge: cancelRate >= 4 ? "Atenção" : "Normal",
-            tone: cancelRate >= 4 ? "#b42318" : "#027a48",
-          },
-          {
-            label: "Canal mais forte",
-            value: strongestChannel.label,
-            helper: `${strongestChannel.orders} pedidos • ${formatCompactCurrency(strongestChannel.revenue)}`,
-            badge: "Líder",
-            tone: "#7d0f14",
-          },
-        ].map((item) => (
-          <div key={item.label} style={{ ...cardStyle, padding: 16 }}>
-            <div className="flex items-start justify-between gap-2">
-              <p className="text-[11px] uppercase tracking-[0.14em] text-[#8a6f73]">{item.label}</p>
-              <span className="rounded-full px-2 py-0.5 text-[10px] font-bold" style={{ background: `${item.tone}14`, color: item.tone }}>
-                {item.badge}
-              </span>
-            </div>
-            <p className="mt-3 text-2xl font-black tracking-[-0.03em] text-[#2f090d]">{item.value}</p>
-            <p className="mt-2 text-xs text-[#7d6669]">{item.helper}</p>
-          </div>
-        ))}
-      </div>
-
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
-        {[
-          {
-            label: "Fila ativa",
-            value: activeOrders.length,
-            helper: `${queueNow.pending} aguardando · ${queueNow.preparing} em preparo`,
-            icon: <ShoppingBag className="w-4 h-4" />,
-            tone: "#7d0f14",
-          },
-          {
-            label: "Pedidos em risco",
-            value: criticalOrders.length,
-            helper: criticalOrders.length > 0 ? `${criticalRate.toFixed(0)}% da fila acima de 35 min` : "Nenhum pedido critico agora",
-            icon: <Clock className="w-4 h-4" />,
-            tone: criticalOrders.length > 0 ? "#b42318" : "#027a48",
-          },
-          {
-            label: "Motoboys ativos",
-            value: activeDrivers,
-            helper: `${assignedDrivers} com pedidos em rota`,
-            icon: <Bike className="w-4 h-4" />,
-            tone: "#7d0f14",
-          },
-          {
-            label: "Carga por motoboy",
-            value: `${loadPerDriver.toFixed(1)}x`,
-            helper: activeDrivers > 0 ? `${queueNow.outForDelivery} pedidos em entrega` : "Sem motoboys ativos no momento",
-            icon: <Zap className="w-4 h-4" />,
-            tone: "#7d0f14",
-          },
-        ].map((item) => (
-          <div key={item.label} style={cardStyle}>
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <p className="text-xs uppercase tracking-[0.14em] text-[#8a6f73]">{item.label}</p>
-                <p className="mt-2 text-3xl font-black tracking-[-0.03em] text-[#2f090d]">{item.value}</p>
-                <p className="mt-2 text-sm text-[#7d6669]">{item.helper}</p>
-              </div>
-              <div
-                className="w-10 h-10 rounded-2xl flex items-center justify-center"
-                style={{ background: `${item.tone}14`, color: item.tone }}
-              >
-                {item.icon}
-              </div>
-            </div>
-          </div>
-        ))}
-      </div>
-
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
-        {[
-          {
-            label: "Receita hoje",
-            value: formatCompactCurrency(todayRevenue),
-            helper: `${todayOrders} pedidos hoje`,
-            trend: revenueDelta,
-          },
-          {
-            label: "Receita do periodo",
-            value: formatCompactCurrency(totalRevenue),
-            helper: revenueDelta === 0 ? "Mesmo ritmo do periodo anterior" : `${revenueDelta > 0 ? "+" : ""}${revenueDelta.toFixed(1)}% vs periodo anterior`,
-            trend: revenueDelta,
-          },
-          {
-            label: "Ticket medio",
-            value: formatCompactCurrency(avgTicket),
-            helper: `${deliveryShare.toFixed(0)}% do volume vem de delivery`,
-            trend: 0,
-          },
-          {
-            label: "Cancelamento",
-            value: `${cancelRate.toFixed(1)}%`,
-            helper: `${cancelledOrders.length} cancelados em ${periodOrdersAll.length} pedidos`,
-            trend: -cancelRate,
-          },
-        ].map((item) => (
-          <div key={item.label} style={cardStyle}>
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <p className="text-xs uppercase tracking-[0.14em] text-[#8a6f73]">{item.label}</p>
-                <p className="mt-2 text-3xl font-black tracking-[-0.03em] text-[#2f090d]">{item.value}</p>
-                <p className="mt-2 text-sm text-[#7d6669]">{item.helper}</p>
-              </div>
-              <div className="mt-1">
-                {item.trend > 0 && <ArrowUp className="w-4 h-4 text-[#027a48]" />}
-                {item.trend < 0 && <ArrowDown className="w-4 h-4 text-[#b42318]" />}
-                {item.trend === 0 && <Minus className="w-4 h-4 text-[#98a2b3]" />}
-              </div>
-            </div>
-          </div>
-        ))}
-      </div>
-
-      <div className="grid grid-cols-1 gap-4 xl:grid-cols-[1.45fr_0.95fr]">
-        <div style={cardStyle}>
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <p className="text-xs uppercase tracking-[0.14em] text-[#8a6f73]">Volume e receita</p>
-              <h3 className="mt-2 text-xl font-black tracking-[-0.03em] text-[#2f090d]">Ritmo do delivery no periodo</h3>
-              <p className="mt-1 text-sm text-[#7d6669]">Media diaria de {formatCompactCurrency(dailyAverageRevenue)} e visao conjunta de pedidos e faturamento.</p>
-            </div>
-            <Badge className="rounded-full bg-[#fff1ef] text-[#7d0f14] border-0">{periodLabel}</Badge>
-          </div>
-
-          {loadingSeries ? (
-            <div className="mt-6 space-y-2">
-              {Array.from({ length: 5 }).map((_, index) => <Skeleton key={index} className="h-10 w-full rounded-xl" />)}
-            </div>
-          ) : chartData.length === 0 ? (
-            <div className="mt-6">
-              <AdminEmptyState title="Sem dados para o periodo" description="Assim que entrarem pedidos, a curva de faturamento e volume aparece aqui." />
-            </div>
-          ) : (
-            <div className="mt-6 h-[320px]">
-              <ResponsiveContainer width="100%" height="100%">
-                <ComposedChart data={chartData} margin={{ top: 8, right: 8, left: -16, bottom: 0 }}>
-                  <defs>
-                    <linearGradient id="dashboardDeliveryRevenue" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#b42318" stopOpacity={0.26} />
-                      <stop offset="95%" stopColor="#b42318" stopOpacity={0.03} />
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#f1e6e6" vertical={false} />
-                  <XAxis dataKey="date" tick={{ fontSize: 11, fill: "#8a6f73" }} axisLine={false} tickLine={false} />
-                  <YAxis yAxisId="left" tick={{ fontSize: 11, fill: "#8a6f73" }} axisLine={false} tickLine={false} allowDecimals={false} />
-                  <YAxis
-                    yAxisId="right"
-                    orientation="right"
-                    tick={{ fontSize: 11, fill: "#8a6f73" }}
-                    axisLine={false}
-                    tickLine={false}
-                    tickFormatter={(value) => `R$${value}`}
-                  />
-                  <Tooltip
-                    contentStyle={{ borderRadius: 14, border: "1px solid #f1e6e6", boxShadow: "0 18px 40px rgba(81,15,20,0.10)" }}
-                    formatter={(value: number, name: string) => [name === "receita" ? formatCurrency(value) : value, name === "receita" ? "Receita" : "Pedidos"]}
-                  />
-                  <Bar yAxisId="left" dataKey="pedidos" radius={[8, 8, 0, 0]} maxBarSize={34} fill="#f4b8b0" />
-                  <Area yAxisId="right" type="monotone" dataKey="receita" stroke="#b42318" strokeWidth={2.5} fill="url(#dashboardDeliveryRevenue)" />
-                  <ReferenceLine yAxisId="right" y={dailyAverageRevenue} stroke="#7d0f14" strokeDasharray="4 4" />
-                </ComposedChart>
-              </ResponsiveContainer>
-            </div>
-          )}
-          <div className="mt-4 grid gap-2 text-sm text-[#7d6669]">
-            <p><strong className="text-[#2f090d]">Pico:</strong> {peakHour.label} com {peakHour.pedidos} pedidos.</p>
-            <p><strong className="text-[#2f090d]">Menor volume:</strong> {lowHour.label}.</p>
-            <p className="rounded-2xl bg-[#fff6f4] p-3 text-[#7d0f14]">
-              Sugestão: reforce produção e entrega antes de {peakHour.label}; o maior volume costuma exigir pré-preparo e motoboy disponível.
-            </p>
-          </div>
-        </div>
-
-        <div style={cardStyle}>
-          <p className="text-xs uppercase tracking-[0.14em] text-[#8a6f73]">Saude operacional</p>
-          <h3 className="mt-2 text-xl font-black tracking-[-0.03em] text-[#2f090d]">Sinais que afetam atraso, experiencia e margem</h3>
-
-          <div className="mt-6 grid grid-cols-1 gap-3">
-            {[
-              {
-                label: "Tempo medio de cozinha",
-                value: `${average(kitchenLeadTimes).toFixed(0)} min`,
-                helper: "Do aceite ate ficar pronto ou sair da cozinha.",
-                icon: <ChefHat className="w-4 h-4" />,
-              },
-              {
-                label: "Tempo medio de despacho",
-                value: `${average(dispatchLeadTimes).toFixed(0)} min`,
-                helper: "Janela entre pronto e saida para entrega.",
-                icon: <Package className="w-4 h-4" />,
-              },
-              {
-                label: "Ponta a ponta do delivery",
-                value: `${average(endToEndLeadTimes).toFixed(0)} min`,
-                helper: "Tempo total do cliente fazendo o pedido ate a entrega.",
-                icon: <Bike className="w-4 h-4" />,
-              },
-              {
-                label: "No prazo previsto",
-                value: onTimeBase > 0 ? `${((onTimeOrders / onTimeBase) * 100).toFixed(0)}%` : "--",
-                helper: onTimeBase > 0 ? `${onTimeOrders} de ${onTimeBase} entregas com previsao` : "Ative previsao de entrega para medir SLA real.",
-                icon: <Clock className="w-4 h-4" />,
-              },
-            ].map((row) => (
-              <div key={row.label} className="rounded-2xl border border-[#f1e6e6] bg-[#fffaf9] p-4">
-                <div className="flex items-center justify-between gap-3">
-                  <div className="flex items-center gap-2 text-[#7d0f14]">
-                    {row.icon}
-                    <span className="text-sm font-semibold text-[#3f1a1f]">{row.label}</span>
-                  </div>
-                  <span className="text-lg font-black tracking-[-0.03em] text-[#2f090d]">{row.value}</span>
+            ) : (
+              <>
+                <div className="admin-chart-shell h-[330px]">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <ComposedChart data={chartData} margin={{ top: 8, right: 10, left: -14, bottom: 0 }}>
+                      <defs>
+                        <linearGradient id="adminRevenueGradient" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor="#631014" stopOpacity={0.18} />
+                          <stop offset="95%" stopColor="#631014" stopOpacity={0.015} />
+                        </linearGradient>
+                      </defs>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#ECEDEF" vertical={false} />
+                      <XAxis dataKey="date" tick={{ fontSize: 11, fill: "#979AA3" }} axisLine={false} tickLine={false} />
+                      <YAxis yAxisId="left" tick={{ fontSize: 11, fill: "#979AA3" }} axisLine={false} tickLine={false} allowDecimals={false} />
+                      <YAxis
+                        yAxisId="right"
+                        orientation="right"
+                        tick={{ fontSize: 11, fill: "#979AA3" }}
+                        axisLine={false}
+                        tickLine={false}
+                        tickFormatter={(value) => `R$${value}`}
+                      />
+                      <Tooltip
+                        contentStyle={{ borderRadius: 12, border: "1px solid #E7E8EC", boxShadow: "0 8px 30px rgba(16,24,40,.08)" }}
+                        formatter={(value: number, name: string) => [name === "receita" ? formatCurrency(value) : value, name === "receita" ? "Receita" : "Pedidos"]}
+                      />
+                      <Bar yAxisId="left" dataKey="pedidos" radius={[6, 6, 0, 0]} maxBarSize={30} fill="#D7A7A9" />
+                      <Area yAxisId="right" type="monotone" dataKey="receita" stroke="#631014" strokeWidth={2.4} fill="url(#adminRevenueGradient)" />
+                      <ReferenceLine yAxisId="right" y={dailyAverageRevenue} stroke="#979AA3" strokeDasharray="4 4" />
+                    </ComposedChart>
+                  </ResponsiveContainer>
                 </div>
-                <p className="mt-2 text-sm text-[#7d6669]">{row.helper}</p>
+                <div className="mt-4 flex flex-wrap gap-x-6 gap-y-2 border-t border-[var(--admin-border)] pt-4 text-xs text-[var(--admin-text-secondary)]">
+                  <span>Média diária: <strong className="font-semibold text-[var(--admin-text-primary)]">{formatCompactCurrency(dailyAverageRevenue)}</strong></span>
+                  {peakHour.pedidos > 0 && <span>Pico: <strong className="font-semibold text-[var(--admin-text-primary)]">{peakHour.label} • {peakHour.pedidos} pedidos</strong></span>}
+                </div>
+              </>
+            )}
+          </AdminSurface>
+        )}
+
+        <AdminSurface
+          title="Saúde da operação"
+          subtitle="Indicadores que afetam SLA, experiência e capacidade."
+          actions={
+            <AdminPill tone={criticalRate >= 35 || cancelRate >= 8 ? "danger" : criticalRate >= 15 || cancelRate >= 4 ? "warning" : "success"}>
+              {opsStatus.label}
+            </AdminPill>
+          }
+        >
+          <div className="space-y-1">
+            {healthRows.map((row) => (
+              <div key={row.label} className="flex items-center justify-between gap-4 border-b border-[var(--admin-border)] py-3 last:border-0">
+                <span className="text-[13px] text-[var(--admin-text-secondary)]">{row.label}</span>
+                <AdminPill tone={row.value === "Crítico" ? "danger" : row.value === "Atenção" ? "warning" : "success"}>{row.value}</AdminPill>
               </div>
             ))}
           </div>
-        </div>
+          <div className="mt-4 grid grid-cols-2 gap-3">
+            <div className="rounded-[12px] bg-[var(--admin-surface-alt)] p-3">
+              <p className="text-[11px] font-medium text-[var(--admin-text-muted)]">Fila ativa</p>
+              <p className="mt-1 text-xl font-semibold tracking-[-.02em] text-[var(--admin-text-primary)]">{activeOrders.length}</p>
+            </div>
+            <div className="rounded-[12px] bg-[var(--admin-surface-alt)] p-3">
+              <p className="text-[11px] font-medium text-[var(--admin-text-muted)]">Pedidos em risco</p>
+              <p className="mt-1 text-xl font-semibold tracking-[-.02em] text-[var(--admin-danger)]">{criticalOrders.length}</p>
+            </div>
+            <div className="rounded-[12px] bg-[var(--admin-surface-alt)] p-3">
+              <p className="text-[11px] font-medium text-[var(--admin-text-muted)]">Motoboys ativos</p>
+              <p className="mt-1 text-xl font-semibold tracking-[-.02em] text-[var(--admin-text-primary)]">{activeDrivers}</p>
+            </div>
+            <div className="rounded-[12px] bg-[var(--admin-surface-alt)] p-3">
+              <p className="text-[11px] font-medium text-[var(--admin-text-muted)]">Carga / motoboy</p>
+              <p className="mt-1 text-xl font-semibold tracking-[-.02em] text-[var(--admin-text-primary)]">{loadPerDriver.toFixed(1)}x</p>
+            </div>
+          </div>
+        </AdminSurface>
       </div>
 
-      <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
-        <div style={cardStyle}>
-          <p className="text-xs uppercase tracking-[0.14em] text-[#8a6f73]">Fila por etapa</p>
-          <h3 className="mt-2 text-xl font-black tracking-[-0.03em] text-[#2f090d]">Status dos pedidos no período</h3>
-          {statusFilter && (
-            <button type="button" onClick={() => setStatusFilter(null)} className="mt-3 text-xs font-bold text-[#7d0f14]">
-              Limpar filtro: {STATUS_LABELS[statusFilter]?.label ?? statusFilter}
-            </button>
-          )}
-          <div className="mt-5 space-y-3">
+      <div className="admin-dashboard-three">
+        <AdminSurface title="Pedidos por status" subtitle="Distribuição do volume no período.">
+          <div className="space-y-3">
             {statusRows.map((row) => {
               const max = Math.max(periodOrdersAll.length, 1);
               const width = `${(row.value / max) * 100}%`;
@@ -1849,387 +1920,205 @@ function DeliveryDashboardTab() {
                   key={row.key}
                   type="button"
                   onClick={() => setStatusFilter(statusFilter === row.key ? null : row.key)}
-                  className="block w-full rounded-xl p-1 text-left transition hover:bg-[#fff6f4]"
+                  className="block w-full rounded-[10px] p-1.5 text-left transition-colors hover:bg-[var(--admin-surface-alt)]"
+                  aria-pressed={statusFilter === row.key}
                 >
                   <div className="mb-1.5 flex items-center justify-between gap-3">
-                    <span className="text-sm font-medium text-[#3f1a1f]">{row.label}</span>
-                    <span className="text-sm font-bold text-[#2f090d]">{row.value}</span>
+                    <span className="text-[13px] font-medium text-[var(--admin-text-secondary)]">{row.label}</span>
+                    <span className="text-[13px] font-semibold text-[var(--admin-text-primary)]">{row.value}</span>
                   </div>
-                  <div className="h-2.5 rounded-full bg-[#f5e9e8]">
-                    <div className="h-full rounded-full" style={{ width, background: row.color }} />
+                  <div className="h-2 rounded-full bg-[#F0F1F3]">
+                    <div className="h-full rounded-full transition-all" style={{ width, background: row.color }} />
                   </div>
                 </button>
               );
             })}
           </div>
-        </div>
+          {statusFilter && (
+            <button type="button" onClick={() => setStatusFilter(null)} className="mt-4 text-xs font-semibold text-[var(--admin-brand-700)] hover:underline">
+              Limpar filtro de status
+            </button>
+          )}
+        </AdminSurface>
 
-        <div style={cardStyle}>
-          <p className="text-xs uppercase tracking-[0.14em] text-[#8a6f73]">Mix de origem</p>
-          <h3 className="mt-2 text-xl font-black tracking-[-0.03em] text-[#2f090d]">Quais canais estao puxando o volume</h3>
+        <AdminSurface title="Canais de venda" subtitle="Participação de cada origem na receita.">
           {sourceMix.length === 0 ? (
-            <div className="mt-6">
-              <AdminEmptyState title="Sem pedidos para classificar" description="Quando o periodo tiver volume, os canais de origem aparecem aqui." />
-            </div>
+            <AdminEmptyState title="Sem canais para comparar" description="Os canais aparecerão quando houver pedidos no período." />
           ) : (
-            <div className="mt-4 flex flex-col gap-4 lg:flex-row lg:items-center">
-              <div className="h-[200px] w-full max-w-[220px] self-center">
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie data={sourceMix} dataKey="orders" nameKey="label" innerRadius={52} outerRadius={82} paddingAngle={2}>
-                      {sourceMix.map((entry) => (
-                        <Cell key={entry.key} fill={entry.fill} />
-                      ))}
-                    </Pie>
-                    <Tooltip
-                      contentStyle={{ borderRadius: 14, border: "1px solid #f1e6e6", boxShadow: "0 18px 40px rgba(81,15,20,0.10)" }}
-                      formatter={(value: number, _name: string, payload: { payload?: { revenue: number } }) => [`${value} pedidos`, payload.payload ? formatCurrency(payload.payload.revenue) : ""]}
-                    />
-                  </PieChart>
-                </ResponsiveContainer>
-              </div>
-
-              <div className="flex-1 space-y-3">
-                {sourceMix.map((row) => (
-                  <div key={row.key} className="rounded-2xl border border-[#f1e6e6] bg-[#fffaf9] p-3">
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="flex items-center gap-2">
-                        <span className="w-2.5 h-2.5 rounded-full" style={{ background: row.fill }} />
-                        <span className="text-sm font-semibold text-[#3f1a1f]">{row.label}</span>
-                      </div>
-                      <span className="text-sm font-bold text-[#2f090d]">{row.orders} pedidos</span>
-                    </div>
-                    <p className="mt-1 text-sm text-[#7d6669]">{formatCompactCurrency(row.revenue)} em receita no periodo</p>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-
-        <div style={cardStyle}>
-          <p className="text-xs uppercase tracking-[0.14em] text-[#8a6f73]">Fila critica</p>
-          <h3 className="mt-2 text-xl font-black tracking-[-0.03em] text-[#2f090d]">SLA operacional agora</h3>
-          <div className="mt-4 grid grid-cols-2 gap-2 text-xs">
-            <div className="rounded-2xl bg-[#fffaf9] p-3">
-              <p className="font-bold text-[#2f090d]">{queueNow.pending}</p>
-              <p className="text-[#8a6f73]">Aguardando confirmação</p>
-            </div>
-            <div className="rounded-2xl bg-[#fffaf9] p-3">
-              <p className="font-bold text-[#2f090d]">{queueNow.preparing}</p>
-              <p className="text-[#8a6f73]">Em preparo</p>
-            </div>
-            <div className="rounded-2xl bg-[#fffaf9] p-3">
-              <p className="font-bold text-[#b42318]">{criticalOrders.length}</p>
-              <p className="text-[#8a6f73]">Atrasados</p>
-            </div>
-            <div className="rounded-2xl bg-[#fffaf9] p-3">
-              <p className="font-bold text-[#c2410c]">{riskyOrders.length}</p>
-              <p className="text-[#8a6f73]">Próximos do limite</p>
-            </div>
-          </div>
-          <div className="mt-3 rounded-2xl border border-[#f1e6e6] bg-[#fffaf9] p-3 text-sm text-[#7d6669]">
-            {oldestQueueOrder ? (
-              <span>Pedido mais antigo: <strong className="text-[#2f090d]">#{oldestQueueOrder.id}</strong> há {oldestQueueOrder.ageMinutes} min • meta de preparo {prepGoalMinutes} min.</span>
-            ) : (
-              <span>Sem fila ativa agora • meta de preparo {prepGoalMinutes} min.</span>
-            )}
-          </div>
-          {loadingLive ? (
-            <div className="mt-6 space-y-2">
-              {Array.from({ length: 4 }).map((_, index) => <Skeleton key={index} className="h-14 w-full rounded-xl" />)}
-            </div>
-          ) : criticalOrders.length === 0 ? (
-            <div className="mt-6">
-              <AdminEmptyState title="Fila sob controle" description="Nenhum pedido ativo ultrapassou 35 minutos neste momento." />
-            </div>
-          ) : (
-            <div className="mt-5 space-y-2">
-              {criticalOrders.slice(0, 6).map((order) => (
-                <div key={order.id} className="rounded-2xl border border-[#f5d0cb] bg-[#fff6f4] p-3">
-                  <div className="flex items-center justify-between gap-3">
-                    <div>
-                      <p className="text-sm font-bold text-[#2f090d]">#{order.id} · {order.customerName}</p>
-                      <p className="mt-1 text-xs text-[#8a6f73]">{serviceLabels[order.serviceType] ?? order.serviceType} · {formatCompactCurrency(Number(order.total))}</p>
-                    </div>
-                    <span className="rounded-full bg-[#b42318] px-2.5 py-1 text-[11px] font-bold text-white">{order.ageMinutes} min</span>
-                  </div>
-                  <div className="mt-2 flex items-center gap-2">
-                    <span className={`rounded-full px-2 py-1 text-[10px] font-bold ${statusTone[order.status] ?? "bg-[#f2f4f7] text-[#667085]"}`}>
-                      {STATUS_LABELS[order.status]?.label ?? order.status}
-                    </span>
-                    {order.deliveryNeighborhood && <span className="text-[11px] text-[#8a6f73]">{order.deliveryNeighborhood}</span>}
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 gap-4 xl:grid-cols-[1.1fr_0.9fr_1fr]">
-        <div style={cardStyle}>
-          <p className="text-xs uppercase tracking-[0.14em] text-[#8a6f73]">Horario quente</p>
-          <h3 className="mt-2 text-xl font-black tracking-[-0.03em] text-[#2f090d]">Quando o volume concentra</h3>
-          {loadingPeriod ? (
-            <div className="mt-6 space-y-2">
-              {Array.from({ length: 4 }).map((_, index) => <Skeleton key={index} className="h-10 w-full rounded-xl" />)}
-            </div>
-          ) : (
-            <div className="mt-4 h-[250px]">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={hourlyVolume} margin={{ top: 8, right: 0, left: -18, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#f1e6e6" vertical={false} />
-                  <XAxis dataKey="label" tick={{ fontSize: 10, fill: "#8a6f73" }} axisLine={false} tickLine={false} interval={2} />
-                  <YAxis tick={{ fontSize: 10, fill: "#8a6f73" }} axisLine={false} tickLine={false} allowDecimals={false} />
-                  <Tooltip
-                    contentStyle={{ borderRadius: 14, border: "1px solid #f1e6e6", boxShadow: "0 18px 40px rgba(81,15,20,0.10)" }}
-                    formatter={(value: number, _name: string, payload: { payload?: { receita: number } }) => [value, payload.payload ? formatCompactCurrency(payload.payload.receita) : ""]}
-                  />
-                  <Bar dataKey="pedidos" radius={[8, 8, 0, 0]} maxBarSize={22} fill="#b42318" />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          )}
-        </div>
-
-        <div style={cardStyle}>
-          <p className="text-xs uppercase tracking-[0.14em] text-[#8a6f73]">Bairros mais demandados</p>
-          <h3 className="mt-2 text-xl font-black tracking-[-0.03em] text-[#2f090d]">Onde vale reforcar entrega e cobertura</h3>
-          {neighborhoodRows.length === 0 ? (
-            <div className="mt-6">
-              <AdminEmptyState title="Sem historico de entrega" description="Os bairros aparecem quando houver pedidos delivery entregues no periodo." />
-            </div>
-          ) : (
-            <div className="mt-5 space-y-3">
-              {neighborhoodRows.map((row) => (
-                <div key={row.name} className="rounded-2xl border border-[#f1e6e6] bg-[#fffaf9] p-3">
-                  <div className="flex items-center justify-between gap-3">
-                    <p className="text-sm font-semibold text-[#3f1a1f]">{row.name}</p>
-                    <span className="text-sm font-black text-[#2f090d]">{row.orders} pedidos</span>
-                  </div>
-                  <div className="mt-2 flex items-center justify-between gap-3 text-sm text-[#7d6669]">
-                    <span>{formatCompactCurrency(row.revenue)}</span>
-                    <span>{row.avgMinutes ? `${row.avgMinutes.toFixed(0)} min medio` : "Sem SLA ainda"}</span>
-                  </div>
-                  <span className={`mt-2 inline-flex rounded-full px-2 py-1 text-[10px] font-bold ${
-                    row.status === "crítico" ? "bg-[#fef3f2] text-[#b42318]" :
-                    row.status === "atenção" ? "bg-[#fff7ed] text-[#c2410c]" :
-                    "bg-[#ecfdf3] text-[#027a48]"
-                  }`}>
-                    {row.status}
-                  </span>
-                </div>
-              ))}
-              {neighborhoodRows.some((row) => row.status !== "bom") && (
-                <p className="rounded-2xl bg-[#fff6f4] p-3 text-sm text-[#7d0f14]">
-                  Sugestão: bairros com tempo médio alto podem precisar de taxa, raio ou entregador dedicado.
-                </p>
-              )}
-            </div>
-          )}
-        </div>
-
-        <div style={cardStyle}>
-          <p className="text-xs uppercase tracking-[0.14em] text-[#8a6f73]">Mix de pagamento e PMIX</p>
-          <h3 className="mt-2 text-xl font-black tracking-[-0.03em] text-[#2f090d]">Leitura rapida de conversao e preferencia</h3>
-
-          <div className="mt-5 space-y-4">
-            <div>
-              <p className="text-xs font-bold uppercase tracking-[0.12em] text-[#8a6f73]">Pagamento</p>
-              <div className="mt-3 space-y-2">
-                {paymentMix.slice(0, 4).map((row) => {
-                  const share = totalRevenue > 0 ? (row.revenue / totalRevenue) * 100 : 0;
-                  return (
-                    <div key={row.key}>
-                      <div className="mb-1 flex items-center justify-between gap-3 text-sm">
-                        <span className="font-medium text-[#3f1a1f]">{row.label}</span>
-                        <span className="font-bold text-[#2f090d]">{share.toFixed(0)}%</span>
-                      </div>
-                      <p className="mb-1 text-[11px] text-[#8a6f73]">
-                        {row.orders} pedidos • ticket médio {formatCompactCurrency(row.avgTicket)}
-                      </p>
-                      <div className="h-2 rounded-full bg-[#f5e9e8]">
-                        <div className="h-full rounded-full bg-[#7d0f14]" style={{ width: `${share}%` }} />
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-
-            <div>
-              <p className="text-xs font-bold uppercase tracking-[0.12em] text-[#8a6f73]">Itens que puxam volume</p>
-              {loadingProducts ? (
-                <div className="mt-3 space-y-2">
-                  {Array.from({ length: 4 }).map((_, index) => <Skeleton key={index} className="h-8 w-full rounded-xl" />)}
-                </div>
-              ) : !topProducts || topProducts.length === 0 ? (
-                <p className="mt-3 text-sm text-[#7d6669]">Sem dados de produto neste periodo.</p>
-              ) : (
-                <div className="mt-3 space-y-2">
-                  {topProducts.map((product, index) => (
-                    <div key={`${product.productName}-${index}`} className="flex items-center justify-between gap-3 rounded-2xl border border-[#f1e6e6] bg-[#fffaf9] px-3 py-2.5">
-                      <div className="min-w-0">
-                        <p className="truncate text-sm font-semibold text-[#3f1a1f]">{product.productName}</p>
-                      </div>
-                      <span className="text-sm font-black text-[#7d0f14]">{product.totalQuantity}x</span>
-                    </div>
-                  ))}
-                </div>
-              )}
-              </div>
-            </div>
-            {paymentMix[0] && (
-              <p className="rounded-2xl bg-[#fff6f4] p-3 text-sm text-[#7d0f14]">
-                Sugestão: {paymentMix[0].label} representa a maior parte dos pagamentos. Mantenha essa opção clara no checkout.
-              </p>
-            )}
-          </div>
-      </div>
-
-      <div className="grid grid-cols-1 gap-4 xl:grid-cols-[0.9fr_0.9fr_1.2fr]">
-        <div style={cardStyle}>
-          <p className="text-xs uppercase tracking-[0.14em] text-[#8a6f73]">Ações recomendadas</p>
-          <h3 className="mt-2 text-xl font-black tracking-[-0.03em] text-[#2f090d]">Próximas decisões sugeridas</h3>
-          <div className="mt-5 space-y-2">
-            {recommendations.map((item, index) => (
-              <div key={`${item}-${index}`} className="flex gap-3 rounded-2xl border border-[#f1e6e6] bg-[#fffaf9] p-3 text-sm text-[#3f1a1f]">
-                <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-[#7d0f14] text-[10px] font-black text-white">
-                  {index + 1}
-                </span>
-                <span>{item}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        <div style={cardStyle}>
-          <p className="text-xs uppercase tracking-[0.14em] text-[#8a6f73]">Saúde da operação</p>
-          <h3 className="mt-2 text-xl font-black tracking-[-0.03em] text-[#2f090d]">{opsStatus.label}</h3>
-          <div className="mt-5 space-y-2">
-            {healthRows.map((row) => (
-              <div key={row.label} className="flex items-center justify-between gap-3 rounded-2xl border border-[#f1e6e6] bg-[#fffaf9] p-3">
-                <span className="text-sm font-medium text-[#3f1a1f]">{row.label}</span>
-                <span className={`rounded-full px-2.5 py-1 text-[10px] font-bold ${row.tone}`}>{row.value}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        <div style={cardStyle}>
-          <p className="text-xs uppercase tracking-[0.14em] text-[#8a6f73]">Resumo por canal</p>
-          <h3 className="mt-2 text-xl font-black tracking-[-0.03em] text-[#2f090d]">Receita, ticket e cancelamentos</h3>
-          <div className="mt-5 overflow-x-auto">
-            <table className="w-full min-w-[520px] text-sm">
-              <thead>
-                <tr className="text-left text-xs uppercase tracking-[0.12em] text-[#8a6f73]">
-                  <th className="pb-2">Canal</th>
-                  <th className="pb-2">Pedidos</th>
-                  <th className="pb-2">Receita</th>
-                  <th className="pb-2">Ticket</th>
-                  <th className="pb-2">Cancel.</th>
-                  <th className="pb-2">Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {channelSummary.map((row) => (
-                  <tr key={row.key} className="border-t border-[#f1e6e6]">
-                    <td className="py-2 font-semibold text-[#3f1a1f]">{row.label}</td>
-                    <td className="py-2 text-[#7d6669]">{row.orders}</td>
-                    <td className="py-2 text-[#7d6669]">{formatCompactCurrency(row.revenue)}</td>
-                    <td className="py-2 text-[#7d6669]">{formatCompactCurrency(row.avgTicket)}</td>
-                    <td className="py-2 text-[#7d6669]">{row.cancelCount}</td>
-                    <td className="py-2">
-                      <span className={`rounded-full px-2 py-1 text-[10px] font-bold ${row.status === "bom" ? "bg-[#ecfdf3] text-[#027a48]" : "bg-[#fff7ed] text-[#c2410c]"}`}>
-                        {row.status}
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 gap-4 xl:grid-cols-[0.9fr_1.1fr]">
-        <div style={cardStyle}>
-          <p className="text-xs uppercase tracking-[0.14em] text-[#8a6f73]">Mix do servico</p>
-          <h3 className="mt-2 text-xl font-black tracking-[-0.03em] text-[#2f090d]">Delivery versus retirada, balcao e salao</h3>
-          {serviceMix.length === 0 ? (
-            <div className="mt-6">
-              <AdminEmptyState title="Sem pedidos no periodo" description="Assim que houver movimentacao, o mix operacional aparece aqui." />
-            </div>
-          ) : (
-            <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2">
-              {serviceMix.map((row) => {
-                const share = completedPeriodOrders.length > 0 ? (row.count / completedPeriodOrders.length) * 100 : 0;
+            <div className="space-y-4">
+              {sourceMix.slice(0, 5).map((row, index) => {
+                const share = totalRevenue > 0 ? (row.revenue / totalRevenue) * 100 : 0;
                 return (
-                  <div key={row.key} className="rounded-2xl border border-[#f1e6e6] bg-[#fffaf9] p-4">
-                    <div className="flex items-center justify-between gap-3">
-                      <p className="text-sm font-semibold text-[#3f1a1f]">{row.label}</p>
-                      <span className="text-lg font-black text-[#2f090d]">{row.count}</span>
+                  <div key={row.key}>
+                    <div className="flex items-center justify-between gap-3 text-[13px]">
+                      <span className="font-medium text-[var(--admin-text-secondary)]">{row.label}</span>
+                      <span className="font-semibold text-[var(--admin-text-primary)]">{share.toFixed(0)}%</span>
                     </div>
-                    <p className="mt-2 text-sm text-[#7d6669]">{share.toFixed(0)}% do volume no periodo</p>
+                    <div className="mt-2 h-2 rounded-full bg-[#F0F1F3]">
+                      <div className="h-full rounded-full" style={{ width: `${share}%`, background: chartPalette[index % chartPalette.length] }} />
+                    </div>
+                    <p className="mt-1 text-[11px] text-[var(--admin-text-muted)]">{row.orders} pedidos • {formatCompactCurrency(row.revenue)}</p>
                   </div>
                 );
               })}
             </div>
           )}
-        </div>
+        </AdminSurface>
 
-        <div style={cardStyle}>
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <p className="text-xs uppercase tracking-[0.14em] text-[#8a6f73]">Pedidos recentes</p>
-              <h3 className="mt-2 text-xl font-black tracking-[-0.03em] text-[#2f090d]">Radar de atendimento para equipe e gerente</h3>
-            </div>
-            <Badge className="rounded-full bg-[#fff1ef] text-[#7d0f14] border-0">{filteredRecentOrders.length} visiveis</Badge>
-          </div>
-
-          {loadingRecent || loadingOverview ? (
-            <div className="mt-6 space-y-2">
-              {Array.from({ length: 5 }).map((_, index) => <Skeleton key={index} className="h-14 w-full rounded-xl" />)}
-            </div>
-          ) : filteredRecentOrders.length === 0 ? (
-            <div className="mt-6">
-              <AdminEmptyState title="Nada encontrado" description="Tente outro nome de cliente ou numero de pedido." />
-            </div>
+        <AdminSurface title="Horários" subtitle="Distribuição do volume ao longo do dia.">
+          {loadingPeriod ? (
+            <div className="space-y-3">{Array.from({ length: 5 }).map((_, index) => <AdminSkeleton key={index} />)}</div>
+          ) : periodOrdersAll.length === 0 ? (
+            <AdminEmptyState title="Sem volume por horário" description="O gráfico será preenchido quando houver pedidos." />
           ) : (
-            <div className="mt-5 space-y-2">
-              {filteredRecentOrders.map((order) => (
-                <div key={order.id} className="rounded-2xl border border-[#f1e6e6] bg-[#fffaf9] p-3">
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <p className="text-sm font-bold text-[#2f090d]">#{order.id} · {order.customerName}</p>
-                      <div className="mt-1 flex flex-wrap items-center gap-2">
-                        <span className={`rounded-full px-2 py-1 text-[10px] font-bold ${statusTone[order.status] ?? "bg-[#f2f4f7] text-[#667085]"}`}>
-                          {STATUS_LABELS[order.status]?.label ?? order.status}
-                        </span>
-                        <span className="text-[11px] text-[#8a6f73]">{paymentLabels[order.paymentMethod] ?? order.paymentMethod}</span>
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-sm font-black text-[#7d0f14]">{formatCompactCurrency(Number(order.total))}</p>
-                      <p className="mt-1 text-[11px] text-[#8a6f73]">
-                        {new Date(order.createdAt).toLocaleString("pt-BR", {
-                          timeZone: "America/Sao_Paulo",
-                          day: "2-digit",
-                          month: "2-digit",
-                          hour: "2-digit",
-                          minute: "2-digit",
-                        })}
-                      </p>
-                    </div>
-                  </div>
+            <div className="h-[250px]">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={hourlyVolume} margin={{ top: 8, right: 0, left: -22, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#ECEDEF" vertical={false} />
+                  <XAxis dataKey="label" tick={{ fontSize: 10, fill: "#979AA3" }} axisLine={false} tickLine={false} interval={2} />
+                  <YAxis tick={{ fontSize: 10, fill: "#979AA3" }} axisLine={false} tickLine={false} allowDecimals={false} />
+                  <Tooltip
+                    contentStyle={{ borderRadius: 12, border: "1px solid #E7E8EC", boxShadow: "0 8px 30px rgba(16,24,40,.08)" }}
+                    formatter={(value: number, _name: string, payload: { payload?: { receita: number } }) => [value, payload.payload ? formatCompactCurrency(payload.payload.receita) : ""]}
+                  />
+                  <Bar dataKey="pedidos" radius={[6, 6, 0, 0]} maxBarSize={20} fill="#631014" />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+        </AdminSurface>
+      </div>
+
+      <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
+        <AdminSurface title="Produtos mais vendidos" subtitle="Itens que mais puxam volume no período.">
+          {loadingProducts ? (
+            <div className="space-y-3">{Array.from({ length: 5 }).map((_, index) => <AdminSkeleton key={index} />)}</div>
+          ) : !topProducts?.length ? (
+            <AdminEmptyState title="Sem ranking de produtos" description="O ranking aparecerá assim que houver vendas no período." />
+          ) : (
+            <div className="divide-y divide-[var(--admin-border)]">
+              {topProducts.slice(0, 6).map((product, index) => (
+                <div key={`${product.productName}-${index}`} className="flex items-center gap-3 py-3 first:pt-0 last:pb-0">
+                  <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-[var(--admin-brand-50)] text-xs font-semibold text-[var(--admin-brand-800)]">{index + 1}</span>
+                  <p className="min-w-0 flex-1 truncate text-[13px] font-medium text-[var(--admin-text-primary)]">{product.productName}</p>
+                  <span className="text-[13px] font-semibold text-[var(--admin-text-secondary)]">{product.totalQuantity}x</span>
                 </div>
               ))}
             </div>
           )}
-        </div>
+        </AdminSurface>
+
+        <AdminSurface title="Bairros e regiões" subtitle="Volume e tempo médio das entregas concluídas.">
+          {neighborhoodRows.length === 0 ? (
+            <AdminEmptyState title="Sem dados de região" description="As regiões aparecerão quando existirem entregas concluídas com endereço." />
+          ) : (
+            <div className="divide-y divide-[var(--admin-border)]">
+              {neighborhoodRows.map((row) => (
+                <div key={row.name} className="flex items-center gap-4 py-3 first:pt-0 last:pb-0">
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-[13px] font-medium text-[var(--admin-text-primary)]">{row.name}</p>
+                    <p className="mt-1 text-[11px] text-[var(--admin-text-muted)]">{row.orders} pedidos • {formatCompactCurrency(row.revenue)}</p>
+                  </div>
+                  <span className="text-[12px] font-semibold text-[var(--admin-text-secondary)]">{row.avgMinutes.toFixed(0)} min</span>
+                  <AdminPill tone={row.status === "crítico" ? "danger" : row.status === "atenção" ? "warning" : "success"}>{row.status}</AdminPill>
+                </div>
+              ))}
+            </div>
+          )}
+        </AdminSurface>
       </div>
-    </div>
+
+      <section className="space-y-3">
+        <div>
+          <AdminSectionLabel>Bonatto Intelligence</AdminSectionLabel>
+          <h2 className="mt-1 text-[20px] font-semibold tracking-[-.02em] text-[var(--admin-text-primary)]">O que merece atenção agora</h2>
+          <p className="mt-1 text-[13px] text-[var(--admin-text-secondary)]">Insights derivados dos dados reais do período e da fila operacional atual.</p>
+        </div>
+        {recommendations.length === 0 ? (
+          <AdminSurface>
+            <AdminEmptyState
+              icon={<Zap className="h-8 w-8" />}
+              title="Sem insights suficientes"
+              description="Quando houver dados suficientes, os principais sinais operacionais aparecerão aqui."
+            />
+          </AdminSurface>
+        ) : (
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+            {recommendations.map((item, index) => (
+              <AdminInsightCard
+                key={item}
+                eyebrow={index === 1 ? "Risco" : index === 2 ? "Atenção" : index === 3 ? "Produto" : "Insight"}
+                title={item}
+                icon={index === 1 ? <Clock className="h-4 w-4" /> : <Zap className="h-4 w-4" />}
+                tone={index === 1 ? "danger" : index === 2 ? "warning" : "brand"}
+              />
+            ))}
+          </div>
+        )}
+      </section>
+
+      <AdminSurface
+        title="Pedidos recentes"
+        subtitle="Radar operacional dos últimos pedidos recebidos."
+        actions={
+          <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
+            <AdminSearch value={searchQuery} onChange={setSearchQuery} placeholder="Buscar pedido ou cliente" className="w-full sm:w-[250px]" />
+            <AdminPill tone="neutral">{filteredRecentOrders.length} visíveis</AdminPill>
+          </div>
+        }
+        flush
+      >
+        {loadingRecent ? (
+          <div className="space-y-2 p-5">
+            {Array.from({ length: 6 }).map((_, index) => <AdminSkeleton key={index} className="h-14" />)}
+          </div>
+        ) : filteredRecentOrders.length === 0 ? (
+          <AdminEmptyState
+            title={searchQuery || statusFilter ? "Nenhum pedido encontrado" : "Sem pedidos recentes"}
+            description={searchQuery || statusFilter ? "Ajuste a busca ou limpe o filtro de status." : "Os pedidos recentes aparecerão aqui automaticamente."}
+          />
+        ) : (
+          <AdminDataTableShell className="rounded-none border-0">
+            <table className="admin-data-table min-w-[760px]">
+              <thead>
+                <tr>
+                  <th>Pedido</th>
+                  <th>Cliente</th>
+                  <th>Status</th>
+                  <th>Pagamento</th>
+                  <th>Total</th>
+                  <th>Horário</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredRecentOrders.map((order) => (
+                  <tr key={order.id}>
+                    <td className="font-semibold">#{order.id}</td>
+                    <td>{order.customerName}</td>
+                    <td>
+                      <span className={`inline-flex rounded-full px-2 py-1 text-[11px] font-semibold ${statusTone[order.status] ?? "bg-[#F2F3F5] text-[#676A73]"}`}>
+                        {STATUS_LABELS[order.status]?.label ?? order.status}
+                      </span>
+                    </td>
+                    <td>{paymentLabels[order.paymentMethod] ?? order.paymentMethod}</td>
+                    <td className="font-semibold">{formatCompactCurrency(Number(order.total))}</td>
+                    <td className="text-[var(--admin-text-secondary)]">
+                      {new Date(order.createdAt).toLocaleString("pt-BR", {
+                        timeZone: "America/Sao_Paulo",
+                        day: "2-digit",
+                        month: "2-digit",
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      })}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </AdminDataTableShell>
+        )}
+      </AdminSurface>
+    </AdminPage>
   );
 }
 
@@ -2267,15 +2156,67 @@ const STATUS_CHIPS = [
   { value: "cancelled", label: "Cancelado", color: "bg-[#f5f5f5] text-[#6b7280] hover:bg-[#e5e7eb]" },
 ];
 
-function ElapsedTime({ createdAt }: { createdAt: string | number | Date }) {
-  const [elapsed, setElapsed] = useState(() => Math.floor((Date.now() - new Date(createdAt).getTime()) / 60000));
+type OperationalRisk = "ok" | "attention" | "critical";
+
+function getOperationalRisk(order: any, nowMs = Date.now()): OperationalRisk {
+  if (!order || order.status === "delivered" || order.status === "cancelled") return "ok";
+  const createdAt = new Date(order.createdAt).getTime();
+  const ageMinutes = Math.max(0, Math.floor((nowMs - createdAt) / 60000));
+
+  if (order.status === "out_for_delivery" && order.predictedDeliveredAt) {
+    const predicted = new Date(order.predictedDeliveredAt).getTime();
+    if (Number.isFinite(predicted)) {
+      const deltaMinutes = Math.floor((nowMs - predicted) / 60000);
+      if (deltaMinutes >= 10) return "critical";
+      if (deltaMinutes >= 0) return "attention";
+    }
+  }
+
+  const thresholds: Record<string, { attention: number; critical: number }> = {
+    pending: { attention: 10, critical: 15 },
+    confirmed: { attention: 15, critical: 20 },
+    preparing: { attention: 30, critical: 40 },
+    out_for_delivery: { attention: 55, critical: 70 },
+  };
+  const threshold = thresholds[order.status];
+  if (!threshold) return "ok";
+  if (ageMinutes >= threshold.critical) return "critical";
+  if (ageMinutes >= threshold.attention) return "attention";
+  return "ok";
+}
+
+function ElapsedTime({
+  createdAt,
+  status,
+  predictedDeliveredAt,
+}: {
+  createdAt: string | number | Date;
+  status?: string;
+  predictedDeliveredAt?: string | number | Date | null;
+}) {
+  const [nowMs, setNowMs] = useState(() => Date.now());
   useEffect(() => {
-    const t = setInterval(() => setElapsed(Math.floor((Date.now() - new Date(createdAt).getTime()) / 60000)), 60000);
+    const t = setInterval(() => setNowMs(Date.now()), 15000);
     return () => clearInterval(t);
-  }, [createdAt]);
-  const isUrgent = elapsed >= 30;
-  if (elapsed < 60) return <span className={`text-xs font-semibold ${isUrgent ? "text-[#6E0D12]" : "text-muted-foreground"}`}><Clock className="mr-1 inline h-3 w-3" />há {elapsed}min</span>;
-  return <span className="text-xs font-semibold text-muted-foreground"><Clock className="mr-1 inline h-3 w-3" />há {Math.floor(elapsed/60)}h{elapsed%60 > 0 ? ` ${elapsed%60}min` : ""}</span>;
+  }, []);
+
+  const elapsed = Math.max(0, Math.floor((nowMs - new Date(createdAt).getTime()) / 60000));
+  const risk = getOperationalRisk({ createdAt, status, predictedDeliveredAt }, nowMs);
+  const label = elapsed < 60 ? `${elapsed}min` : `${Math.floor(elapsed / 60)}h${elapsed % 60 > 0 ? ` ${elapsed % 60}min` : ""}`;
+  const riskClass =
+    risk === "critical"
+      ? "bg-[var(--admin-danger-bg)] text-[var(--admin-danger)]"
+      : risk === "attention"
+        ? "bg-[var(--admin-warning-bg)] text-[var(--admin-warning)]"
+        : "bg-[var(--admin-surface-alt)] text-[var(--admin-text-secondary)]";
+
+  return (
+    <span className={`inline-flex items-center rounded-full px-2 py-1 text-[11px] font-semibold ${riskClass}`}>
+      <Clock className="mr-1 h-3 w-3" />
+      {label}
+      {risk === "critical" ? " • atrasado" : risk === "attention" ? " • atenção" : ""}
+    </span>
+  );
 }
 
 // ─── KANBAN COLUMNS ──────────────────────────────────────────────────────────
@@ -2307,6 +2248,14 @@ function KanbanCard({ order, onOpen, overlay = false }: { order: any; onOpen: (o
   const style = transform && !overlay
     ? { transform: `translate3d(${transform.x}px, ${transform.y}px, 0)` }
     : undefined;
+  const risk = getOperationalRisk(order);
+  const displayNumber = order.orderNumber || String(order.id);
+  const riskBorder =
+    risk === "critical"
+      ? "border-[var(--admin-danger)] shadow-[0_8px_26px_rgba(217,45,32,0.12)]"
+      : risk === "attention"
+        ? "border-[var(--admin-warning)]"
+        : "border-[var(--admin-border)]";
 
   return (
     <button
@@ -2316,16 +2265,16 @@ function KanbanCard({ order, onOpen, overlay = false }: { order: any; onOpen: (o
       style={style}
       {...attributes}
       {...listeners}
-      aria-label={`Pedido ${order.id}, ${order.customerName}. Segure e arraste para alterar a etapa.`}
-      className={`group relative w-full touch-manipulation select-none space-y-2 overflow-hidden rounded-2xl border border-[#ead9d5] bg-white p-3.5 text-left shadow-[0_7px_22px_rgba(55,12,15,0.07)] transition-[transform,box-shadow,opacity,border-color] duration-200 ease-[cubic-bezier(.23,1,.32,1)] motion-reduce:transition-none active:scale-[0.985] ${
+      aria-label={`Pedido ${displayNumber}, ${order.customerName}. Segure e arraste para alterar a etapa.`}
+      className={`group relative w-full touch-manipulation select-none space-y-2 overflow-hidden rounded-2xl border bg-white p-3.5 text-left shadow-[var(--admin-shadow-sm)] transition-[transform,box-shadow,opacity,border-color] duration-200 ease-[cubic-bezier(.23,1,.32,1)] motion-reduce:transition-none active:scale-[0.985] ${riskBorder} ${
         overlay ? "rotate-2 scale-[1.02] border-[#8d171d] shadow-[0_24px_60px_rgba(55,12,15,0.24)]" : "hover:-translate-y-0.5 hover:border-[#c99a96] hover:shadow-[0_12px_30px_rgba(55,12,15,0.12)]"
       } ${isDragging ? "z-10 opacity-25" : "opacity-100"}`}
     >
-      <span className="absolute inset-y-0 left-0 w-1 bg-gradient-to-b from-[#6e0d12] to-[#bd2e34]" />
-      <div className="flex items-center justify-between">
-        <span className="font-black tracking-tight text-[#42090c]">#{order.id}</span>
-        <div className="flex items-center gap-1">
-          <ElapsedTime createdAt={order.createdAt} />
+      <span className={`absolute inset-y-0 left-0 w-1 ${risk === "critical" ? "bg-[var(--admin-danger)]" : risk === "attention" ? "bg-[var(--admin-warning)]" : "bg-[var(--admin-brand-800)]"}`} />
+      <div className="flex items-center justify-between gap-2">
+        <span className="truncate font-semibold tracking-tight text-[var(--admin-text-primary)]">#{displayNumber}</span>
+        <div className="flex shrink-0 items-center gap-1">
+          <ElapsedTime createdAt={order.createdAt} status={order.status} predictedDeliveredAt={order.predictedDeliveredAt} />
           <GripVertical className="h-4 w-4 text-[#bda9a6] transition-colors group-hover:text-[#6e0d12]" aria-hidden="true" />
         </div>
       </div>
@@ -2385,6 +2334,7 @@ function KanbanColumn({ col, orders, activeOrder, onOpen, visibleLimit, onShowMo
             {visibleOrders.map(order => <KanbanCard key={order.id} order={order} onOpen={onOpen} />)}
             {orders.length > visibleOrders.length && (
               <button
+                data-help-id="orders.showMore"
                 type="button"
                 onClick={onShowMore}
                 className="mt-1 rounded-xl border border-[#d9bbb6] bg-white px-3 py-2.5 text-xs font-bold text-[#6e0d12] transition-[transform,background-color] duration-150 hover:bg-[#fff6f2] active:scale-[0.98]"
@@ -2401,8 +2351,18 @@ function KanbanColumn({ col, orders, activeOrder, onOpen, visibleLimit, onShowMo
 
 function OrderDetailModal({ order, onClose, drivers }: { order: any; onClose: () => void; drivers: any[] }) {
   const utils = trpc.useUtils();
-  const [selectedDriver, setSelectedDriver] = useState("");
+  const [selectedDriver, setSelectedDriver] = useState(
+    order.driverId ? String(order.driverId) : "",
+  );
+  const [assignedDriverId, setAssignedDriverId] = useState<number | null>(
+    order.driverId ?? null,
+  );
   const [pixConfirmedLocally, setPixConfirmedLocally] = useState(order.paymentStatus === "paid");
+  const [showCancelForm, setShowCancelForm] = useState(false);
+  const [cancelReasonCode, setCancelReasonCode] = useState<
+    "" | "customer_request" | "payment" | "address" | "out_of_stock" | "delay" | "operational" | "other"
+  >("");
+  const [cancelReason, setCancelReason] = useState("");
   const s = STATUS_LABELS[order.status];
   const pixNeedsReceipt = order.paymentMethod === "pix" && !pixConfirmedLocally;
   const activeDrivers = drivers?.filter(d => d.active) ?? [];
@@ -2427,8 +2387,17 @@ function OrderDetailModal({ order, onClose, drivers }: { order: any; onClose: ()
     onError: (err) => toast.error(err.message),
   });
   const assignDriver = trpc.drivers.assignToOrder.useMutation({
-    onSuccess: () => utils.orders.list.invalidate(),
-    onError: () => toast.error("Erro ao atribuir motoboy"),
+    onSuccess: (_data, variables) => {
+      utils.orders.list.invalidate();
+      setSelectedDriver(variables.driverId ? String(variables.driverId) : "");
+      setAssignedDriverId(variables.driverId);
+      toast.success(
+        variables.driverId
+          ? "Motoboy atribuído ao pedido."
+          : "Motoboy removido do pedido.",
+      );
+    },
+    onError: (error) => toast.error("Erro ao atribuir motoboy", { description: error.message }),
   });
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={onClose}>
@@ -2440,7 +2409,7 @@ function OrderDetailModal({ order, onClose, drivers }: { order: any; onClose: ()
         {/* Modal Header */}
         <div className="flex items-center justify-between p-5 border-b">
           <div className="flex items-center gap-2">
-            <span className="font-black text-xl">#{order.id}</span>
+            <span className="font-black text-xl">#{order.orderNumber || order.id}</span>
             <Badge className={`${s?.color} border-0`}>{s?.label}</Badge>
             {pixConfirmedLocally && (
               <Badge className="bg-[#f0fdf4] text-[#166534] border-0 text-xs gap-1"><CheckCircle className="w-3 h-3" />Pago</Badge>
@@ -2449,7 +2418,7 @@ function OrderDetailModal({ order, onClose, drivers }: { order: any; onClose: ()
               <Badge className="bg-amber-50 text-amber-700 border border-amber-200 text-xs">PIX pendente</Badge>
             )}
           </div>
-          <button type="button" onClick={onClose} className="text-muted-foreground hover:text-foreground transition-colors">
+          <button data-help-id="common.cancel" type="button" onClick={onClose} aria-label="Fechar detalhes do pedido" className="text-muted-foreground hover:text-foreground transition-colors">
             <XCircle className="w-5 h-5" />
           </button>
         </div>
@@ -2460,7 +2429,7 @@ function OrderDetailModal({ order, onClose, drivers }: { order: any; onClose: ()
             <div className="flex items-center gap-1.5"><Users className="w-3.5 h-3.5 text-muted-foreground" /><span className="font-semibold">{order.customerName}</span></div>
             <div className="flex items-center gap-1.5"><Phone className="w-3.5 h-3.5 text-muted-foreground" /><span>{order.customerPhone}</span></div>
             <div className="flex items-center gap-1.5 col-span-2"><MapPin className="w-3.5 h-3.5 text-muted-foreground shrink-0" /><span className="truncate">{order.deliveryAddress}</span></div>
-            <div className="flex items-center gap-1.5 col-span-2 text-xs text-muted-foreground"><Clock className="w-3 h-3" /><span>{new Date(order.createdAt).toLocaleString("pt-BR")}</span><ElapsedTime createdAt={order.createdAt} /></div>
+            <div className="flex items-center gap-1.5 col-span-2 text-xs text-muted-foreground"><Clock className="w-3 h-3" /><span>{new Date(order.createdAt).toLocaleString("pt-BR")}</span><ElapsedTime createdAt={order.createdAt} status={order.status} predictedDeliveredAt={order.predictedDeliveredAt} /></div>
           </div>
 
           {order.notes && (
@@ -2483,6 +2452,7 @@ function OrderDetailModal({ order, onClose, drivers }: { order: any; onClose: ()
               <p className="font-bold">PIX aguardando confirmação</p>
               <p className="mt-1 text-xs text-amber-800">Marque como recebido antes de enviar o pedido para preparo.</p>
               <Button
+                data-help-id="orders.confirmPix"
                 type="button"
                 size="sm"
                 className="mt-3 bg-amber-600 text-white hover:bg-amber-700"
@@ -2509,6 +2479,7 @@ function OrderDetailModal({ order, onClose, drivers }: { order: any; onClose: ()
                 </div>
               ) : (
                 <Button
+                  data-help-id="orders.nfce"
                   size="sm"
                   variant="outline"
                   className="gap-1.5 text-xs"
@@ -2522,46 +2493,111 @@ function OrderDetailModal({ order, onClose, drivers }: { order: any; onClose: ()
             </div>
           )}
 
-          {/* Status Actions */}
-          {s?.next && (
-            <div className="pt-3 border-t space-y-2">
-              {s.next === "out_for_delivery" && activeDrivers.length > 0 && (
-                <div className="flex items-center gap-2">
-                  <Bike className="w-4 h-4 text-muted-foreground shrink-0" />
-                  <Select value={selectedDriver} onValueChange={setSelectedDriver}>
-                    <SelectTrigger className="h-8 text-xs flex-1">
-                      <SelectValue placeholder="Selecionar motoboy (opcional)" />
+          {/* Driver assignment — independent from order status */}
+          {order.serviceType === "delivery" && !["delivered", "cancelled"].includes(order.status) && (
+            <div className="rounded-xl border border-[#ead9d9] bg-[#fffafa] p-3.5">
+              <div className="mb-2.5 flex items-center gap-2">
+                <Bike className="h-4 w-4 text-[#73151B]" />
+                <div>
+                  <p className="text-sm font-bold text-foreground">Motoboy responsável</p>
+                  <p className="text-[11px] text-muted-foreground">
+                    Você pode atribuir ou trocar o motoboy sem alterar o status do pedido.
+                  </p>
+                </div>
+              </div>
+
+              {activeDrivers.length > 0 ? (
+                <div className="flex flex-col gap-2 sm:flex-row">
+                  <Select
+                    value={selectedDriver || "__none__"}
+                    onValueChange={(value) => setSelectedDriver(value === "__none__" ? "" : value)}
+                  >
+                    <SelectTrigger className="h-9 flex-1 text-xs">
+                      <SelectValue placeholder="Selecionar motoboy" />
                     </SelectTrigger>
                     <SelectContent>
-                      {activeDrivers.map(d => (
-                        <SelectItem key={d.id} value={String(d.id)}>{d.name}</SelectItem>
+                      <SelectItem value="__none__">Sem motoboy</SelectItem>
+                      {activeDrivers.map((driver) => (
+                        <SelectItem key={driver.id} value={String(driver.id)}>
+                          {driver.name}
+                        </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
+
+                  <Button
+                    data-help-id="orders.assignDriver"
+                    type="button"
+                    size="sm"
+                    className="h-9 shrink-0 gap-1.5"
+                    disabled={assignDriver.isPending}
+                    onClick={() => assignDriver.mutate({
+                      orderId: order.id,
+                      driverId: selectedDriver ? Number(selectedDriver) : null,
+                    })}
+                  >
+                    {assignDriver.isPending ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <Bike className="h-3.5 w-3.5" />
+                    )}
+                    {assignedDriverId ? "Atualizar motoboy" : "Atribuir motoboy"}
+                  </Button>
                 </div>
+              ) : (
+                <p className="text-xs text-amber-700">
+                  Nenhum motoboy ativo cadastrado para esta unidade.
+                </p>
               )}
+            </div>
+          )}
+
+          {/* Status Actions */}
+          {s?.next && (
+            <div className="pt-3 border-t space-y-2">
               <div className="flex gap-2 flex-wrap">
                 <Button
+                  data-help-id="orders.advance"
                   size="sm"
-                  onClick={() => {
+                  onClick={async () => {
                     if (s.next === "preparing" && pixNeedsReceipt) {
                       toast.error("Marque o PIX como recebido antes de preparar o pedido.");
                       return;
                     }
-                    updateStatus.mutate({ id: order.id, status: s.next as any });
-                    if (s.next === "out_for_delivery" && selectedDriver) {
-                      assignDriver.mutate({ orderId: order.id, driverId: parseInt(selectedDriver) });
+
+                    try {
+                      if (
+                        s.next === "out_for_delivery"
+                        && selectedDriver
+                        && Number(selectedDriver) !== assignedDriverId
+                      ) {
+                        await assignDriver.mutateAsync({
+                          orderId: order.id,
+                          driverId: Number(selectedDriver),
+                        });
+                      }
+
+                      await updateStatus.mutateAsync({ id: order.id, status: s.next as any });
+                    } catch {
+                      // Each mutation already shows the specific backend error.
                     }
                   }}
-                  disabled={updateStatus.isPending || (s.next === "preparing" && pixNeedsReceipt)}
+                  disabled={
+                    updateStatus.isPending
+                    || assignDriver.isPending
+                    || (s.next === "preparing" && pixNeedsReceipt)
+                  }
                   className="gap-1.5"
                 >
                   {updateStatus.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
                   Avançar para: {STATUS_LABELS[s.next]?.label}
                 </Button>
                 {order.status !== "cancelled" && (
-                  <Button size="sm" variant="outline"
-                    onClick={() => updateStatus.mutate({ id: order.id, status: "cancelled" })}
+                  <Button
+                    data-help-id="orders.cancel"
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setShowCancelForm((value) => !value)}
                     disabled={updateStatus.isPending}
                     className="text-destructive hover:text-destructive border-destructive/30"
                   >
@@ -2569,6 +2605,54 @@ function OrderDetailModal({ order, onClose, drivers }: { order: any; onClose: ()
                   </Button>
                 )}
               </div>
+
+              {showCancelForm && order.status !== "cancelled" && (
+                <div className="mt-3 space-y-3 rounded-[12px] border border-[var(--admin-danger)]/20 bg-[var(--admin-danger-bg)] p-3">
+                  <div>
+                    <p className="text-sm font-semibold text-[var(--admin-text-primary)]">Motivo do cancelamento</p>
+                    <p className="mt-1 text-xs text-[var(--admin-text-secondary)]">Esse dado será usado nos indicadores operacionais e na auditoria.</p>
+                  </div>
+                  <Select value={cancelReasonCode} onValueChange={(value) => setCancelReasonCode(value as typeof cancelReasonCode)}>
+                    <SelectTrigger className="bg-white"><SelectValue placeholder="Selecione uma categoria" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="customer_request">Cliente desistiu</SelectItem>
+                      <SelectItem value="payment">Pagamento</SelectItem>
+                      <SelectItem value="address">Endereço / localização</SelectItem>
+                      <SelectItem value="out_of_stock">Falta de produto</SelectItem>
+                      <SelectItem value="delay">Atraso</SelectItem>
+                      <SelectItem value="operational">Problema operacional</SelectItem>
+                      <SelectItem value="other">Outro</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <textarea
+                    value={cancelReason}
+                    onChange={(event) => setCancelReason(event.target.value)}
+                    maxLength={500}
+                    rows={3}
+                    placeholder="Descreva o motivo com pelo menos 3 caracteres..."
+                    className="w-full rounded-[10px] border border-[var(--admin-input-border)] bg-white px-3 py-2 text-sm outline-none"
+                  />
+                  <div className="flex justify-end gap-2">
+                    <Button type="button" size="sm" variant="ghost" onClick={() => setShowCancelForm(false)}>Voltar</Button>
+                    <Button
+                      data-help-id="orders.confirmCancel"
+                      type="button"
+                      size="sm"
+                      variant="destructive"
+                      disabled={updateStatus.isPending || !cancelReasonCode || cancelReason.trim().length < 3}
+                      onClick={() => updateStatus.mutate({
+                        id: order.id,
+                        status: "cancelled",
+                        cancellationReasonCode: cancelReasonCode || undefined,
+                        cancellationReason: cancelReason.trim() || undefined,
+                      })}
+                    >
+                      {updateStatus.isPending && <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />}
+                      Confirmar cancelamento
+                    </Button>
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -2592,12 +2676,22 @@ function OrdersTab({ onOpenOrder }: { onOpenOrder?: () => void }) {
     cancelled: 40,
   });
   const [showCancelled, setShowCancelled] = useState(false);
-  const { selectedStoreId } = useAdminStore();
-  const { data: allOrders, isLoading } = trpc.orders.list.useQuery(
+  const [operationNow, setOperationNow] = useState(() => Date.now());
+  const { selectedStoreId, selectedStoreName } = useAdminStore();
+
+  useEffect(() => {
+    const timer = setInterval(() => setOperationNow(Date.now()), 15000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const { data: allOrders, isLoading, dataUpdatedAt } = trpc.orders.list.useQuery(
     { limit: 1000, storeId: selectedStoreId },
-    { refetchInterval: 15000 }
+    { refetchInterval: false }
   );
-  const { data: drivers } = trpc.drivers.list.useQuery({ storeId: selectedStoreId });
+  const { data: drivers } = trpc.drivers.list.useQuery(
+    { storeId: selectedStoreId },
+    { refetchInterval: 10000, refetchIntervalInBackground: true },
+  );
   const sensors = useSensors(
     useSensor(MouseSensor, { activationConstraint: { distance: 6 } }),
     useSensor(TouchSensor, { activationConstraint: { delay: 220, tolerance: 8 } }),
@@ -2611,7 +2705,8 @@ function OrdersTab({ onOpenOrder }: { onOpenOrder?: () => void }) {
         delete next[variables.id];
         return next;
       });
-      toast.success(`Pedido #${variables.id} movido para ${STATUS_LABELS[variables.status]?.label}.`);
+      const changedOrder = allOrders?.find((order) => order.id === variables.id);
+      toast.success(`Pedido #${changedOrder?.orderNumber || variables.id} movido para ${STATUS_LABELS[variables.status]?.label}.`);
     },
     onError: (error, variables) => {
       setOptimisticStatuses(current => {
@@ -2629,8 +2724,27 @@ function OrdersTab({ onOpenOrder }: { onOpenOrder?: () => void }) {
     status: optimisticStatuses[order.id] ?? order.status,
   })).filter(o => {
     const q = searchQuery.toLowerCase().trim();
-    return !q || o.customerName?.toLowerCase().includes(q) || String(o.id).includes(q) || o.customerPhone?.includes(q);
+    return !q ||
+      o.customerName?.toLowerCase().includes(q) ||
+      String(o.id).includes(q) ||
+      o.orderNumber?.toLowerCase().includes(q) ||
+      o.customerPhone?.includes(q);
   }) ?? [];
+
+  const activeOperationalOrders = filteredOrders.filter((order) =>
+    ["pending", "confirmed", "preparing", "out_for_delivery"].includes(order.status),
+  );
+  const attentionOrders = activeOperationalOrders.filter((order) => getOperationalRisk(order, operationNow) === "attention");
+  const criticalOrders = activeOperationalOrders.filter((order) => getOperationalRisk(order, operationNow) === "critical");
+  const waitingDriverOrders = activeOperationalOrders.filter((order) =>
+    order.serviceType === "delivery" &&
+    !order.driverId &&
+    (order.status === "preparing" || order.status === "out_for_delivery"),
+  );
+  const activeDriversCount = (drivers ?? []).filter((driver) => driver.active).length;
+  const lastSyncLabel = dataUpdatedAt
+    ? new Date(dataUpdatedAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", second: "2-digit" })
+    : "--:--:--";
 
   // Group by status
   const byStatus = (status: string) => filteredOrders.filter(o => o.status === status);
@@ -2649,6 +2763,10 @@ function OrdersTab({ onOpenOrder }: { onOpenOrder?: () => void }) {
     const targetStatus = String(over.id).replace("column-", "") as OrderStatus;
     const sourceStatus = order.status as OrderStatus;
     if (targetStatus === sourceStatus) return;
+    if (targetStatus === "cancelled") {
+      toast.error("Abra o pedido para cancelar e informar o motivo.");
+      return;
+    }
     if (!KANBAN_TRANSITIONS[sourceStatus]?.includes(targetStatus)) {
       toast.error("Esse pedido não pode ser movido diretamente para essa etapa.");
       return;
@@ -2665,8 +2783,8 @@ function OrdersTab({ onOpenOrder }: { onOpenOrder?: () => void }) {
   return (
     <AdminPage>
       <AdminTopbar
-        title="Pedidos"
-        subtitle={`${filteredOrders.length} pedido${filteredOrders.length !== 1 ? "s" : ""} encontrado${filteredOrders.length !== 1 ? "s" : ""}`}
+        title="Central de pedidos"
+        subtitle={`${selectedStoreName} • atualização automática a cada 5s • última sincronização ${lastSyncLabel}`}
         onRefresh={() => utils.orders.list.invalidate()}
         actions={
           <button
@@ -2683,6 +2801,56 @@ function OrdersTab({ onOpenOrder }: { onOpenOrder?: () => void }) {
           </button>
         }
       />
+
+      <AdminStatGrid className="xl:grid-cols-5">
+        <AdminStat
+          label="Novos"
+          value={byStatus("pending").length}
+          icon={<ShoppingBag className="h-4 w-4" />}
+          sub="Aguardando confirmação"
+        />
+        <AdminStat
+          label="Em preparo"
+          value={byStatus("preparing").length}
+          icon={<ChefHat className="h-4 w-4" />}
+          sub={attentionOrders.length ? `${attentionOrders.length} em atenção` : "Fila dentro da meta"}
+        />
+        <AdminStat
+          label="Em entrega"
+          value={byStatus("out_for_delivery").length}
+          icon={<Truck className="h-4 w-4" />}
+          sub={`${activeDriversCount} motoboy${activeDriversCount === 1 ? "" : "s"} ativo${activeDriversCount === 1 ? "" : "s"}`}
+        />
+        <AdminStat
+          label="Atrasados"
+          value={criticalOrders.length}
+          icon={<Clock className="h-4 w-4" />}
+          trend={criticalOrders.length > 0 ? "down" : "neutral"}
+          trendLabel={criticalOrders.length > 0 ? "Ação necessária" : "Sob controle"}
+          sub="Pedidos fora do SLA"
+        />
+        <AdminStat
+          label="Sem motoboy"
+          value={waitingDriverOrders.length}
+          icon={<Bike className="h-4 w-4" />}
+          trend={waitingDriverOrders.length > 0 ? "down" : "neutral"}
+          trendLabel={waitingDriverOrders.length > 0 ? "Atribuir" : "Normal"}
+          sub="Delivery em preparo/saída"
+        />
+      </AdminStatGrid>
+
+      {(criticalOrders.length > 0 || attentionOrders.length > 0) && (
+        <div className="flex flex-wrap items-center gap-2 rounded-[14px] border border-[var(--admin-border)] bg-white px-4 py-3 text-xs">
+          <span className="font-semibold text-[var(--admin-text-primary)]">Fila operacional:</span>
+          {criticalOrders.length > 0 && (
+            <AdminPill tone="danger">{criticalOrders.length} atrasado{criticalOrders.length === 1 ? "" : "s"}</AdminPill>
+          )}
+          {attentionOrders.length > 0 && (
+            <AdminPill tone="warning">{attentionOrders.length} em atenção</AdminPill>
+          )}
+          <span className="text-[var(--admin-text-secondary)]">Priorize os cards destacados no Kanban.</span>
+        </div>
+      )}
 
       <div className="admin-toolbar">
         <AdminSearch
@@ -2746,7 +2914,7 @@ function OrdersTab({ onOpenOrder }: { onOpenOrder?: () => void }) {
 // ─── MENU TAB ─────────────────────────────────────────────────────────────────
 function MenuTab() {
   const utils = trpc.useUtils();
-  const { selectedStoreId } = useAdminStore();
+  const { selectedStoreId, stores } = useAdminStore();
   const { data: categories } = trpc.categories.listAll.useQuery(
     { storeId: selectedStoreId },
     { enabled: selectedStoreId !== undefined },
@@ -2756,9 +2924,16 @@ function MenuTab() {
     { enabled: selectedStoreId !== undefined },
   );
   const [selectedCatId, setSelectedCatId] = useState<number | null>(null);
+  const [productSearch, setProductSearch] = useState("");
+  const [productStatusFilter, setProductStatusFilter] = useState<"all" | "active" | "paused">("all");
+  const [selectedProductIds, setSelectedProductIds] = useState<Set<number>>(() => new Set());
+  const [bulkCategoryId, setBulkCategoryId] = useState<number | undefined>();
   const [editingProduct, setEditingProduct] = useState<any | null>(null);
+  const [newProductCategoryId, setNewProductCategoryId] = useState<number | undefined>();
+  const [performanceProductId, setPerformanceProductId] = useState<number | null>(null);
   const [showForm, setShowForm] = useState(false);
-  const [activeMenuTab, setActiveMenuTab] = useState<"products" | "categories" | "slides" | "carousel">("products");
+  const [showCatalogReplication, setShowCatalogReplication] = useState(false);
+  const [activeMenuTab, setActiveMenuTab] = useState<"structure" | "products" | "categories" | "modifiers" | "performance" | "slides" | "carousel">("structure");
   // Category form
   const [showCatForm, setShowCatForm] = useState(false);
   const [editingCat, setEditingCat] = useState<any | null>(null);
@@ -2787,6 +2962,21 @@ function MenuTab() {
       utils.products.listAll.invalidate();
       utils.products.list.invalidate();
       toast.success("Produto removido!");
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
+  const batchProducts = trpc.products.batchUpdate.useMutation({
+    onSuccess: async (result) => {
+      await Promise.all([
+        utils.products.listAll.invalidate(),
+        utils.products.list.invalidate(),
+        utils.catalog.adminProductSummaries.invalidate(),
+        utils.catalog.adminModifierGroups.invalidate(),
+      ]);
+      setSelectedProductIds(new Set());
+      setBulkCategoryId(undefined);
+      toast.success(`${result.count} produto(s) atualizado(s).`);
     },
     onError: (err) => toast.error(err.message),
   });
@@ -2824,42 +3014,40 @@ function MenuTab() {
 
   const [categoryImageUploading, setCategoryImageUploading] = useState(false);
   const categoryImageInputRef = useRef<HTMLInputElement>(null);
-  const uploadCategoryImage = trpc.categories.uploadImage.useMutation({
-    onSuccess: (data) => {
+  const handleCategoryImageFile = async (file: File) => {
+    if (!file) return;
+    setCategoryImageUploading(true);
+    try {
+      const data = await uploadImageFile({ file, scope: "category", storeId: selectedStoreId });
       setCatForm((current) => ({ ...current, imageUrl: data.url }));
       toast.success("Imagem da categoria enviada!");
-    },
-    onError: (err) => toast.error(err.message),
-    onSettled: () => setCategoryImageUploading(false),
-  });
-  const handleCategoryImageFile = (file: File) => {
-    if (!file) return;
-    if (file.size > 5 * 1024 * 1024) {
-      toast.error("Imagem muito grande. Maximo de 5MB.");
-      return;
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Não foi possível enviar a imagem.");
+    } finally {
+      setCategoryImageUploading(false);
     }
-    setCategoryImageUploading(true);
-    const reader = new FileReader();
-    reader.onload = (ev) => {
-      const result = typeof ev.target?.result === "string" ? ev.target.result : "";
-      const base64 = result.split(",")[1];
-      if (!base64) {
-        setCategoryImageUploading(false);
-        toast.error("Nao foi possivel ler a imagem.");
-        return;
-      }
-      uploadCategoryImage.mutate({
-        base64,
-        mimeType: file.type as "image/jpeg" | "image/png" | "image/webp" | "image/gif",
-        fileName: file.name,
-      });
-    };
-    reader.readAsDataURL(file);
   };
 
-  const filteredProducts = selectedCatId
-    ? products?.filter((p) => p.categoryId === selectedCatId)
-    : products;
+  const filteredProducts = (products ?? []).filter((product) => {
+    if (selectedCatId && product.categoryId !== selectedCatId) return false;
+    if (productStatusFilter === "active" && !product.active) return false;
+    if (productStatusFilter === "paused" && product.active) return false;
+    const term = productSearch.trim().toLowerCase();
+    if (term) {
+      const categoryName = categories?.find((category) => category.id === product.categoryId)?.name ?? "";
+      const haystack = `${product.name} ${product.description ?? ""} ${categoryName}`.toLowerCase();
+      if (!haystack.includes(term)) return false;
+    }
+    return true;
+  });
+
+  const activeProductCount = (products ?? []).filter((product) => product.active).length;
+  const pausedProductCount = (products ?? []).length - activeProductCount;
+
+  useEffect(() => {
+    setProductPage(1);
+    setSelectedProductIds(new Set());
+  }, [selectedCatId, productSearch, productStatusFilter, selectedStoreId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -2916,10 +3104,11 @@ function MenuTab() {
   const PRODUCTS_PER_PAGE = 10;
   const [productPage, setProductPage] = useState(1);
   const totalProductPages = Math.max(1, Math.ceil((filteredProducts?.length ?? 0) / PRODUCTS_PER_PAGE));
-  const paginatedProducts = filteredProducts?.slice(
+  const paginatedProducts = filteredProducts.slice(
     (productPage - 1) * PRODUCTS_PER_PAGE,
     productPage * PRODUCTS_PER_PAGE,
   );
+  const allFilteredProductsSelected = filteredProducts.length > 0 && filteredProducts.every((product) => selectedProductIds.has(product.id));
 
   // Slides
   const { data: slides } = trpc.menuSlides.listAll.useQuery(
@@ -2931,21 +3120,18 @@ function MenuTab() {
   const [slideForm, setSlideForm] = useState({ title: "", subtitle: "", imageUrl: "", videoUrl: "", badgeText: "", ctaText: "", ctaLink: "", sortOrder: "" });
   const [slideImageUploading, setSlideImageUploading] = useState(false);
   const slideImageInputRef = useRef<HTMLInputElement>(null);
-  const uploadSlideImage = trpc.menuSlides.uploadImage.useMutation({
-    onSuccess: (data) => { setSlideForm((f) => ({ ...f, imageUrl: data.url })); toast.success("Imagem enviada!"); },
-    onError: (e) => toast.error(e.message),
-    onSettled: () => setSlideImageUploading(false),
-  });
-  const handleSlideImageFile = (file: File) => {
+  const handleSlideImageFile = async (file: File) => {
     if (!file) return;
-    if (file.size > 5 * 1024 * 1024) { toast.error("Imagem muito grande. Máximo 5MB."); return; }
     setSlideImageUploading(true);
-    const reader = new FileReader();
-    reader.onload = (ev) => {
-      const base64 = (ev.target?.result as string).split(",")[1];
-      uploadSlideImage.mutate({ storeId: selectedStoreId, base64, mimeType: file.type as "image/jpeg" | "image/png" | "image/webp" | "image/gif", fileName: file.name });
-    };
-    reader.readAsDataURL(file);
+    try {
+      const data = await uploadImageFile({ file, scope: "banner", storeId: selectedStoreId });
+      setSlideForm((current) => ({ ...current, imageUrl: data.url }));
+      toast.success("Imagem enviada!");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Não foi possível enviar a imagem.");
+    } finally {
+      setSlideImageUploading(false);
+    }
   };
 
   const seedSlides = trpc.menuSlides.seed.useMutation({
@@ -3015,10 +3201,26 @@ function MenuTab() {
 
   const startEdit = (product: any) => {
     setEditingProduct(product);
+    setNewProductCategoryId(undefined);
     setShowForm(true);
+    setActiveMenuTab("products");
+  };
+
+  const startCreateProduct = (categoryId?: number) => {
+    setEditingProduct(null);
+    setNewProductCategoryId(categoryId);
+    setShowCatForm(false);
+    setShowForm(true);
+    setActiveMenuTab("products");
+  };
+
+  const openProductPerformance = (productId: number) => {
+    setPerformanceProductId(productId);
+    setActiveMenuTab("performance");
   };
 
   const startEditCat = (cat: any) => {
+    setActiveMenuTab("categories");
     setEditingCat(cat);
     setCatForm({
       name: cat.name,
@@ -3032,10 +3234,13 @@ function MenuTab() {
   };
 
   const menuSubTabs = [
+    { id: "structure" as const, label: "Cardápio", count: products?.length ?? 0 },
     { id: "products" as const, label: "Produtos", count: products?.length ?? 0 },
     { id: "categories" as const, label: "Categorias", count: categories?.length ?? 0 },
+    { id: "modifiers" as const, label: "Complementos", count: null as number | null },
+    { id: "performance" as const, label: "Desempenho", count: null as number | null },
     { id: "slides" as const, label: "Banners", count: slides?.length ?? 0 },
-    { id: "carousel" as const, label: "Carrossel Hero", count: null as number | null },
+    { id: "carousel" as const, label: "Carrossel", count: null as number | null },
   ];
 
   if (selectedStoreId === undefined) {
@@ -3053,11 +3258,20 @@ function MenuTab() {
     <AdminPage>
       <AdminTopbar
         title="Cardápio"
-        subtitle="Produtos, categorias, banners e carrossel da página inicial"
+        subtitle="Gerencie a estrutura do cardápio, produtos, complementos e desempenho desta unidade."
         actions={
           <>
+            <Button
+              data-help-id="catalog.replicate"
+              variant="outline"
+              onClick={() => setShowCatalogReplication(true)}
+              className="h-9 gap-1.5 text-xs"
+            >
+              <Copy className="h-4 w-4" />
+              Sincronizar
+            </Button>
             {activeMenuTab === "products" && (
-              <Button onClick={() => { setEditingProduct(null); setShowForm(true); setShowCatForm(false); }} className="gap-1.5 h-9 text-xs">
+              <Button onClick={() => startCreateProduct()} className="gap-1.5 h-9 text-xs">
                 <PlusCircle className="w-4 h-4" />
                 Novo produto
               </Button>
@@ -3072,6 +3286,13 @@ function MenuTab() {
         }
       />
 
+      <CatalogReplicationDialog
+        open={showCatalogReplication}
+        onClose={() => setShowCatalogReplication(false)}
+        stores={stores}
+        initialSourceStoreId={selectedStoreId}
+      />
+
       {/* Sub-tabs */}
       <div className="flex gap-1 border-b" style={{ borderColor: 'var(--admin-divider)' }}>
         {menuSubTabs.map((t) => {
@@ -3079,6 +3300,7 @@ function MenuTab() {
           return (
             <button
               key={t.id}
+              data-help-id={"menu.tab." + t.id}
               onClick={() => setActiveMenuTab(t.id)}
               className="relative px-4 py-2.5 text-[13px] font-medium transition-colors"
               style={{
@@ -3097,167 +3319,110 @@ function MenuTab() {
         })}
       </div>
 
+      {activeMenuTab === "structure" && (
+        <MenuStructurePanel
+          storeId={selectedStoreId}
+          categories={categories ?? []}
+          products={products ?? []}
+          onCreateCategory={() => {
+            setActiveMenuTab("categories");
+            setEditingCat(null);
+            setCatForm({ name: "", slug: "", description: "", sortOrder: "", icon: "", imageUrl: "" });
+            setShowCatForm(true);
+            setShowForm(false);
+          }}
+          onCreateProduct={(categoryId) => startCreateProduct(categoryId)}
+          onEditCategory={startEditCat}
+          onEditProduct={startEdit}
+          onViewProductPerformance={openProductPerformance}
+        />
+      )}
+
+      {activeMenuTab === "modifiers" && (
+        <ModifierGroupsPanel
+          storeId={selectedStoreId}
+          onEditProduct={(productId) => {
+            const product = products?.find((item) => item.id === productId);
+            if (product) startEdit(product);
+          }}
+        />
+      )}
+
+      {activeMenuTab === "performance" && (
+        <MenuPerformancePanel
+          storeId={selectedStoreId}
+          categories={(categories ?? []).map((category) => ({ id: category.id, name: category.name }))}
+          onEditProduct={(productId) => {
+            const product = products?.find((item) => item.id === productId);
+            if (product) startEdit(product);
+          }}
+          focusProductId={performanceProductId}
+        />
+      )}
+
       {activeMenuTab === "products" && (
-        <>
-          <Card className="mb-5 border-primary/20">
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base">Estilo do cardápio</CardTitle>
-              <p className="text-sm text-muted-foreground">Escolha a experiência de navegação desta loja. Produtos e regras permanecem os mesmos.</p>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="grid gap-3 md:grid-cols-3">
-                {([
-                  { id: "editorial", name: "Lista editorial", description: "Imagem generosa, leitura rápida e botão de compra destacado." },
-                  { id: "compact", name: "Lista compacta", description: "Mais produtos visíveis e navegação eficiente para cardápios grandes." },
-                  { id: "visual", name: "Vitrine visual", description: "Grade de imagens para marcas que vendem primeiro pelo visual." },
-                ] as const).map((option) => (
-                  <button key={option.id} type="button" onClick={() => setMenuLayout(option.id)} className={`rounded-2xl border-2 p-3 text-left transition-all ${menuLayout === option.id ? "border-primary bg-primary/5 shadow-sm" : "border-border bg-background hover:border-primary/40"}`}>
-                    <div className={`mb-3 grid gap-1 rounded-xl bg-[#f6efec] p-2 ${option.id === "visual" ? "grid-cols-2" : "grid-cols-1"}`}>
-                      {[0, 1].map((item) => <div key={item} className={`overflow-hidden rounded-lg border bg-white ${option.id === "visual" ? "h-20" : option.id === "compact" ? "h-10" : "h-14"}`}><div className={`h-full bg-[#d9a07a] ${option.id === "visual" ? "w-full" : option.id === "compact" ? "w-12" : "w-16"}`} /></div>)}
-                    </div>
-                    <p className="font-semibold text-foreground">{option.name}</p>
-                    <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{option.description}</p>
-                  </button>
-                ))}
-              </div>
-              <div className="flex justify-end">
-                <Button onClick={() => saveMenuLayout.mutate({ storeId: selectedStoreId, layout: menuLayout })} disabled={saveMenuLayout.isPending}>
-                  {saveMenuLayout.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                  Aplicar layout
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-          {/* Product Form */}
-          {showForm && (
+        <div className="space-y-5">
+          {showForm ? (
             <ProductCatalogEditor
               key={editingProduct?.id ?? "new-product"}
               storeId={selectedStoreId}
               categories={categories ?? []}
               product={editingProduct}
-              onClose={() => { setShowForm(false); setEditingProduct(null); }}
-              onSaved={() => { setShowForm(false); setEditingProduct(null); }}
+              defaultCategoryId={newProductCategoryId}
+              onClose={() => { setShowForm(false); setEditingProduct(null); setNewProductCategoryId(undefined); }}
+              onSaved={async () => {
+                setShowForm(false);
+                setEditingProduct(null);
+                setNewProductCategoryId(undefined);
+                await Promise.all([
+                  utils.products.listAll.invalidate(),
+                  utils.products.list.invalidate(),
+                  utils.catalog.adminProductSummaries.invalidate(),
+                ]);
+              }}
             />
-          )}
-
-          {/* Category Filter */}
-          <div className="flex max-w-full gap-2 overflow-x-auto pb-2">
-            <button
-              onClick={() => setSelectedCatId(null)}
-              className={`shrink-0 px-3 py-1.5 rounded-full text-sm font-medium transition-all ${
-                selectedCatId === null ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:bg-muted/80"
-              }`}
-            >
-              Todos
-            </button>
-            {categories?.map((cat) => (
-              <button
-                key={cat.id}
-                onClick={() => setSelectedCatId(cat.id)}
-                className={`shrink-0 px-3 py-1.5 rounded-full text-sm font-medium transition-all ${
-                  selectedCatId === cat.id ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:bg-muted/80"
-                }`}
-              >
-                {cat.name}
-              </button>
-            ))}
-          </div>
-
-          {/* Products Table */}
-          {isLoading ? (
-            <div className="space-y-2">
-              {Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-16 w-full" />)}
-            </div>
           ) : (
-            <Card className="min-w-0 max-w-full overflow-hidden">
-              <CardContent className="min-w-0 p-0">
-                <div className="max-w-full overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead>
-                  <tr className="admin-table-head">
-                    <th className="text-left p-3">Produto</th>
-                    <th className="text-left p-3 hidden md:table-cell">Categoria</th>
-                    <th className="text-right p-3">Preço</th>
-                    <th className="text-center p-3">Status</th>
-                    <th className="text-right p-3">Ações</th>
-                  </tr>
-                    </thead>
-                    <tbody>
-                      {paginatedProducts?.map((product) => {
-                        const cat = categories?.find((c) => c.id === product.categoryId);
-                        return (
-                          <tr key={product.id} className="border-b hover:bg-muted/30 transition-colors">
-                            <td className="p-3">
-                              <div className="flex items-center gap-3">
-                                {product.imageUrl ? (
-                                  <img src={product.imageUrl} alt={product.name} className="w-10 h-10 rounded-lg object-cover shrink-0" />
-                                ) : (
-                                  <div className="w-10 h-10 rounded-lg bg-muted flex items-center justify-center shrink-0">
-                                    <ChefHat className="w-4 h-4 text-muted-foreground" />
-                                  </div>
-                                )}
-                                <div>
-                                  <p className="font-medium">{product.name}</p>
-                                  {product.featured && (
-                                    <Badge className="bg-primary/10 text-primary border-0 text-xs mt-0.5">Destaque</Badge>
-                                  )}
-                                </div>
-                              </div>
-                            </td>
-                            <td className="p-3 hidden md:table-cell text-muted-foreground">{cat?.name}</td>
-                            <td className="p-3 text-right font-bold text-primary">
-                              R$ {parseFloat(product.price).toFixed(2).replace(".", ",")}
-                            </td>
-                            <td className="p-3 text-center">
-                              <button
-                                onClick={() => updateProduct.mutate({ id: product.id, active: !product.active, storeId: selectedStoreId })}
-                                className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium transition-all ${
-                                  product.active ? "bg-[#f0fdf4] text-[#166534] hover:bg-[#dcfce7]" : "bg-[#fce8e8] text-[#450709] hover:bg-[#f9d0d0]"
-                                }`}
-                                title={product.active ? "Clique para desativar" : "Clique para ativar"}
-                              >
-                                {product.active ? "✓ Ativo" : "✕ Inativo"}
-                              </button>
-                            </td>
-                            <td className="p-3 text-right">
-                              <div className="flex items-center justify-end gap-1">
-                                <Button size="sm" variant="ghost" onClick={() => startEdit(product)}>
-                                  Editar
-                                </Button>
-                                <Button
-                                  size="sm"
-                                  variant="ghost"
-                                  className="text-destructive hover:text-destructive"
-                                  onClick={() => {
-                                    if (confirm("Remover este produto?")) {
-                                      deleteProduct.mutate({ id: product.id, storeId: selectedStoreId });
-                                    }
-                                  }}
-                                >
-                                  Remover
-                                </Button>
-                              </div>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
+            <>
+              <AdminSurface
+                title="Experiência do cardápio"
+                subtitle="Escolha a forma de navegação desta unidade. Produtos e regras de negócio permanecem os mesmos."
+              >
+                <div className="grid gap-3 md:grid-cols-3">
+                  {([
+                    { id: "editorial", name: "Lista editorial", description: "Imagem generosa, leitura rápida e botão de compra destacado." },
+                    { id: "compact", name: "Lista compacta", description: "Mais produtos visíveis e navegação eficiente para cardápios grandes." },
+                    { id: "visual", name: "Vitrine visual", description: "Grade de imagens para marcas que vendem primeiro pelo visual." },
+                  ] as const).map((option) => (
+                    <button
+                      key={option.id}
+                      type="button"
+                      onClick={() => setMenuLayout(option.id)}
+                      className={`rounded-[14px] border p-4 text-left transition-colors ${menuLayout === option.id ? "border-[var(--admin-brand-700)] bg-[var(--admin-brand-50)]" : "border-[var(--admin-border)] bg-white hover:border-[var(--admin-border-strong)]"}`}
+                    >
+                      <p className="font-semibold text-[var(--admin-text-primary)]">{option.name}</p>
+                      <p className="mt-1 text-xs leading-5 text-[var(--admin-text-secondary)]">{option.description}</p>
+                    </button>
+                  ))}
                 </div>
-              </CardContent>
-              {totalProductPages > 1 && (
-                <div className="flex justify-center py-4 border-t">
-                  <JoinedPagination
-                    currentPage={productPage}
-                    totalPages={totalProductPages}
-                    paginationItemsToDisplay={5}
-                    onPageChange={setProductPage}
-                  />
+                <div className="mt-4 flex justify-end">
+                  <Button
+                    onClick={() => saveMenuLayout.mutate({ storeId: selectedStoreId, layout: menuLayout })}
+                    disabled={saveMenuLayout.isPending}
+                  >
+                    {saveMenuLayout.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                    Aplicar layout
+                  </Button>
                 </div>
-              )}
-            </Card>
+              </AdminSurface>
+
+              <ProductsManagementPanel
+                storeId={selectedStoreId}
+                onCreate={() => startCreateProduct()}
+                onEdit={(product) => startEdit(product)}
+              />
+            </>
           )}
-        </>
+        </div>
       )}
 
       {activeMenuTab === "categories" && (
@@ -3375,7 +3540,7 @@ function MenuTab() {
                               </div>
                               <div className="min-w-0">
                                 <p className="truncate text-sm font-medium text-foreground">{asset.label}</p>
-                                <p className="truncate text-[11px] text-muted-foreground">Sugestao premium do pack Magnific</p>
+                                <p className="truncate text-[11px] text-muted-foreground">Sugestão do pack Magnific</p>
                               </div>
                             </button>
                           );
@@ -3686,9 +3851,23 @@ function CarouselAdminSection() {
     { storeId: selectedStoreId },
     { enabled: selectedStoreId !== undefined },
   );
+  const { data: destinationProducts } = trpc.products.list.useQuery(
+    { storeId: selectedStoreId },
+    { enabled: selectedStoreId !== undefined, staleTime: 60_000 },
+  );
+  const { data: destinationCategories } = trpc.categories.listAll.useQuery(
+    { storeId: selectedStoreId },
+    { enabled: selectedStoreId !== undefined, staleTime: 60_000 },
+  );
   const [showForm, setShowForm] = useState(false);
   const [editingImage, setEditingImage] = useState<any | null>(null);
-  const [form, setForm] = useState({ imageUrl: "", title: "", sortOrder: "0" });
+  const [form, setForm] = useState<{
+    imageUrl: string;
+    title: string;
+    sortOrder: string;
+    destinationType: "none" | "product" | "category" | "internal" | "external";
+    destinationValue: string;
+  }>({ imageUrl: "", title: "", sortOrder: "0", destinationType: "none", destinationValue: "" });
   const [uploading, setUploading] = useState(false);
   const [homeConfig, setHomeConfig] = useState<HomeAppConfig>(DEFAULT_HOME_APP_CONFIG);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -3702,9 +3881,8 @@ function CarouselAdminSection() {
     }
   }, [storeSettings?.homeLayoutConfig]);
 
-  const uploadImage = trpc.carousel.uploadImage.useMutation();
   const createImage = trpc.carousel.create.useMutation({
-    onSuccess: () => { utils.carousel.listAll.invalidate(); utils.carousel.list.invalidate(); setShowForm(false); setForm({ imageUrl: "", title: "", sortOrder: "0" }); toast.success("Imagem adicionada!"); },
+    onSuccess: () => { utils.carousel.listAll.invalidate(); utils.carousel.list.invalidate(); setShowForm(false); setForm({ imageUrl: "", title: "", sortOrder: "0", destinationType: "none", destinationValue: "" }); toast.success("Imagem adicionada!"); },
     onError: (err) => toast.error(err.message),
   });
   const updateImage = trpc.carousel.update.useMutation({
@@ -3724,45 +3902,60 @@ function CarouselAdminSection() {
   });
 
   const handleFile = async (file: File) => {
-    if (file.size > 3 * 1024 * 1024) { toast.error("Imagem muito grande. Máximo de 3 MB."); return; }
-    if (!["image/jpeg", "image/png", "image/webp", "image/gif"].includes(file.type)) {
-      toast.error("Formato inválido. Use JPG, PNG, WebP ou GIF.");
-      return;
-    }
     setUploading(true);
-    const reader = new FileReader();
-    reader.onload = async (e) => {
-      try {
-        const base64 = (e.target?.result as string).split(",")[1];
-        const { url } = await uploadImage.mutateAsync({ storeId: selectedStoreId, base64, mimeType: file.type as "image/jpeg" | "image/png" | "image/webp" | "image/gif", fileName: file.name });
-        setForm(f => ({ ...f, imageUrl: url }));
-      } catch {
-        // Mutation and global API handlers provide the user-facing error.
-      } finally {
-        setUploading(false);
-      }
-    };
-    reader.onerror = () => {
+    try {
+      const data = await uploadImageFile({ file, scope: "carousel", storeId: selectedStoreId });
+      setForm((current) => ({ ...current, imageUrl: data.url }));
+      toast.success("Imagem enviada!");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Não foi possível enviar a imagem.");
+    } finally {
       setUploading(false);
-      toast.error("Não foi possível ler a imagem.");
-    };
-    reader.readAsDataURL(file);
+    }
   };
 
   const startEdit = (img: any) => {
     setEditingImage(img);
-    setForm({ imageUrl: img.imageUrl, title: img.title ?? "", sortOrder: String(img.sortOrder) });
+    setForm({
+      imageUrl: img.imageUrl,
+      title: img.title ?? "",
+      sortOrder: String(img.sortOrder),
+      destinationType: img.destinationType ?? "none",
+      destinationValue: img.destinationValue ?? "",
+    });
     setShowForm(true);
   };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    const data = { imageUrl: form.imageUrl, title: form.title || null, sortOrder: parseInt(form.sortOrder) || 0 };
+    const data = {
+      imageUrl: form.imageUrl,
+      title: form.title || null,
+      sortOrder: parseInt(form.sortOrder) || 0,
+      destinationType: form.destinationType,
+      destinationValue: form.destinationType === "none" ? null : form.destinationValue || null,
+    };
     if (editingImage) {
       updateImage.mutate({ id: editingImage.id, storeId: selectedStoreId, ...data });
     } else {
       createImage.mutate({ ...data, storeId: selectedStoreId });
     }
+  };
+
+  const destinationLabel = (img: any) => {
+    const type = img.destinationType ?? "none";
+    const value = img.destinationValue ?? "";
+    if (type === "product") {
+      const product = destinationProducts?.find((item) => String(item.id) === String(value));
+      return product ? `Produto: ${product.name}` : "Produto selecionado";
+    }
+    if (type === "category") {
+      const category = destinationCategories?.find((item) => String(item.id) === String(value));
+      return category ? `Categoria: ${category.name}` : "Categoria selecionada";
+    }
+    if (type === "internal") return `Página: ${value}`;
+    if (type === "external") return `Link: ${value}`;
+    return "Sem ação ao clicar";
   };
 
   return (
@@ -3827,7 +4020,7 @@ function CarouselAdminSection() {
           <h3 className="font-semibold">Imagens do Carrossel Hero</h3>
           <p className="text-xs text-muted-foreground mt-0.5">Gerencie as imagens exibidas no carrossel da página inicial</p>
         </div>
-        <Button size="sm" onClick={() => { setEditingImage(null); setForm({ imageUrl: "", title: "", sortOrder: String((images?.length ?? 0) + 1) }); setShowForm(true); }}>
+        <Button data-help-id="menu.carousel.add" size="sm" onClick={() => { setEditingImage(null); setForm({ imageUrl: "", title: "", sortOrder: String((images?.length ?? 0) + 1), destinationType: "none", destinationValue: "" }); setShowForm(true); }}>
           + Adicionar Imagem
         </Button>
       </div>
@@ -3840,10 +4033,20 @@ function CarouselAdminSection() {
               <div className="space-y-1.5">
                 <label className="text-sm font-medium">Imagem <span className="text-xs text-muted-foreground">(JPG, PNG ou WebP — até 3 MB; faixas largas serão centralizadas)</span></label>
                 <div
+                  role="button"
+                  tabIndex={0}
+                  data-help-id="menu.carousel.image"
+                  aria-label={form.imageUrl ? "Trocar imagem do banner" : "Selecionar imagem do banner"}
                   className={`relative border-2 border-dashed rounded-xl transition-colors cursor-pointer ${
                     uploading ? "border-primary/50 bg-primary/5" : "border-input hover:border-primary/50 hover:bg-muted/30"
                   }`}
                   onClick={() => !uploading && inputRef.current?.click()}
+                  onKeyDown={(e) => {
+                    if ((e.key === "Enter" || e.key === " ") && !uploading) {
+                      e.preventDefault();
+                      inputRef.current?.click();
+                    }
+                  }}
                   onDragOver={(e) => e.preventDefault()}
                   onDrop={(e) => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f) handleFile(f); }}
                 >
@@ -3870,19 +4073,99 @@ function CarouselAdminSection() {
                   <input className="mt-1.5 w-full h-9 px-3 border border-input rounded-md text-sm bg-background" value={form.imageUrl} onChange={(e) => setForm({ ...form, imageUrl: e.target.value })} placeholder="https://..." />
                 </details>
               </div>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <div className="space-y-1.5">
                   <label className="text-sm font-medium">Legenda (opcional)</label>
                   <input className="w-full h-9 px-3 border border-input rounded-md text-sm bg-background" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} placeholder="Ex: Pizza Margherita" />
                 </div>
                 <div className="space-y-1.5">
                   <label className="text-sm font-medium">Ordem</label>
-                  <input className="w-full h-9 px-3 border border-input rounded-md text-sm bg-background" type="number" value={form.sortOrder} onChange={(e) => setForm({ ...form, sortOrder: e.target.value })} placeholder="1, 2, 3..." />
+                  <input className="w-full h-9 px-3 border border-input rounded-md text-sm bg-background" type="number" min="0" value={form.sortOrder} onChange={(e) => setForm({ ...form, sortOrder: e.target.value })} placeholder="1, 2, 3..." />
                 </div>
+              </div>
+
+              <div className="rounded-xl border bg-muted/20 p-4 space-y-3">
+                <div>
+                  <Label>Ao clicar nesta imagem</Label>
+                  <p className="text-xs text-muted-foreground mt-0.5">Escolha exatamente para onde o cliente será levado.</p>
+                </div>
+                <Select
+                  value={form.destinationType}
+                  onValueChange={(value) => setForm((current) => ({
+                    ...current,
+                    destinationType: value as typeof current.destinationType,
+                    destinationValue: "",
+                  }))}
+                >
+                  <SelectTrigger data-help-id="menu.carousel.destination"><SelectValue placeholder="Escolha o destino" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">Sem ação</SelectItem>
+                    <SelectItem value="product">Abrir um produto</SelectItem>
+                    <SelectItem value="category">Abrir uma categoria</SelectItem>
+                    <SelectItem value="internal">Abrir uma página do site</SelectItem>
+                    <SelectItem value="external">Abrir um link externo</SelectItem>
+                  </SelectContent>
+                </Select>
+
+                {form.destinationType === "product" && (
+                  <Select value={form.destinationValue} onValueChange={(value) => setForm((current) => ({ ...current, destinationValue: value }))}>
+                    <SelectTrigger><SelectValue placeholder="Escolha o produto" /></SelectTrigger>
+                    <SelectContent>
+                      {(destinationProducts ?? []).map((product) => (
+                        <SelectItem key={product.id} value={String(product.id)}>{product.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+
+                {form.destinationType === "category" && (
+                  <Select value={form.destinationValue} onValueChange={(value) => setForm((current) => ({ ...current, destinationValue: value }))}>
+                    <SelectTrigger><SelectValue placeholder="Escolha a categoria" /></SelectTrigger>
+                    <SelectContent>
+                      {(destinationCategories ?? []).filter((category) => category.active).map((category) => (
+                        <SelectItem key={category.id} value={String(category.id)}>{category.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+
+                {form.destinationType === "internal" && (
+                  <Select value={form.destinationValue} onValueChange={(value) => setForm((current) => ({ ...current, destinationValue: value }))}>
+                    <SelectTrigger><SelectValue placeholder="Escolha a página" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="/cardapio">Cardápio</SelectItem>
+                      <SelectItem value="/minha-conta">Minha Conta</SelectItem>
+                      <SelectItem value="/minha-conta?tab=promocoes">Promoções</SelectItem>
+                      <SelectItem value="/minha-conta?tab=cupons">Cupons</SelectItem>
+                      <SelectItem value="/minha-conta?tab=clube">Clube Bonatto</SelectItem>
+                      <SelectItem value="/minha-conta?tab=sorteios">Sorteios</SelectItem>
+                      <SelectItem value="/minha-conta?tab=pedidos">Meus pedidos</SelectItem>
+                    </SelectContent>
+                  </Select>
+                )}
+
+                {form.destinationType === "external" && (
+                  <Input
+                    value={form.destinationValue}
+                    onChange={(e) => setForm((current) => ({ ...current, destinationValue: e.target.value }))}
+                    placeholder="https://exemplo.com/pagina"
+                    inputMode="url"
+                  />
+                )}
               </div>
               <div className="flex gap-2 justify-end">
                 <Button type="button" variant="outline" onClick={() => { setShowForm(false); setEditingImage(null); }}>Cancelar</Button>
-                <Button type="submit" disabled={!form.imageUrl || createImage.isPending || updateImage.isPending || uploading}>
+                <Button
+                  data-help-id="menu.carousel.save"
+                  type="submit"
+                  disabled={
+                    !form.imageUrl
+                    || (form.destinationType !== "none" && !form.destinationValue)
+                    || createImage.isPending
+                    || updateImage.isPending
+                    || uploading
+                  }
+                >
                   {editingImage ? "Salvar" : "Adicionar"}
                 </Button>
               </div>
@@ -3910,9 +4193,11 @@ function CarouselAdminSection() {
                   <div className="flex-1 min-w-0">
                     <p className="font-medium text-sm truncate">{img.title || <span className="text-muted-foreground italic">Sem legenda</span>}</p>
                     <p className="text-xs text-muted-foreground">Ordem: {img.sortOrder} · {img.active ? "✓ Ativo" : "✕ Inativo"}</p>
+                    <p className="mt-0.5 truncate text-xs text-muted-foreground">{destinationLabel(img)}</p>
                   </div>
                   <div className="flex items-center gap-1 flex-shrink-0">
                     <button
+                      data-help-id="menu.carousel.toggle"
                       onClick={() => updateImage.mutate({ id: img.id, storeId: selectedStoreId, active: !img.active })}
                       className={`px-2 py-1 rounded-full text-xs font-medium transition-all ${
                         img.active ? "bg-[#f0fdf4] text-[#166534] hover:bg-[#dcfce7]" : "bg-[#fce8e8] text-[#450709] hover:bg-[#f9d0d0]"
@@ -3920,8 +4205,8 @@ function CarouselAdminSection() {
                     >
                       {img.active ? "✓ Ativo" : "✕ Inativo"}
                     </button>
-                    <Button size="sm" variant="ghost" onClick={() => startEdit(img)}>Editar</Button>
-                    <Button size="sm" variant="ghost" className="text-destructive hover:text-destructive"
+                    <Button data-help-id="menu.carousel.edit" size="sm" variant="ghost" onClick={() => startEdit(img)}>Editar</Button>
+                    <Button data-help-id="menu.carousel.remove" size="sm" variant="ghost" className="text-destructive hover:text-destructive"
                       onClick={() => { if (confirm("Remover esta imagem do carrossel?")) deleteImage.mutate({ id: img.id, storeId: selectedStoreId }); }}
                     >Remover</Button>
                   </div>
@@ -5107,7 +5392,7 @@ function UpsellsTab() {
                   <p className="text-xs text-muted-foreground">Só aparece quando este produto específico está no carrinho</p>
                 </div>
                 <div className="space-y-1.5"><Label>Pedido mínimo (R$)</Label><Input type="number" min="0" value={form.triggerMinTotal} onChange={(e) => setForm((f) => ({ ...f, triggerMinTotal: e.target.value }))} placeholder="0 = sempre mostrar" /></div>
-                <div className="space-y-1.5 sm:col-span-2"><Label>Descrição</Label><Input value={form.description} onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))} placeholder="Ex: Aproveite e adicione uma bebida gelada!" /></div>
+                <div className="space-y-1.5 sm:col-span-2"><Label>Descrição</Label><Input value={form.description} onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))} placeholder="Ex: Adicione uma bebida ao pedido." /></div>
               </div>
               <Button type="submit" disabled={createUpsell.isPending}>{createUpsell.isPending ? "Salvando..." : "Criar Up-sell"}</Button>
             </form>
@@ -5221,9 +5506,9 @@ function CustomerJourneyHistoryModal({ userId, userName, onClose }: { userId: nu
 
 function UsersTab() {
   const utils = trpc.useUtils();
-  const { selectedStoreId, tenantConfig } = useAdminStore();
+  const { selectedStoreId, bonattoConfig } = useAdminStore();
   const { user: authenticatedUser } = useAuth();
-  const { data: userPage, isLoading } = trpc.adminUsers.list.useQuery(
+  const { data: userPage, isLoading, isError, error, refetch } = trpc.adminUsers.list.useQuery(
     { storeId: selectedStoreId, pageSize: 100 },
     { enabled: selectedStoreId !== undefined },
   );
@@ -5277,7 +5562,16 @@ function UsersTab() {
         </Card>
       )}
 
-      {isLoading ? <Skeleton className="h-40 w-full" /> : (
+      {isLoading ? <Skeleton className="h-40 w-full" /> : isError ? (
+        <AdminSurface>
+          <AdminEmptyState
+            icon={<Users className="w-8 h-8" />}
+            title="Não foi possível carregar os usuários"
+            description={error?.message ?? "A consulta de usuários falhou. Tente novamente."}
+            action={<Button variant="outline" onClick={() => void refetch()}><RefreshCw className="w-4 h-4 mr-2" />Tentar novamente</Button>}
+          />
+        </AdminSurface>
+      ) : (
         <Card>
           <CardContent className="p-0">
             <div className="overflow-x-auto">
@@ -5301,7 +5595,7 @@ function UsersTab() {
                           <Button size="sm" variant="outline" onClick={() => setSendCouponForm({ userId: u.id, userName: u.name ?? "Cliente" })}>
                             <Tag className="w-3.5 h-3.5 mr-1" />Cupom
                           </Button>
-                          {(authenticatedUser?.role === "admin" || tenantConfig.features.automations) && <Button size="sm" variant="outline" onClick={() => setJourneyHistoryUser({ userId: u.id, userName: u.name ?? "Cliente" })} className="border-[#e8ebf0] text-[#8a92a0] hover:text-[#1a1d23]">
+                          {(authenticatedUser?.role === "admin" || bonattoConfig.features.automations) && <Button size="sm" variant="outline" onClick={() => setJourneyHistoryUser({ userId: u.id, userName: u.name ?? "Cliente" })} className="border-[#e8ebf0] text-[#8a92a0] hover:text-[#1a1d23]">
                             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="mr-1"><path d="M12 2v10l4 2"/><circle cx="12" cy="12" r="10"/></svg>
                             Jornadas
                           </Button>}
@@ -5702,9 +5996,8 @@ function SettingsTab() {
   );
 
   const [hours, setHours] = useState<Record<string, DaySchedule>>(DEFAULT_HOURS);
-  const [cepInput, setCepInput] = useState("");
+  const [manualStoreOpen, setManualStoreOpen] = useState(false);
   const [whatsapp, setWhatsapp] = useState("");
-  const [deliveryFee, setDeliveryFee] = useState("");
   const [minOrder, setMinOrder] = useState("");
 
   // Initialize form from DB when data arrives (useEffect to avoid setState during render)
@@ -5712,9 +6005,8 @@ function SettingsTab() {
     if (!settings) return;
     const h = settings.storeHours ? JSON.parse(settings.storeHours) as Record<string, DaySchedule> : DEFAULT_HOURS;
     setHours(h);
-    setCepInput(settings.deliveryCepPrefixes ? (JSON.parse(settings.deliveryCepPrefixes) as string[]).join("\n") : "");
+    setManualStoreOpen(settings.manualStoreOpen === "true");
     setWhatsapp(settings.whatsappNumber ?? "");
-    setDeliveryFee(settings.deliveryFee ?? "");
     setMinOrder(settings.minOrderValue ?? "");
   }, [settings]);
 
@@ -5743,17 +6035,11 @@ function SettingsTab() {
   }
 
   function handleSave() {
-    const prefixes = cepInput
-      .split(/[\n,;]+/)
-      .map((s) => s.trim().replace(/\D/g, "").substring(0, 5))
-      .filter((s) => s.length === 5);
-
     save.mutate({
       storeId: selectedStoreId,
       storeHours: hours,
-      deliveryCepPrefixes: prefixes,
+      manualStoreOpen,
       whatsappNumber: whatsapp || undefined,
-      deliveryFee: deliveryFee || undefined,
       minOrderValue: minOrder || undefined,
     });
   }
@@ -5770,7 +6056,7 @@ function SettingsTab() {
   if (isLoading) return <Skeleton className="h-64 w-full" />;
 
   return (
-    <AdminPage className="max-w-2xl">
+    <AdminPage className="w-full max-w-2xl">
       <AdminTopbar
         title="Configurações da loja"
         subtitle="Horários, entrega, contato e operação da loja"
@@ -5790,11 +6076,11 @@ function SettingsTab() {
             const schedule = hours[key];
             const isOpen = schedule !== null && schedule !== undefined;
             return (
-              <div key={day} className="flex items-center gap-3 flex-wrap">
+              <div key={day} className="grid grid-cols-1 gap-2 sm:flex sm:flex-wrap sm:items-center sm:gap-3">
                 <button
                   type="button"
                   onClick={() => toggleDay(key)}
-                  className={`w-28 text-sm font-medium px-3 py-1.5 rounded-md border transition-colors ${
+                  className={`w-full text-sm font-medium px-3 py-2 rounded-md border transition-colors sm:w-28 sm:py-1.5 ${
                     isOpen
                       ? "bg-primary text-primary-foreground border-primary"
                       : "bg-muted text-muted-foreground border-input"
@@ -5804,22 +6090,22 @@ function SettingsTab() {
                 </button>
                 {isOpen ? (
                   <>
-                    <div className="flex items-center gap-1.5">
+                    <div className="grid min-w-0 grid-cols-[44px_minmax(0,1fr)] items-center gap-1.5 sm:flex sm:w-auto">
                       <Label className="text-xs text-muted-foreground">Abre</Label>
                       <Input
                         type="time"
                         value={schedule.open}
                         onChange={(e) => updateTime(key, "open", e.target.value)}
-                        className="w-28 h-8 text-sm"
+                        className="h-9 min-w-0 w-full text-sm sm:h-8 sm:w-28"
                       />
                     </div>
-                    <div className="flex items-center gap-1.5">
+                    <div className="grid min-w-0 grid-cols-[44px_minmax(0,1fr)] items-center gap-1.5 sm:flex sm:w-auto">
                       <Label className="text-xs text-muted-foreground">Fecha</Label>
                       <Input
                         type="time"
                         value={schedule.close}
                         onChange={(e) => updateTime(key, "close", e.target.value)}
-                        className="w-28 h-8 text-sm"
+                        className="h-9 min-w-0 w-full text-sm sm:h-8 sm:w-28"
                       />
                     </div>
                   </>
@@ -5830,32 +6116,34 @@ function SettingsTab() {
             );
           })}
           <p className="text-xs text-muted-foreground pt-1">Clique no nome do dia para abrir/fechar.</p>
+          <div className="mt-4 flex items-center justify-between gap-4 rounded-xl border border-border bg-muted/30 p-4">
+            <div>
+              <p className="text-sm font-semibold">Abrir loja agora</p>
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                MantÃ©m a loja aberta para pedidos mesmo fora do horÃ¡rio configurado. Desative para voltar ao horÃ¡rio automÃ¡tico.
+              </p>
+            </div>
+            <Switch checked={manualStoreOpen} onCheckedChange={setManualStoreOpen} />
+          </div>
         </CardContent>
       </Card>
 
-      {/* Área de Entrega */}
+      {/* Entrega por distância */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            <ShoppingBag className="w-5 h-5 text-primary" />
-            Área de Entrega (CEPs)
+            <Truck className="w-5 h-5 text-primary" />
+            Entrega por distância
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
           <p className="text-sm text-muted-foreground">
-            Insira os <strong>prefixos de 5 dígitos</strong> dos CEPs atendidos, um por linha (ex: <code>37500</code>).
-            O sistema aceita qualquer CEP que comece com esses prefixos.
+            Cobertura, taxa e prazo são configurados por unidade com base na distância da rota. Bairro e prefixo de CEP não definem mais a cobrança.
           </p>
-          <textarea
-            value={cepInput}
-            onChange={(e) => setCepInput(e.target.value)}
-            rows={8}
-            placeholder={"37500\n37501\n37502\n37503"}
-            className="w-full px-3 py-2 text-sm border border-input rounded-md bg-background font-mono resize-y"
-          />
-          <p className="text-xs text-muted-foreground">
-            {cepInput.split(/[\n,;]+/).filter((s) => s.trim().replace(/\D/g, "").length === 5).length} prefixos configurados
-          </p>
+          <Button type="button" variant="outline" onClick={() => { window.location.href = "/admin/configuracoes/entrega"; }}>
+            <MapPin className="mr-2 h-4 w-4" />
+            Configurar entrega por distância
+          </Button>
         </CardContent>
       </Card>
 
@@ -5877,17 +6165,6 @@ function SettingsTab() {
                 placeholder="5537999999999"
               />
               <p className="text-xs text-muted-foreground">Formato: 55 + DDD + número (sem espaços)</p>
-            </div>
-            <div className="space-y-1.5">
-              <Label>Taxa de entrega (R$)</Label>
-              <Input
-                type="number"
-                min="0"
-                step="0.01"
-                value={deliveryFee}
-                onChange={(e) => setDeliveryFee(e.target.value)}
-                placeholder="5.00"
-              />
             </div>
             <div className="space-y-1.5">
               <Label>Pedido mínimo (R$)</Label>
@@ -6266,7 +6543,7 @@ function DriversTab() {
       utils.drivers.list.invalidate();
       toast.success("Motoboy cadastrado!", { description: "Copie o token e envie para o motoboy." });
     },
-    onError: () => toast.error("Erro ao cadastrar motoboy"),
+    onError: (error) => toast.error("Erro ao cadastrar motoboy", { description: error.message }),
   });
 
   const updateMutation = trpc.drivers.update.useMutation({
@@ -6357,8 +6634,18 @@ function DriversTab() {
             </div>
             <div className="flex gap-2">
               <Button
-                onClick={() => createMutation.mutate({ name: newName, phone: newPhone || undefined })}
-                disabled={!newName.trim() || createMutation.isPending}
+                onClick={() => {
+                  if (!selectedStoreId) {
+                    toast.error("Selecione uma unidade antes de cadastrar o motoboy.");
+                    return;
+                  }
+                  createMutation.mutate({
+                    name: newName.trim(),
+                    phone: newPhone.trim() || undefined,
+                    storeId: selectedStoreId,
+                  });
+                }}
+                disabled={!newName.trim() || !selectedStoreId || createMutation.isPending}
               >
                 {createMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : "Cadastrar"}
               </Button>

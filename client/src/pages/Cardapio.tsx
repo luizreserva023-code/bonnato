@@ -9,18 +9,19 @@ import {
   Star, Clock, MapPin, Tag, ChevronDown, Search, X,
   Menu, Bell, BellRing, Package, Trophy, Crown, Gift, Ticket, Receipt, CreditCard, User, ChefHat, ShoppingBag, LogOut
 } from "lucide-react";
-import { useMemo, useState, useCallback, useEffect, useRef } from "react";
+import { lazy, Suspense, useMemo, useState, useCallback, useEffect, useRef } from "react";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { Link, useLocation } from "wouter";
-import { ProductDetailModal, type ProductDetailProduct } from "@/components/ProductDetailModal";
+import type { ProductDetailProduct } from "@/components/ProductDetailModal";
 import { getPizzaFlavorConfig } from "@/lib/pizza-flavor-config";
 import { isStoreOpenWithHours, nextOpenTimeWithHours, type DaySchedule } from "@/lib/storeUtils";
 import { useStore } from "@/contexts/StoreContext";
 import type { Product } from "../../../drizzle/schema";
 import { BRAND_ASSETS } from "@/lib/brand";
 import { getCategoryIcon } from "@/lib/category-visuals";
-import { useTenantConfig } from "@/shared/tenant/use-tenant-config";
+import { useBonattoConfig } from "@/hooks/use-bonatto-config";
 import { savePendingCoupon } from "@/lib/checkout-intent";
+import { emitAnalyticsEvent } from "@/lib/analyticsTracking";
 
 // ─── Assets ─────────────────────────────────────────────────────────────────
 const LOGO_URL = BRAND_ASSETS.heroLogo;
@@ -38,18 +39,32 @@ type MenuCategoryRecord = {
 };
 
 const PRODUCT_FALLBACK_IMG = BRAND_ASSETS.pizzaHero;
+const ProductDetailModal = lazy(() =>
+  import("@/components/ProductDetailModal").then((module) => ({ default: module.ProductDetailModal })),
+);
 
 // ─── Cardapio Menu Drawer ────────────────────────────────────────────────────
 function CardapioMenuDrawer({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { user, isAuthenticated, logout } = useAuth();
-  const { selectedStore, tenantConfig } = useStore();
+  const { selectedStore, bonattoConfig } = useStore();
   const [, navigate] = useLocation();
   const { data: notifData } = trpc.notifications.unreadCount.useQuery(
     { storeId: selectedStore?.id },
-    { enabled: isAuthenticated && Boolean(selectedStore?.id), refetchInterval: 60000 },
+    {
+      enabled: open && isAuthenticated && Boolean(selectedStore?.id),
+      staleTime: 60_000,
+      refetchInterval: open ? 60_000 : false,
+    },
   );
   const notifCount = (notifData as number) ?? 0;
-  const { data: orders } = trpc.orders.myOrders.useQuery({ storeId: selectedStore?.id }, { enabled: isAuthenticated && Boolean(selectedStore?.id), refetchInterval: 30000 });
+  const { data: orders } = trpc.orders.myOrders.useQuery(
+    { storeId: selectedStore?.id },
+    {
+      enabled: open && isAuthenticated && Boolean(selectedStore?.id),
+      staleTime: 30_000,
+      refetchInterval: open ? 30_000 : false,
+    },
+  );
   const activeOrdersCount = (orders as any[])?.filter((o) => !["delivered", "cancelled"].includes(o.status)).length ?? 0;
   const navLinks = [
     { href: "/", label: "Início" },
@@ -69,11 +84,11 @@ function CardapioMenuDrawer({ open, onClose }: { open: boolean; onClose: () => v
     { tab: "cartoes", icon: <CreditCard className="w-6 h-6" />, label: "Cartões", badge: null, color: "text-slate-600", bg: "bg-slate-100" },
     { tab: "perfil", icon: <User className="w-6 h-6" />, label: "Perfil", badge: null, color: "text-gray-600", bg: "bg-gray-100" },
   ].filter((card) => {
-    if (card.tab === "fidelidade") return tenantConfig.features.loyalty;
-    if (card.tab === "clube") return tenantConfig.features.club;
-    if (card.tab === "cupons") return tenantConfig.features.adminTabs.coupons;
-    if (card.tab === "promocoes") return tenantConfig.features.adminTabs.promotions;
-    if (card.tab === "sorteios") return tenantConfig.features.adminTabs.raffles;
+    if (card.tab === "fidelidade") return bonattoConfig.features.loyalty;
+    if (card.tab === "clube") return bonattoConfig.features.club;
+    if (card.tab === "cupons") return bonattoConfig.features.adminTabs.coupons;
+    if (card.tab === "promocoes") return bonattoConfig.features.adminTabs.promotions;
+    if (card.tab === "sorteios") return bonattoConfig.features.adminTabs.raffles;
     return true;
   });
   function goToTab(tab: string) {
@@ -90,7 +105,7 @@ function CardapioMenuDrawer({ open, onClose }: { open: boolean; onClose: () => v
               <>
                 <div className="w-10 h-10 rounded-full bg-primary flex items-center justify-center text-white font-black text-base shrink-0 overflow-hidden">
                   {(user as any)?.avatarUrl
-                    ? <img src={(user as any).avatarUrl} alt="Avatar" className="w-full h-full object-cover" />
+                    ? <img src={(user as any).avatarUrl} alt="Avatar" className="w-full h-full object-cover" loading="lazy" decoding="async" />
                     : (user?.name ?? "U")[0].toUpperCase()
                   }
                 </div>
@@ -172,32 +187,51 @@ function RestaurantHeader({
   onMenuOpen: () => void;
 }) {
   const { itemCount, setIsOpen: openCart } = useCart();
-  const tenant = useTenantConfig();
+  const tenant = useBonattoConfig();
   const { selectedStore } = useStore();
   const { isAuthenticated } = useAuth();
-  const { data: orders } = trpc.orders.myOrders.useQuery({ storeId: selectedStore?.id }, { enabled: isAuthenticated && Boolean(selectedStore?.id), refetchInterval: 30000 });
+  const [loadSecondaryStatus, setLoadSecondaryStatus] = useState(false);
+
+  useEffect(() => {
+    const handle = window.setTimeout(() => setLoadSecondaryStatus(true), 900);
+    return () => window.clearTimeout(handle);
+  }, []);
+
+  const { data: orders } = trpc.orders.myOrders.useQuery(
+    { storeId: selectedStore?.id },
+    {
+      enabled: loadSecondaryStatus && isAuthenticated && Boolean(selectedStore?.id),
+      staleTime: 30_000,
+      refetchInterval: loadSecondaryStatus ? 30_000 : false,
+    },
+  );
   const activeOrdersCount = (orders as any[])?.filter((o) => !["delivered", "cancelled"].includes(o.status)).length ?? 0;
   const { data: notifData } = trpc.notifications.unreadCount.useQuery(
     { storeId: selectedStore?.id },
-    { enabled: isAuthenticated && Boolean(selectedStore?.id), refetchInterval: 60000 },
+    {
+      enabled: loadSecondaryStatus && isAuthenticated && Boolean(selectedStore?.id),
+      staleTime: 60_000,
+      refetchInterval: loadSecondaryStatus ? 60_000 : false,
+    },
   );
   const notifCount = (notifData as number) ?? 0;
   const minOrder = storeSettings?.minOrderValue ? parseFloat(storeSettings.minOrderValue) : 0;
-  const deliveryFee = storeSettings?.deliveryFee ? parseFloat(storeSettings.deliveryFee) : 0;
-  const isBonatto = tenant.brand.key === "bonatto" || tenant.storeSlug === "bonatto";
+  const isBonatto = true;
   const bannerUrl = tenant.pages.menu.heroImage || (isBonatto ? BANNER_URL : "");
   const headerLogo = tenant.brand.logos.wordmark || tenant.brand.logos.icon || (isBonatto ? PALMITO_URL : "");
-  const restaurantLogo = isBonatto ? BRAND_ASSETS.icon : tenant.brand.logos.icon;
+  const restaurantLogo = isBonatto ? BRAND_ASSETS.homeLogo : tenant.brand.logos.icon;
 
   return (
     <div className="relative">
       {/* Banner */}
-      <div className="relative h-36 overflow-hidden sm:h-56" style={{ backgroundColor: "var(--tenant-header, #DA1923)" }}>
+      <div className="relative h-36 overflow-hidden sm:h-56" style={{ backgroundColor: "var(--bonatto-header, #DA1923)" }}>
         {bannerUrl ? <img
           src={bannerUrl}
           alt={tenant.brand.name}
           className="h-full w-full object-cover object-center"
           loading="eager"
+          decoding="async"
+          fetchPriority="high"
         /> : null}
         {/* Overlay suave para dar profundidade */}
         <div className="absolute inset-0 bg-black/20" />
@@ -208,6 +242,7 @@ function RestaurantHeader({
             alt={tenant.brand.name}
             className="max-h-28 w-[70%] max-w-xs object-contain drop-shadow-lg sm:max-w-sm"
             loading="eager"
+            decoding="async"
           /> : <span className="px-6 text-center text-3xl font-black text-white">{tenant.brand.name}</span>}
         </div>
         {/* Top bar: visível apenas no desktop (md+) */}
@@ -248,8 +283,19 @@ function RestaurantHeader({
       <div className="relative z-10 -mt-4 rounded-t-[22px] bg-background shadow-sm sm:-mt-5 sm:rounded-t-2xl">
         {/* Logo + Name row */}
         <div className="relative flex items-start gap-3 px-3 pb-3 pt-3 sm:px-4 sm:pt-4">
-          <div className="-mt-8 grid h-[58px] w-[58px] shrink-0 place-items-center overflow-hidden rounded-full border-[3px] border-background bg-white p-1 shadow-lg sm:-mt-10 sm:h-16 sm:w-16">
-            {restaurantLogo ? <img src={restaurantLogo} alt={tenant.brand.name} className="h-full w-full object-contain" /> : <span className="grid h-full place-items-center text-xl font-black" style={{ color: tenant.brand.colors.primary }}>{tenant.brand.shortName.slice(0, 1)}</span>}
+          <div className="-mt-8 grid h-[58px] w-[58px] shrink-0 place-items-center overflow-hidden rounded-full border-[3px] border-background bg-white shadow-lg sm:-mt-10 sm:h-16 sm:w-16">
+            {restaurantLogo ? (
+              <img
+                src={restaurantLogo}
+                alt={tenant.brand.name}
+                className="block h-full w-full rounded-full object-cover object-center"
+                decoding="async"
+              />
+            ) : (
+              <span className="grid h-full place-items-center text-xl font-black" style={{ color: tenant.brand.colors.primary }}>
+                {tenant.brand.shortName.slice(0, 1)}
+              </span>
+            )}
           </div>
           <div className="min-w-0 flex-1 pr-14 pt-0.5 sm:pr-16 sm:pt-1">
             <h1 className="break-words text-[15px] font-black leading-tight text-foreground sm:text-lg">{tenant.brand.name}</h1>
@@ -284,13 +330,9 @@ function RestaurantHeader({
         <div className="border-t border-border mx-4" />
         <div className="flex items-center gap-2 px-4 py-3">
           <Clock className="w-4 h-4 text-muted-foreground shrink-0" />
-          <span className="text-sm font-medium text-foreground">Padrão · 40-60 min</span>
+          <span className="text-sm font-medium text-foreground">Entrega conforme seu endereço</span>
           <span className="mx-1 text-muted-foreground">·</span>
-          {deliveryFee === 0 ? (
-            <span className="text-sm font-bold text-green-600">Grátis</span>
-          ) : (
-            <span className="text-sm text-muted-foreground">{fmt(deliveryFee)}</span>
-          )}
+          <span className="text-sm text-muted-foreground">Taxa e prazo calculados no checkout</span>
           <ChevronDown className="w-3 h-3 text-muted-foreground ml-auto" />
         </div>
       </div>
@@ -372,7 +414,7 @@ function ProductCard({
     <div className={`group overflow-hidden border border-border bg-card transition-all duration-200 hover:border-primary/40 hover:shadow-lg ${isList ? `flex flex-row ${isCompact ? "min-h-[108px] rounded-xl" : "min-h-[146px] rounded-2xl"}` : "flex flex-col rounded-2xl"}`}>
       {/* Image */}
       <div className={`relative shrink-0 cursor-pointer overflow-hidden bg-muted ${isList ? (isCompact ? "w-[104px]" : "w-[38%] max-w-[180px]") : "aspect-[4/3] w-full"}`} onClick={onDetail}>
-        <img src={imgUrl} alt={product.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" loading="lazy" />
+        <img src={imgUrl} alt={product.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" loading="lazy" decoding="async" fetchPriority="low" />
         {/* Badge */}
         {badge && (
           <div className={`absolute top-2 left-2 text-[10px] font-bold px-2 py-0.5 rounded-md shadow ${badgeColor[badge]}`}>
@@ -405,7 +447,11 @@ function ProductCard({
             {product.name}
           </h3>
           {product.description && (
-            <p className={`mt-1 text-xs text-muted-foreground ${isCompact ? "line-clamp-1" : "line-clamp-2"}`}>{product.description}</p>
+            <p
+              className={`mt-1 break-words whitespace-normal text-xs leading-relaxed text-muted-foreground ${isCompact ? "line-clamp-2" : layout === "visual" ? "line-clamp-3" : ""}`}
+            >
+              {product.description}
+            </p>
           )}
         </div>
         <div className="flex items-end justify-between gap-2 mt-auto">
@@ -499,7 +545,7 @@ function PecaNovamente({
                 className="relative w-full h-28 cursor-pointer overflow-hidden bg-muted"
                 onClick={() => onDetail(product, imgUrl, slug)}
               >
-                <img src={imgUrl} alt={product.name} className="w-full h-full object-cover" loading="lazy" />
+                <img src={imgUrl} alt={product.name} className="w-full h-full object-cover" loading="lazy" decoding="async" fetchPriority="low" />
               </div>
               <div className="p-2.5">
                 <p className="text-xs font-bold text-foreground line-clamp-2 leading-tight mb-1">{product.name}</p>
@@ -578,6 +624,7 @@ export default function Cardapio() {
   const [searchOpen, setSearchOpen] = useState(false);
   const [menuDrawerOpen, setMenuDrawerOpen] = useState(false);
   const [bottomBarVisible, setBottomBarVisible] = useState(true);
+  const [secondaryReady, setSecondaryReady] = useState(false);
   const lastScrollY = useRef(0);
   const { requireStore, selectedStore, stores } = useStore();
 
@@ -586,6 +633,22 @@ export default function Cardapio() {
     if (stores.length > 1) requireStore();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stores.length]);
+
+  useEffect(() => {
+    const idleWindow = window as Window & {
+      requestIdleCallback?: (callback: () => void, options?: { timeout: number }) => number;
+      cancelIdleCallback?: (handle: number) => void;
+    };
+
+    const enableSecondaryData = () => setSecondaryReady(true);
+    if (idleWindow.requestIdleCallback) {
+      const handle = idleWindow.requestIdleCallback(enableSecondaryData, { timeout: 1_200 });
+      return () => idleWindow.cancelIdleCallback?.(handle);
+    }
+
+    const handle = window.setTimeout(enableSecondaryData, 650);
+    return () => window.clearTimeout(handle);
+  }, []);
 
   useEffect(() => {
     const handleScroll = () => {
@@ -605,18 +668,54 @@ export default function Cardapio() {
     return () => window.removeEventListener("scroll", handleScroll);
   }, []);
 
-  const { data: categories, isLoading: catsLoading } = trpc.categories.list.useQuery({ storeId: selectedStore?.id });
-  const { data: products, isLoading: prodsLoading } = trpc.products.list.useQuery(
-    { categoryId: selectedCategoryId ?? undefined, storeId: selectedStore?.id }
+  const storeId = selectedStore?.id;
+  const queryEnabled = Boolean(storeId);
+  const { data: categories, isLoading: catsLoading } = trpc.categories.list.useQuery(
+    { storeId },
+    {
+      enabled: queryEnabled,
+      staleTime: 2 * 60 * 1000,
+      gcTime: 30 * 60 * 1000,
+    },
   );
-  const { data: storeSettings } = trpc.storeSettings.get.useQuery({ storeId: selectedStore?.id });
+  const { data: products, isLoading: prodsLoading } = trpc.products.list.useQuery(
+    { storeId },
+    {
+      enabled: queryEnabled,
+      staleTime: 2 * 60 * 1000,
+      gcTime: 30 * 60 * 1000,
+    },
+  );
+  const { data: storeSettings } = trpc.storeSettings.get.useQuery(
+    { storeId },
+    {
+      enabled: queryEnabled,
+      staleTime: 2 * 60 * 1000,
+      gcTime: 30 * 60 * 1000,
+    },
+  );
   const { addItem, setIsOpen, items, updateQuantity } = useCart();
   const { isAuthenticated } = useAuth();
-  const { data: favoritesData } = trpc.favorites.list.useQuery(undefined, { enabled: isAuthenticated });
-  const favoriteIds = new Set((favoritesData ?? []).map((f: { productId: number }) => f.productId));
-  const toggleFavMutation = trpc.favorites.toggle.useMutation({ onSuccess: () => trpc.useUtils().favorites.list.invalidate() });
-  // Últimos pedidos para "Peça novamente"
-  const { data: myOrders } = trpc.orders.myOrders.useQuery({ storeId: selectedStore?.id }, { enabled: isAuthenticated && Boolean(selectedStore?.id) });
+  const { data: favoritesData } = trpc.favorites.list.useQuery(undefined, {
+    enabled: secondaryReady && isAuthenticated,
+    staleTime: 60_000,
+  });
+  const favoriteIds = useMemo(
+    () => new Set((favoritesData ?? []).map((favorite: { productId: number }) => favorite.productId)),
+    [favoritesData],
+  );
+  const utils = trpc.useUtils();
+  const toggleFavMutation = trpc.favorites.toggle.useMutation({
+    onSuccess: () => utils.favorites.list.invalidate(),
+  });
+  // Últimos pedidos para "Peça novamente" são secundários; o cardápio não espera por eles.
+  const { data: myOrders } = trpc.orders.myOrders.useQuery(
+    { storeId },
+    {
+      enabled: secondaryReady && isAuthenticated && queryEnabled,
+      staleTime: 60_000,
+    },
+  );
   // Horários dinâmicos do banco (com fallback para os padrão)
   const dbStoreHours = storeSettings?.storeHours
     ? (JSON.parse(storeSettings.storeHours as string) as Record<string, DaySchedule | null>)
@@ -625,7 +724,7 @@ export default function Cardapio() {
     () => getPizzaFlavorConfig(storeSettings?.pizzaFlavorConfig),
     [storeSettings?.pizzaFlavorConfig],
   );
-  const isOpen = isStoreOpenWithHours(dbStoreHours);
+  const isOpen = storeSettings?.manualStoreOpen === "true" || isStoreOpenWithHours(dbStoreHours);
   const menuLayout = (["editorial", "compact", "visual"].includes(storeSettings?.menuLayout ?? "")
     ? storeSettings?.menuLayout
     : "editorial") as "editorial" | "compact" | "visual";
@@ -637,10 +736,20 @@ export default function Cardapio() {
 
   const filteredProducts = useMemo(() => {
     if (!products) return [];
-    if (!search.trim()) return products;
-    const q = search.toLowerCase();
-    return products.filter((p: AnyProduct) => p.name.toLowerCase().includes(q) || p.description?.toLowerCase().includes(q));
-  }, [products, search]);
+
+    let next = selectedCategoryId === null
+      ? products
+      : products.filter((product: AnyProduct) => product.categoryId === selectedCategoryId);
+
+    const query = search.trim().toLocaleLowerCase("pt-BR");
+    if (query) {
+      next = next.filter((product: AnyProduct) =>
+        product.name.toLocaleLowerCase("pt-BR").includes(query)
+        || product.description?.toLocaleLowerCase("pt-BR").includes(query));
+    }
+
+    return next;
+  }, [products, search, selectedCategoryId]);
 
   const totalCartItems = items.reduce((sum, i) => sum + i.quantity, 0);
   const cartTotal = items.reduce((sum, i) => sum + parseFloat(String(i.productPrice)) * i.quantity, 0);
@@ -653,6 +762,11 @@ export default function Cardapio() {
   const [detailImg, setDetailImg] = useState("");
   const deepLinkHandled = useRef(false);
   const openDetail = (product: (typeof filteredProducts)[0], imgUrl: string, catSlug: string) => {
+    emitAnalyticsEvent({
+      eventType: "PRODUCT_VIEW",
+      productId: product.id,
+      categoryId: product.categoryId,
+    });
     setDetailProduct({ ...product, imageUrl: product.imageUrl?.trim() || null, categorySlug: catSlug, categoryId: product.categoryId });
     setDetailImg(imgUrl);
   };
@@ -664,11 +778,23 @@ export default function Cardapio() {
     if (coupon) savePendingCoupon(coupon);
 
     const productId = Number(params.get("product"));
+    const categoryId = Number(params.get("categoria"));
     if (Number.isInteger(productId) && productId > 0) {
       const product = products.find((entry: AnyProduct) => entry.id === productId);
       if (product) {
         const category = categories.find((entry: MenuCategoryRecord) => entry.id === product.categoryId);
         openDetail(product, product.imageUrl?.trim() || PRODUCT_FALLBACK_IMG, category?.slug ?? "pizzas");
+      }
+    } else if (Number.isInteger(categoryId) && categoryId > 0) {
+      const category = categories.find((entry: MenuCategoryRecord) => entry.id === categoryId);
+      if (category) {
+        setSelectedCategoryId(category.id);
+        setTimeout(() => {
+          const element = document.getElementById(`cat-section-${category.id}`);
+          if (!element) return;
+          const top = element.getBoundingClientRect().top + window.scrollY - 120;
+          window.scrollTo({ top, behavior: "smooth" });
+        }, 120);
       }
     } else {
       const requestedSearch = params.get("search")?.trim();
@@ -684,6 +810,13 @@ export default function Cardapio() {
     return category?.slug === "pizzas";
   }, [categories, pizzaFlavorConfig.enabled]);
 
+  const requiresConfigurator = useCallback((product: AnyProduct) => (
+    product.hasConfiguration === true
+    || product.productType === "multi_flavor"
+    || product.productType === "combo"
+    || isMultiFlavorProduct(product)
+  ), [isMultiFlavorProduct]);
+
   const getCartQuantityForProduct = useCallback((productId: number) => {
     return items
       .filter((item) => item.productId === productId)
@@ -692,6 +825,9 @@ export default function Cardapio() {
 
   const scrollToCategory = useCallback((id: number | null) => {
     setSelectedCategoryId(id);
+    if (id !== null) {
+      emitAnalyticsEvent({ eventType: "CATEGORY_VIEW", categoryId: id });
+    }
     if (id === null) { window.scrollTo({ top: 0, behavior: "smooth" }); return; }
     setTimeout(() => {
       const el = document.getElementById(`cat-section-${id}`);
@@ -703,9 +839,10 @@ export default function Cardapio() {
   }, []);
 
   // Determine badge for product
-  const getProductBadge = (product: typeof filteredProducts[0], index: number): "Mais pedido" | "Destaque" | "Novo" | "Promoção" | undefined => {
+  const getProductBadge = (product: typeof filteredProducts[0], _index: number): "Mais pedido" | "Destaque" | "Novo" | "Promoção" | undefined => {
+    // Não inferimos "Mais pedido" pela posição visual. Esse selo só deve ser
+    // exibido quando houver uma fonte de dados real que sustente a afirmação.
     if (product.featured) return "Destaque";
-    if (index === 0) return "Mais pedido";
     return undefined;
   };
 
@@ -715,7 +852,7 @@ export default function Cardapio() {
         const cat = categories?.find((c: MenuCategoryRecord) => c.id === product.categoryId);
         const slug = cat?.slug ?? "pizzas";
         const productImg = product.imageUrl?.trim() || PRODUCT_FALLBACK_IMG;
-        const allowQuickAdd = !isMultiFlavorProduct(product);
+        const allowQuickAdd = !requiresConfigurator(product);
         return (
           <ProductCard
             key={product.id}
@@ -800,7 +937,16 @@ export default function Cardapio() {
             products={products}
             categories={categories}
             items={items}
-            onAdd={(p) => handleAdd(p as typeof filteredProducts[0])}
+            onAdd={(p) => {
+              const product = p as AnyProduct;
+              const category = categories.find((entry: MenuCategoryRecord) => entry.id === product.categoryId);
+              const productImg = product.imageUrl?.trim() || PRODUCT_FALLBACK_IMG;
+              if (requiresConfigurator(product)) {
+                openDetail(product, productImg, category?.slug ?? "pizzas");
+              } else {
+                handleAdd(product);
+              }
+            }}
             onUpdateQty={updateQuantity}
             onDetail={(p, img, slug) => openDetail(p as typeof filteredProducts[0], img, slug)}
           />
@@ -836,7 +982,12 @@ export default function Cardapio() {
             const catProducts = filteredProducts.filter((p: AnyProduct) => p.categoryId === cat.id);
             if (catProducts.length === 0) return null;
             return (
-              <section key={cat.id} id={`cat-section-${cat.id}`} className="mb-12">
+              <section
+                key={cat.id}
+                id={`cat-section-${cat.id}`}
+                className="mb-12"
+                style={{ contentVisibility: "auto", containIntrinsicSize: "700px" }}
+              >
                 <div className="flex items-center gap-2 mb-5 pb-3 border-b border-border">
                   {(() => { const Icon = getCategoryIcon(cat); return <Icon className="h-5 w-5 text-primary" />; })()}
                   <h2 className="text-lg font-black text-foreground" style={{ fontFamily: "'Poppins', sans-serif" }}>{cat.name}</h2>
@@ -845,7 +996,7 @@ export default function Cardapio() {
                 <div className={productGridClass}>
                   {catProducts.map((product: AnyProduct, idx: number) => {
                     const productImg = product.imageUrl?.trim() || PRODUCT_FALLBACK_IMG;
-                    const allowQuickAdd = !isMultiFlavorProduct(product);
+                    const allowQuickAdd = !requiresConfigurator(product);
                     return (
                       <ProductCard
                         key={product.id}
@@ -871,7 +1022,11 @@ export default function Cardapio() {
         )}
       </div>
 
-      <ProductDetailModal product={detailProduct} open={!!detailProduct} onClose={() => setDetailProduct(null)} fallbackImg={detailImg} />
+      {detailProduct && (
+        <Suspense fallback={null}>
+          <ProductDetailModal product={detailProduct} open onClose={() => setDetailProduct(null)} fallbackImg={detailImg} />
+        </Suspense>
+      )}
 
       {/* Mobile bottom navigation bar — visível apenas no mobile (some no desktop) */}
       <div className={`md:hidden fixed bottom-0 left-0 right-0 z-50 bg-background/95 backdrop-blur-sm border-t border-border shadow-[0_-2px_12px_rgba(0,0,0,0.08)] transition-transform duration-300 ease-in-out ${bottomBarVisible ? "translate-y-0" : "translate-y-full"}`}>

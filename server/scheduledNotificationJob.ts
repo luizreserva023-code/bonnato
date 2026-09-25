@@ -208,8 +208,10 @@ export async function processScheduledNotifications(): Promise<void> {
           {
             title: notification.title,
             body: notification.message,
+            imageUrl: notification.imageUrl,
             url: "/",
             tag: `scheduled-${notification.id}`,
+            dedupeKey: `scheduled-${notification.id}`,
           },
           userIds
         );
@@ -240,6 +242,7 @@ export async function processScheduledNotifications(): Promise<void> {
           storeId: notification.storeId,
           title: notification.title,
           message: notification.message,
+          imageUrl: notification.imageUrl,
           channel: notification.channel,
           targetAudience: notification.targetAudience,
           scheduledAt: nextDate,
@@ -256,6 +259,7 @@ export async function processScheduledNotifications(): Promise<void> {
           storeId: notification.storeId,
           title: notification.title,
           message: notification.message,
+          imageUrl: notification.imageUrl,
           channel: notification.channel,
           targetAudience: notification.targetAudience,
           scheduledAt: nextDate,

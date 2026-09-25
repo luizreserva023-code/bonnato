@@ -146,7 +146,7 @@ export function SiteBlockRenderer({ block, editing = false, data }: { block: Sit
   }
 
   if (block.type === "testimonials") {
-    return <section className={`${shell} px-4`} style={style}><h2 className="text-2xl font-black uppercase tracking-[-.035em]" style={headingStyle}>{title}</h2><blockquote className="mt-5 rounded-2xl bg-white p-6 shadow-[0_12px_32px_rgba(75,25,15,.07)]"><div className="flex gap-1 text-[var(--site-accent)]">{Array.from({length:5}).map((_,i)=><Star key={i} className="size-4 fill-current"/>)}</div><p className="mt-5 text-base font-semibold leading-relaxed">“{String(block.props.quote ?? "Experiência incrível, pedido rápido e comida deliciosa.")}”</p><footer className="mt-4 text-xs font-black text-black/45">{String(block.props.author ?? "Cliente da casa")}</footer></blockquote></section>;
+    return <section className={`${shell} px-4`} style={style}><h2 className="text-2xl font-black uppercase tracking-[-.035em]" style={headingStyle}>{title}</h2><blockquote className="mt-5 rounded-2xl bg-white p-6 shadow-[0_12px_32px_rgba(75,25,15,.07)]"><div className="flex gap-1 text-[var(--site-accent)]">{Array.from({length:5}).map((_,i)=><Star key={i} className="size-4 fill-current"/>)}</div><p className="mt-5 text-base font-semibold leading-relaxed">“{String(block.props.quote ?? "Adicione aqui o depoimento de um cliente.")}”</p><footer className="mt-4 text-xs font-black text-black/45">{String(block.props.author ?? "Nome do cliente")}</footer></blockquote></section>;
   }
 
   if (block.type === "location") {

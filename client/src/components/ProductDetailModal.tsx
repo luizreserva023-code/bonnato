@@ -236,12 +236,12 @@ export function ProductDetailModal({ product, open, onClose, fallbackImg }: Prod
 
   return (
     <Dialog open={open} onOpenChange={(value) => !value && onClose()}>
-      <DialogContent className="flex max-h-[92dvh] w-[min(94vw,680px)] max-w-none flex-col gap-0 overflow-hidden rounded-[28px] border-0 bg-[#f7f1eb] p-0 shadow-[0_28px_90px_rgba(69,7,9,0.35)]">
+      <DialogContent className="box-border flex max-h-[92dvh] w-[calc(100vw-1rem)] min-w-0 max-w-[680px] flex-col gap-0 overflow-hidden rounded-[24px] border-0 bg-[#f7f1eb] p-0 shadow-[0_28px_90px_rgba(69,7,9,0.35)] sm:w-[min(94vw,680px)] sm:rounded-[28px]">
         <DialogTitle className="sr-only">Monte {product.name}</DialogTitle>
         <DialogDescription className="sr-only">Escolha tamanhos, sabores e adicionais antes de colocar o produto na sacola.</DialogDescription>
 
-        <header className="relative shrink-0 bg-[#DA1923] text-white">
-          <div className="grid min-h-36 grid-cols-[1fr_145px] sm:min-h-44 sm:grid-cols-[1fr_220px]">
+        <header className="relative w-full min-w-0 shrink-0 overflow-hidden bg-[#DA1923] text-white">
+          <div className="grid w-full min-w-0 min-h-36 grid-cols-[minmax(0,1fr)_120px] sm:min-h-44 sm:grid-cols-[minmax(0,1fr)_220px]">
             <div className="flex min-w-0 flex-col justify-between p-5 sm:p-7">
               <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.18em] text-white/75"><Flame className="h-4 w-4" /> Monte do seu jeito</div>
               <div>
@@ -254,8 +254,12 @@ export function ProductDetailModal({ product, open, onClose, fallbackImg }: Prod
           <button type="button" onClick={onClose} className="absolute right-3 top-3 z-10 grid h-9 w-9 place-items-center rounded-full bg-[#450709] text-white" aria-label="Fechar"><X className="h-4 w-4" /></button>
         </header>
 
-        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain p-4 sm:p-6">
-          {product.description && <p className="rounded-2xl bg-white p-4 text-sm leading-relaxed text-[#665557]">{product.description}</p>}
+        <div className="min-h-0 w-full min-w-0 flex-1 touch-pan-y space-y-4 overflow-x-hidden overflow-y-auto overscroll-contain p-4 sm:p-6">
+          {product.description && (
+            <p className="w-full min-w-0 max-w-full break-words rounded-2xl bg-white p-4 text-sm leading-relaxed text-[#665557] [overflow-wrap:anywhere]">
+              {product.description}
+            </p>
+          )}
 
           {configurationQuery.isLoading && <div className="grid min-h-40 place-items-center rounded-3xl bg-white"><Loader2 className="h-7 w-7 animate-spin text-[#DA1923]" /></div>}
 
@@ -292,7 +296,43 @@ export function ProductDetailModal({ product, open, onClose, fallbackImg }: Prod
                 const selectedQuantity = optionQuantities[option.id] ?? 0;
                 const maximum = Math.min(option.maxQuantity, group.maxSelections);
                 const single = group.maxSelections === 1;
-                return <div key={option.id} className={`flex min-h-16 items-center justify-between gap-3 rounded-2xl border-2 p-3 ${selectedQuantity ? "border-[#DA1923] bg-[#fff0ef]" : "border-[#eadeda] bg-white"}`}><button type="button" className="min-w-0 flex-1 text-left" onClick={() => selectOption(group.id, option.id, maximum, single)}><strong className="block truncate text-sm text-[#2b1718]">{option.name}</strong><small className="text-[#DA1923]">{option.price > 0 ? `+ ${formatPrice(option.price)}` : "Incluso"}</small></button>{!single && selectedQuantity > 0 ? <div className="flex items-center gap-2 rounded-xl bg-white p-1"><button type="button" className="grid h-7 w-7 place-items-center" onClick={() => changeOptionQuantity(option.id, -1, maximum)}><Minus className="h-3 w-3" /></button><strong className="w-4 text-center text-sm">{selectedQuantity}</strong><button type="button" className="grid h-7 w-7 place-items-center" onClick={() => changeOptionQuantity(option.id, 1, maximum)}><Plus className="h-3 w-3" /></button></div> : <SelectionMark selected={selectedQuantity > 0} />}</div>;
+                const optionClassName = `flex min-h-16 w-full items-center justify-between gap-3 rounded-2xl border-2 p-3 text-left transition ${selectedQuantity ? "border-[#DA1923] bg-[#fff0ef]" : "border-[#eadeda] bg-white"}`;
+                if (single) {
+                  return (
+                    <button
+                      key={option.id}
+                      type="button"
+                      onClick={() => selectOption(group.id, option.id, maximum, true)}
+                      className={optionClassName}
+                      aria-pressed={selectedQuantity > 0}
+                    >
+                      <span className="min-w-0 flex-1">
+                        <strong className="block truncate text-sm text-[#2b1718]">{option.name}</strong>
+                        <small className="text-[#DA1923]">{option.price > 0 ? `+ ${formatPrice(option.price)}` : "Incluso"}</small>
+                      </span>
+                      <SelectionMark selected={selectedQuantity > 0} />
+                    </button>
+                  );
+                }
+                return (
+                  <div key={option.id} className={optionClassName}>
+                    <button type="button" className="min-w-0 flex-1 text-left" onClick={() => selectOption(group.id, option.id, maximum, false)}>
+                      <strong className="block truncate text-sm text-[#2b1718]">{option.name}</strong>
+                      <small className="text-[#DA1923]">{option.price > 0 ? `+ ${formatPrice(option.price)}` : "Incluso"}</small>
+                    </button>
+                    {selectedQuantity > 0 ? (
+                      <div className="flex items-center gap-2 rounded-xl bg-white p-1">
+                        <button type="button" className="grid h-7 w-7 place-items-center" onClick={() => changeOptionQuantity(option.id, -1, maximum)}><Minus className="h-3 w-3" /></button>
+                        <strong className="w-4 text-center text-sm">{selectedQuantity}</strong>
+                        <button type="button" className="grid h-7 w-7 place-items-center" onClick={() => changeOptionQuantity(option.id, 1, maximum)}><Plus className="h-3 w-3" /></button>
+                      </div>
+                    ) : (
+                      <button type="button" aria-label={`Selecionar ${option.name}`} onClick={() => selectOption(group.id, option.id, maximum, false)}>
+                        <SelectionMark selected={false} />
+                      </button>
+                    )}
+                  </div>
+                );
               })}</div>
             </ChoiceSection>;
           })}
@@ -320,10 +360,10 @@ export function ProductDetailModal({ product, open, onClose, fallbackImg }: Prod
           {isConfigured && pricingErrors.length > 0 && !calculatePrice.isPending && <div className="rounded-2xl border border-[#f3c0bc] bg-[#fff0ef] px-4 py-3 text-sm font-semibold text-[#8f1118]">{pricingErrors[0]}</div>}
         </div>
 
-        <footer className="shrink-0 border-t border-[#e6d8d2] bg-white p-3 sm:p-4">
+        <footer className="w-full min-w-0 shrink-0 overflow-hidden border-t border-[#e6d8d2] bg-white p-3 sm:p-4">
           <div className="flex items-center gap-3">
             <div className="flex h-12 shrink-0 items-center rounded-2xl border-2 border-[#eadeda] bg-[#faf7f4] p-1"><button type="button" onClick={() => setQuantity((current) => Math.max(1, current - 1))} className="grid h-9 w-9 place-items-center rounded-xl"><Minus className="h-4 w-4" /></button><strong className="w-7 text-center text-sm">{quantity}</strong><button type="button" onClick={() => setQuantity((current) => Math.min(configuration?.maxQuantity ?? 99, current + 1))} className="grid h-9 w-9 place-items-center rounded-xl"><Plus className="h-4 w-4" /></button></div>
-            <Button type="button" onClick={handleAdd} disabled={!canAdd || calculatePrice.isPending} className="h-12 min-w-0 flex-1 rounded-2xl bg-[#DA1923] px-4 text-sm font-black uppercase tracking-wide text-white hover:bg-[#bd111b]">{calculatePrice.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ShoppingBag className="mr-2 h-4 w-4" />}<span className="truncate">{canAdd ? `Adicionar · ${formatPrice(unitPrice * quantity)}` : "Complete as escolhas"}</span></Button>
+            <Button type="button" onClick={handleAdd} disabled={calculatePrice.isPending} aria-disabled={!canAdd} className="h-12 min-w-0 flex-1 rounded-2xl bg-[#DA1923] px-4 text-sm font-black uppercase tracking-wide text-white hover:bg-[#bd111b] disabled:opacity-70">{calculatePrice.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ShoppingBag className="mr-2 h-4 w-4" />}<span className="truncate">{canAdd ? `Adicionar · ${formatPrice(unitPrice * quantity)}` : "Revisar escolhas"}</span></Button>
           </div>
         </footer>
       </DialogContent>
@@ -332,7 +372,7 @@ export function ProductDetailModal({ product, open, onClose, fallbackImg }: Prod
 }
 
 function ChoiceSection({ number, title, hint, children }: { number: string; title: string; hint: string; children: React.ReactNode }) {
-  return <section className="rounded-3xl bg-white p-4 shadow-[0_6px_24px_rgba(69,7,9,0.05)] sm:p-5"><div className="mb-4 flex items-start justify-between gap-3"><div className="flex items-center gap-3"><span className="grid h-8 min-w-8 place-items-center rounded-xl bg-[#450709] px-2 text-[10px] font-black text-white">{number}</span><h3 className="text-base font-black uppercase leading-tight text-[#2b1718]">{title}</h3></div><span className="shrink-0 text-[10px] font-bold uppercase tracking-wider text-[#9b8587]">{hint}</span></div>{children}</section>;
+  return <section className="w-full min-w-0 max-w-full overflow-hidden rounded-3xl bg-white p-4 shadow-[0_6px_24px_rgba(69,7,9,0.05)] sm:p-5"><div className="mb-4 flex min-w-0 items-start justify-between gap-3"><div className="flex min-w-0 items-center gap-3"><span className="grid h-8 min-w-8 shrink-0 place-items-center rounded-xl bg-[#450709] px-2 text-[10px] font-black text-white">{number}</span><h3 className="min-w-0 break-words text-base font-black uppercase leading-tight text-[#2b1718] [overflow-wrap:anywhere]">{title}</h3></div><span className="max-w-[42%] shrink-0 break-words text-right text-[10px] font-bold uppercase tracking-wider text-[#9b8587] [overflow-wrap:anywhere]">{hint}</span></div><div className="min-w-0 max-w-full">{children}</div></section>;
 }
 
 function SelectionMark({ selected }: { selected: boolean }) {

@@ -6,6 +6,7 @@ import {
   Clock,
   MapPin,
   Navigation,
+  KeyRound,
   RefreshCw,
   Timer,
 } from "lucide-react";
@@ -13,6 +14,7 @@ import {
 import { useAuth } from "@/_core/hooks/useAuth";
 import { MapView, searchAddress, type LatLngLiteral, type MapMarker } from "@/components/Map";
 import { trpc } from "@/lib/trpc";
+import { useOrderRealtime } from "@/hooks/useOrderRealtime";
 
 const POLL_INTERVAL_MS = 5000;
 const DEFAULT_CENTER: LatLngLiteral = { lat: -19.9833, lng: -44.0667 };
@@ -65,6 +67,19 @@ export default function TrackOrder() {
   const { user } = useAuth();
   const [destinationPosition, setDestinationPosition] = useState<LatLngLiteral | null>(null);
   const [destinationLoading, setDestinationLoading] = useState(false);
+  const utils = trpc.useUtils();
+
+  useOrderRealtime({
+    enabled: Boolean(user && orderId > 0),
+    orderId,
+    onEvent: () => {
+      void utils.orders.byId.invalidate({ id: orderId });
+    },
+    onFallback: () => {
+      void utils.orders.byId.invalidate({ id: orderId });
+    },
+    fallbackIntervalMs: 15_000,
+  });
 
   const locationQuery = trpc.drivers.locationByOrder.useQuery(
     { orderId },
@@ -340,6 +355,23 @@ export default function TrackOrder() {
             </div>
           )}
         </div>
+
+        {orderQuery.data?.deliveryConfirmationCode && (
+          <div className="mb-3 flex items-center gap-3 rounded-2xl border border-amber-700/30 bg-amber-950/35 px-4 py-3">
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-amber-500/15">
+              <KeyRound className="h-4 w-4 text-amber-300" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-amber-300/75">Código de entrega</p>
+              <p className="font-mono text-xl font-black tracking-[0.3em] text-white">
+                {orderQuery.data.deliveryConfirmationCode}
+              </p>
+            </div>
+            <p className="max-w-32 text-right text-[10px] leading-tight text-zinc-500">
+              Informe ao motoboy somente no recebimento.
+            </p>
+          </div>
+        )}
 
         <div className="mb-3 h-px bg-white/5" />
 

@@ -1,5 +1,7 @@
-import React, { createContext, useCallback, useContext, useEffect, useState } from "react";
+import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import type { ConfiguredProductSelection } from "../../../shared/catalog";
+import { trackMetaEvent } from "@/lib/storeTracking";
+import { emitAnalyticsEvent } from "@/lib/analyticsTracking";
 
 export interface CartItem {
   lineId?: string;
@@ -61,7 +63,24 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       return [];
     }
   });
-  const [isOpen, setIsOpen] = useState(false);
+  const [isOpen, setIsOpenState] = useState(false);
+  const itemsRef = useRef(items);
+
+  useEffect(() => {
+    itemsRef.current = items;
+  }, [items]);
+
+  const setIsOpen = useCallback((open: boolean) => {
+    setIsOpenState(open);
+    if (open) {
+      emitAnalyticsEvent({
+        eventType: "CART_VIEW",
+        metadata: {
+          item_count: itemsRef.current.reduce((sum, item) => sum + item.quantity, 0),
+        },
+      });
+    }
+  }, []);
 
   useEffect(() => {
     setItems((current) => {
@@ -89,15 +108,46 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       }
       return [...prev, { ...item, lineId: item.lineId ?? createLineId(item), quantity: normalizeQuantity(item.quantity ?? 1) }];
     });
+    trackMetaEvent("AddToCart", {
+      content_ids: [String(item.productId)],
+      content_name: item.productName,
+      content_type: "product",
+      value: Number(item.productPrice) * normalizeQuantity(item.quantity ?? 1),
+      currency: "BRL",
+    });
+    emitAnalyticsEvent({
+      eventType: "ADD_TO_CART",
+      productId: item.productId,
+      metadata: {
+        quantity: normalizeQuantity(item.quantity ?? 1),
+        value: Number(item.productPrice) * normalizeQuantity(item.quantity ?? 1),
+      },
+    });
     setIsOpen(true);
   }, []);
 
   const removeItem = useCallback((lineIdOrProductId: string | number) => {
+    const item = itemsRef.current.find((entry) => resolveItemIdentity(entry) === lineIdOrProductId);
+    if (item) {
+      emitAnalyticsEvent({
+        eventType: "REMOVE_FROM_CART",
+        productId: item.productId,
+        metadata: { quantity: item.quantity },
+      });
+    }
     setItems((prev) => prev.filter((i) => resolveItemIdentity(i) !== lineIdOrProductId));
   }, []);
 
   const updateQuantity = useCallback((lineIdOrProductId: string | number, quantity: number) => {
     if (quantity <= 0) {
+      const item = itemsRef.current.find((entry) => resolveItemIdentity(entry) === lineIdOrProductId);
+      if (item) {
+        emitAnalyticsEvent({
+          eventType: "REMOVE_FROM_CART",
+          productId: item.productId,
+          metadata: { quantity: item.quantity },
+        });
+      }
       setItems((prev) => prev.filter((i) => resolveItemIdentity(i) !== lineIdOrProductId));
     } else {
       setItems((prev) =>
@@ -123,6 +173,15 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
         lineId: item.lineId ?? createLineId(item),
       })),
     );
+  }, []);
+
+  useEffect(() => {
+    const clearForStoreChange = () => {
+      setItems([]);
+      setIsOpenState(false);
+    };
+    window.addEventListener("cart:clear", clearForStoreChange);
+    return () => window.removeEventListener("cart:clear", clearForStoreChange);
   }, []);
 
   // Listen for cart:addItem custom events (used by Checkout upsell/downsell)

@@ -10,7 +10,7 @@ if (IS_PRODUCTION && rawJwtSecret.length < 32) {
   );
 }
 
-if (!rawJwtSecret) {
+if (!rawJwtSecret && process.env.NODE_ENV !== "test") {
   // In dev, warn loudly so it's obvious sessions are effectively unsigned.
   console.warn(
     "[env] JWT_SECRET is empty — sessions are signed with an empty key (dev only). Set JWT_SECRET for real auth."
@@ -62,4 +62,5 @@ export const ENV = {
   emailFrom: process.env.EMAIL_FROM ?? "Bonatto Pizza <onboarding@resend.dev>",
   publicAppUrl: PUBLIC_APP_URL,
   enablePersistentJobs: process.env.ENABLE_PERSISTENT_JOBS === "true",
+  enableOutboxJobs: process.env.ENABLE_OUTBOX_JOBS === "true",
 };

@@ -523,7 +523,7 @@ function NodeEditor({ node, onSave, onDelete, onClose, journeyId }: {
             <div className="col-span-3">
               <Label className="text-xs font-bold text-[#6E0D12] uppercase tracking-wider">Título</Label>
               <Input value={form.alertTitle ?? ""} onChange={(e) => set("alertTitle", e.target.value)}
-                className="mt-1 border-[#f9d0d0]" placeholder="Ex: Novidade especial para você!" />
+                className="mt-1 border-[#f9d0d0]" placeholder="Ex: Novo sabor no cardápio" />
             </div>
           </div>
           <div>
@@ -1277,7 +1277,7 @@ function AutomacoesContent() {
                 Automações
               </h1>
               <p className="text-[#8a92a0] text-sm">
-                Jornadas automáticas de WhatsApp, Push e ações para engajar e recuperar clientes
+                Automatize WhatsApp, Push e ações de recuperação de clientes
               </p>
             </div>
           </div>
@@ -1399,7 +1399,7 @@ function AutomacoesContent() {
             </div>
             <div>
               <strong className="font-semibold text-[#6E0D12]">Como funcionam as automações:</strong>{" "}
-              Crie uma jornada, configure os passos (WhatsApp, Push, Cupom, Pontos, Alerta, Teste A/B, Condição, Tag, Webhook) e ative-a.
+              Crie a jornada, adicione os passos que precisar e ative quando estiver pronta.
               O sistema processa execuções automaticamente a cada 2 minutos.
               Para disparar manualmente, abra a jornada e clique em "Testar".
             </div>

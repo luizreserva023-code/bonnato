@@ -1,58 +1,71 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+type QueryResult = Array<Record<string, unknown>>;
+
 const mocks = vi.hoisted(() => ({
-  results: [[{ storeId: 7 }], []] as Array<Array<Record<string, unknown>>>,
+  results: [] as QueryResult[],
   queryIndex: 0,
 }));
+
+function nextRows() {
+  return mocks.results[mocks.queryIndex++] ?? [];
+}
 
 vi.mock("./db.ts", () => ({
   getDb: vi.fn(async () => ({
     select: () => ({
-      from: () => ({
-        where: () => {
-          const rows = mocks.results[mocks.queryIndex++] ?? [];
-          return Object.assign(Promise.resolve(rows), {
-            limit: async () => rows,
-          });
-        },
-      }),
+      from: () => {
+        const chain: any = {
+          innerJoin: () => chain,
+          where: () => {
+            const rows = nextRows();
+            return Object.assign(Promise.resolve(rows), {
+              limit: async () => rows,
+            });
+          },
+        };
+        return chain;
+      },
     }),
   })),
 }));
 
-import { assertStoreEntityAccess } from "./storeUtils.ts";
+import { assertStoreEntityAccess, resolveStoreId } from "./storeUtils.ts";
 
-describe("tenant store isolation", () => {
+describe("store isolation", () => {
   beforeEach(() => {
-    mocks.results = [[{ storeId: 7 }], []];
+    mocks.results = [];
     mocks.queryIndex = 0;
   });
 
-  it("allows a manager to access records from their own store", async () => {
+  it("allows a manager to access an assigned store", async () => {
+    mocks.results = [[{ storeId: 7 }]];
     await expect(assertStoreEntityAccess({ id: 10, role: "manager" }, 7)).resolves.toBe(7);
   });
 
-  it("blocks a manager from accessing another store", async () => {
+  it("blocks a manager from another store", async () => {
+    mocks.results = [[{ storeId: 7 }]];
     await expect(assertStoreEntityAccess({ id: 10, role: "manager" }, 8)).rejects.toMatchObject({
       code: "FORBIDDEN",
     });
   });
 
-  it("allows a tenant manager to access every unit in their brand", async () => {
-    mocks.results = [
-      [],
-      [{ tenantKey: "pizza-joao" }],
-      [{ storeId: 7 }, { storeId: 8 }],
-    ];
-
+  it("allows a manager to access multiple explicitly assigned stores", async () => {
+    mocks.results = [[{ storeId: 7 }, { storeId: 8 }]];
     await expect(assertStoreEntityAccess({ id: 10, role: "manager" }, 8)).resolves.toBe(8);
   });
 
-  it("allows an admin to operate globally", async () => {
-    await expect(assertStoreEntityAccess({ id: 1, role: "admin" }, 8)).resolves.toBeUndefined();
+  it("lets an admin aggregate all stores when no store is selected", async () => {
+    await expect(resolveStoreId({ id: 1, role: "admin" })).resolves.toBeUndefined();
   });
 
-  it("keeps an admin inside an explicitly selected store", async () => {
+  it("keeps admin access scoped to the selected entity store", async () => {
+    mocks.results = [[{ id: 8 }]];
+    await expect(assertStoreEntityAccess({ id: 1, role: "admin" }, 8)).resolves.toBe(8);
+  });
+
+  it("rejects an admin request when the selected store differs from the entity store", async () => {
+    mocks.results = [[{ id: 7 }]];
     await expect(assertStoreEntityAccess({ id: 1, role: "admin" }, 8, 7)).rejects.toMatchObject({
       code: "FORBIDDEN",
     });

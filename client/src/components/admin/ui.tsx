@@ -5,13 +5,11 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 
 /**
- * Design system primitives do painel admin — visual Nexus Dashboard (cruip.com)
- * com cor de destaque Bonatto (#6E0D12) no lugar do violet-500.
- * Todas as variações visuais são controladas por CSS variables (`--admin-*`)
- * declaradas em `index.css` no :root.
+ * Primitivos do Design System administrativo Bonatto.
+ * A aparência premium é aplicada somente dentro de .bonatto-admin.
  */
 
-// ── Topbar (barra superior fixa 60px, backdrop blur) ──────────────────────
+// ── Topbar contextual ──────────────────────────────────────────────────────
 export type AdminTopbarProps = {
   title: React.ReactNode;
   subtitle?: React.ReactNode;
@@ -23,33 +21,13 @@ export type AdminTopbarProps = {
 export function AdminTopbar({ title, subtitle, onRefresh, refreshing, actions, className }: AdminTopbarProps) {
   return (
     <div
-      className={cn("sticky top-0 z-20 flex items-center justify-between gap-4 px-6", className)}
-      style={{
-        height: 60,
-        background: "var(--admin-header-bg, var(--admin-bg))",
-        backdropFilter: "blur(12px)",
-        WebkitBackdropFilter: "blur(12px)",
-        borderBottom: "1px solid var(--admin-divider)",
-      }}
+      className={cn("admin-topbar flex flex-col items-stretch justify-center gap-3 sm:flex-row sm:items-end sm:justify-between sm:gap-5", className)}
     >
       <div className="min-w-0">
-        <h1
-          className="truncate"
-          style={{
-            fontSize: 17,
-            fontWeight: 700,
-            letterSpacing: "-0.02em",
-            color: "var(--admin-text-heading)",
-            lineHeight: 1.2,
-          }}
-        >
-          {title}
-        </h1>
-        {subtitle && (
-          <p style={{ fontSize: 12, color: "var(--admin-text-muted)", marginTop: 1 }}>{subtitle}</p>
-        )}
+        <h1 className="admin-topbar__title truncate">{title}</h1>
+        {subtitle && <p className="admin-topbar__subtitle break-words">{subtitle}</p>}
       </div>
-      <div className="flex items-center gap-2 shrink-0">
+      <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:shrink-0">
         {actions}
         {onRefresh && (
           <Button
@@ -57,12 +35,7 @@ export function AdminTopbar({ title, subtitle, onRefresh, refreshing, actions, c
             size="sm"
             onClick={onRefresh}
             disabled={refreshing}
-            className="h-8 gap-1.5 text-xs font-medium"
-            style={{
-              background: "var(--admin-card-bg)",
-              borderColor: "var(--admin-card-border)",
-              color: "var(--admin-text-heading)",
-            }}
+            className="h-9 w-full gap-1.5 rounded-[10px] border-[var(--admin-border-strong)] bg-white px-3 text-xs font-semibold text-[var(--admin-text-primary)] shadow-none hover:bg-[var(--admin-surface-alt)] sm:w-auto"
           >
             <RefreshCw className={cn("w-3.5 h-3.5", refreshing && "animate-spin")} />
             Atualizar
@@ -126,7 +99,7 @@ export function AdminSurface({
             {title && <h3 className="admin-surface__title">{title}</h3>}
             {subtitle && <p className="admin-surface__subtitle">{subtitle}</p>}
           </div>
-          {actions && <div className="flex items-center gap-2 shrink-0">{actions}</div>}
+          {actions && <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:shrink-0">{actions}</div>}
         </div>
       )}
       <div className={cn(flush ? "" : "admin-surface__body", bodyClassName)}>{children}</div>
@@ -322,6 +295,84 @@ export function AdminToolbar({ children, className }: { children: React.ReactNod
   return (
     <div className={cn("admin-toolbar", className)}>
       {children}
+    </div>
+  );
+}
+
+
+export function AdminInsightCard({
+  eyebrow = "Bonatto Intelligence",
+  title,
+  description,
+  icon,
+  tone = "brand",
+  children,
+  className,
+}: {
+  eyebrow?: React.ReactNode;
+  title: React.ReactNode;
+  description?: React.ReactNode;
+  icon?: React.ReactNode;
+  tone?: "brand" | "success" | "warning" | "danger" | "info";
+  children?: React.ReactNode;
+  className?: string;
+}) {
+  const toneClass: Record<string, string> = {
+    brand: "text-[var(--admin-brand-800)] bg-[var(--admin-brand-50)]",
+    success: "text-[var(--admin-success)] bg-[var(--admin-success-bg)]",
+    warning: "text-[var(--admin-warning)] bg-[var(--admin-warning-bg)]",
+    danger: "text-[var(--admin-danger)] bg-[var(--admin-danger-bg)]",
+    info: "text-[var(--admin-info)] bg-[var(--admin-info-bg)]",
+  };
+  return (
+    <section className={cn("admin-intelligence p-5", className)}>
+      <div className="flex items-start gap-3">
+        {icon && <div className={cn("grid h-9 w-9 shrink-0 place-items-center rounded-[10px]", toneClass[tone])}>{icon}</div>}
+        <div className="min-w-0 flex-1">
+          <p className="admin-intelligence__eyebrow">{eyebrow}</p>
+          <h3 className="mt-1 text-[16px] font-semibold leading-6 text-[var(--admin-text-primary)]">{title}</h3>
+          {description && <p className="mt-1 text-[13px] leading-5 text-[var(--admin-text-secondary)]">{description}</p>}
+          {children && <div className="mt-4">{children}</div>}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+export function AdminDataTableShell({
+  children,
+  className,
+}: {
+  children: React.ReactNode;
+  className?: string;
+}) {
+  return <div className={cn("admin-data-table-wrap", className)}>{children}</div>;
+}
+
+export function AdminSkeleton({
+  className,
+}: {
+  className?: string;
+}) {
+  return <div aria-hidden="true" className={cn("admin-skeleton h-10 w-full", className)} />;
+}
+
+export function AdminCardSkeleton({ className }: { className?: string }) {
+  return (
+    <div className={cn("admin-surface p-5", className)}>
+      <AdminSkeleton className="h-3 w-24" />
+      <AdminSkeleton className="mt-5 h-8 w-32" />
+      <AdminSkeleton className="mt-4 h-3 w-40" />
+    </div>
+  );
+}
+
+export function AdminChartSkeleton({ className }: { className?: string }) {
+  return (
+    <div className={cn("admin-surface p-5", className)}>
+      <AdminSkeleton className="h-4 w-40" />
+      <AdminSkeleton className="mt-3 h-3 w-64 max-w-full" />
+      <AdminSkeleton className="mt-8 h-[260px] w-full rounded-[14px]" />
     </div>
   );
 }

@@ -6,6 +6,8 @@ interface CarouselItem {
   imageUrl: string;
   name: string;
   productId?: number;
+  href?: string;
+  external?: boolean;
 }
 
 interface SequentialCarouselProps {
@@ -54,7 +56,12 @@ export function SequentialCarousel({
           <ChevronLeft className="size-5" />
         </button>
 
-        <button type="button" className="group relative block h-[220px] w-full overflow-hidden text-left sm:h-[300px] lg:h-[350px]" onClick={() => onCardClick?.(currentItem)}>
+        <button
+          type="button"
+          disabled={!currentItem.href && !currentItem.productId}
+          className="group relative block h-[220px] w-full overflow-hidden text-left disabled:cursor-default sm:h-[300px] lg:h-[350px]"
+          onClick={() => onCardClick?.(currentItem)}
+        >
           {currentItem.imageUrl ? (
             <>
               {preserveFullImage && <img aria-hidden="true" src={currentItem.imageUrl} alt="" className="absolute inset-0 h-full w-full scale-110 object-cover opacity-35 blur-2xl" />}
@@ -71,7 +78,7 @@ export function SequentialCarousel({
               />
             </>
           ) : <div className="h-full w-full bg-[#DA1923]" />}
-          {currentItem.imageUrl && <span className="sr-only">Abrir {currentItem.name || "destaque"} no cardápio</span>}
+          {currentItem.imageUrl && (currentItem.href || currentItem.productId) && <span className="sr-only">Abrir {currentItem.name || "destaque"}</span>}
           {!currentItem.imageUrl && currentItem.name && (
             <div className="absolute inset-x-0 bottom-0 z-10 px-14 pb-8 text-center text-white sm:px-20 sm:pb-10">
               <p className="text-2xl leading-none sm:text-4xl lg:text-5xl">{currentItem.name}</p>

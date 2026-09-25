@@ -15,6 +15,7 @@ import { getSessionCookieOptions } from "./cookies.ts";
 import { ENV } from "./env.ts";
 import { decryptOAuthToken, encryptOAuthToken } from "./oauthCrypto.ts";
 import { sdk } from "./sdk.ts";
+import { createTwoFactorChallenge } from "../twoFactor.ts";
 
 export type SocialOAuthProvider = "google" | "facebook" | "apple" | "instagram";
 type OAuthMode = "login" | "connect";
@@ -478,7 +479,24 @@ async function persistSocialAccount(
 }
 
 async function finalizeLogin(req: Request, res: Response, openId: string, name: string, returnPath: string) {
-  const sessionToken = await sdk.createSessionToken(openId, { name, expiresInMs: DEFAULT_SESSION_MS });
+  const user = await db.getUserByOpenId(openId);
+  const twoFactorEnabled = process.env.TWO_FACTOR_FEATURE_ENABLED === "true";
+  if (twoFactorEnabled && user?.totpEnabled) {
+    const challengeToken = await createTwoFactorChallenge(user.id);
+    const target = new URL("/login", buildBaseAppUrl(req));
+    target.searchParams.set("twoFactorChallenge", challengeToken);
+    target.searchParams.set("returnTo", sanitizeReturnPath(returnPath));
+    res.redirect(302, target.pathname + target.search);
+    return;
+  }
+
+  const sessionToken = await sdk.createSessionToken(openId, {
+    name,
+    expiresInMs: DEFAULT_SESSION_MS,
+    trackSession: true,
+    ipAddress: req.ip ?? null,
+    userAgent: req.get("user-agent") ?? null,
+  });
   res.cookie(COOKIE_NAME, sessionToken, { ...getSessionCookieOptions(req), maxAge: DEFAULT_SESSION_MS });
   res.redirect(302, sanitizeReturnPath(returnPath));
 }

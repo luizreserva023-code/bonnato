@@ -5,8 +5,8 @@
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
-  "background_color": "#6E0D12",
-  "theme_color": "#6E0D12",
+  "background_color": "#FFFAF8",
+  "theme_color": "#DA1923",
   "orientation": "portrait",
   "categories": ["food", "shopping"],
   "icons": [

@@ -5,11 +5,12 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { getLoginUrl } from "@/const";
 import { trpc } from "@/lib/trpc";
-import { ChevronDown, ChevronUp, Clock, LogIn, Package, ShoppingBag } from "lucide-react";
+import { ChevronDown, ChevronUp, Clock, KeyRound, LogIn, Package, ShoppingBag } from "lucide-react";
 import { useState } from "react";
 import { Link } from "wouter";
 import { useStore } from "@/contexts/StoreContext";
 import { BonattoSectionHero } from "@/components/consumer/BonattoSectionHero";
+import { useOrderRealtime } from "@/hooks/useOrderRealtime";
 
 const STATUS_LABELS: Record<string, { label: string; color: string }> = {
   pending: { label: "Aguardando", color: "bg-yellow-100 text-yellow-800" },
@@ -66,10 +67,21 @@ export default function MeusPedidos() {
   const { isAuthenticated, loading } = useAuth();
   const { selectedStore } = useStore();
   const [expandedId, setExpandedId] = useState<number | null>(null);
-  // Poll every 30s so the customer can see status updates in real time
+  const utils = trpc.useUtils();
+  useOrderRealtime({
+    enabled: isAuthenticated,
+    onEvent: () => {
+      void utils.orders.myOrders.invalidate();
+      void utils.orders.byId.invalidate();
+    },
+    onFallback: () => {
+      void utils.orders.myOrders.invalidate();
+    },
+    fallbackIntervalMs: 15_000,
+  });
   const { data: orders, isLoading } = trpc.orders.myOrders.useQuery({ storeId: selectedStore?.id }, {
     enabled: isAuthenticated && Boolean(selectedStore?.id),
-    refetchInterval: 30000,
+    refetchInterval: false,
   });
 
   if (loading) {
@@ -120,7 +132,7 @@ export default function MeusPedidos() {
           <div className="text-center py-20 text-muted-foreground">
             <Package className="w-16 h-16 mx-auto mb-4 opacity-20" />
             <p className="text-xl font-medium">Nenhum pedido ainda</p>
-            <p className="text-sm mt-2 mb-6">Faça seu primeiro pedido agora!</p>
+            <p className="text-sm mt-2 mb-6">Seu histórico de pedidos vai aparecer aqui.</p>
             <Link href="/cardapio">
               <Button className="gap-2">
                 <ShoppingBag className="w-4 h-4" />
@@ -160,6 +172,27 @@ export default function MeusPedidos() {
                         <p className="font-medium">{PAYMENT_LABELS[order.paymentMethod] ?? order.paymentMethod}</p>
                       </div>
                     </div>
+
+                    {order.serviceType === "delivery"
+                      && order.deliveryConfirmationCode
+                      && !["delivered", "cancelled"].includes(order.status) && (
+                      <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3">
+                        <div className="flex items-start gap-3">
+                          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-amber-100 text-amber-800">
+                            <KeyRound className="h-4 w-4" />
+                          </span>
+                          <div className="min-w-0 flex-1">
+                            <p className="text-xs font-bold uppercase tracking-wide text-amber-800">Código de entrega</p>
+                            <p className="mt-1 font-mono text-2xl font-black tracking-[0.3em] text-amber-950">
+                              {order.deliveryConfirmationCode}
+                            </p>
+                            <p className="mt-1 text-xs leading-relaxed text-amber-800">
+                              Informe este código ao motoboy somente quando estiver recebendo o pedido.
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    )}
 
                     {/* Expand items */}
                     <button

@@ -11,6 +11,7 @@ interface AlertCardProps {
     type: string;
     title: string;
     message: string;
+    imageUrl: string | null;
     icon: string | null;
     url: string | null;
     read: boolean;
@@ -91,8 +92,12 @@ function AlertCard({ alert, onDismiss }: AlertCardProps) {
       className={`relative flex items-start gap-3 p-3.5 rounded-xl border-l-4 cursor-pointer transition-all hover:brightness-95 active:scale-[0.99] ${styles.border} ${styles.bg} ${!alert.read ? "shadow-sm ring-1 ring-black/5" : "opacity-75"}`}
       onClick={handleClick}
     >
-      {/* Ícone */}
-      <span className="text-xl flex-shrink-0 mt-0.5 leading-none">{alert.icon ?? "🔔"}</span>
+      {/* Imagem/ícone */}
+      {alert.imageUrl ? (
+        <img src={alert.imageUrl} alt="" className="h-14 w-14 flex-shrink-0 rounded-lg object-cover" loading="lazy" />
+      ) : (
+        <span className="text-xl flex-shrink-0 mt-0.5 leading-none">{alert.icon ?? "🔔"}</span>
+      )}
 
       {/* Conteúdo */}
       <div className="flex-1 min-w-0">

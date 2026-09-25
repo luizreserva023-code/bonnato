@@ -785,7 +785,7 @@ function ClubTab() {
               <textarea
                 className="w-full border border-gray-200 rounded-xl p-3 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-[#7d0f14]"
                 rows={5}
-                placeholder="Ex: 🍕 Hoje tem 30% OFF em todas as pizzas especiais! Só para membros do Clube do Bonatto. Peça agora!"
+                placeholder="Ex: 🍕 Membros do Clube têm 30% de desconto nas pizzas especiais hoje."
                 value={promoMessage}
                 onChange={(e) => setPromoMessage(e.target.value)}
               />

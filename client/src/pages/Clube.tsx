@@ -447,7 +447,7 @@ export default function Clube() {
         <BonattoSectionHero
           eyebrow={clubConfig?.badgeLabel ?? "Clube do Bonatto"}
           title={clubConfig?.sectionTitle ?? "Assine, economize e ganhe pizza todo mês."}
-          description={clubConfig?.sectionSubtitle ?? "Cliente fiel merece mais. Escolha seu plano e faça parte do clube."}
+          description={clubConfig?.sectionSubtitle ?? "Escolha um plano e veja os benefícios incluídos."}
           aside={<img src="/brand/dna/personagem-bonatto.png" alt="Personagem Bonatto" className="relative z-[1] h-full w-full object-contain p-2" />}
         />
 
@@ -463,7 +463,7 @@ export default function Clube() {
             {clubConfig?.sectionTitle ?? "Assine, economize e ganhe pizza todo mês."}
           </h1>
           <p className="hidden">
-            {clubConfig?.sectionSubtitle ?? "Cliente fiel merece mais. Escolha seu plano, pague via PIX e faça parte do clube."}
+            {clubConfig?.sectionSubtitle ?? "Escolha um plano, pague via PIX e veja os benefícios incluídos."}
           </p>
           {/* Mini benefícios */}
           <div className="mt-5 flex flex-wrap justify-start gap-2">
@@ -501,7 +501,7 @@ export default function Clube() {
                   <><Crown className="w-5 h-5 mr-2" /> {clubConfig?.ctaLabel ?? "Assinar agora via PIX"}</>
                 )}
               </Button>
-              <p className="text-zinc-500 text-xs mt-3">{clubConfig?.disclaimer ?? "Pagamento 100% seguro via PIX • Cancele quando quiser"}</p>
+              <p className="text-zinc-500 text-xs mt-3">{clubConfig?.disclaimer ?? "Pagamento via PIX • Cancele quando quiser"}</p>
             </div>
           </>
         )}
@@ -524,14 +524,14 @@ export default function Clube() {
             </div>
             <h2 className="text-3xl font-black text-white mb-3">{clubConfig?.successTitle ?? "Bem-vindo ao Clube!"}</h2>
             <p className="text-zinc-400 mb-8">
-              {clubConfig?.successSubtitle ?? "Seu plano foi ativado. Aproveite todos os benefícios exclusivos do Clube do Bonatto!"}
+              {clubConfig?.successSubtitle ?? "Seu plano foi ativado e os benefícios já estão disponíveis."}
             </p>
             <Button
               onClick={() => navigate("/cardapio")}
               className="bg-[#6E0D12] btn-bonatto hover:bg-[#5a0a0f] text-white font-bold px-8 py-4 rounded-xl"
             >
               <Pizza className="w-5 h-5 mr-2" />
-              Fazer Meu Primeiro Pedido com Desconto
+              Fazer pedido com desconto
             </Button>
           </div>
         )}

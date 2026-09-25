@@ -19,6 +19,7 @@ import {
   Package,
   RefreshCcw,
   Settings,
+  Star,
   Store,
   Tag,
   Ticket,
@@ -30,7 +31,7 @@ import { Link } from "wouter";
 
 import { useAdminStore } from "@/contexts/AdminStoreContext";
 import { Button } from "@/components/ui/button";
-import { useTenantConfig } from "@/shared/tenant/use-tenant-config";
+import { useBonattoConfig } from "@/hooks/use-bonatto-config";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -71,6 +72,7 @@ export const ADMIN_NAV_ITEMS: AdminNavItem[] = [
     icon: <Megaphone className="h-[18px] w-[18px]" />,
     children: [
       { id: "coupons", label: "Cupons", icon: <Tag className="h-4 w-4" /> },
+      { id: "reviews", label: "Avaliações", icon: <Star className="h-4 w-4" /> },
       { id: "promotions", label: "Promoções", icon: <Gift className="h-4 w-4" /> },
       { id: "raffles", label: "Sorteios", icon: <Ticket className="h-4 w-4" /> },
       { id: "upsells", label: "Up-sells", icon: <Zap className="h-4 w-4" /> },
@@ -102,7 +104,7 @@ const TOOL_LINKS = [
   { href: "/vendas", label: "Painel de Vendas", icon: <BarChart3 className="h-4 w-4" /> },
   { href: "/crm", label: "CRM", icon: <Users className="h-4 w-4" /> },
   { href: "/notificacoes", label: "Notificações", icon: <Megaphone className="h-4 w-4" /> },
-  { href: "/zonas-entrega", label: "Zonas de Entrega", icon: <MapPin className="h-4 w-4" /> },
+  { href: "/admin/configuracoes/entrega", label: "Configurações de entrega", icon: <MapPin className="h-4 w-4" /> },
   { href: "/automacoes", label: "Automações", icon: <Bot className="h-4 w-4" /> },
 ];
 
@@ -134,8 +136,7 @@ export function AdminSidebar({
   isAdmin,
 }: AdminSidebarProps) {
   const [openSubmenu, setOpenSubmenu] = useState<string | null>(null);
-  const { selectedStoreSlug } = useAdminStore();
-  const tenant = useTenantConfig(selectedStoreSlug);
+  const bonatto = useBonattoConfig();
 
   useEffect(() => {
     for (const item of ADMIN_NAV_ITEMS) {
@@ -172,9 +173,9 @@ export function AdminSidebar({
         style={{ borderBottom: `1px solid ${dividerColor}` }}
       >
         <div className="flex min-w-0 items-center gap-2">
-          <img src={tenant.brand.logos.icon || BONATTO_ICON_URL} alt={tenant.brand.shortName} className="h-10 w-10 shrink-0 rounded-full bg-white/10 object-contain" />
+          <img src={bonatto.brand.logos.icon || BONATTO_ICON_URL} alt={bonatto.brand.shortName} className="h-10 w-10 shrink-0 rounded-full bg-white/10 object-contain" />
           <div className="flex min-w-0 items-center overflow-hidden">
-            <img src={tenant.brand.logos.wordmark || BONATTO_LOGO_URL} alt={tenant.brand.name} className="h-8 w-auto object-contain" />
+            <img src={bonatto.brand.logos.wordmark || BONATTO_LOGO_URL} alt={bonatto.brand.name} className="h-8 w-auto object-contain" />
           </div>
         </div>
       </div>
@@ -187,7 +188,7 @@ export function AdminSidebar({
         <div className="space-y-0.5">
           {ADMIN_NAV_ITEMS.map((item) => {
             if (item.adminOnly && !isAdmin) return null;
-            if (tenant.features.adminTabs[item.id] === false) return null;
+            if (bonatto.features.adminTabs[item.id] === false) return null;
 
             const childIds = item.children?.map((child) => child.id) ?? [];
             const hasChildren = childIds.length > 0;
@@ -241,7 +242,7 @@ export function AdminSidebar({
 
                 {hasChildren && isOpen ? (
                   <div className="ml-5 mt-0.5 space-y-0.5 border-l-2 pl-3" style={{ borderColor: "rgba(255,255,255,0.20)" }}>
-                    {item.children?.filter((child) => (!child.adminOnly || isAdmin) && tenant.features.adminTabs[child.id] !== false).map((child) => {
+                    {item.children?.filter((child) => (!child.adminOnly || isAdmin) && bonatto.features.adminTabs[child.id] !== false).map((child) => {
                       const isChildActive = activeTab === child.id;
                       const childBadge =
                         child.id === "orders" && pendingCount > 0

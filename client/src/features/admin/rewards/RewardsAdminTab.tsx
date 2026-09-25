@@ -14,6 +14,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { useAdminStore } from "@/contexts/AdminStoreContext";
 import { trpc } from "@/lib/trpc";
+import { AdminEmptyState, AdminPage, AdminStat, AdminStatGrid, AdminSurface, AdminTopbar } from "@/components/admin/ui";
 
 type RewardType = "discount" | "product" | "free_delivery" | "cashback";
 
@@ -144,7 +145,6 @@ export function RewardsAdminTab() {
       await refresh();
     },
   });
-
   const busy = createReward.isPending || updateReward.isPending;
 
   const openCreate = () => {
@@ -252,32 +252,49 @@ export function RewardsAdminTab() {
   }), [rewardsQuery.data]);
 
   if (!selectedStoreId) {
-    return <Card><CardContent className="p-8 text-center text-muted-foreground">Selecione uma loja para administrar as recompensas.</CardContent></Card>;
+    return (
+      <AdminPage>
+        <AdminTopbar title="Clube de Recompensas" subtitle="Selecione uma unidade para administrar benefícios, cupons e resgates." />
+        <AdminSurface>
+          <AdminEmptyState
+            icon={<Gift className="h-8 w-8" />}
+            title="Selecione uma loja"
+            description="As recompensas e os cupons são independentes por unidade."
+          />
+        </AdminSurface>
+      </AdminPage>
+    );
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
-        <div>
-          <p className="text-xs font-black uppercase tracking-[0.16em] text-[#DA1923]">Fidelidade e retenção</p>
-          <h1 className="mt-1 text-3xl font-black tracking-tight">Clube de Recompensas</h1>
-          <p className="mt-1 text-sm text-muted-foreground">Benefícios, cupons únicos, resgates e estornos em um fluxo auditável.</p>
-        </div>
-        <div className="flex flex-wrap gap-2"><Button variant="outline" onClick={() => refresh()}><RefreshCw className="mr-2 size-4" />Atualizar</Button><Button onClick={openCreate}><Plus className="mr-2 size-4" />Nova recompensa</Button></div>
-      </div>
+    <AdminPage>
+      <AdminTopbar
+        title="Clube de Recompensas"
+        subtitle="Benefícios, cupons únicos, resgates e estornos em um fluxo auditável."
+        onRefresh={() => refresh()}
+        actions={<Button onClick={openCreate} className="gap-2"><Plus className="size-4" />Nova recompensa</Button>}
+      />
 
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        {[['Recompensas', summary.rewards], ['Ativas', summary.active], ['Cupons disponíveis', summary.coupons], ['Resgates', summary.redemptions]].map(([label, value]) => (
-          <Card key={label} className="rounded-2xl"><CardContent className="p-4"><p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">{label}</p><p className="mt-2 text-3xl font-black">{value}</p></CardContent></Card>
-        ))}
-      </div>
+      <AdminStatGrid>
+        <AdminStat label="Recompensas" value={summary.rewards} icon={<Gift className="h-4 w-4" />} />
+        <AdminStat label="Ativas" value={summary.active} icon={<Gift className="h-4 w-4" />} />
+        <AdminStat label="Cupons disponíveis" value={summary.coupons} icon={<Ticket className="h-4 w-4" />} />
+        <AdminStat label="Resgates" value={summary.redemptions} icon={<RefreshCw className="h-4 w-4" />} />
+      </AdminStatGrid>
 
       {rewardsQuery.isPending ? (
         <div className="grid min-h-64 place-items-center"><Loader2 className="size-7 animate-spin text-primary" /></div>
       ) : rewardsQuery.isError ? (
         <Card><CardContent className="p-8 text-center"><p className="font-semibold">Falha ao carregar recompensas.</p><Button className="mt-3" variant="outline" onClick={() => rewardsQuery.refetch()}>Tentar novamente</Button></CardContent></Card>
       ) : rewardsQuery.data?.length === 0 ? (
-        <Card className="border-dashed"><CardContent className="p-10 text-center"><Gift className="mx-auto size-9 text-muted-foreground" /><h2 className="mt-3 font-black">Comece criando a primeira recompensa</h2><p className="mt-1 text-sm text-muted-foreground">Depois, carregue os cupons únicos que serão entregues aos clientes.</p><Button className="mt-4" onClick={openCreate}>Criar recompensa</Button></CardContent></Card>
+        <AdminSurface>
+          <AdminEmptyState
+            icon={<Gift className="h-8 w-8" />}
+            title="Comece criando a primeira recompensa"
+            description="Depois, carregue os cupons únicos que serão entregues aos clientes."
+            action={<Button onClick={openCreate}>Criar recompensa</Button>}
+          />
+        </AdminSurface>
       ) : (
         <div className="grid gap-5 xl:grid-cols-[minmax(280px,0.78fr)_minmax(0,1.7fr)]">
           <div className="space-y-3">
@@ -343,7 +360,7 @@ export function RewardsAdminTab() {
       <Dialog open={cancelTarget !== null} onOpenChange={(open) => !cancelRedemption.isPending && !open && setCancelTarget(null)}>
         <DialogContent className="max-w-md"><DialogHeader><DialogTitle>Cancelar resgate e estornar pontos</DialogTitle><DialogDescription>O cupom será invalidado e não voltará automaticamente ao estoque.</DialogDescription></DialogHeader><div><Label htmlFor="cancel-reason">Motivo obrigatório</Label><Textarea id="cancel-reason" value={cancelReason} onChange={(event) => setCancelReason(event.target.value)} placeholder="Explique o motivo do cancelamento" /></div><DialogFooter><Button variant="outline" onClick={() => setCancelTarget(null)}>Voltar</Button><Button variant="destructive" disabled={cancelReason.trim().length < 5 || cancelRedemption.isPending} onClick={() => cancelTarget && cancelRedemption.mutate({ storeId: selectedStoreId, redemptionId: cancelTarget, reason: cancelReason.trim() })}>{cancelRedemption.isPending && <Loader2 className="mr-2 size-4 animate-spin" />}Cancelar e estornar</Button></DialogFooter></DialogContent>
       </Dialog>
-    </div>
+    </AdminPage>
   );
 }
 

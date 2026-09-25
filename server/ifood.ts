@@ -484,7 +484,7 @@ export async function syncIfoodCatalog(selectedMerchantId?: string): Promise<Syn
           .where(eq(categories.id, categoryId));
         categoriesUpdated += 1;
       } else {
-        const inserted = await db.insert(categories).values(categoryPayload).$returningId();
+        const inserted = await db.insert(categories).values(categoryPayload).returning({ id: categories.id });
         categoryId = inserted[0].id;
         categoriesImported += 1;
       }
@@ -803,7 +803,7 @@ async function handleNewOrder(db: NonNullable<Awaited<ReturnType<typeof getDb>>>
       createdAt: new Date(order.createdAt),
       updatedAt: new Date(),
     })
-    .$returningId();
+    .returning({ id: orders.id });
 
   if (newOrder?.id && itemsData.length > 0) {
     await db.insert(orderItems).values(

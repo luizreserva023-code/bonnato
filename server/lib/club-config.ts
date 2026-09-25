@@ -39,7 +39,7 @@ export type ClubConfig = {
 export const DEFAULT_CLUB_CONFIG: ClubConfig = {
   badgeLabel: "Clube do Bonatto",
   sectionTitle: "Assine, economize e ganhe pizza todo mês.",
-  sectionSubtitle: "Cliente fiel merece mais. Escolha seu plano e faça parte do clube.",
+  sectionSubtitle: "Escolha um plano e veja os benefícios incluídos.",
   ctaLabel: "Assinar agora via PIX",
   disclaimer: "Cancele quando quiser • Pagamento via PIX • Ativação após confirmação",
   highlightItems: [
@@ -55,11 +55,11 @@ export const DEFAULT_CLUB_CONFIG: ClubConfig = {
   checkoutFreePizzaLabel: "Pizza grátis disponível para o próximo pedido.",
   profileGuestTitle: "Você ainda não é membro",
   profileGuestSubtitle:
-    "Assine o Clube do Bonatto e tenha descontos exclusivos, entrega grátis e uma pizza grátis todo mês!",
+    "Assine o Clube do Bonatto para ter descontos, entrega grátis nos planos elegíveis e uma pizza grátis por mês.",
   profileBenefitsTitle: "Seus benefícios",
   profilePrimaryActionLabel: "Fazer pedido com desconto",
   successTitle: "Bem-vindo ao Clube!",
-  successSubtitle: "Seu plano foi ativado. Aproveite todos os benefícios exclusivos do Clube do Bonatto!",
+  successSubtitle: "Seu plano foi ativado e os benefícios já estão disponíveis.",
   popularPlanId: "bonattao",
   plans: [
     {
@@ -70,7 +70,7 @@ export const DEFAULT_CLUB_CONFIG: ClubConfig = {
       discountPercent: 15,
       freeDelivery: false,
       freePizzaPerMonth: true,
-      description: "Entrou para o time. Agora é da família.",
+      description: "Plano de entrada com desconto e uma pizza grátis por mês.",
       benefits: [
         "15% de desconto em todos os pedidos",
         "1 pizza grátis por mês",
@@ -85,7 +85,7 @@ export const DEFAULT_CLUB_CONFIG: ClubConfig = {
       discountPercent: 20,
       freeDelivery: true,
       freePizzaPerMonth: true,
-      description: "Você não pede pizza. Você pede Bonatto.",
+      description: "Plano com desconto maior, entrega grátis e uma pizza grátis por mês.",
       benefits: [
         "20% de desconto em todos os pedidos",
         "Entrega sempre grátis",
@@ -101,7 +101,7 @@ const CLUB_CONFIG_KEY = "clubConfig";
 function repairClubText(value: string): string {
   let repaired = value.trim();
 
-  if (/[ÃƒÃ¢]/.test(repaired)) {
+  if (/[Ãâ]/.test(repaired)) {
     try {
       const decoded = Buffer.from(repaired, "latin1").toString("utf8");
       if (decoded && !decoded.includes("\uFFFD")) {

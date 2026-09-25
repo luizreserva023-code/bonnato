@@ -1,6 +1,18 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { appRouter } from "./routers.ts";
 import type { TrpcContext } from "./_core/context.ts";
+// Estes testes isolam o Workflow Builder. O isolamento/autorização por loja
+// possui suíte própria em storeUtils.test.ts.
+vi.mock("./storeUtils", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./storeUtils.ts")>();
+  return {
+    ...actual,
+    resolveStoreId: vi.fn(async (_user: unknown, requestedStoreId?: number) => requestedStoreId),
+    resolveRequiredStoreId: vi.fn(async (_user: unknown, requestedStoreId?: number) => requestedStoreId ?? 1),
+    assertStoreEntityAccess: vi.fn(async () => undefined),
+  };
+});
+
 
 // ─── Mock DB calls ────────────────────────────────────────────────────────────
 vi.mock("./automation", async (importOriginal) => {

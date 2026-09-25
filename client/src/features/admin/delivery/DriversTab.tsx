@@ -90,7 +90,7 @@ export function DriversTab() {
       utils.drivers.list.invalidate();
       toast.success("Motoboy cadastrado!", { description: "Copie o token e envie para o motoboy." });
     },
-    onError: () => toast.error("Erro ao cadastrar motoboy"),
+    onError: (error) => toast.error("Erro ao cadastrar motoboy", { description: error.message }),
   });
 
   const updateMutation = trpc.drivers.update.useMutation({
@@ -197,8 +197,18 @@ export function DriversTab() {
             </div>
             <div className="flex gap-2">
               <Button
-                onClick={() => createMutation.mutate({ name: newName, phone: newPhone || undefined, storeId: selectedStoreId })}
-                disabled={!newName.trim() || createMutation.isPending}
+                onClick={() => {
+                  if (!selectedStoreId) {
+                    toast.error("Selecione uma unidade antes de cadastrar o motoboy.");
+                    return;
+                  }
+                  createMutation.mutate({
+                    name: newName.trim(),
+                    phone: newPhone.trim() || undefined,
+                    storeId: selectedStoreId,
+                  });
+                }}
+                disabled={!newName.trim() || !selectedStoreId || createMutation.isPending}
               >
                 {createMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : "Cadastrar"}
               </Button>

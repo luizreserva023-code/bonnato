@@ -1,0 +1,1 @@
+ALTER TABLE `promotions` ADD `requiresLogin` boolean DEFAULT true NOT NULL;

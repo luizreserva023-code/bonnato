@@ -9,6 +9,7 @@ type AppNotice = {
   id: string;
   title: string;
   body: string;
+  imageUrl?: string | null;
   url?: string | null;
 };
 
@@ -55,6 +56,7 @@ function showLocalNotice(notice: AppNotice) {
       body: notice.body,
       icon: "/icon-192.png",
       badge: "/icon-192.png",
+      ...(notice.imageUrl ? { image: notice.imageUrl } : {}),
       tag: notice.id,
     });
 
@@ -79,58 +81,126 @@ function showLocalNotice(notice: AppNotice) {
   });
 }
 
+const MAX_PERSISTED_NOTICE_IDS = 250;
+
+function seenStorageKey(userId: number, storeId: number) {
+  return `bonatto-notifications-seen:${userId}:${storeId}`;
+}
+
+function loadPersistedSeen(userId: number, storeId: number) {
+  try {
+    const raw = localStorage.getItem(seenStorageKey(userId, storeId));
+    const parsed = raw ? JSON.parse(raw) : [];
+    return new Set<string>(Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === "string") : []);
+  } catch {
+    return new Set<string>();
+  }
+}
+
+function persistSeen(userId: number, storeId: number, seen: Set<string>) {
+  try {
+    const ids = Array.from(seen).slice(-MAX_PERSISTED_NOTICE_IDS);
+    localStorage.setItem(seenStorageKey(userId, storeId), JSON.stringify(ids));
+  } catch {
+    // Storage can be blocked in private browsing; in-memory dedupe still works.
+  }
+}
+
 export function InAppNotificationBridge() {
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, user } = useAuth();
   const { selectedStore } = useStore();
   const initializedRef = useRef(false);
+  const initializedScopeRef = useRef("");
   const seenRef = useRef<Set<string>>(new Set());
 
+  const queryEnabled = isAuthenticated && Boolean(user?.id) && Boolean(selectedStore?.id);
+
   const notificationsQuery = trpc.notifications.list.useQuery({ storeId: selectedStore?.id }, {
-    enabled: isAuthenticated && Boolean(selectedStore?.id),
-    refetchInterval: 8_000,
-    refetchIntervalInBackground: true,
+    enabled: queryEnabled,
+    staleTime: 15_000,
+    refetchInterval: 30_000,
+    refetchIntervalInBackground: false,
   });
 
   const alertsQuery = trpc.clientAlerts.list.useQuery({ storeId: selectedStore?.id ?? 0 }, {
-    enabled: isAuthenticated && Boolean(selectedStore?.id),
-    refetchInterval: 15_000,
-    refetchIntervalInBackground: true,
+    enabled: queryEnabled,
+    staleTime: 30_000,
+    refetchInterval: 60_000,
+    refetchIntervalInBackground: false,
   });
 
   useEffect(() => {
-    if (!isAuthenticated) {
+    if (!queryEnabled || !user?.id || !selectedStore?.id) {
       initializedRef.current = false;
+      initializedScopeRef.current = "";
       seenRef.current.clear();
       return;
     }
 
+    // Critical: do not initialize from undefined/partial query data. Previously
+    // the bridge initialized with an empty list, then treated every existing
+    // notification as new when the queries finished loading.
+    if (
+      notificationsQuery.isLoading
+      || notificationsQuery.isFetching && notificationsQuery.data === undefined
+      || alertsQuery.isLoading
+      || alertsQuery.isFetching && alertsQuery.data === undefined
+    ) {
+      return;
+    }
+
+    const scope = `${user.id}:${selectedStore.id}`;
     const notices: AppNotice[] = [
-      ...(notificationsQuery.data ?? []).map((item) => ({
-        id: `notification:${item.id}`,
-        title: item.title,
-        body: item.message,
-        url: item.type === "order" ? "/minha-conta" : undefined,
-      })),
+      ...(notificationsQuery.data ?? [])
+        .filter((item) => !item.read)
+        .map((item) => ({
+          id: `notification:${item.id}`,
+          title: item.title,
+          body: item.message,
+          imageUrl: item.imageUrl,
+          url: item.url ?? (item.type === "order" ? "/minha-conta" : undefined),
+        })),
       ...(alertsQuery.data ?? []).map((item) => ({
         id: `alert:${item.id}`,
         title: item.title,
         body: item.message,
+        imageUrl: item.imageUrl,
         url: item.url,
       })),
     ];
 
-    if (!initializedRef.current) {
-      seenRef.current = new Set(notices.map((notice) => notice.id));
+    if (!initializedRef.current || initializedScopeRef.current !== scope) {
+      seenRef.current = loadPersistedSeen(user.id, selectedStore.id);
+      // Existing notices are part of the initial snapshot. They stay visible in
+      // the notification center, but opening/reloading the app must not replay
+      // them as fresh browser notifications/toasts.
+      for (const notice of notices) seenRef.current.add(notice.id);
+      persistSeen(user.id, selectedStore.id, seenRef.current);
+      initializedScopeRef.current = scope;
       initializedRef.current = true;
       return;
     }
 
+    let changed = false;
     for (const notice of notices) {
       if (seenRef.current.has(notice.id)) continue;
       seenRef.current.add(notice.id);
+      changed = true;
       showLocalNotice(notice);
     }
-  }, [alertsQuery.data, isAuthenticated, notificationsQuery.data]);
+
+    if (changed) persistSeen(user.id, selectedStore.id, seenRef.current);
+  }, [
+    alertsQuery.data,
+    alertsQuery.isFetching,
+    alertsQuery.isLoading,
+    notificationsQuery.data,
+    notificationsQuery.isFetching,
+    notificationsQuery.isLoading,
+    queryEnabled,
+    selectedStore?.id,
+    user?.id,
+  ]);
 
   return null;
 }

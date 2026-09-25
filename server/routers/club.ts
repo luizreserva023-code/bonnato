@@ -5,7 +5,7 @@ import { z } from "zod";
 import { fireJourneyTrigger } from "../automation.ts";
 import { getDb } from "../db.ts";
 import { protectedProcedure, publicProcedure, router, staffProcedure } from "../_core/trpc.ts";
-import { clubPayments, tenantCustomerAccounts, users } from "../../drizzle/schema.ts";
+import { clubPayments, customerStoreAccounts, users } from "../../drizzle/schema.ts";
 import { sendWhatsApp } from "../whatsapp.ts";
 import {
   getClubConfig,
@@ -16,8 +16,8 @@ import {
 } from "../lib/club-config.ts";
 import { getPaymentSettingsAdmin } from "../lib/payment-config.ts";
 import { generatePixCode, generatePixQrCodeUrl } from "../lib/pix.ts";
-import { getWhiteLabelRuntimeByStoreId } from "../whiteLabel.ts";
-import { getTenantCustomerAccount, getTenantScope } from "../db.ts";
+import { getBonattoRuntimeByStoreId } from "../bonattoRuntime.ts";
+import { getCustomerStoreAccount } from "../db.ts";
 import { assertStoreEntityAccess, resolveRequiredStoreId } from "../storeUtils.ts";
 
 const clubPlanSchema = z.object({
@@ -59,7 +59,7 @@ function ensureClubPlanIds(config: ClubConfig): ClubPlanId[] {
 }
 
 async function assertClubStore(storeId: number) {
-  const tenant = await getWhiteLabelRuntimeByStoreId(storeId);
+  const tenant = await getBonattoRuntimeByStoreId(storeId);
   if (!tenant || tenant.status !== "active" || !tenant.features.club) {
     throw new TRPCError({ code: "PRECONDITION_FAILED", message: "O clube nao esta disponivel nesta loja." });
   }
@@ -67,20 +67,18 @@ async function assertClubStore(storeId: number) {
 }
 
 type ClubAccountUpdate = Partial<Pick<
-  typeof tenantCustomerAccounts.$inferInsert,
+  typeof customerStoreAccounts.$inferInsert,
   "clubPlan" | "clubStatus" | "clubStartDate" | "clubNextBillingDate" | "clubFreePizzaUsed" | "clubFreePizzaResetAt"
 >>;
 
 async function updateClubAccount(userId: number, storeId: number, data: ClubAccountUpdate) {
   const db = await getDb();
   if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
-  const account = await getTenantCustomerAccount(userId, storeId);
+  const account = await getCustomerStoreAccount(userId, storeId);
   if (!account) throw new TRPCError({ code: "NOT_FOUND", message: "Conta do cliente nao encontrada." });
-  await db.update(tenantCustomerAccounts).set(data).where(eq(tenantCustomerAccounts.id, account.id));
-  const scope = await getTenantScope(storeId);
-  if (scope.tenantKey === "bonatto") {
-    await db.update(users).set(data).where(eq(users.id, userId));
-  }
+  await db.update(customerStoreAccounts)
+    .set({ ...data, updatedAt: new Date() })
+    .where(eq(customerStoreAccounts.id, account.id));
   return { ...account, ...data };
 }
 
@@ -122,7 +120,7 @@ export const clubRouter = router({
     .input(z.object({ storeId: z.number().int().positive() }))
     .query(async ({ ctx, input }) => {
     await assertClubStore(input.storeId);
-    const account = await getTenantCustomerAccount(ctx.user.id, input.storeId);
+    const account = await getCustomerStoreAccount(ctx.user.id, input.storeId);
     if (!account?.clubPlan || !account.clubStatus) return null;
 
     const planDetails = await getClubPlanConfig(account.clubPlan, input.storeId);
@@ -173,10 +171,7 @@ export const clubRouter = router({
 
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
-      const scope = await getTenantScope(input.storeId);
-
-      const result = await db.insert(clubPayments).values({
-        tenantKey: scope.tenantKey,
+      const [payment] = await db.insert(clubPayments).values({
         storeId: input.storeId,
         userId: ctx.user.id,
         plan: input.plan,
@@ -184,11 +179,9 @@ export const clubRouter = router({
         pixCode,
         pixQrCode,
         status: "pending",
-      });
+      }).returning({ id: clubPayments.id });
 
-      const paymentId =
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        ((result as any).insertId ?? (result as any)[0]?.insertId ?? 0) as number;
+      const paymentId = payment.id;
 
       await updateClubAccount(ctx.user.id, input.storeId, { clubPlan: input.plan, clubStatus: "pending" });
 
@@ -293,7 +286,7 @@ export const clubRouter = router({
     const db = await getDb();
     if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
 
-    let account = await getTenantCustomerAccount(ctx.user.id, input.storeId);
+    let account = await getCustomerStoreAccount(ctx.user.id, input.storeId);
     if (!account) throw new TRPCError({ code: "NOT_FOUND" });
     if (account.clubStatus !== "active") {
       throw new TRPCError({ code: "FORBIDDEN", message: "Você não é membro ativo do clube." });
@@ -311,24 +304,18 @@ export const clubRouter = router({
       account = { ...account, clubFreePizzaUsed: false, clubFreePizzaResetAt: nextReset };
     }
 
-    const result = await db
-      .update(tenantCustomerAccounts)
-      .set({ clubFreePizzaUsed: true })
+    const [updated] = await db
+      .update(customerStoreAccounts)
+      .set({ clubFreePizzaUsed: true, updatedAt: new Date() })
       .where(and(
-        eq(tenantCustomerAccounts.id, account.id),
-        eq(tenantCustomerAccounts.clubStatus, "active"),
-        eq(tenantCustomerAccounts.clubFreePizzaUsed, false),
-      ));
+        eq(customerStoreAccounts.id, account.id),
+        eq(customerStoreAccounts.clubStatus, "active"),
+        eq(customerStoreAccounts.clubFreePizzaUsed, false),
+      ))
+      .returning({ id: customerStoreAccounts.id });
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const mutationResult = result as any;
-    const affectedRows = mutationResult?.rowsAffected ?? mutationResult?.[0]?.affectedRows ?? 0;
-    if (!affectedRows) {
+    if (!updated) {
       throw new TRPCError({ code: "BAD_REQUEST", message: "Você já usou sua pizza grátis neste mês." });
-    }
-    const scope = await getTenantScope(input.storeId);
-    if (scope.tenantKey === "bonatto") {
-      await db.update(users).set({ clubFreePizzaUsed: true }).where(eq(users.id, ctx.user.id));
     }
 
     return { ok: true };
@@ -340,13 +327,14 @@ export const clubRouter = router({
     const db = await getDb();
     if (!db) return [];
     const storeId = await resolveRequiredStoreId(ctx.user, input.storeId);
-    const scope = await getTenantScope(storeId);
-
     const members = await db
-      .select({ account: tenantCustomerAccounts, user: users })
-      .from(tenantCustomerAccounts)
-      .innerJoin(users, eq(tenantCustomerAccounts.userId, users.id))
-      .where(and(eq(tenantCustomerAccounts.tenantKey, scope.tenantKey), isNotNull(tenantCustomerAccounts.clubPlan)));
+      .select({ account: customerStoreAccounts, user: users })
+      .from(customerStoreAccounts)
+      .innerJoin(users, eq(customerStoreAccounts.userId, users.id))
+      .where(and(
+        eq(customerStoreAccounts.storeId, storeId),
+        isNotNull(customerStoreAccounts.clubPlan),
+      ));
     return members.map(({ user, account }) => ({
       id: user.id,
       name: user.name,
@@ -391,16 +379,14 @@ export const clubRouter = router({
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
       const storeId = await resolveRequiredStoreId(ctx.user, input.storeId);
-      const scope = await getTenantScope(storeId);
-
       const members = await db
         .select({ phone: users.phone, name: users.name })
-        .from(tenantCustomerAccounts)
-        .innerJoin(users, eq(tenantCustomerAccounts.userId, users.id))
+        .from(customerStoreAccounts)
+        .innerJoin(users, eq(customerStoreAccounts.userId, users.id))
         .where(and(
-          eq(tenantCustomerAccounts.tenantKey, scope.tenantKey),
-          isNotNull(tenantCustomerAccounts.clubPlan),
-          eq(tenantCustomerAccounts.clubStatus, "active"),
+          eq(customerStoreAccounts.storeId, storeId),
+          isNotNull(customerStoreAccounts.clubPlan),
+          eq(customerStoreAccounts.clubStatus, "active"),
         ));
 
       let sent = 0;
@@ -419,3 +405,5 @@ export const clubRouter = router({
       return { sent, failed, total: members.length };
     }),
 });
+
+

@@ -5,6 +5,8 @@ import { Label } from "@/components/ui/label";
 import { Eye, EyeOff, Lock, ArrowRight } from "lucide-react";
 import { useState } from "react";
 import { useLocation, useSearch } from "wouter";
+import { PasswordStrength } from "@/components/PasswordStrength";
+import { evaluatePassword } from "@/lib/form-utils";
 
 const LOGO_URL = "/brand/bonatto-logo-driver.jpg";
 
@@ -34,8 +36,9 @@ export default function ResetPassword() {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
-    if (password.length < 6) {
-      setError("A senha deve ter pelo menos 6 caracteres.");
+    const strength = evaluatePassword(password);
+    if (strength.score < 4 || !strength.criteria.length) {
+      setError("Use uma senha mais forte: pelo menos 8 caracteres, com maiúscula, minúscula e número.");
       return;
     }
     if (password !== confirm) {
@@ -87,7 +90,7 @@ export default function ResetPassword() {
                   <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/30" />
                   <Input
                     type={showPassword ? "text" : "password"}
-                    placeholder="Mínimo 6 caracteres"
+                    placeholder="Mínimo 8 caracteres"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     className="pl-9 pr-10 bg-white/5 border-white/10 text-white placeholder:text-white/25 focus-visible:ring-[#6E0D12] focus-visible:border-[#6E0D12]"
@@ -101,6 +104,7 @@ export default function ResetPassword() {
                     {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                   </button>
                 </div>
+                <PasswordStrength password={password} className="border-white/10 bg-white/5 text-white [&_*]:text-inherit" />
               </div>
 
               <div className="space-y-1.5">

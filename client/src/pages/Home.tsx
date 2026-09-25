@@ -27,7 +27,7 @@ import { cn } from "@/lib/utils";
 import { SequentialCarousel } from "@/components/SequentialCarousel";
 import { HomePopup } from "@/components/HomePopup";
 import { BRAND_ASSETS } from "@/lib/brand";
-import type { TenantRuntimeConfig } from "@/shared/tenant/tenant-config";
+import type { BonattoRuntimeConfig } from "@/config/bonatto";
 import type { Product } from "../../../drizzle/schema";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { DEFAULT_HOME_APP_CONFIG, HomeAppHub, type HomeAppConfig } from "@/components/home/HomeAppHub";
@@ -180,7 +180,7 @@ function WhiteLabelHome({
   storeCity,
   products,
 }: {
-  tenant: TenantRuntimeConfig;
+  tenant: BonattoRuntimeConfig;
   storeCity?: string;
   products: Product[];
 }) {
@@ -190,7 +190,7 @@ function WhiteLabelHome({
   const highlights = [
     tenant.features.loyalty ? { icon: Star, title: "Fidelidade", description: "Benefícios para quem pede sempre." } : null,
     tenant.features.driverApp ? { icon: Bike, title: "Entrega acompanhada", description: "Acompanhe o pedido até sua chegada." } : null,
-    { icon: Clock, title: "Pedido sem complicação", description: "Escolha, confirme e acompanhe em poucos passos." },
+    { icon: Clock, title: "Pedido fácil de acompanhar", description: "Escolha seus itens, confirme o pedido e acompanhe a entrega." },
   ].filter(Boolean) as Array<{ icon: typeof Star; title: string; description: string }>;
 
   return (
@@ -326,56 +326,137 @@ function WhiteLabelHome({
 }
 
 function HomeLegacy() {
-  const { selectedStore, tenantConfig } = useStore();
+  const { selectedStore, bonattoConfig } = useStore();
   const { isAuthenticated } = useAuth();
-  const isBonatto = tenantConfig.brand.key === "bonatto" || selectedStore?.isDefault === true;
+  const isBonatto = bonattoConfig.brand.key === "bonatto" || selectedStore?.isDefault === true;
   const storeId = selectedStore?.id ?? 0;
-  const { data: featuredProducts } = trpc.products.list.useQuery({ categoryId: undefined, storeId: selectedStore?.id });
+  const { data: featuredProducts } = trpc.products.list.useQuery(
+    { storeId: selectedStore?.id },
+    {
+      enabled: Boolean(selectedStore?.id),
+      staleTime: 2 * 60 * 1000,
+      gcTime: 30 * 60 * 1000,
+    },
+  );
   const { data: carouselImages } = trpc.carousel.list.useQuery(
     { storeId: selectedStore?.id },
-    { enabled: isBonatto && Boolean(selectedStore?.id) },
+    {
+      enabled: isBonatto && Boolean(selectedStore?.id),
+      staleTime: 5 * 60 * 1000,
+      refetchOnWindowFocus: false,
+    },
   );
   const { data: publicStoreSettings } = trpc.storeSettings.get.useQuery(
     { storeId: selectedStore?.id },
-    { enabled: isBonatto && Boolean(selectedStore?.id) },
+    {
+      enabled: isBonatto && Boolean(selectedStore?.id),
+      staleTime: 2 * 60 * 1000,
+      refetchOnWindowFocus: false,
+    },
   );
   const { data: promotions = [] } = trpc.promotions.homeActive.useQuery(
     { storeId: selectedStore?.id },
-    { enabled: isBonatto && Boolean(selectedStore?.id), staleTime: 0, refetchOnWindowFocus: true },
+    {
+      enabled: isBonatto && Boolean(selectedStore?.id),
+      staleTime: 60_000,
+      refetchOnWindowFocus: false,
+    },
   );
   const { data: coupons = [] } = trpc.coupons.listPublic.useQuery(
     { storeId: selectedStore?.id },
-    { enabled: isBonatto && Boolean(selectedStore?.id), staleTime: 0, refetchOnWindowFocus: true },
+    {
+      enabled: isBonatto && Boolean(selectedStore?.id),
+      staleTime: 60_000,
+      refetchOnWindowFocus: false,
+    },
   );
   const { data: rewards = [] } = trpc.rewards.list.useQuery(
     { storeId },
-    { enabled: isBonatto && storeId > 0, staleTime: 0, refetchOnWindowFocus: true },
+    {
+      enabled: isBonatto && storeId > 0,
+      staleTime: 2 * 60 * 1000,
+      refetchOnWindowFocus: false,
+    },
   );
   const { data: clubConfig } = trpc.club.getPublicConfig.useQuery(
     { storeId },
-    { enabled: isBonatto && storeId > 0, staleTime: 0, refetchOnWindowFocus: true },
+    {
+      enabled: isBonatto && storeId > 0,
+      staleTime: 5 * 60 * 1000,
+      refetchOnWindowFocus: false,
+    },
   );
   const { data: memberPlan } = trpc.club.getMyPlan.useQuery(
     { storeId },
-    { enabled: isBonatto && isAuthenticated && storeId > 0, retry: false },
+    {
+      enabled: isBonatto && isAuthenticated && storeId > 0,
+      staleTime: 60_000,
+      retry: false,
+    },
   );
   const { data: memberPromotions = [] } = trpc.promotions.active.useQuery(
     { storeId: selectedStore?.id },
-    { enabled: isBonatto && isAuthenticated && storeId > 0, retry: false },
+    {
+      enabled: isBonatto && isAuthenticated && storeId > 0,
+      staleTime: 60_000,
+      retry: false,
+    },
   );
   const [, navigate] = useLocation();
 
   const topProducts = featuredProducts?.slice(0, 6) ?? [];
 
-  // Usa imagens do carrossel gerenciado pelo admin; se vazio, cai para produtos
+  // Usa imagens do carrossel gerenciado pelo admin; se vazio, cai para produtos.
+  // Banners antigos sem destino explícito mantêm o comportamento legado por nome do produto.
   const carouselItems = carouselImages && carouselImages.length > 0
     ? carouselImages.map((img) => {
-        const matchingProduct = featuredProducts?.find((product) => product.name.trim().toLocaleLowerCase("pt-BR") === (img.title ?? "").trim().toLocaleLowerCase("pt-BR"));
-        return { id: img.id, imageUrl: img.imageUrl || matchingProduct?.imageUrl || PIZZA_HERO_MAIN, name: img.title ?? matchingProduct?.name ?? "", productId: matchingProduct?.id };
+        const matchingProduct = featuredProducts?.find(
+          (product) => product.name.trim().toLocaleLowerCase("pt-BR") === (img.title ?? "").trim().toLocaleLowerCase("pt-BR"),
+        );
+        const destinationType = img.destinationType ?? "none";
+        const destinationValue = img.destinationValue?.trim() ?? "";
+        let href: string | undefined;
+        let external = false;
+        let productId: number | undefined;
+
+        if (destinationType === "product") {
+          const parsed = Number(destinationValue);
+          if (Number.isInteger(parsed) && parsed > 0) {
+            productId = parsed;
+            href = productOrderHref(parsed);
+          }
+        } else if (destinationType === "category") {
+          const parsed = Number(destinationValue);
+          if (Number.isInteger(parsed) && parsed > 0) href = `/cardapio?categoria=${parsed}`;
+        } else if (destinationType === "internal") {
+          href = destinationValue || undefined;
+        } else if (destinationType === "external") {
+          href = destinationValue || undefined;
+          external = Boolean(href);
+        } else if (matchingProduct) {
+          productId = matchingProduct.id;
+          href = productOrderHref(matchingProduct.id);
+        }
+
+        return {
+          id: img.id,
+          imageUrl: img.imageUrl || matchingProduct?.imageUrl || PIZZA_HERO_MAIN,
+          name: img.title ?? matchingProduct?.name ?? "",
+          productId,
+          href,
+          external,
+        };
       })
     : topProducts.length > 0
-      ? topProducts.map((product) => ({ id: product.id, imageUrl: product.imageUrl || PIZZA_HERO_MAIN, name: product.name, productId: product.id }))
-      : [{ id: -1, imageUrl: PIZZA_HERO_MAIN, name: "Destaque Bonatto", productId: undefined }];
+      ? topProducts.map((product) => ({
+          id: product.id,
+          imageUrl: product.imageUrl || PIZZA_HERO_MAIN,
+          name: product.name,
+          productId: product.id,
+          href: productOrderHref(product.id),
+          external: false,
+        }))
+      : [{ id: -1, imageUrl: PIZZA_HERO_MAIN, name: "Destaque Bonatto", productId: undefined, href: "/cardapio", external: false }];
 
   const startCouponOrder = (code: string) => {
     savePendingCoupon(code);
@@ -397,7 +478,7 @@ function HomeLegacy() {
   }
 
   if (!isBonatto) {
-    return <WhiteLabelHome tenant={tenantConfig} storeCity={selectedStore?.city} products={topProducts} />;
+    return <WhiteLabelHome tenant={bonattoConfig} storeCity={selectedStore?.city} products={topProducts} />;
   }
 
   return (
@@ -424,7 +505,13 @@ function HomeLegacy() {
           items={carouselItems}
           autoAdvance
           autoAdvanceInterval={4200}
-          onCardClick={(item) => navigate(productOrderHref(item.productId, item.name))}
+          onCardClick={(item) => {
+            if (item.external && item.href) {
+              window.open(item.href, "_blank", "noopener,noreferrer");
+              return;
+            }
+            if (item.href) navigate(item.href);
+          }}
         />
       </section>
 
@@ -578,10 +665,10 @@ function HomeLegacy() {
             <h2
               className="text-4xl md:text-5xl font-black text-white mb-4 leading-tight"
             >
-              Pronto para o melhor<br />sabor da cidade?
+              Já sabe o que vai<br />pedir hoje?
             </h2>
             <p className="text-white/80 text-lg mb-10 max-w-md mx-auto leading-relaxed">
-              Monte seu pedido agora e receba em casa com toda a qualidade e carinho da Bonatto Pizza.
+              Escolha seus itens no cardápio e acompanhe o pedido até a entrega.
             </p>
             <div className="flex flex-wrap gap-4 justify-center">
               <Link href="/cardapio">
@@ -590,7 +677,7 @@ function HomeLegacy() {
                   className="h-14 px-10 text-base font-bold bg-white text-[#DA1923] hover:bg-white/90 gap-2 shadow-xl hover:scale-105 transition-all rounded-xl"
                 >
                   <ShoppingBag className="w-5 h-5" />
-                  Ver Cardápio Completo
+                  Ver cardápio
                 </Button>
               </Link>
               <a
@@ -733,11 +820,11 @@ function HomeLegacy() {
 }
 
 function PublishedStudioHome({ document, storeId, store }: { document: SitePageDocument; storeId: number; store: { name: string; address?: string | null } }) {
-  const { data: products = [] } = trpc.products.list.useQuery({ storeId }, { staleTime: 60_000 });
-  const { data: categories = [] } = trpc.categories.list.useQuery({ storeId }, { staleTime: 60_000 });
-  const { data: promotions = [] } = trpc.promotions.homeActive.useQuery({ storeId }, { staleTime: 30_000 });
-  const { data: coupons = [] } = trpc.coupons.listPublic.useQuery({ storeId }, { staleTime: 30_000 });
-  const { data: rewards = [] } = trpc.rewards.list.useQuery({ storeId }, { staleTime: 60_000 });
+  const { data: products = [] } = trpc.products.list.useQuery({ storeId }, { staleTime: 2 * 60 * 1000 });
+  const { data: categories = [] } = trpc.categories.list.useQuery({ storeId }, { staleTime: 2 * 60 * 1000 });
+  const { data: promotions = [] } = trpc.promotions.homeActive.useQuery({ storeId }, { staleTime: 60_000 });
+  const { data: coupons = [] } = trpc.coupons.listPublic.useQuery({ storeId }, { staleTime: 60_000 });
+  const { data: rewards = [] } = trpc.rewards.list.useQuery({ storeId }, { staleTime: 2 * 60 * 1000 });
   const liveData = { products, categories, promotions, coupons, rewards, store };
   return (
     <div className="min-h-screen pb-24 pt-28" style={siteThemeStyle(document.theme)}>
@@ -752,8 +839,34 @@ export default function Home() {
   const { selectedStore } = useStore();
   const published = trpc.siteStudio.published.useQuery(
     { storeId: selectedStore?.id ?? 0, pageKey: "home" },
-    { enabled: Boolean(selectedStore?.id), staleTime: 60_000, refetchOnWindowFocus: false },
+    {
+      enabled: Boolean(selectedStore?.id),
+      staleTime: 2 * 60 * 1000,
+      refetchOnWindowFocus: false,
+    },
   );
-  if (published.data?.document && selectedStore) return <PublishedStudioHome document={published.data.document} storeId={selectedStore.id} store={selectedStore} />;
+
+  // Do not mount the legacy home while discovering whether the store has a
+  // published Studio page. Mounting both paths caused duplicate startup calls.
+  if (!selectedStore || published.isLoading) {
+    return (
+      <div className="min-h-screen bg-[#f5eee6] px-4 pb-20 pt-36">
+        <div className="mx-auto max-w-6xl animate-pulse">
+          <div className="mx-auto h-14 w-[min(82vw,680px)] rounded-2xl bg-[#6e0d12]/10" />
+          <div className="mt-8 h-64 rounded-[28px] bg-[#6e0d12]/10 sm:h-80" />
+          <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-3">
+            {Array.from({ length: 6 }).map((_, index) => (
+              <div key={index} className="h-28 rounded-2xl bg-white/75" />
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (published.data?.document) {
+    return <PublishedStudioHome document={published.data.document} storeId={selectedStore.id} store={selectedStore} />;
+  }
+
   return <HomeLegacy />;
 }

@@ -5,21 +5,23 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { GridPattern } from "@/components/ui/grid-pattern";
-import { Eye, EyeOff, Mail, Lock, User, ArrowRight } from "lucide-react";
+import { Eye, EyeOff, Mail, Lock, User, ArrowRight, ShieldCheck } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useLocation, useSearch } from "wouter";
+import { PasswordStrength } from "@/components/PasswordStrength";
+import { evaluatePassword } from "@/lib/form-utils";
 
 const MASCOTE_URL = "/brand/palmito-2-circular.png";
 const LOGO_TIPOGRAFICA_URL = "/brand/palmito-logo-tipografica.png";
 
 const BENEFITS = [
-  { icon: "🎁", text: "Cupons exclusivos para clientes cadastrados" },
-  { icon: "🔥", text: "Promoções e combos especiais" },
+  { icon: "🎁", text: "Cupons para clientes cadastrados" },
+  { icon: "🔥", text: "Promoções e combos da loja" },
   { icon: "🎰", text: "Participe de sorteios e ganhe prêmios" },
   { icon: "📦", text: "Acompanhe seus pedidos em tempo real" },
 ];
 
-type Mode = "login" | "register" | "forgot";
+type Mode = "login" | "register" | "forgot" | "twoFactor";
 
 export default function Login() {
   const { isAuthenticated, loading } = useAuth();
@@ -35,6 +37,8 @@ export default function Login() {
   const [error, setError] = useState("");
   const [forgotSent, setForgotSent] = useState(false);
   const [acceptTerms, setAcceptTerms] = useState(false);
+  const [twoFactorChallenge, setTwoFactorChallenge] = useState(params.get("twoFactorChallenge") ?? "");
+  const [twoFactorCode, setTwoFactorCode] = useState("");
   const { data: socialConfig, isLoading: socialConfigLoading } = trpc.system.socialAuthConfig.useQuery(undefined, {
     staleTime: 5 * 60 * 1000,
   });
@@ -44,6 +48,15 @@ export default function Login() {
       navigate(returnTo);
     }
   }, [isAuthenticated, loading, navigate, returnTo]);
+
+  useEffect(() => {
+    const challenge = params.get("twoFactorChallenge");
+    if (challenge) {
+      setTwoFactorChallenge(challenge);
+      setMode("twoFactor");
+      setError("");
+    }
+  }, [search]);
 
   useEffect(() => {
     const oauthError = params.get("oauthError");
@@ -57,6 +70,20 @@ export default function Login() {
   const utils = trpc.useUtils();
 
   const loginMutation = trpc.auth.loginEmail.useMutation({
+    onSuccess: async (data) => {
+      if (data.requiresTwoFactor && data.challengeToken) {
+        setTwoFactorChallenge(data.challengeToken);
+        setTwoFactorCode("");
+        setMode("twoFactor");
+        return;
+      }
+      await utils.auth.me.invalidate();
+      navigate(returnTo);
+    },
+    onError: (err) => setError(err.message),
+  });
+
+  const verifyTwoFactorMutation = trpc.auth.verifyTwoFactor.useMutation({
     onSuccess: async () => {
       await utils.auth.me.invalidate();
       navigate(returnTo);
@@ -82,9 +109,21 @@ export default function Login() {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
-    if (mode === "login") {
+    if (mode === "twoFactor") {
+      if (!twoFactorChallenge) {
+        setError("Sua verificação expirou. Faça login novamente.");
+        setMode("login");
+        return;
+      }
+      verifyTwoFactorMutation.mutate({ challengeToken: twoFactorChallenge, code: twoFactorCode });
+    } else if (mode === "login") {
       loginMutation.mutate({ email: form.email, password: form.password });
     } else if (mode === "register") {
+      const strength = evaluatePassword(form.password);
+      if (strength.score < 4 || !strength.criteria.length) {
+        setError("Use uma senha mais forte: pelo menos 8 caracteres, com maiúscula, minúscula e número.");
+        return;
+      }
       if (!acceptTerms) {
         setError("Aceite os Termos de Uso e a Política de Privacidade para criar sua conta.");
         return;
@@ -95,7 +134,11 @@ export default function Login() {
     }
   };
 
-  const isLoading = loginMutation.isPending || registerMutation.isPending || forgotMutation.isPending;
+  const isLoading =
+    loginMutation.isPending ||
+    verifyTwoFactorMutation.isPending ||
+    registerMutation.isPending ||
+    forgotMutation.isPending;
 
   const getProviderLoginUrl = (provider: SocialProvider) =>
     getLoginUrl(returnTo === "/" ? undefined : returnTo, provider);
@@ -173,7 +216,7 @@ export default function Login() {
         {/* Texto central */}
         <div className="relative z-10">
           <h1 className="text-4xl font-black text-white leading-tight mb-6">
-            A pizza que faz todo mundo{" "}
+            Seu pedido na{" "}
             <span className="text-white/60">{brandName}</span>
           </h1>
           <div className="space-y-4">
@@ -189,7 +232,7 @@ export default function Login() {
         {/* Rodapé */}
         <div className="relative z-10 flex items-center gap-2">
           <div className="flex text-yellow-300 text-sm">{"⭐".repeat(5)}</div>
-          <span className="text-white/70 text-sm">4.8 · 10.000+ pedidos entregues</span>
+          <span className="text-white/70 text-sm">Pedidos, cupons e acompanhamento pela sua conta</span>
         </div>
       </div>
 
@@ -230,16 +273,18 @@ export default function Login() {
                 {mode === "login" && loginHeroTitle}
                 {mode === "register" && "Criar conta gratuita"}
                 {mode === "forgot" && "Redefinir senha"}
+                {mode === "twoFactor" && "Verificação em duas etapas"}
               </h2>
               <p className="text-gray-500 text-sm">
                 {mode === "login" && "Bem-vindo de volta! 👋"}
-                {mode === "register" && "Rápido, grátis e sem complicação."}
+                {mode === "register" && "Cadastre seus dados para fazer pedidos e acompanhar tudo por aqui."}
                 {mode === "forgot" && "Enviaremos um link para seu e-mail."}
+                {mode === "twoFactor" && "Digite o código de 6 dígitos do seu autenticador."}
               </p>
             </div>
 
             {/* Botões sociais */}
-            {mode !== "forgot" && (
+            {mode !== "forgot" && mode !== "twoFactor" && (
               <>
                 {socialAuthReady && (
                   <>
@@ -277,7 +322,7 @@ export default function Login() {
               </>
             )}
 
-            {mode !== "forgot" && !socialConfigLoading && !socialAuthReady && (
+            {mode !== "forgot" && mode !== "twoFactor" && !socialConfigLoading && !socialAuthReady && (
               <div className="mb-5 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
                 Login social ainda não configurado neste deploy. Por enquanto, use e-mail e senha.
               </div>
@@ -317,7 +362,7 @@ export default function Login() {
                   </div>
                 )}
 
-                <div className="space-y-1.5">
+                {mode !== "twoFactor" && <div className="space-y-1.5">
                   <Label className="text-gray-600 text-xs font-semibold">E-mail</Label>
                   <div className="relative">
                     <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
@@ -330,9 +375,30 @@ export default function Login() {
                       required
                     />
                   </div>
-                </div>
+                </div>}
 
-                {mode !== "forgot" && (
+                {mode === "twoFactor" && (
+                  <div className="space-y-1.5">
+                    <Label className="text-gray-600 text-xs font-semibold">Código do autenticador</Label>
+                    <div className="relative">
+                      <ShieldCheck className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+                      <Input
+                        inputMode="numeric"
+                        autoComplete="one-time-code"
+                        pattern="[0-9]{6}"
+                        maxLength={6}
+                        placeholder="000000"
+                        value={twoFactorCode}
+                        onChange={(e) => setTwoFactorCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                        className="pl-9 bg-white border-gray-200 text-gray-900 tracking-[0.35em] font-semibold"
+                        required
+                        autoFocus
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {mode !== "forgot" && mode !== "twoFactor" && (
                   <div className="space-y-1.5">
                     <div className="flex items-center justify-between">
                       <Label className="text-gray-600 text-xs font-semibold">Senha</Label>
@@ -350,7 +416,7 @@ export default function Login() {
                       <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                       <Input
                         type={showPassword ? "text" : "password"}
-                        placeholder={mode === "register" ? "Mínimo 6 caracteres" : "Sua senha"}
+                        placeholder={mode === "register" ? "Mínimo 8 caracteres" : "Sua senha"}
                         value={form.password}
                         onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))}
                         className="pl-9 pr-10 bg-white border-gray-200 text-gray-900 placeholder:text-gray-400 focus-visible:ring-[#6E0D12] focus-visible:border-[#6E0D12] shadow-sm"
@@ -364,6 +430,7 @@ export default function Login() {
                         {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                       </button>
                     </div>
+                    {mode === "register" && <PasswordStrength password={form.password} />}
                   </div>
                 )}
 
@@ -400,6 +467,7 @@ export default function Login() {
                       {mode === "login" && "Entrar"}
                       {mode === "register" && "Criar minha conta"}
                       {mode === "forgot" && "Enviar link de redefinição"}
+                      {mode === "twoFactor" && "Verificar e entrar"}
                       <ArrowRight className="w-4 h-4" />
                     </>
                   )}
@@ -408,7 +476,7 @@ export default function Login() {
             )}
 
             {/* Toggle de modo */}
-            {!forgotSent && (
+            {!forgotSent && mode !== "twoFactor" && (
               <div className="mt-6 text-center">
                 {mode === "login" && (
                   <p className="text-gray-500 text-sm">
@@ -440,6 +508,24 @@ export default function Login() {
                     ← Voltar para o login
                   </button>
                 )}
+              </div>
+            )}
+
+            {mode === "twoFactor" && (
+              <div className="mt-5 text-center">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMode("login");
+                    setTwoFactorChallenge("");
+                    setTwoFactorCode("");
+                    setError("");
+                    navigate("/login");
+                  }}
+                  className="text-sm font-medium text-gray-500 hover:text-[#6E0D12]"
+                >
+                  ← Voltar e fazer login novamente
+                </button>
               </div>
             )}
 

@@ -10,11 +10,11 @@ const vapidPrivateKey = process.env.VAPID_PRIVATE_KEY ?? "";
 const isVapidConfigured = Boolean(vapidPublicKey && vapidPrivateKey);
 if (isVapidConfigured) {
   webpush.setVapidDetails(
-    process.env.VAPID_EMAIL ?? "mailto:contato@bonattopizza.com.br",
+    process.env.VAPID_EMAIL ?? process.env.VAPID_SUBJECT ?? "mailto:contato@bonattopizza.com.br",
     vapidPublicKey,
     vapidPrivateKey
   );
-} else {
+} else if (process.env.NODE_ENV !== "test") {
   console.warn("[Push] VAPID keys not configured — push notifications disabled.");
 }
 
@@ -27,6 +27,11 @@ export interface PushPayload {
   url?: string;
   tag?: string;
   soundUrl?: string;
+  imageUrl?: string | null;
+  /** Stable key used to prevent the same logical in-app notification from being persisted twice. */
+  dedupeKey?: string | null;
+  /** When false, caller already persisted its own in-app notification. */
+  persistInAppFallback?: boolean;
 }
 
 function inferInAppType(payload: PushPayload): "order" | "promo" | "system" {
@@ -45,7 +50,12 @@ async function saveInAppNotification(userId: number, payload: PushPayload): Prom
     userId,
     title: payload.title,
     message: payload.body,
+    imageUrl: payload.imageUrl ?? null,
+    url: payload.url ?? null,
+    dedupeKey: payload.dedupeKey ?? null,
     type: inferInAppType(payload),
+  }).onConflictDoNothing({
+    target: [clientNotifications.storeId, clientNotifications.userId, clientNotifications.dedupeKey],
   });
 }
 
@@ -62,9 +72,14 @@ async function saveInAppNotificationsForUsers(userIds: number[], payload: PushPa
       userId,
       title: payload.title,
       message: payload.body,
+      imageUrl: payload.imageUrl ?? null,
+      url: payload.url ?? null,
+      dedupeKey: payload.dedupeKey ?? null,
       type: inferInAppType(payload),
     }))
-  );
+  ).onConflictDoNothing({
+    target: [clientNotifications.storeId, clientNotifications.userId, clientNotifications.dedupeKey],
+  });
 }
 
 /**
@@ -76,7 +91,9 @@ export async function sendPushToUser(userId: number, payload: PushPayload): Prom
   if (!db) return;
 
   if (!isVapidConfigured) {
-    await saveInAppNotification(userId, payload);
+    if (payload.persistInAppFallback !== false) {
+      await saveInAppNotification(userId, payload);
+    }
     return;
   }
 
@@ -86,7 +103,9 @@ export async function sendPushToUser(userId: number, payload: PushPayload): Prom
     .where(eq(pushSubscriptions.userId, userId));
 
   if (subs.length === 0) {
-    await saveInAppNotification(userId, payload);
+    if (payload.persistInAppFallback !== false) {
+      await saveInAppNotification(userId, payload);
+    }
     return;
   }
 
@@ -98,7 +117,7 @@ export async function sendPushToUser(userId: number, payload: PushPayload): Prom
       try {
         await webpush.sendNotification(
           { endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } },
-          JSON.stringify({ title: payload.title, body: payload.body, icon, badge, url: payload.url ?? "/", tag: payload.tag, soundUrl: payload.soundUrl })
+          JSON.stringify({ title: payload.title, body: payload.body, icon, badge, image: payload.imageUrl ?? undefined, url: payload.url ?? "/", tag: payload.tag, soundUrl: payload.soundUrl })
         );
       } catch (err: any) {
         // 410 Gone ou 404 = subscription expirada, remover
@@ -196,7 +215,7 @@ export async function sendPushToAllUsers(
       try {
         await webpush.sendNotification(
           { endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } },
-          JSON.stringify({ title: payload.title, body: payload.body, icon, badge, url: payload.url ?? "/", tag: payload.tag, soundUrl: payload.soundUrl })
+          JSON.stringify({ title: payload.title, body: payload.body, icon, badge, image: payload.imageUrl ?? undefined, url: payload.url ?? "/", tag: payload.tag, soundUrl: payload.soundUrl })
         );
         sent++;
       } catch (err: any) {
@@ -228,7 +247,7 @@ export async function sendPushToDriver(driverId: number, payload: PushPayload): 
       try {
         await webpush.sendNotification(
           { endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } },
-          JSON.stringify({ title: payload.title, body: payload.body, icon, badge, url: payload.url ?? "/motoboy", tag: payload.tag, soundUrl: payload.soundUrl })
+          JSON.stringify({ title: payload.title, body: payload.body, icon, badge, image: payload.imageUrl ?? undefined, url: payload.url ?? "/motoboy", tag: payload.tag, soundUrl: payload.soundUrl })
         );
       } catch (err: any) {
         if (err?.statusCode === 410 || err?.statusCode === 404) {

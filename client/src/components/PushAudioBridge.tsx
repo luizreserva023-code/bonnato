@@ -1,14 +1,14 @@
 import { useEffect, useRef } from "react";
 
-const DEFAULT_PUSH_SOUND_URL = "/manus-storage/notification-motoboy_31cd6501.mp3";
+const DEFAULT_PUSH_SOUND_URL = "";
 
 export function PushAudioBridge() {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const unlockedRef = useRef(false);
 
   useEffect(() => {
-    const audio = new Audio(DEFAULT_PUSH_SOUND_URL);
-    audio.preload = "auto";
+    const audio = new Audio();
+    audio.preload = "none";
     audioRef.current = audio;
 
     return () => {
@@ -63,21 +63,21 @@ export function PushAudioBridge() {
           : DEFAULT_PUSH_SOUND_URL;
 
       const audio = audioRef.current;
-      if (!audio) return;
-
-      try {
-        const absoluteSoundUrl = new URL(soundUrl, window.location.origin).toString();
-        if (audio.src !== absoluteSoundUrl) {
-          audio.src = absoluteSoundUrl;
+      if (audio && soundUrl) {
+        try {
+          const absoluteSoundUrl = new URL(soundUrl, window.location.origin).toString();
+          if (audio.src !== absoluteSoundUrl) {
+            audio.src = absoluteSoundUrl;
+          }
+        } catch {
+          audio.src = soundUrl;
         }
-      } catch {
-        audio.src = soundUrl;
-      }
 
-      audio.currentTime = 0;
-      audio.play().catch(() => {
-        // If autoplay is blocked, the silent notification still appears.
-      });
+        audio.currentTime = 0;
+        audio.play().catch(() => {
+          // If autoplay is blocked, the notification still appears.
+        });
+      }
 
       if (navigator.vibrate) {
         navigator.vibrate([180, 100, 180]);

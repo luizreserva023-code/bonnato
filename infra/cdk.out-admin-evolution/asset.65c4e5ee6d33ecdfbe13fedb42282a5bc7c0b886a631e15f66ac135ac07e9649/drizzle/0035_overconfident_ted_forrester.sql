@@ -1,0 +1,1 @@
+ALTER TABLE `notification_templates` MODIFY COLUMN `event` enum('order_confirmed','order_preparing','order_out_for_delivery','order_delivered','order_cancelled','cart_abandoned_step1','cart_abandoned_step2','cart_abandoned_step3','reactivation_15','reactivation_30','reactivation_60','custom') NOT NULL;

@@ -1,0 +1,338 @@
+{
+  "/BonattoProduction": [
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "<anonymous> (C:\\Users\\luisg\\Documents\\New project\\bonatto-mobile-app\\infra\\bin\\bonatto.ts:6:1)",
+        "...node internals, ts-node, ts-node, ts-node..."
+      ]
+    },
+    {
+      "type": "aws:cdk:acknowledged-rules",
+      "data": {
+        "CloudFormation-Validate::W3010": "Literal AZs in template are the result of accessing stack.availabilityZones, this is expected and safe"
+      },
+      "trace": [
+        "    ...Vpc2.fromLookup in aws-cdk-lib...",
+        "    at new BonattoStack (C:\\Users\\luisg\\Documents\\New project\\bonatto-mobile-app\\infra\\lib\\bonatto-stack.ts:17:25)",
+        "    at <anonymous> (C:\\Users\\luisg\\Documents\\New project\\bonatto-mobile-app\\infra\\bin\\bonatto.ts:6:1)",
+        "    ...node internals, ts-node, ts-node..."
+      ]
+    }
+  ],
+  "/BonattoProduction/BeanstalkInstanceProfile": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "BeanstalkInstanceProfile"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "new BonattoStack (C:\\Users\\luisg\\Documents\\New project\\bonatto-mobile-app\\infra\\lib\\bonatto-stack.ts:75:29)",
+        "<anonymous> (C:\\Users\\luisg\\Documents\\New project\\bonatto-mobile-app\\infra\\bin\\bonatto.ts:6:1)",
+        "...node internals, ts-node, ts-node..."
+      ]
+    }
+  ],
+  "/BonattoProduction/Application": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "Application"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "new BonattoStack (C:\\Users\\luisg\\Documents\\New project\\bonatto-mobile-app\\infra\\lib\\bonatto-stack.ts:91:25)",
+        "<anonymous> (C:\\Users\\luisg\\Documents\\New project\\bonatto-mobile-app\\infra\\bin\\bonatto.ts:6:1)",
+        "...node internals, ts-node, ts-node..."
+      ]
+    }
+  ],
+  "/BonattoProduction/ApplicationVersion": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "ApplicationVersion"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "new BonattoStack (C:\\Users\\luisg\\Documents\\New project\\bonatto-mobile-app\\infra\\lib\\bonatto-stack.ts:96:21)",
+        "<anonymous> (C:\\Users\\luisg\\Documents\\New project\\bonatto-mobile-app\\infra\\bin\\bonatto.ts:6:1)",
+        "...node internals, ts-node, ts-node..."
+      ]
+    }
+  ],
+  "/BonattoProduction/Environment": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "Environment"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "new BonattoStack (C:\\Users\\luisg\\Documents\\New project\\bonatto-mobile-app\\infra\\lib\\bonatto-stack.ts:127:25)",
+        "<anonymous> (C:\\Users\\luisg\\Documents\\New project\\bonatto-mobile-app\\infra\\bin\\bonatto.ts:6:1)",
+        "...node internals, ts-node, ts-node..."
+      ]
+    }
+  ],
+  "/BonattoProduction/PublicUrl": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "PublicUrl"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "new BonattoStack (C:\\Users\\luisg\\Documents\\New project\\bonatto-mobile-app\\infra\\lib\\bonatto-stack.ts:160:5)",
+        "<anonymous> (C:\\Users\\luisg\\Documents\\New project\\bonatto-mobile-app\\infra\\bin\\bonatto.ts:6:1)",
+        "...node internals, ts-node, ts-node..."
+      ]
+    }
+  ],
+  "/BonattoProduction/BeanstalkUrl": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "BeanstalkUrl"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "new BonattoStack (C:\\Users\\luisg\\Documents\\New project\\bonatto-mobile-app\\infra\\lib\\bonatto-stack.ts:163:5)",
+        "<anonymous> (C:\\Users\\luisg\\Documents\\New project\\bonatto-mobile-app\\infra\\bin\\bonatto.ts:6:1)",
+        "...node internals, ts-node, ts-node..."
+      ]
+    }
+  ],
+  "/BonattoProduction/DatabaseEndpoint": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "DatabaseEndpoint"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "new BonattoStack (C:\\Users\\luisg\\Documents\\New project\\bonatto-mobile-app\\infra\\lib\\bonatto-stack.ts:166:5)",
+        "<anonymous> (C:\\Users\\luisg\\Documents\\New project\\bonatto-mobile-app\\infra\\bin\\bonatto.ts:6:1)",
+        "...node internals, ts-node, ts-node..."
+      ]
+    }
+  ],
+  "/BonattoProduction/DatabaseSecretArn": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "DatabaseSecretArn"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "new BonattoStack (C:\\Users\\luisg\\Documents\\New project\\bonatto-mobile-app\\infra\\lib\\bonatto-stack.ts:169:5)",
+        "<anonymous> (C:\\Users\\luisg\\Documents\\New project\\bonatto-mobile-app\\infra\\bin\\bonatto.ts:6:1)",
+        "...node internals, ts-node, ts-node..."
+      ]
+    }
+  ],
+  "/BonattoProduction/BootstrapVersion": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "BootstrapVersion"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...aws-cdk-lib...",
+        "(no user code in 10 frames, use --stack-trace-limit to capture more)"
+      ]
+    }
+  ],
+  "/BonattoProduction/CheckBootstrapVersion": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "CheckBootstrapVersion"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...aws-cdk-lib...",
+        "(no user code in 10 frames, use --stack-trace-limit to capture more)"
+      ]
+    }
+  ],
+  "/BonattoProduction/AppSecurityGroup/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "AppSecurityGroupC396D536"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...new SecurityGroup2 in aws-cdk-lib...",
+        "new BonattoStack (C:\\Users\\luisg\\Documents\\New project\\bonatto-mobile-app\\infra\\lib\\bonatto-stack.ts:19:19)",
+        "<anonymous> (C:\\Users\\luisg\\Documents\\New project\\bonatto-mobile-app\\infra\\bin\\bonatto.ts:6:1)",
+        "...node internals, ts-node, ts-node..."
+      ]
+    }
+  ],
+  "/BonattoProduction/DatabaseSecurityGroup/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "DatabaseSecurityGroup7319C0F6"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...new SecurityGroup2 in aws-cdk-lib...",
+        "new BonattoStack (C:\\Users\\luisg\\Documents\\New project\\bonatto-mobile-app\\infra\\lib\\bonatto-stack.ts:26:18)",
+        "<anonymous> (C:\\Users\\luisg\\Documents\\New project\\bonatto-mobile-app\\infra\\bin\\bonatto.ts:6:1)",
+        "...node internals, ts-node, ts-node..."
+      ]
+    }
+  ],
+  "/BonattoProduction/DatabaseSecurityGroup/from BonattoProductionAppSecurityGroupF3B51B29:5432": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "DatabaseSecurityGroupfromBonattoProductionAppSecurityGroupF3B51B29543215BCA32C"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...WrappedClass.<anonymous> in aws-cdk-lib...",
+        "new BonattoStack (C:\\Users\\luisg\\Documents\\New project\\bonatto-mobile-app\\infra\\lib\\bonatto-stack.ts:31:10)",
+        "<anonymous> (C:\\Users\\luisg\\Documents\\New project\\bonatto-mobile-app\\infra\\bin\\bonatto.ts:6:1)",
+        "...node internals, ts-node, ts-node..."
+      ]
+    }
+  ],
+  "/BonattoProduction/Database/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "DatabaseB269D8BB"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...new DatabaseInstance2 in aws-cdk-lib...",
+        "new BonattoStack (C:\\Users\\luisg\\Documents\\New project\\bonatto-mobile-app\\infra\\lib\\bonatto-stack.ts:33:22)",
+        "<anonymous> (C:\\Users\\luisg\\Documents\\New project\\bonatto-mobile-app\\infra\\bin\\bonatto.ts:6:1)",
+        "...node internals, ts-node, ts-node..."
+      ]
+    }
+  ],
+  "/BonattoProduction/JwtSecret/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "JwtSecretB8834B39"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...new Secret2 in aws-cdk-lib...",
+        "new BonattoStack (C:\\Users\\luisg\\Documents\\New project\\bonatto-mobile-app\\infra\\lib\\bonatto-stack.ts:58:23)",
+        "<anonymous> (C:\\Users\\luisg\\Documents\\New project\\bonatto-mobile-app\\infra\\bin\\bonatto.ts:6:1)",
+        "...node internals, ts-node, ts-node..."
+      ]
+    }
+  ],
+  "/BonattoProduction/BeanstalkEc2Role/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "BeanstalkEc2Role52A7CC8D"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...new Role2 in aws-cdk-lib...",
+        "new BonattoStack (C:\\Users\\luisg\\Documents\\New project\\bonatto-mobile-app\\infra\\lib\\bonatto-stack.ts:68:21)",
+        "<anonymous> (C:\\Users\\luisg\\Documents\\New project\\bonatto-mobile-app\\infra\\bin\\bonatto.ts:6:1)",
+        "...node internals, ts-node, ts-node..."
+      ]
+    }
+  ],
+  "/BonattoProduction/BeanstalkServiceRole/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "BeanstalkServiceRole8800EBFE"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...new Role2 in aws-cdk-lib...",
+        "new BonattoStack (C:\\Users\\luisg\\Documents\\New project\\bonatto-mobile-app\\infra\\lib\\bonatto-stack.ts:79:25)",
+        "<anonymous> (C:\\Users\\luisg\\Documents\\New project\\bonatto-mobile-app\\infra\\bin\\bonatto.ts:6:1)",
+        "...node internals, ts-node, ts-node..."
+      ]
+    }
+  ],
+  "/BonattoProduction/Distribution/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "Distribution830FAC52"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...new Distribution2 in aws-cdk-lib...",
+        "new BonattoStack (C:\\Users\\luisg\\Documents\\New project\\bonatto-mobile-app\\infra\\lib\\bonatto-stack.ts:111:26)",
+        "<anonymous> (C:\\Users\\luisg\\Documents\\New project\\bonatto-mobile-app\\infra\\bin\\bonatto.ts:6:1)",
+        "...node internals, ts-node, ts-node..."
+      ]
+    }
+  ],
+  "/BonattoProduction/CDKMetadata/Default": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "CDKMetadata"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...aws-cdk-lib, node internals...",
+        "(no user code in 10 frames, use --stack-trace-limit to capture more)"
+      ]
+    }
+  ],
+  "/BonattoProduction/Database/SubnetGroup/Default": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "DatabaseSubnetGroup7D60F180"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...new DatabaseInstance2 in aws-cdk-lib...",
+        "new BonattoStack (C:\\Users\\luisg\\Documents\\New project\\bonatto-mobile-app\\infra\\lib\\bonatto-stack.ts:33:22)",
+        "<anonymous> (C:\\Users\\luisg\\Documents\\New project\\bonatto-mobile-app\\infra\\bin\\bonatto.ts:6:1)",
+        "...node internals, ts-node..."
+      ]
+    }
+  ],
+  "/BonattoProduction/Database/Secret/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "BonattoProductionDatabaseSecret54D477F13fdaad7efa858a3daf9490cf0a702aeb"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...new DatabaseInstance2 in aws-cdk-lib...",
+        "new BonattoStack (C:\\Users\\luisg\\Documents\\New project\\bonatto-mobile-app\\infra\\lib\\bonatto-stack.ts:33:22)",
+        "<anonymous> (C:\\Users\\luisg\\Documents\\New project\\bonatto-mobile-app\\infra\\bin\\bonatto.ts:6:1)"
+      ]
+    }
+  ],
+  "/BonattoProduction/Database/Secret/Attachment/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "DatabaseSecretAttachmentE5D1B020"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...new DatabaseInstance2 in aws-cdk-lib...",
+        "new BonattoStack (C:\\Users\\luisg\\Documents\\New project\\bonatto-mobile-app\\infra\\lib\\bonatto-stack.ts:33:22)",
+        "<anonymous> (C:\\Users\\luisg\\Documents\\New project\\bonatto-mobile-app\\infra\\bin\\bonatto.ts:6:1)",
+        "...node internals, ts-node..."
+      ]
+    }
+  ]
+}

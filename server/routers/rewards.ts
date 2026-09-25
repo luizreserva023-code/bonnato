@@ -1,6 +1,6 @@
-import { z } from "zod";
+﻿import { z } from "zod";
 
-import { recordTenantAudit } from "../tenantAudit.ts";
+import { recordStoreAudit } from "../storeAudit.ts";
 import { resolveRequiredStoreId } from "../storeUtils.ts";
 import { protectedProcedure, publicProcedure, router, staffProcedure } from "../_core/trpc.ts";
 import {
@@ -21,9 +21,36 @@ import {
   updateReward,
   validateRewardCoupon,
 } from "../services/rewards.ts";
+import {
+  getReviewCashbackConfig,
+  getReviewCashbackOffer,
+  getReviewCashbackStats,
+  saveReviewCashbackConfig,
+} from "../services/reviewCashback.ts";
 
 const storeInput = z.object({ storeId: z.number().int().positive() });
 const nullableText = (max: number) => z.string().trim().max(max).nullable().optional();
+const reviewCashbackConfigSchema = z.object({
+  enabled: z.boolean(),
+  campaignMode: z.enum(["order_reward", "order_reward_plus_google", "google_request"]),
+  cashbackPercent: z.number().min(0).max(30),
+  pointsPerRealCashback: z.number().min(0.1).max(1000),
+  rewardBase: z.enum(["paid_products", "order_total"]),
+  minimumOrderValue: z.number().min(0).max(1_000_000),
+  maxPointsPerOrder: z.number().int().min(1).max(1_000_000).nullable(),
+  validityEnabled: z.boolean(),
+  offerValidityDays: z.number().int().min(1).max(365),
+  notificationDelayMinutes: z.number().int().min(0).max(43_200),
+  notificationTitle: z.string().trim().min(1).max(200),
+  notificationMessage: z.string().trim().min(1).max(1000),
+  externalReviewEnabled: z.boolean(),
+  externalReviewUrl: z.string().trim().max(2000).refine(
+    (value) => value === "" || /^https?:\/\//i.test(value),
+    "Use um link externo http:// ou https:// válido.",
+  ),
+  externalReviewLabel: z.string().trim().min(1).max(80),
+});
+
 const rewardDataSchema = z.object({
   name: z.string().trim().min(2).max(160),
   description: nullableText(1000),
@@ -66,6 +93,10 @@ export const rewardsRouter = router({
     idempotencyKey: z.string().trim().min(16).max(96).regex(/^[A-Za-z0-9_-]+$/),
   })).mutation(({ ctx, input }) => redeemReward({ ...input, userId: ctx.user.id })),
 
+  reviewOffer: protectedProcedure
+    .input(z.object({ orderId: z.number().int().positive() }))
+    .query(({ ctx, input }) => getReviewCashbackOffer({ orderId: input.orderId, userId: ctx.user.id })),
+
   validateCoupon: protectedProcedure.input(storeInput.extend({
     code: z.string().trim().min(4).max(64),
     subtotal: z.number().min(0).max(1_000_000),
@@ -77,6 +108,41 @@ export const rewardsRouter = router({
   })).query(({ ctx, input }) => validateRewardCoupon({ ...input, userId: ctx.user.id })),
 
   admin: router({
+    reviewCashbackConfig: staffProcedure.input(storeInput).query(async ({ ctx, input }) => {
+      const storeId = await resolveRequiredStoreId(ctx.user, input.storeId);
+      return getReviewCashbackConfig(storeId);
+    }),
+
+    reviewCashbackStats: staffProcedure.input(storeInput).query(async ({ ctx, input }) => {
+      const storeId = await resolveRequiredStoreId(ctx.user, input.storeId);
+      return getReviewCashbackStats(storeId);
+    }),
+
+    saveReviewCashbackConfig: staffProcedure
+      .input(storeInput.extend(reviewCashbackConfigSchema.shape))
+      .mutation(async ({ ctx, input }) => {
+        const storeId = await resolveRequiredStoreId(ctx.user, input.storeId);
+        const { storeId: _storeId, ...config } = input;
+        const saved = await saveReviewCashbackConfig(storeId, config);
+        await recordStoreAudit({
+          storeId,
+          actorUserId: ctx.user.id,
+          action: "reward.review_cashback_configured",
+          resourceType: "review_cashback",
+          resourceId: String(storeId),
+          metadata: {
+            enabled: saved.enabled,
+            campaignMode: saved.campaignMode,
+            cashbackPercent: saved.cashbackPercent,
+            pointsPerRealCashback: saved.pointsPerRealCashback,
+            validityEnabled: saved.validityEnabled,
+            offerValidityDays: saved.offerValidityDays,
+            externalReviewEnabled: saved.externalReviewEnabled,
+          },
+        });
+        return saved;
+      }),
+
     list: staffProcedure.input(storeInput).query(async ({ ctx, input }) => {
       const storeId = await resolveRequiredStoreId(ctx.user, input.storeId);
       return listRewardsForAdmin(storeId);
@@ -86,7 +152,7 @@ export const rewardsRouter = router({
       const storeId = await resolveRequiredStoreId(ctx.user, input.storeId);
       const { storeId: _storeId, ...data } = input;
       const rewardId = await createReward(storeId, data);
-      await recordTenantAudit({
+      await recordStoreAudit({
         storeId,
         actorUserId: ctx.user.id,
         action: "reward.created",
@@ -104,7 +170,7 @@ export const rewardsRouter = router({
       const storeId = await resolveRequiredStoreId(ctx.user, input.storeId);
       const { storeId: _storeId, rewardId, ...changes } = input;
       const previous = await updateReward(storeId, rewardId, changes);
-      await recordTenantAudit({
+      await recordStoreAudit({
         storeId,
         actorUserId: ctx.user.id,
         action: "reward.updated",
@@ -119,7 +185,7 @@ export const rewardsRouter = router({
       .mutation(async ({ ctx, input }) => {
         const storeId = await resolveRequiredStoreId(ctx.user, input.storeId);
         const previous = await archiveReward(storeId, input.rewardId);
-        await recordTenantAudit({
+        await recordStoreAudit({
           storeId,
           actorUserId: ctx.user.id,
           action: "reward.archived",
@@ -137,7 +203,7 @@ export const rewardsRouter = router({
     })).mutation(async ({ ctx, input }) => {
       const storeId = await resolveRequiredStoreId(ctx.user, input.storeId);
       const result = await addRewardCoupons({ ...input, storeId });
-      await recordTenantAudit({
+      await recordStoreAudit({
         storeId,
         actorUserId: ctx.user.id,
         action: "reward.coupons_imported",
@@ -157,7 +223,7 @@ export const rewardsRouter = router({
     })).mutation(async ({ ctx, input }) => {
       const storeId = await resolveRequiredStoreId(ctx.user, input.storeId);
       const result = await generateRewardCoupons({ ...input, storeId });
-      await recordTenantAudit({
+      await recordStoreAudit({
         storeId,
         actorUserId: ctx.user.id,
         action: "reward.coupons_generated",
@@ -178,7 +244,7 @@ export const rewardsRouter = router({
       .mutation(async ({ ctx, input }) => {
         const storeId = await resolveRequiredStoreId(ctx.user, input.storeId);
         const coupon = await revealRewardCoupon(storeId, input.couponId);
-        await recordTenantAudit({
+        await recordStoreAudit({
           storeId,
           actorUserId: ctx.user.id,
           action: "reward.coupon_revealed",
@@ -197,7 +263,7 @@ export const rewardsRouter = router({
           ...row,
           code: (await revealRewardCoupon(storeId, row.id)).code,
         })));
-        await recordTenantAudit({
+        await recordStoreAudit({
           storeId,
           actorUserId: ctx.user.id,
           action: "reward.coupons_exported",
@@ -220,7 +286,7 @@ export const rewardsRouter = router({
     })).mutation(async ({ ctx, input }) => {
       const storeId = await resolveRequiredStoreId(ctx.user, input.storeId);
       const result = await cancelRewardRedemption({ ...input, storeId });
-      await recordTenantAudit({
+      await recordStoreAudit({
         storeId,
         actorUserId: ctx.user.id,
         action: "reward.redemption_cancelled",
@@ -232,3 +298,4 @@ export const rewardsRouter = router({
     }),
   }),
 });
+

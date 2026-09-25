@@ -6,6 +6,8 @@ export type TrpcContext = {
   req: CreateExpressContextOptions["req"];
   res: CreateExpressContextOptions["res"];
   user: User | null;
+  requestId: string;
+  ipAddress: string | null;
 };
 
 export async function createContext(
@@ -24,5 +26,9 @@ export async function createContext(
     req: opts.req,
     res: opts.res,
     user,
+    requestId: typeof opts.res.locals.requestId === "string"
+      ? opts.res.locals.requestId
+      : "req_unknown",
+    ipAddress: opts.req.ip?.slice(0, 64) || null,
   };
 }

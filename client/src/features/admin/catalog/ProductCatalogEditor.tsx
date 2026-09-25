@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
+import { uploadImageFile } from "@/lib/imageUpload";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -55,6 +56,7 @@ type ProductCatalogEditorProps = {
   storeId: number;
   categories: Array<{ id: number; name: string }>;
   product?: EditorProduct | null;
+  defaultCategoryId?: number;
   onClose: () => void;
   onSaved: () => void | Promise<void>;
 };
@@ -75,12 +77,12 @@ const productTypes: Array<{ id: ProductType; title: string; description: string;
   { id: "combo", title: "Combo", description: "Produto principal com grupos de escolha.", icon: ChefHat },
 ];
 
-export function ProductCatalogEditor({ storeId, categories, product, onClose, onSaved }: ProductCatalogEditorProps) {
+export function ProductCatalogEditor({ storeId, categories, product, defaultCategoryId, onClose, onSaved }: ProductCatalogEditorProps) {
   const utils = trpc.useUtils();
   const [step, setStep] = useState(0);
   const [productType, setProductType] = useState<ProductType>(product?.productType ?? "simple");
   const [basic, setBasic] = useState({
-    categoryId: product ? String(product.categoryId) : "",
+    categoryId: product ? String(product.categoryId) : defaultCategoryId ? String(defaultCategoryId) : "",
     name: product?.name ?? "",
     shortDescription: product?.shortDescription ?? "",
     description: product?.description ?? "",
@@ -144,12 +146,6 @@ export function ProductCatalogEditor({ storeId, categories, product, onClose, on
     })));
   }, [sizes]);
 
-  const uploadImage = trpc.products.uploadImage.useMutation({
-    onSuccess: (data) => { setBasic((current) => ({ ...current, imageUrl: data.url })); toast.success("Imagem enviada"); },
-    onError: (error) => toast.error(error.message),
-    onSettled: () => setImageUploading(false),
-  });
-
   const saveProduct = trpc.catalog.saveProduct.useMutation({
     onSuccess: async (_data, variables) => {
       await Promise.all([utils.products.list.invalidate(), utils.products.listAll.invalidate()]);
@@ -159,18 +155,18 @@ export function ProductCatalogEditor({ storeId, categories, product, onClose, on
     onError: (error) => toast.error(error.message),
   });
 
-  const handleImage = (file?: File) => {
+  const handleImage = async (file?: File) => {
     if (!file) return;
-    if (!file.type.match(/^image\/(jpeg|png|webp|gif)$/)) return toast.error("Use JPG, PNG, WebP ou GIF");
-    if (file.size > 5 * 1024 * 1024) return toast.error("A imagem deve ter no maximo 5MB");
     setImageUploading(true);
-    const reader = new FileReader();
-    reader.onload = () => {
-      const base64 = String(reader.result ?? "").split(",")[1];
-      if (!base64) return setImageUploading(false);
-      uploadImage.mutate({ storeId, base64, mimeType: file.type as "image/jpeg" | "image/png" | "image/webp" | "image/gif", fileName: file.name });
-    };
-    reader.readAsDataURL(file);
+    try {
+      const data = await uploadImageFile({ file, scope: "product", storeId });
+      setBasic((current) => ({ ...current, imageUrl: data.url }));
+      toast.success("Imagem enviada");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Não foi possível enviar a imagem.");
+    } finally {
+      setImageUploading(false);
+    }
   };
 
   const canAdvance = useMemo(() => {
@@ -217,11 +213,11 @@ export function ProductCatalogEditor({ storeId, categories, product, onClose, on
 
   const steps = ["Tipo", "Informações", "Montagem", "Revisão"];
   return (
-    <section className="overflow-hidden rounded-3xl border border-[#e7d8d2] bg-[#fffdfb] shadow-[0_24px_70px_rgba(69,7,9,0.12)]">
-      <header className="flex flex-col gap-5 border-b border-[#eadeda] bg-[#450709] px-5 py-5 text-white sm:px-7">
+    <section className="overflow-hidden rounded-[var(--admin-radius-xl)] border border-[var(--admin-border)] bg-[var(--admin-surface)] shadow-[var(--admin-shadow-md)]">
+      <header className="flex flex-col gap-5 border-b border-[var(--admin-border)] bg-[var(--admin-brand-900)] px-5 py-5 text-white sm:px-7">
         <div className="flex items-start justify-between gap-4">
           <div>
-            <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-[#ffadb0]">Editor de catálogo</p>
+            <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-[var(--admin-brand-100)]">Editor de catálogo</p>
             <h2 className="mt-1 text-xl font-black tracking-tight sm:text-2xl">{product ? `Editar ${product.name}` : "Criar novo produto"}</h2>
             <p className="mt-1 text-sm text-white/65">Configure tudo em uma sequência segura e veja o resumo antes de publicar.</p>
           </div>
@@ -231,7 +227,7 @@ export function ProductCatalogEditor({ storeId, categories, product, onClose, on
           {steps.map((label, index) => (
             <li key={label} className="min-w-0">
               <button type="button" onClick={() => index <= step && setStep(index)} className="w-full text-left" aria-current={index === step ? "step" : undefined}>
-                <span className={`mb-2 block h-1 rounded-full ${index <= step ? "bg-[#DA1923]" : "bg-white/15"}`} />
+                <span className={`mb-2 block h-1 rounded-full ${index <= step ? "bg-[var(--admin-brand-800)]" : "bg-white/15"}`} />
                 <span className={`block truncate text-[10px] font-bold uppercase tracking-wider sm:text-xs ${index === step ? "text-white" : "text-white/45"}`}>{index + 1}. {label}</span>
               </button>
             </li>
@@ -242,13 +238,13 @@ export function ProductCatalogEditor({ storeId, categories, product, onClose, on
       <div className="p-5 sm:p-7">
         {step === 0 && (
           <div>
-            <div className="mb-5"><h3 className="text-lg font-black text-[#2b1718]">Como este produto é vendido?</h3><p className="text-sm text-[#7d6669]">A escolha libera somente as configurações necessárias.</p></div>
+            <div className="mb-5"><h3 className="text-lg font-black text-[var(--admin-text-primary)]">Como este produto é vendido?</h3><p className="text-sm text-[var(--admin-text-secondary)]">A escolha libera somente as configurações necessárias.</p></div>
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
               {productTypes.map((type) => {
                 const Icon = type.icon; const active = productType === type.id;
-                return <button key={type.id} type="button" onClick={() => setProductType(type.id)} className={`group min-h-36 rounded-2xl border p-4 text-left transition-all ${active ? "border-[#DA1923] bg-[#fff1f0] shadow-[0_10px_28px_rgba(218,25,35,0.12)]" : "border-[#eadeda] bg-white hover:-translate-y-0.5 hover:border-[#c8aaa7]"}`}>
-                  <span className={`mb-5 inline-flex h-10 w-10 items-center justify-center rounded-xl ${active ? "bg-[#DA1923] text-white" : "bg-[#f5eeea] text-[#6e0d12]"}`}><Icon className="h-5 w-5" /></span>
-                  <span className="block font-black text-[#2b1718]">{type.title}</span><span className="mt-1 block text-sm leading-relaxed text-[#7d6669]">{type.description}</span>
+                return <button key={type.id} type="button" onClick={() => setProductType(type.id)} className={`group min-h-36 rounded-2xl border p-4 text-left transition-all ${active ? "border-[var(--admin-brand-700)] bg-[var(--admin-brand-50)] shadow-[var(--admin-shadow-sm)]" : "border-[var(--admin-border)] bg-white hover:border-[var(--admin-border-strong)]"}`}>
+                  <span className={`mb-5 inline-flex h-10 w-10 items-center justify-center rounded-xl ${active ? "bg-[var(--admin-brand-800)] text-white" : "bg-[var(--admin-brand-50)] text-[var(--admin-brand-800)]"}`}><Icon className="h-5 w-5" /></span>
+                  <span className="block font-black text-[var(--admin-text-primary)]">{type.title}</span><span className="mt-1 block text-sm leading-relaxed text-[var(--admin-text-secondary)]">{type.description}</span>
                 </button>;
               })}
             </div>
@@ -263,14 +259,14 @@ export function ProductCatalogEditor({ storeId, categories, product, onClose, on
               <Field label="Preço base" required><Input type="number" min="0" step="0.01" value={basic.price} onChange={(event) => setBasic({ ...basic, price: event.target.value })} placeholder="0,00" /></Field>
               <Field label="Codigo interno / SKU"><Input value={basic.sku} onChange={(event) => setBasic({ ...basic, sku: event.target.value })} placeholder="PIZ-GR-001" /></Field>
               <Field label="Descrição curta" className="sm:col-span-2"><Input value={basic.shortDescription} onChange={(event) => setBasic({ ...basic, shortDescription: event.target.value })} placeholder="Uma frase para vender o produto" maxLength={320} /></Field>
-              <Field label="Descrição completa" className="sm:col-span-2"><textarea className="min-h-24 w-full rounded-xl border border-input bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-[#DA1923]/20" value={basic.description} onChange={(event) => setBasic({ ...basic, description: event.target.value })} placeholder="Ingredientes, diferenciais e informações importantes" /></Field>
+              <Field label="Descrição completa" className="sm:col-span-2"><textarea className="min-h-24 w-full rounded-xl border border-input bg-background px-3 py-2 text-sm outline-none focus:ring-0" value={basic.description} onChange={(event) => setBasic({ ...basic, description: event.target.value })} placeholder="Ingredientes, diferenciais e informações importantes" /></Field>
               <Field label="Tempo de preparo (min)"><Input type="number" min="0" max="600" value={basic.preparationTime} onChange={(event) => setBasic({ ...basic, preparationTime: event.target.value })} /></Field>
               <div className="grid grid-cols-2 gap-3"><Field label="Mínimo"><Input type="number" min="1" value={basic.minQuantity} onChange={(event) => setBasic({ ...basic, minQuantity: event.target.value })} /></Field><Field label="Máximo"><Input type="number" min="1" value={basic.maxQuantity} onChange={(event) => setBasic({ ...basic, maxQuantity: event.target.value })} /></Field></div>
             </div>
             <div>
               <Label className="mb-2 block">Foto do produto</Label>
-              <button type="button" onClick={() => imageInputRef.current?.click()} className="group relative flex aspect-square w-full items-center justify-center overflow-hidden rounded-3xl border-2 border-dashed border-[#d8c5bf] bg-[#f8f2ee] transition hover:border-[#DA1923]">
-                {basic.imageUrl ? <><img src={basic.imageUrl} alt="Previa do produto" className="h-full w-full object-cover" /><span className="absolute inset-0 flex items-center justify-center bg-[#450709]/65 text-sm font-bold text-white opacity-0 transition group-hover:opacity-100"><Upload className="mr-2 h-4 w-4" /> Trocar imagem</span></> : imageUploading ? <Loader2 className="h-8 w-8 animate-spin text-[#DA1923]" /> : <span className="px-6 text-center text-sm font-semibold text-[#7d6669]"><ImageIcon className="mx-auto mb-3 h-8 w-8 text-[#DA1923]" />Clique ou arraste a foto principal</span>}
+              <button type="button" onClick={() => imageInputRef.current?.click()} className="group relative flex aspect-square w-full items-center justify-center overflow-hidden rounded-3xl border-2 border-dashed border-[var(--admin-border-strong)] bg-[var(--admin-surface-alt)] transition hover:border-[var(--admin-brand-700)]">
+                {basic.imageUrl ? <><img src={basic.imageUrl} alt="Previa do produto" className="h-full w-full object-cover" /><span className="absolute inset-0 flex items-center justify-center bg-[var(--admin-brand-900)]/65 text-sm font-bold text-white opacity-0 transition group-hover:opacity-100"><Upload className="mr-2 h-4 w-4" /> Trocar imagem</span></> : imageUploading ? <Loader2 className="h-8 w-8 animate-spin text-[var(--admin-brand-800)]" /> : <span className="px-6 text-center text-sm font-semibold text-[var(--admin-text-secondary)]"><ImageIcon className="mx-auto mb-3 h-8 w-8 text-[var(--admin-brand-800)]" />Clique ou arraste a foto principal</span>}
               </button>
               <input ref={imageInputRef} type="file" accept="image/jpeg,image/png,image/webp,image/gif" className="hidden" onChange={(event) => { handleImage(event.target.files?.[0]); event.currentTarget.value = ""; }} />
               <Input className="mt-3" value={basic.imageUrl} onChange={(event) => setBasic({ ...basic, imageUrl: event.target.value })} placeholder="Ou cole uma URL HTTPS" />
@@ -283,14 +279,14 @@ export function ProductCatalogEditor({ storeId, categories, product, onClose, on
             {["sizes", "multi_flavor"].includes(productType) && <SizesEditor sizes={sizes} setSizes={setSizes} />}
             {productType === "multi_flavor" && <FlavorsEditor sizes={sizes} flavors={flavors} setFlavors={setFlavors} pricingRule={pricingRule} setPricingRule={setPricingRule} allowRepeated={allowRepeatedFlavors} setAllowRepeated={setAllowRepeatedFlavors} />}
             <ModifierGroupsEditor groups={groups} setGroups={setGroups} productType={productType} />
-            {productType === "simple" && groups.length === 0 && <div className="rounded-2xl border border-dashed border-[#d8c5bf] bg-[#faf6f3] p-8 text-center"><Check className="mx-auto mb-3 h-8 w-8 text-[#DA1923]" /><p className="font-black text-[#2b1718]">Nenhuma montagem obrigatoria</p><p className="mt-1 text-sm text-[#7d6669]">Voce pode publicar agora ou adicionar um grupo de opcionais.</p><Button type="button" variant="outline" className="mt-4" onClick={() => setGroups([emptyGroup()])}><Plus className="mr-2 h-4 w-4" />Adicionar opcionais</Button></div>}
+            {productType === "simple" && groups.length === 0 && <div className="rounded-2xl border border-dashed border-[var(--admin-border-strong)] bg-[var(--admin-surface-alt)] p-8 text-center"><Check className="mx-auto mb-3 h-8 w-8 text-[var(--admin-brand-800)]" /><p className="font-black text-[var(--admin-text-primary)]">Nenhuma montagem obrigatoria</p><p className="mt-1 text-sm text-[var(--admin-text-secondary)]">Voce pode publicar agora ou adicionar um grupo de opcionais.</p><Button type="button" variant="outline" className="mt-4" onClick={() => setGroups([emptyGroup()])}><Plus className="mr-2 h-4 w-4" />Adicionar opcionais</Button></div>}
           </div>
         )}
 
         {step === 3 && (
           <div className="grid gap-7 lg:grid-cols-[minmax(0,1fr)_340px]">
             <div className="space-y-4">
-              <div><h3 className="text-lg font-black text-[#2b1718]">Tudo pronto para publicar</h3><p className="text-sm text-[#7d6669]">Revise as regras. Você pode salvar como rascunho sem mostrar no cardápio.</p></div>
+              <div><h3 className="text-lg font-black text-[var(--admin-text-primary)]">Tudo pronto para publicar</h3><p className="text-sm text-[var(--admin-text-secondary)]">Revise as regras. Você pode salvar como rascunho sem mostrar no cardápio.</p></div>
               <ReviewRow label="Tipo" value={productTypes.find((type) => type.id === productType)?.title ?? productType} />
               <ReviewRow label="Categoria" value={categories.find((category) => String(category.id) === basic.categoryId)?.name ?? "Nao selecionada"} />
               <ReviewRow label="Preço base" value={`R$ ${Number(basic.price || 0).toFixed(2).replace(".", ",")}`} />
@@ -299,39 +295,39 @@ export function ProductCatalogEditor({ storeId, categories, product, onClose, on
               <ReviewRow label="Grupos de escolha" value={groups.length ? `${groups.length} grupo(s)` : "Nenhum"} />
               <div className="grid gap-3 sm:grid-cols-3"><ToggleCard label="Em destaque" checked={basic.featured} onChange={(checked) => setBasic({ ...basic, featured: checked })} /><ToggleCard label="Aceita cupom" checked={basic.couponEligible} onChange={(checked) => setBasic({ ...basic, couponEligible: checked })} /><ToggleCard label="Gera pontos" checked={basic.pointsEligible} onChange={(checked) => setBasic({ ...basic, pointsEligible: checked })} /></div>
             </div>
-            <div className="rounded-3xl bg-[#f3ebe6] p-4">
-              <p className="mb-3 text-[10px] font-bold uppercase tracking-[0.2em] text-[#8b6665]">Prévia no cardápio</p>
-              <div className="overflow-hidden rounded-2xl bg-white shadow-[0_14px_35px_rgba(69,7,9,0.12)]">
-                <div className="aspect-[4/3] bg-[#eadeda]">{basic.imageUrl ? <img src={basic.imageUrl} alt="" className="h-full w-full object-cover" /> : <div className="flex h-full items-center justify-center"><ChefHat className="h-10 w-10 text-[#b99b97]" /></div>}</div>
-                <div className="p-4"><p className="font-black text-[#2b1718]">{basic.name || "Nome do produto"}</p><p className="mt-1 line-clamp-2 text-sm text-[#7d6669]">{basic.shortDescription || basic.description || "Descrição do produto"}</p><div className="mt-4 flex items-end justify-between"><span className="text-xs font-bold uppercase tracking-wider text-[#8b6665]">A partir de</span><strong className="text-xl text-[#DA1923]">R$ {Number(basic.price || 0).toFixed(2).replace(".", ",")}</strong></div></div>
+            <div className="rounded-3xl bg-[var(--admin-brand-50)] p-4">
+              <p className="mb-3 text-[10px] font-bold uppercase tracking-[0.2em] text-[var(--admin-text-secondary)]">Prévia no cardápio</p>
+              <div className="overflow-hidden rounded-2xl bg-white shadow-[var(--admin-shadow-md)]">
+                <div className="aspect-[4/3] bg-[var(--admin-border)]">{basic.imageUrl ? <img src={basic.imageUrl} alt="" className="h-full w-full object-cover" /> : <div className="flex h-full items-center justify-center"><ChefHat className="h-10 w-10 text-[var(--admin-text-muted)]" /></div>}</div>
+                <div className="p-4"><p className="font-black text-[var(--admin-text-primary)]">{basic.name || "Nome do produto"}</p><p className="mt-1 line-clamp-2 text-sm text-[var(--admin-text-secondary)]">{basic.shortDescription || basic.description || "Descrição do produto"}</p><div className="mt-4 flex items-end justify-between"><span className="text-xs font-bold uppercase tracking-wider text-[var(--admin-text-secondary)]">A partir de</span><strong className="text-xl text-[var(--admin-brand-700)]">R$ {Number(basic.price || 0).toFixed(2).replace(".", ",")}</strong></div></div>
               </div>
             </div>
           </div>
         )}
       </div>
 
-      <footer className="flex flex-col-reverse gap-3 border-t border-[#eadeda] bg-[#faf6f3] px-5 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-7">
+      <footer className="flex flex-col-reverse gap-3 border-t border-[var(--admin-border)] bg-[var(--admin-surface-alt)] px-5 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-7">
         <Button type="button" variant="ghost" onClick={step === 0 ? onClose : () => setStep((current) => current - 1)}><ArrowLeft className="mr-2 h-4 w-4" />{step === 0 ? "Cancelar" : "Voltar"}</Button>
-        {step < 3 ? <Button type="button" onClick={() => canAdvance ? setStep((current) => current + 1) : toast.error("Complete os campos desta etapa")} className="bg-[#DA1923] hover:bg-[#b9141d]">Continuar <ArrowRight className="ml-2 h-4 w-4" /></Button> : <div className="flex flex-col gap-2 sm:flex-row"><Button type="button" variant="outline" disabled={saveProduct.isPending} onClick={() => submit("draft")}><Save className="mr-2 h-4 w-4" />Salvar rascunho</Button><Button type="button" disabled={saveProduct.isPending} onClick={() => submit("published")} className="bg-[#DA1923] hover:bg-[#b9141d]">{saveProduct.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Check className="mr-2 h-4 w-4" />}Publicar produto</Button></div>}
+        {step < 3 ? <Button type="button" onClick={() => canAdvance ? setStep((current) => current + 1) : toast.error("Complete os campos desta etapa")} className="bg-[var(--admin-brand-800)] hover:bg-[var(--admin-brand-700)]">Continuar <ArrowRight className="ml-2 h-4 w-4" /></Button> : <div className="flex flex-col gap-2 sm:flex-row"><Button type="button" variant="outline" disabled={saveProduct.isPending} onClick={() => submit("draft")}><Save className="mr-2 h-4 w-4" />Salvar rascunho</Button><Button type="button" disabled={saveProduct.isPending} onClick={() => submit("published")} className="bg-[var(--admin-brand-800)] hover:bg-[var(--admin-brand-700)]">{saveProduct.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Check className="mr-2 h-4 w-4" />}Publicar produto</Button></div>}
       </footer>
     </section>
   );
 }
 
-function Field({ label, required, className = "", children }: { label: string; required?: boolean; className?: string; children: React.ReactNode }) { return <div className={`space-y-1.5 ${className}`}><Label>{label}{required && <span className="text-[#DA1923]"> *</span>}</Label>{children}</div>; }
-function ReviewRow({ label, value }: { label: string; value: string }) { return <div className="flex items-start justify-between gap-6 border-b border-[#eadeda] py-3"><span className="text-sm text-[#7d6669]">{label}</span><strong className="text-right text-sm text-[#2b1718]">{value}</strong></div>; }
-function ToggleCard({ label, checked, onChange }: { label: string; checked: boolean; onChange: (checked: boolean) => void }) { return <label className="flex items-center justify-between gap-3 rounded-2xl border border-[#eadeda] bg-white p-3 text-sm font-bold text-[#2b1718]">{label}<Switch checked={checked} onCheckedChange={onChange} /></label>; }
+function Field({ label, required, className = "", children }: { label: string; required?: boolean; className?: string; children: React.ReactNode }) { return <div className={`space-y-1.5 ${className}`}><Label>{label}{required && <span className="text-[var(--admin-brand-700)]"> *</span>}</Label>{children}</div>; }
+function ReviewRow({ label, value }: { label: string; value: string }) { return <div className="flex items-start justify-between gap-6 border-b border-[var(--admin-border)] py-3"><span className="text-sm text-[var(--admin-text-secondary)]">{label}</span><strong className="text-right text-sm text-[var(--admin-text-primary)]">{value}</strong></div>; }
+function ToggleCard({ label, checked, onChange }: { label: string; checked: boolean; onChange: (checked: boolean) => void }) { return <label className="flex items-center justify-between gap-3 rounded-2xl border border-[var(--admin-border)] bg-white p-3 text-sm font-bold text-[var(--admin-text-primary)]">{label}<Switch checked={checked} onCheckedChange={onChange} /></label>; }
 
 function SizesEditor({ sizes, setSizes }: { sizes: SizeDraft[]; setSizes: React.Dispatch<React.SetStateAction<SizeDraft[]>> }) {
-  return <section><div className="mb-4 flex items-end justify-between gap-4"><div><h3 className="font-black text-[#2b1718]">Tamanhos e preços</h3><p className="text-sm text-[#7d6669]">Cada tamanho pode ter preço, promoção e limite de sabores.</p></div><Button type="button" variant="outline" size="sm" onClick={() => setSizes((current) => [...current, emptySize()])}><Plus className="mr-1 h-4 w-4" />Tamanho</Button></div><div className="space-y-3">{sizes.map((size, index) => <div key={size.key} className="grid gap-3 rounded-2xl border border-[#eadeda] bg-white p-4 sm:grid-cols-[1.2fr_1fr_1fr_0.7fr_auto]"><Field label="Nome"><Input value={size.name} onChange={(event) => setSizes((current) => current.map((entry) => entry.key === size.key ? { ...entry, name: event.target.value } : entry))} placeholder="Grande" /></Field><Field label="Preço"><Input type="number" min="0" step="0.01" value={size.price} onChange={(event) => setSizes((current) => current.map((entry) => entry.key === size.key ? { ...entry, price: event.target.value } : entry))} /></Field><Field label="Promocional"><Input type="number" min="0" step="0.01" value={size.promotionalPrice} onChange={(event) => setSizes((current) => current.map((entry) => entry.key === size.key ? { ...entry, promotionalPrice: event.target.value } : entry))} /></Field><Field label="Serve"><Input type="number" min="1" value={size.serves} onChange={(event) => setSizes((current) => current.map((entry) => entry.key === size.key ? { ...entry, serves: event.target.value } : entry))} /></Field><Button type="button" variant="ghost" size="icon" className="self-end text-[#a22]" onClick={() => setSizes((current) => current.filter((entry) => entry.key !== size.key))} aria-label={`Remover tamanho ${index + 1}`}><Trash2 className="h-4 w-4" /></Button></div>)}</div></section>;
+  return <section><div className="mb-4 flex items-end justify-between gap-4"><div><h3 className="font-black text-[var(--admin-text-primary)]">Tamanhos e preços</h3><p className="text-sm text-[var(--admin-text-secondary)]">Cada tamanho pode ter preço, promoção e limite de sabores.</p></div><Button type="button" variant="outline" size="sm" onClick={() => setSizes((current) => [...current, emptySize()])}><Plus className="mr-1 h-4 w-4" />Tamanho</Button></div><div className="space-y-3">{sizes.map((size, index) => <div key={size.key} className="grid gap-3 rounded-2xl border border-[var(--admin-border)] bg-white p-4 sm:grid-cols-[1.2fr_1fr_1fr_0.7fr_auto]"><Field label="Nome"><Input value={size.name} onChange={(event) => setSizes((current) => current.map((entry) => entry.key === size.key ? { ...entry, name: event.target.value } : entry))} placeholder="Grande" /></Field><Field label="Preço"><Input type="number" min="0" step="0.01" value={size.price} onChange={(event) => setSizes((current) => current.map((entry) => entry.key === size.key ? { ...entry, price: event.target.value } : entry))} /></Field><Field label="Promocional"><Input type="number" min="0" step="0.01" value={size.promotionalPrice} onChange={(event) => setSizes((current) => current.map((entry) => entry.key === size.key ? { ...entry, promotionalPrice: event.target.value } : entry))} /></Field><Field label="Serve"><Input type="number" min="1" value={size.serves} onChange={(event) => setSizes((current) => current.map((entry) => entry.key === size.key ? { ...entry, serves: event.target.value } : entry))} /></Field><Button type="button" variant="ghost" size="icon" className="self-end text-[var(--admin-danger)]" onClick={() => setSizes((current) => current.filter((entry) => entry.key !== size.key))} aria-label={`Remover tamanho ${index + 1}`}><Trash2 className="h-4 w-4" /></Button></div>)}</div></section>;
 }
 
 function FlavorsEditor({ sizes, flavors, setFlavors, pricingRule, setPricingRule, allowRepeated, setAllowRepeated }: { sizes: SizeDraft[]; flavors: FlavorDraft[]; setFlavors: React.Dispatch<React.SetStateAction<FlavorDraft[]>>; pricingRule: "highest_price" | "average_price" | "proportional_price" | "size_fixed_price" | "base_plus_difference"; setPricingRule: (value: "highest_price" | "average_price" | "proportional_price" | "size_fixed_price" | "base_plus_difference") => void; allowRepeated: boolean; setAllowRepeated: (value: boolean) => void }) {
   return (
-    <section className="min-w-0 rounded-3xl bg-[#450709] p-4 text-white sm:p-5">
+    <section className="min-w-0 rounded-3xl bg-[var(--admin-brand-900)] p-4 text-white sm:p-5">
       <div className="mb-5 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div><h3 className="font-black">Sabores e regra de cobrança</h3><p className="text-sm text-white/60">Defina o valor de cada sabor em cada tamanho.</p></div>
-        <Button type="button" size="sm" className="bg-[#DA1923] hover:bg-[#b9141d]" onClick={() => setFlavors((current) => [...current, emptyFlavor(sizes.length)])}><Plus className="mr-1 h-4 w-4" />Sabor</Button>
+        <Button type="button" size="sm" className="bg-[var(--admin-brand-800)] hover:bg-[var(--admin-brand-700)]" onClick={() => setFlavors((current) => [...current, emptyFlavor(sizes.length)])}><Plus className="mr-1 h-4 w-4" />Sabor</Button>
       </div>
       <div className="mb-5 grid gap-3 sm:grid-cols-[1fr_auto]">
         <Select value={pricingRule} onValueChange={setPricingRule}><SelectTrigger className="border-white/15 bg-white/10 text-white"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="highest_price">Cobrar o sabor mais caro</SelectItem><SelectItem value="average_price">Média dos sabores</SelectItem><SelectItem value="proportional_price">Preço proporcional</SelectItem><SelectItem value="size_fixed_price">Preço fixo do tamanho</SelectItem><SelectItem value="base_plus_difference">Base mais diferença</SelectItem></SelectContent></Select>
@@ -341,11 +337,11 @@ function FlavorsEditor({ sizes, flavors, setFlavors, pricingRule, setPricingRule
         {flavors.map((flavor) => (
           <div key={flavor.key} className="min-w-0 rounded-2xl bg-white/10 p-3">
             <div className="flex items-end gap-2">
-              <div className="min-w-0 flex-1"><Field label="Sabor"><Input className="border-white/15 bg-white text-[#2b1718]" value={flavor.name} onChange={(event) => setFlavors((current) => current.map((entry) => entry.key === flavor.key ? { ...entry, name: event.target.value } : entry))} placeholder="Calabresa" /></Field></div>
+              <div className="min-w-0 flex-1"><Field label="Sabor"><Input className="border-white/15 bg-white text-[var(--admin-text-primary)]" value={flavor.name} onChange={(event) => setFlavors((current) => current.map((entry) => entry.key === flavor.key ? { ...entry, name: event.target.value } : entry))} placeholder="Calabresa" /></Field></div>
               <Button type="button" variant="ghost" size="icon" className="shrink-0 text-white hover:bg-white/10 hover:text-white" onClick={() => setFlavors((current) => current.filter((entry) => entry.key !== flavor.key))} aria-label={`Remover sabor ${flavor.name || "sem nome"}`}><Trash2 className="h-4 w-4" /></Button>
             </div>
             <div className="mt-3 grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-              {sizes.map((size, sizeIndex) => <Field key={size.key} label={size.name || `Tamanho ${sizeIndex + 1}`}><Input className="border-white/15 bg-white text-[#2b1718]" type="number" min="0" step="0.01" value={flavor.prices[sizeIndex] ?? ""} onChange={(event) => setFlavors((current) => current.map((entry) => entry.key === flavor.key ? { ...entry, prices: entry.prices.map((price, index) => index === sizeIndex ? event.target.value : price) } : entry))} /></Field>)}
+              {sizes.map((size, sizeIndex) => <Field key={size.key} label={size.name || `Tamanho ${sizeIndex + 1}`}><Input className="border-white/15 bg-white text-[var(--admin-text-primary)]" type="number" min="0" step="0.01" value={flavor.prices[sizeIndex] ?? ""} onChange={(event) => setFlavors((current) => current.map((entry) => entry.key === flavor.key ? { ...entry, prices: entry.prices.map((price, index) => index === sizeIndex ? event.target.value : price) } : entry))} /></Field>)}
             </div>
           </div>
         ))}
@@ -356,5 +352,5 @@ function FlavorsEditor({ sizes, flavors, setFlavors, pricingRule, setPricingRule
 
 function ModifierGroupsEditor({ groups, setGroups, productType }: { groups: GroupDraft[]; setGroups: React.Dispatch<React.SetStateAction<GroupDraft[]>>; productType: ProductType }) {
   const title = productType === "combo" ? "Grupos do combo" : "Adicionais e escolhas";
-  return <section><div className="mb-4 flex items-end justify-between gap-4"><div><h3 className="font-black text-[#2b1718]">{title}</h3><p className="text-sm text-[#7d6669]">Ex.: escolha a borda, adicionais ou bebidas do combo.</p></div><Button type="button" variant="outline" size="sm" onClick={() => setGroups((current) => [...current, emptyGroup()])}><Plus className="mr-1 h-4 w-4" />Grupo</Button></div><div className="space-y-4">{groups.map((group) => <div key={group.key} className="min-w-0 rounded-2xl border border-[#eadeda] bg-white p-4"><div className="grid min-w-0 gap-3 sm:grid-cols-[minmax(0,1.4fr)_auto_100px_100px_auto]"><Field label="Nome do grupo"><Input value={group.name} onChange={(event) => setGroups((current) => current.map((entry) => entry.key === group.key ? { ...entry, name: event.target.value } : entry))} placeholder="Escolha a borda" /></Field><label className="flex items-end gap-2 pb-2 text-sm font-semibold"><Switch checked={group.required} onCheckedChange={(checked) => setGroups((current) => current.map((entry) => entry.key === group.key ? { ...entry, required: checked, minSelections: checked && entry.minSelections === "0" ? "1" : entry.minSelections } : entry))} />Obrigatorio</label><Field label="Minimo"><Input type="number" min="0" value={group.minSelections} onChange={(event) => setGroups((current) => current.map((entry) => entry.key === group.key ? { ...entry, minSelections: event.target.value } : entry))} /></Field><Field label="Maximo"><Input type="number" min="1" value={group.maxSelections} onChange={(event) => setGroups((current) => current.map((entry) => entry.key === group.key ? { ...entry, maxSelections: event.target.value } : entry))} /></Field><Button type="button" variant="ghost" size="icon" className="self-end text-[#a22]" onClick={() => setGroups((current) => current.filter((entry) => entry.key !== group.key))}><Trash2 className="h-4 w-4" /></Button></div><div className="mt-4 space-y-2 border-l-2 border-[#f0d7d3] pl-3 sm:pl-4">{group.options.map((option) => <div key={option.key} className="grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1fr)_120px_80px_auto]"><Input value={option.name} onChange={(event) => setGroups((current) => current.map((entry) => entry.key === group.key ? { ...entry, options: entry.options.map((item) => item.key === option.key ? { ...item, name: event.target.value } : item) } : entry))} placeholder="Nome da opcao" /><Input type="number" min="0" step="0.01" value={option.price} onChange={(event) => setGroups((current) => current.map((entry) => entry.key === group.key ? { ...entry, options: entry.options.map((item) => item.key === option.key ? { ...item, price: event.target.value } : item) } : entry))} placeholder="Preco" /><Input type="number" min="1" value={option.maxQuantity} onChange={(event) => setGroups((current) => current.map((entry) => entry.key === group.key ? { ...entry, options: entry.options.map((item) => item.key === option.key ? { ...item, maxQuantity: event.target.value } : item) } : entry))} /><Button type="button" variant="ghost" size="icon" onClick={() => setGroups((current) => current.map((entry) => entry.key === group.key ? { ...entry, options: entry.options.filter((item) => item.key !== option.key) } : entry))}><X className="h-4 w-4" /></Button></div>)}<Button type="button" variant="ghost" size="sm" onClick={() => setGroups((current) => current.map((entry) => entry.key === group.key ? { ...entry, options: [...entry.options, emptyOption()] } : entry))}><Plus className="mr-1 h-4 w-4" />Opcao</Button></div></div>)}</div></section>;
+  return <section><div className="mb-4 flex items-end justify-between gap-4"><div><h3 className="font-black text-[var(--admin-text-primary)]">{title}</h3><p className="text-sm text-[var(--admin-text-secondary)]">Ex.: escolha a borda, adicionais ou bebidas do combo.</p></div><Button type="button" variant="outline" size="sm" onClick={() => setGroups((current) => [...current, emptyGroup()])}><Plus className="mr-1 h-4 w-4" />Grupo</Button></div><div className="space-y-4">{groups.map((group) => <div key={group.key} className="min-w-0 rounded-2xl border border-[var(--admin-border)] bg-white p-4"><div className="grid min-w-0 gap-3 sm:grid-cols-[minmax(0,1.4fr)_auto_100px_100px_auto]"><Field label="Nome do grupo"><Input value={group.name} onChange={(event) => setGroups((current) => current.map((entry) => entry.key === group.key ? { ...entry, name: event.target.value } : entry))} placeholder="Escolha a borda" /></Field><label className="flex items-end gap-2 pb-2 text-sm font-semibold"><Switch checked={group.required} onCheckedChange={(checked) => setGroups((current) => current.map((entry) => entry.key === group.key ? { ...entry, required: checked, minSelections: checked && entry.minSelections === "0" ? "1" : entry.minSelections } : entry))} />Obrigatorio</label><Field label="Minimo"><Input type="number" min="0" value={group.minSelections} onChange={(event) => setGroups((current) => current.map((entry) => entry.key === group.key ? { ...entry, minSelections: event.target.value } : entry))} /></Field><Field label="Maximo"><Input type="number" min="1" value={group.maxSelections} onChange={(event) => setGroups((current) => current.map((entry) => entry.key === group.key ? { ...entry, maxSelections: event.target.value } : entry))} /></Field><Button type="button" variant="ghost" size="icon" className="self-end text-[var(--admin-danger)]" onClick={() => setGroups((current) => current.filter((entry) => entry.key !== group.key))}><Trash2 className="h-4 w-4" /></Button></div><div className="mt-4 space-y-2 border-l-2 border-[var(--admin-brand-100)] pl-3 sm:pl-4">{group.options.map((option) => <div key={option.key} className="grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1fr)_120px_80px_auto]"><Input value={option.name} onChange={(event) => setGroups((current) => current.map((entry) => entry.key === group.key ? { ...entry, options: entry.options.map((item) => item.key === option.key ? { ...item, name: event.target.value } : item) } : entry))} placeholder="Nome da opcao" /><Input type="number" min="0" step="0.01" value={option.price} onChange={(event) => setGroups((current) => current.map((entry) => entry.key === group.key ? { ...entry, options: entry.options.map((item) => item.key === option.key ? { ...item, price: event.target.value } : item) } : entry))} placeholder="Preco" /><Input type="number" min="1" value={option.maxQuantity} onChange={(event) => setGroups((current) => current.map((entry) => entry.key === group.key ? { ...entry, options: entry.options.map((item) => item.key === option.key ? { ...item, maxQuantity: event.target.value } : item) } : entry))} /><Button type="button" variant="ghost" size="icon" onClick={() => setGroups((current) => current.map((entry) => entry.key === group.key ? { ...entry, options: entry.options.filter((item) => item.key !== option.key) } : entry))}><X className="h-4 w-4" /></Button></div>)}<Button type="button" variant="ghost" size="sm" onClick={() => setGroups((current) => current.map((entry) => entry.key === group.key ? { ...entry, options: [...entry.options, emptyOption()] } : entry))}><Plus className="mr-1 h-4 w-4" />Opcao</Button></div></div>)}</div></section>;
 }

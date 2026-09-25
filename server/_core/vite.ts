@@ -3,10 +3,16 @@ import fs from "fs";
 import { type Server } from "http";
 import { nanoid } from "nanoid";
 import path from "path";
-import { createServer as createViteServer } from "vite";
-import viteConfig from "../../vite.config.ts";
 
 export async function setupVite(app: Express, server: Server) {
+  // Keep Vite and its plugins entirely out of the production server bundle.
+  // Using non-literal dynamic import specifiers prevents esbuild from eagerly
+  // bundling development-only dependencies into dist/index.js.
+  const vitePackage = "vite";
+  const viteConfigModule = "../../vite.config.ts";
+  const { createServer: createViteServer } = await import(vitePackage);
+  const { default: viteConfig } = await import(viteConfigModule);
+
   const serverOptions = {
     middlewareMode: true,
     hmr: { server, clientPort: parseInt(process.env.PORT || "3000", 10) },
@@ -142,10 +148,42 @@ export function serveStatic(app: Express) {
   app.get("/motoboy", serveDriverHTML);
   app.get("/motoboy/*", serveDriverHTML);
 
-  app.use(express.static(distPath));
+  app.use(express.static(distPath, {
+    setHeaders(res, filePath) {
+      const normalized = filePath.replace(/\\/g, "/");
+
+      // Vite assets are content-hashed. They can be cached forever safely:
+      // a new build always produces a new filename.
+      if (normalized.includes("/assets/")) {
+        res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+        return;
+      }
+
+      // Service worker, manifests and HTML must stay fresh so a deploy is
+      // picked up immediately instead of pinning an old application shell.
+      if (
+        normalized.endsWith("/index.html")
+        || normalized.endsWith("/sw.js")
+        || normalized.endsWith("/manifest.json")
+        || normalized.endsWith("/driver-manifest.json")
+      ) {
+        res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+        return;
+      }
+
+      res.setHeader("Cache-Control", "public, max-age=3600");
+    },
+  }));
 
   // Fallback for all other SPA routes
   app.use("*", (_req, res) => {
-    res.sendFile(path.resolve(distPath, "index.html"));
+    res
+      .status(200)
+      .set({
+        "Cache-Control": "no-cache, no-store, must-revalidate",
+        "Pragma": "no-cache",
+        "Expires": "0",
+      })
+      .sendFile(path.resolve(distPath, "index.html"));
   });
 }

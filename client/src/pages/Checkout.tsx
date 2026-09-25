@@ -29,7 +29,7 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation } from "wouter";
-import { isStoreOpenWithHours, isCepInDeliveryZone, nextOpenTimeWithHours, type DaySchedule } from "@/lib/storeUtils";
+import { isStoreOpenWithHours, nextOpenTimeWithHours, type DaySchedule } from "@/lib/storeUtils";
 import { StoreClosedBanner } from "@/components/StoreClosedBanner";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
@@ -37,6 +37,11 @@ import { BonattoSectionHero } from "@/components/consumer/BonattoSectionHero";
 import { TrendingDown, Zap, ShoppingCart as CartIcon, X as XIcon } from "lucide-react";
 import { useStore } from "@/contexts/StoreContext";
 import { clearPendingCoupon, getPendingCoupon } from "@/lib/checkout-intent";
+import { trackMetaEvent } from "@/lib/storeTracking";
+import { getStoreAttribution } from "@/lib/marketingAttribution";
+import { clearCheckoutIdempotencyKey, getCheckoutIdempotencyKey } from "@/lib/order-idempotency";
+import { emitAnalyticsEvent } from "@/lib/analyticsTracking";
+import { lookupCep, lookupNeighborhoodCep } from "@/lib/cep";
 
 type PaymentMethod = "credit_card" | "debit_card" | "pix" | "cash";
 type DeliveryMode = "delivery" | "pickup";
@@ -50,13 +55,55 @@ type PixCheckoutData = {
   instructions?: string;
 };
 
+type AlternativeDeliveryStoreView = {
+  storeId: number;
+  name: string;
+  slug: string;
+  city: string;
+  distanceKm: number;
+  deliveryFee: number;
+  estimatedMinutes: number;
+};
+
+type DeliveryQuoteView = (
+  | {
+      available: true;
+      zoneId: number;
+      distanceKm: number;
+      deliveryFee: number;
+      estimatedMinutes: number;
+    }
+  | {
+      available: false;
+      reason: string;
+      distanceKm?: number;
+    }
+) & {
+  alternatives?: AlternativeDeliveryStoreView[];
+};
+
+function deliveryReasonMessage(reason: string) {
+  const messages: Record<string, string> = {
+    DELIVERY_DISABLED: "A entrega está temporariamente indisponível nesta unidade.",
+    STORE_LOCATION_MISSING: "A unidade ainda não configurou a origem da entrega.",
+    INVALID_ADDRESS: "Preencha CEP, rua, número, cidade e UF.",
+    ADDRESS_NOT_FOUND: "Não conseguimos localizar este endereço. Confira rua e número.",
+    LOW_CONFIDENCE_ADDRESS: "Não conseguimos localizar este endereço com confiança. Confira rua e número.",
+    ROUTING_PROVIDER_UNAVAILABLE: "Não foi possível calcular a rota agora. Tente novamente em instantes.",
+    OUTSIDE_DELIVERY_AREA: "Infelizmente este endereço está fora da nossa área de entrega.",
+    NO_COVERAGE_ZONE: "Este endereço fica em uma área sem cobertura de entrega.",
+    NO_DELIVERY_ZONES: "A entrega desta unidade ainda não foi configurada.",
+  };
+  return messages[reason] ?? "Não foi possível calcular a entrega.";
+}
+
 const STEPS = ["Entrega", "Pagamento", "Confirmar"] as const;
 type Step = 0 | 1 | 2;
 
 export default function Checkout() {
   const { items, subtotal, clearCart, replaceCart } = useCart();
   const { user, isAuthenticated, loading: authLoading } = useAuth();
-  const { selectedStore, tenantConfig } = useStore();
+  const { selectedStore, bonattoConfig, stores, setSelectedStore } = useStore();
   const [, navigate] = useLocation();
 
   const [step, setStep] = useState<Step>(0);
@@ -67,8 +114,11 @@ export default function Checkout() {
     customerEmail: user?.email ?? "",
     customerPhone: "",
     deliveryAddress: "",
+    deliveryStreet: "",
+    deliveryNumber: "",
     deliveryCep: "",
-    deliveryCity: "Mateus Leme",
+    deliveryCity: selectedStore?.city ?? "",
+    deliveryState: "",
     deliveryComplement: "",
     notes: "",
     changeFor: "", // troco para
@@ -87,16 +137,8 @@ export default function Checkout() {
   const [savedItems, setSavedItems] = useState<typeof items>([]);
   const [cepLoading, setCepLoading] = useState(false);
   const [neighborhood, setNeighborhood] = useState("");
-  const [neighborhoodSearch, setNeighborhoodSearch] = useState("");
-  const [deliveryZone, setDeliveryZone] = useState<{
-    id: number;
-    neighborhood: string;
-    city: string;
-    deliveryFee: string;
-    estimatedMinutes: number;
-    isActive: boolean;
-  } | null>(null);
-  const [zoneNotFound, setZoneNotFound] = useState(false);
+  const [deliveryQuote, setDeliveryQuote] = useState<DeliveryQuoteView | null>(null);
+  const [deliveryQuoteError, setDeliveryQuoteError] = useState<string | null>(null);
 
   // Upsell / Downsell state
   const [showUpsellModal, setShowUpsellModal] = useState(false);
@@ -104,6 +146,7 @@ export default function Checkout() {
   const [showDownsellModal, setShowDownsellModal] = useState(false);
 
   const createOrder = trpc.orders.create.useMutation();
+  const deliveryQuoteMutation = trpc.delivery.quote.useMutation();
   const createCheckoutSession = trpc.payments.createCheckoutSession.useMutation();
   const createManualPixCode = trpc.payments.createManualPixCode.useMutation();
   const checkoutWithSavedCard = trpc.payments.checkoutWithSavedCard.useMutation();
@@ -135,14 +178,12 @@ export default function Checkout() {
   // loyalty.redeem foi substituído — o débito agora acontece dentro do createOrder via pointsToRedeem
   const loyaltyPointsQuery = trpc.loyalty.points.useQuery(
     { storeId: selectedStore?.id },
-    { enabled: isAuthenticated && tenantConfig.features.loyalty && Boolean(selectedStore?.id) },
+    { enabled: isAuthenticated && bonattoConfig.features.loyalty && Boolean(selectedStore?.id) },
   );
   const registerAbandonedCart = trpc.automations.registerAbandonedCart.useMutation();
   const profileQuery = trpc.profile.me.useQuery(undefined, { enabled: isAuthenticated });
-  const zonesSearchQuery = trpc.deliveryZones.search.useQuery(
-    { query: neighborhoodSearch, storeId: selectedStore?.id },
-    { enabled: neighborhoodSearch.length >= 2 && Boolean(selectedStore?.id) }
-  );
+  const savedAddressesQuery = trpc.addresses.list.useQuery(undefined, { enabled: isAuthenticated });
+
   const cartProductIds = useMemo(() => items.map((i) => i.productId), [items]);
   const upsellQuery = trpc.upsells.forCart.useQuery(
     { productIds: cartProductIds, cartTotal: subtotal, storeId: selectedStore?.id },
@@ -151,11 +192,11 @@ export default function Checkout() {
   const productsQuery = trpc.products.list.useQuery({ storeId: selectedStore?.id }, { enabled: isAuthenticated && Boolean(selectedStore?.id) });
   const myClubPlan = trpc.club.getMyPlan.useQuery(
     { storeId: selectedStore?.id ?? 0 },
-    { enabled: isAuthenticated && tenantConfig.features.club && Boolean(selectedStore?.id) },
+    { enabled: isAuthenticated && bonattoConfig.features.club && Boolean(selectedStore?.id) },
   );
   const clubConfigQuery = trpc.club.getPublicConfig.useQuery(
     { storeId: selectedStore?.id ?? 0 },
-    { enabled: tenantConfig.features.club && Boolean(selectedStore?.id) },
+    { enabled: bonattoConfig.features.club && Boolean(selectedStore?.id) },
   );
   const paymentSettingsQuery = trpc.paymentSettings.getPublic.useQuery(
     { storeId: selectedStore?.id },
@@ -170,6 +211,7 @@ export default function Checkout() {
   const dbStoreHours = storeSettingsQuery.data?.storeHours
     ? (JSON.parse(storeSettingsQuery.data.storeHours as string) as Record<string, DaySchedule | null>)
     : undefined;
+  const manualStoreOpen = storeSettingsQuery.data?.manualStoreOpen === "true";
   const clubPlan = myClubPlan.data;
   const clubConfig = clubConfigQuery.data;
   const paymentSettings = paymentSettingsQuery.data;
@@ -177,22 +219,22 @@ export default function Checkout() {
   const paymentOptions = useMemo(() => {
     const options: Array<{ value: PaymentMethod; label: string; icon: React.ReactNode; desc: string }> = [];
     if (!paymentSettings) return options;
-    if (tenantConfig.providers.payments.pix && paymentSettings?.config.orders.pixEnabled) {
+    if (bonattoConfig.providers.payments.pix && paymentSettings?.config.orders.pixEnabled) {
       const desc =
         paymentSettings.config.orders.pixMode === "dynamic_asaas"
           ? "QR Code e aprovação automática"
           : "Copia e cola com chave da loja";
       options.push({ value: "pix", label: "PIX", icon: <QrCode className="w-5 h-5" />, desc });
     }
-    if (tenantConfig.providers.payments.card && paymentSettings?.config.orders.cardEnabled) {
+    if (bonattoConfig.providers.payments.card && paymentSettings?.config.orders.cardEnabled) {
       options.push({ value: "credit_card", label: "Cartão de Crédito", icon: <CreditCard className="w-5 h-5" />, desc: "Pagamento online seguro" });
       options.push({ value: "debit_card", label: "Cartão de Débito", icon: <CreditCard className="w-5 h-5" />, desc: "Pagamento online seguro" });
     }
-    if (tenantConfig.providers.payments.cash && paymentSettings.config.orders.cashEnabled) {
+    if (bonattoConfig.providers.payments.cash && paymentSettings.config.orders.cashEnabled) {
       options.push({ value: "cash", label: "Dinheiro", icon: <Wallet className="w-5 h-5" />, desc: "Pagamento na entrega" });
     }
     return options;
-  }, [paymentSettings, tenantConfig.providers.payments]);
+  }, [paymentSettings, bonattoConfig.providers.payments]);
   const clubPlanDetails = clubPlan?.planDetails;
   const isClubActive = clubPlan?.status === "active";
   const clubDiscountPct = isClubActive ? Number(clubPlanDetails?.discountPercent ?? 0) : 0;
@@ -235,11 +277,27 @@ export default function Checkout() {
         customerEmail: prev.customerEmail || p.email || "",
         customerPhone: prev.customerPhone || (p as any).phone || "",
         deliveryAddress: prev.deliveryAddress || (p as any).savedAddress || "",
+        deliveryStreet: prev.deliveryStreet || (p as any).savedStreet || "",
+        deliveryNumber: prev.deliveryNumber || (p as any).savedNumber || "",
         deliveryCep: prev.deliveryCep || (p as any).savedCep || "",
-        deliveryCity: prev.deliveryCity || (p as any).savedCity || "Mateus Leme",
+        deliveryCity: prev.deliveryCity || (p as any).savedCity || selectedStore?.city || "",
+        deliveryState: prev.deliveryState || (p as any).savedState || "",
+        deliveryComplement: prev.deliveryComplement || (p as any).savedComplement || "",
       }));
+      if (!neighborhood && (p as any).savedNeighborhood) {
+        setNeighborhood((p as any).savedNeighborhood);
+      }
     }
-  }, [profileQuery.data]);
+  }, [profileQuery.data, selectedStore?.city, neighborhood]);
+
+  useEffect(() => {
+    if (!selectedStore?.city) return;
+    setForm((prev) => (
+      prev.deliveryCity.trim()
+        ? prev
+        : { ...prev, deliveryCity: selectedStore.city }
+    ));
+  }, [selectedStore?.city, selectedStore?.id]);
 
   useEffect(() => {
     if (!paymentOptions.length) return;
@@ -264,36 +322,197 @@ export default function Checkout() {
     return () => window.cancelAnimationFrame(frame);
   }, [step]);
 
+  const applySavedAddress = (address: NonNullable<typeof savedAddressesQuery.data>[number]) => {
+    // Mesmo com coordenadas salvas, não reutilizamos taxa/prazo antigos.
+    // Alterar os campos invalida a cotação atual e o efeito abaixo chama delivery.quote novamente.
+    setForm((prev) => ({
+      ...prev,
+      deliveryCep: address.cep ?? "",
+      deliveryStreet: address.street ?? "",
+      deliveryNumber: address.number ?? "",
+      deliveryComplement: address.complement ?? "",
+      deliveryCity: address.city ?? selectedStore?.city ?? "",
+      deliveryState: address.state ?? "",
+    }));
+    setNeighborhood(address.neighborhood ?? "");
+    setDeliveryQuote(null);
+    setDeliveryQuoteError(null);
+  };
+
   const handleCepBlur = async () => {
     const cep = form.deliveryCep.replace(/\D/g, "");
     if (cep.length !== 8) return;
     setCepLoading(true);
     try {
-      const res = await fetch(`https://viacep.com.br/ws/${cep}/json/`);
-      const data = await res.json();
-      if (!data.erro) {
-        setForm((prev) => ({
-          ...prev,
-          deliveryAddress: prev.deliveryAddress || `${data.logradouro}, ${data.bairro}`,
-          deliveryCity: data.localidade || prev.deliveryCity,
-        }));
-        toast.success("Endereço preenchido automaticamente!");
-      } else {
+      const data = await lookupCep(cep);
+      if (!data) {
         toast.error("CEP não encontrado");
+        return;
       }
-    } catch {
-      // silently ignore
+
+      setForm((prev) => ({
+        ...prev,
+        deliveryCep: data.cep,
+        deliveryStreet: data.street || prev.deliveryStreet,
+        deliveryCity: data.city || prev.deliveryCity,
+        deliveryState: data.state || prev.deliveryState,
+      }));
+      if (data.neighborhood) setNeighborhood(data.neighborhood);
+      toast.success("Endereço preenchido automaticamente!");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Não foi possível consultar o CEP agora.");
     } finally {
       setCepLoading(false);
     }
   };
 
-  const rawDeliveryFeeAmount = deliveryMode === "delivery" && deliveryZone
-    ? parseFloat(deliveryZone.deliveryFee)
+  const handleNeighborhoodBlur = async () => {
+    const typedNeighborhood = neighborhood.trim();
+    const city = form.deliveryCity.trim() || selectedStore?.city?.trim() || "";
+    if (typedNeighborhood.length < 2 || city.length < 2) return;
+
+    setCepLoading(true);
+    try {
+      const data = await lookupNeighborhoodCep({
+        neighborhood: typedNeighborhood,
+        city,
+        state: form.deliveryState,
+      });
+      if (!data) {
+        toast.error("NÃ£o foi possÃ­vel identificar o CEP deste bairro.");
+        return;
+      }
+
+      setNeighborhood(data.neighborhood || typedNeighborhood);
+      setForm((prev) => ({
+        ...prev,
+        deliveryCep: data.cep,
+        deliveryStreet: prev.deliveryStreet || data.street,
+        deliveryCity: data.city || prev.deliveryCity,
+        deliveryState: data.state || prev.deliveryState,
+      }));
+      toast.success("CEP identificado pelo bairro!");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "NÃ£o foi possÃ­vel identificar o CEP deste bairro agora.");
+    } finally {
+      setCepLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    setDeliveryQuote(null);
+    setDeliveryQuoteError(null);
+
+    if (deliveryMode !== "delivery" || !selectedStore?.id) return;
+
+    const cep = form.deliveryCep.replace(/\D/g, "");
+    const hasCompleteAddress =
+      cep.length === 8 &&
+      form.deliveryStreet.trim().length >= 2 &&
+      form.deliveryNumber.trim().length >= 1 &&
+      form.deliveryCity.trim().length >= 2 &&
+      form.deliveryState.trim().length === 2;
+
+    if (!hasCompleteAddress) return;
+
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      void deliveryQuoteMutation.mutateAsync({
+        storeId: selectedStore.id,
+        requestId: globalThis.crypto?.randomUUID?.(),
+        address: {
+          postalCode: cep,
+          street: form.deliveryStreet.trim(),
+          number: form.deliveryNumber.trim(),
+          complement: form.deliveryComplement.trim() || null,
+          neighborhood: neighborhood.trim() || null,
+          city: form.deliveryCity.trim(),
+          state: form.deliveryState.trim().toUpperCase(),
+        },
+      }).then((quote) => {
+        if (cancelled) return;
+        setDeliveryQuote(quote);
+        setDeliveryQuoteError(quote.available ? null : deliveryReasonMessage(quote.reason));
+      }).catch((error: unknown) => {
+        if (cancelled) return;
+        setDeliveryQuote(null);
+        setDeliveryQuoteError(error instanceof Error ? error.message : "Não foi possível calcular a entrega.");
+      });
+    }, 650);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [
+    deliveryMode,
+    selectedStore?.id,
+    form.deliveryCep,
+    form.deliveryStreet,
+    form.deliveryNumber,
+    form.deliveryComplement,
+    form.deliveryCity,
+    form.deliveryState,
+    neighborhood,
+  ]);
+
+  const handleSwitchToAlternativeStore = (alternative: AlternativeDeliveryStoreView) => {
+    const targetStore = stores.find((store) => store.id === alternative.storeId);
+    if (!targetStore) {
+      toast.error("Não foi possível localizar a unidade sugerida. Atualize a página e tente novamente.");
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `A unidade ${alternative.name} atende este endereço a ${alternative.distanceKm.toFixed(1).replace(".", ",")} km. `
+      + "Ao trocar de unidade, o carrinho atual será limpo porque os produtos e preços são específicos de cada loja. Deseja continuar?",
+    );
+    if (!confirmed) return;
+
+    setSelectedStore(targetStore, {
+      skipCartConfirmation: true,
+      destinationPath: "/cardapio",
+    });
+    toast.success(`Unidade alterada para ${alternative.name}.`, {
+      description: "Confira o cardápio desta unidade para montar o pedido.",
+    });
+  };
+
+  const rawDeliveryFeeAmount = deliveryMode === "delivery" && deliveryQuote?.available
+    ? deliveryQuote.deliveryFee
     : 0;
   const deliveryFeeAmount = clubFreeDelivery || couponFreeDelivery ? 0 : rawDeliveryFeeAmount;
   const clubDiscountAmount = clubDiscountPct > 0 ? ((subtotal - couponDiscount) * clubDiscountPct) / 100 : 0;
   const total = Math.max(0, subtotal - couponDiscount - pointsDiscount - clubDiscountAmount + deliveryFeeAmount);
+  const checkoutTrackingKeyRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!selectedStore?.id || items.length === 0) return;
+    const key = `${selectedStore.id}:${items.map((item) => `${item.productId}x${item.quantity}`).join(",")}`;
+    if (checkoutTrackingKeyRef.current === key) return;
+    checkoutTrackingKeyRef.current = key;
+    trackMetaEvent("InitiateCheckout", {
+      value: total,
+      currency: "BRL",
+      content_type: "product",
+      content_ids: items.map((item) => String(item.productId)),
+      num_items: items.reduce((sum, item) => sum + item.quantity, 0),
+      store_id: selectedStore.id,
+      store_slug: selectedStore.slug,
+      store_city: selectedStore.city,
+    });
+
+    // Um evento por produto permite medir o funil individual sem armazenar
+    // dados pessoais. O funil global continua correto porque agrega sessões únicas.
+    for (const productId of Array.from(new Set(items.map((item) => item.productId)))) {
+      emitAnalyticsEvent({
+        eventType: "CHECKOUT_STARTED",
+        productId,
+        metadata: { cart_item_count: items.length },
+      });
+    }
+  }, [items, selectedStore?.city, selectedStore?.id, selectedStore?.slug, total]);
+
   const pointsBalance = loyaltyPointsQuery.data ?? 0;
   const maxRedeemable = Math.min(pointsBalance, Math.floor(total / 0.10)); // não pode descontar mais que o total
 
@@ -368,16 +587,69 @@ export default function Checkout() {
       });
   }, [items, selectedStore?.id, subtotal]);
 
+  const getDeliveryAddressText = () => {
+    if (deliveryMode === "pickup") return "Retirada no local";
+    const locality = [neighborhood.trim(), form.deliveryCity.trim(), form.deliveryState.trim().toUpperCase()]
+      .filter(Boolean)
+      .join(" - ");
+    return [
+      `${form.deliveryStreet.trim()}, ${form.deliveryNumber.trim()}`,
+      form.deliveryComplement.trim(),
+      locality,
+      form.deliveryCep.trim(),
+    ].filter(Boolean).join(", ");
+  };
+
+  const buildOrderFingerprint = () => JSON.stringify({
+    storeId: selectedStore?.id ?? null,
+    form,
+    deliveryMode,
+    deliveryAddress: getDeliveryAddressText(),
+    neighborhood: neighborhood || null,
+    paymentMethod,
+    couponCode: couponApplied ? couponCode : null,
+    pointsToRedeem: appliedPointsToRedeem >= 50 ? appliedPointsToRedeem : 0,
+    items: items.map((item) => ({
+      productId: item.productId,
+      quantity: item.quantity,
+      notes: item.notes ?? null,
+      configuration: item.catalogSelection ?? null,
+    })),
+  });
+
+  const getOrderIdempotencyKey = () => {
+    if (!selectedStore?.id) throw new Error("Loja não selecionada.");
+    return getCheckoutIdempotencyKey(selectedStore.id, buildOrderFingerprint());
+  };
+
+  const maybeClearIdempotencyAfterError = (error: any) => {
+    if (!selectedStore?.id) return;
+    const code = error?.data?.code ?? error?.shape?.data?.code;
+    if (code && code !== "CONFLICT") {
+      clearCheckoutIdempotencyKey(selectedStore.id);
+    }
+  };
+
   const doCreateOrder = async () => {
+    if (!selectedStore?.id) {
+      toast.error("Selecione uma unidade antes de finalizar o pedido.");
+      return;
+    }
     try {
       const result = await createOrder.mutateAsync({
-        storeId: selectedStore?.id,
+        storeId: selectedStore.id,
+        idempotencyKey: getOrderIdempotencyKey(),
+        attribution: getStoreAttribution(selectedStore.id),
         ...form,
+        serviceType: deliveryMode,
         deliveryCep: form.deliveryCep ? form.deliveryCep.replace(/\D/g, "").replace(/(\d{5})(\d{3})/, "$1-$2") || undefined : undefined,
-        deliveryAddress: deliveryMode === "delivery"
-          ? `${form.deliveryAddress}${neighborhood ? `, ${neighborhood}` : ""}${form.deliveryCity ? ` - ${form.deliveryCity}` : ""}`
-          : (form.deliveryAddress.trim() || "Retirada no local"),
-        deliveryNeighborhood: deliveryMode === "delivery" ? neighborhood || undefined : undefined,
+        deliveryAddress: getDeliveryAddressText(),
+        deliveryStreet: deliveryMode === "delivery" ? form.deliveryStreet.trim() : undefined,
+        deliveryNumber: deliveryMode === "delivery" ? form.deliveryNumber.trim() : undefined,
+        deliveryNeighborhood: deliveryMode === "delivery" ? neighborhood.trim() || undefined : undefined,
+        deliveryCity: deliveryMode === "delivery" ? form.deliveryCity.trim() || undefined : undefined,
+        deliveryState: deliveryMode === "delivery" ? form.deliveryState.trim().toUpperCase() || undefined : undefined,
+        deliveryComplement: deliveryMode === "delivery" ? form.deliveryComplement.trim() || undefined : undefined,
         paymentMethod,
         couponCode: couponApplied ? couponCode : undefined,
         pointsToRedeem: appliedPointsToRedeem >= 50 ? appliedPointsToRedeem : undefined,
@@ -392,6 +664,17 @@ export default function Checkout() {
       });
       setOrderId(result.orderId);
       setSavedItems([...items]);
+      clearCheckoutIdempotencyKey(selectedStore.id);
+      trackMetaEvent("Purchase", {
+        value: total,
+        currency: "BRL",
+        content_type: "product",
+        content_ids: items.map((item) => String(item.productId)),
+        order_id: String(result.orderId),
+        store_id: selectedStore.id,
+        store_slug: selectedStore.slug,
+        store_city: selectedStore.city,
+      });
       clearCart();
 
       // PIX: Asaas desabilitado temporariamente — pedido segue direto para sucesso.
@@ -427,20 +710,31 @@ export default function Checkout() {
 
       setOrderStep("success");
     } catch (err: any) {
+      maybeClearIdempotencyAfterError(err);
       toast.error(err.message ?? "Erro ao realizar pedido");
     }
   };
 
   const submitOrder = async () => {
+    if (!selectedStore?.id) {
+      toast.error("Selecione uma unidade antes de finalizar o pedido.");
+      return;
+    }
     try {
       const result = await createOrder.mutateAsync({
-        storeId: selectedStore?.id,
+        storeId: selectedStore.id,
+        idempotencyKey: getOrderIdempotencyKey(),
+        attribution: getStoreAttribution(selectedStore.id),
         ...form,
+        serviceType: deliveryMode,
         deliveryCep: form.deliveryCep ? form.deliveryCep.replace(/\D/g, "").replace(/(\d{5})(\d{3})/, "$1-$2") || undefined : undefined,
-        deliveryAddress: deliveryMode === "delivery"
-          ? `${form.deliveryAddress}${neighborhood ? `, ${neighborhood}` : ""}${form.deliveryCity ? ` - ${form.deliveryCity}` : ""}`
-          : (form.deliveryAddress.trim() || "Retirada no local"),
-        deliveryNeighborhood: deliveryMode === "delivery" ? neighborhood || undefined : undefined,
+        deliveryAddress: getDeliveryAddressText(),
+        deliveryStreet: deliveryMode === "delivery" ? form.deliveryStreet.trim() : undefined,
+        deliveryNumber: deliveryMode === "delivery" ? form.deliveryNumber.trim() : undefined,
+        deliveryNeighborhood: deliveryMode === "delivery" ? neighborhood.trim() || undefined : undefined,
+        deliveryCity: deliveryMode === "delivery" ? form.deliveryCity.trim() || undefined : undefined,
+        deliveryState: deliveryMode === "delivery" ? form.deliveryState.trim().toUpperCase() || undefined : undefined,
+        deliveryComplement: deliveryMode === "delivery" ? form.deliveryComplement.trim() || undefined : undefined,
         paymentMethod,
         couponCode: couponApplied ? couponCode : undefined,
         pointsToRedeem: appliedPointsToRedeem >= 50 ? appliedPointsToRedeem : undefined,
@@ -456,6 +750,17 @@ export default function Checkout() {
 
       setOrderId(result.orderId);
       setSavedItems([...items]);
+      clearCheckoutIdempotencyKey(selectedStore.id);
+      trackMetaEvent("Purchase", {
+        value: total,
+        currency: "BRL",
+        content_type: "product",
+        content_ids: items.map((item) => String(item.productId)),
+        order_id: String(result.orderId),
+        store_id: selectedStore.id,
+        store_slug: selectedStore.slug,
+        store_city: selectedStore.city,
+      });
       clearCart();
 
       if (paymentMethod === "credit_card" || paymentMethod === "debit_card") {
@@ -516,26 +821,48 @@ export default function Checkout() {
   };
 
   const validateStep0 = () => {
+    if (!form.customerName.trim() || !form.customerPhone.trim()) {
+      toast.error("Preencha nome e telefone");
+      return false;
+    }
+
     if (deliveryMode === "delivery") {
-      if (!form.customerName || !form.customerPhone || !form.deliveryAddress) {
-        toast.error("Preencha nome, telefone e endereço");
+      const cep = form.deliveryCep.replace(/\D/g, "");
+      if (
+        cep.length !== 8 ||
+        !form.deliveryStreet.trim() ||
+        !form.deliveryNumber.trim() ||
+        !form.deliveryCity.trim() ||
+        form.deliveryState.trim().length !== 2
+      ) {
+        toast.error("Preencha CEP, rua, número, cidade e UF.");
         return false;
       }
-      if (!neighborhood.trim()) {
-        toast.error("Informe o bairro para calcular a taxa de entrega.");
+      if (deliveryQuoteMutation.isPending) {
+        toast.info("Aguarde o cálculo da entrega.");
         return false;
       }
-      if (!deliveryZone) {
-        toast.error("Bairro não encontrado na nossa área de entrega. Entre em contato pelo WhatsApp.");
-        return false;
-      }
-    } else {
-      if (!form.customerName || !form.customerPhone) {
-        toast.error("Preencha nome e telefone");
+      if (!deliveryQuote?.available) {
+        toast.error(deliveryQuoteError || "Calcule a entrega antes de continuar.");
         return false;
       }
     }
     return true;
+  };
+
+  const completeStepAndSet = (nextStep: Step) => {
+    if (nextStep > step) {
+      emitAnalyticsEvent({
+        eventType: "CHECKOUT_STEP_COMPLETED",
+        metadata: {
+          completed_step: step,
+          next_step: nextStep,
+          delivery_mode: deliveryMode,
+          payment_method: step >= 1 ? paymentMethod : null,
+        },
+      });
+    }
+    setStep(nextStep);
   };
 
   const handleNext = () => {
@@ -554,7 +881,7 @@ export default function Checkout() {
     }
     const nextStep = Math.min(step + 1, 2) as Step;
     // Quando o cliente chega no step de pagamento (step 1), registrar carrinho abandonado
-    if (nextStep === 1 && isAuthenticated && items.length > 0 && selectedStore?.id && tenantConfig.features.automations) {
+    if (nextStep === 1 && isAuthenticated && items.length > 0 && selectedStore?.id && bonattoConfig.features.automations) {
       registerAbandonedCart.mutate({
         storeId: selectedStore.id,
         customerName: form.customerName,
@@ -573,7 +900,7 @@ export default function Checkout() {
       setShowUpsellModal(true);
       return;
     }
-    setStep(nextStep);
+    completeStepAndSet(nextStep);
   };
 
   const handleBack = () => setStep((s) => Math.max(s - 1, 0) as Step);
@@ -628,7 +955,7 @@ export default function Checkout() {
   return (
     <div className="min-h-screen bg-muted/30">
       {/* Store closed warning */}
-      {!isStoreOpenWithHours(dbStoreHours) && <StoreClosedBanner storeHours={dbStoreHours} />}
+      {!manualStoreOpen && !isStoreOpenWithHours(dbStoreHours) && <StoreClosedBanner storeHours={dbStoreHours} />}
       <div className="py-8">
       <div className="container max-w-3xl">
         <BonattoSectionHero eyebrow="Último passo para o sabor" title="Fechar pedido" description="Confira entrega, pagamento e benefícios. O resto deixa com a cozinha." />
@@ -732,80 +1059,212 @@ export default function Checkout() {
                   <Card>
                     <CardContent className="pt-5 space-y-4">
                       <p className="text-sm font-semibold flex items-center gap-2"><MapPin className="w-4 h-4 text-primary" />Endereço de Entrega</p>
-                      <div className="grid grid-cols-2 gap-4">
-                        <div className="space-y-1.5">
-                          <Label htmlFor="cep">CEP {cepLoading && <span className="text-xs text-muted-foreground">(buscando...)</span>}</Label>
-                          <Input id="cep" value={form.deliveryCep} onChange={(e) => setForm({ ...form, deliveryCep: e.target.value })} onBlur={handleCepBlur} placeholder="35670-000" />
-                        </div>
-                        <div className="space-y-1.5">
-                          <Label htmlFor="city">Cidade</Label>
-                          <Input id="city" value={form.deliveryCity} readOnly className="bg-muted/40" />
-                        </div>
-                      </div>
-                      <div className="space-y-1.5">
-                        <Label htmlFor="address">Endereço completo *</Label>
-                        <Input id="address" value={form.deliveryAddress} onChange={(e) => setForm({ ...form, deliveryAddress: e.target.value })} placeholder="Rua, número" required />
-                      </div>
-                      {/* Campo de bairro com busca automática */}
-                      <div className="space-y-1.5 relative">
-                        <Label htmlFor="neighborhood">Bairro *</Label>
-                        <div className="relative">
-                          <Input
-                            id="neighborhood"
-                            value={neighborhood}
-                            onChange={(e) => {
-                              const val = e.target.value;
-                              setNeighborhood(val);
-                              setNeighborhoodSearch(val);
-                              setDeliveryZone(null);
-                              setZoneNotFound(false);
-                            }}
-                            placeholder="Ex: Juatuba, Centro..."
-                            className={deliveryZone ? "border-green-500 pr-8" : zoneNotFound ? "border-[#a01218] pr-8" : ""}
-                          />
-                          {deliveryZone && (
-                            <span className="absolute right-2 top-1/2 -translate-y-1/2 text-green-500 text-xs font-bold">✓</span>
-                          )}
-                        </div>
-                        {/* Sugestões de bairro */}
-                        {neighborhoodSearch.length >= 2 && !deliveryZone && zonesSearchQuery.data && zonesSearchQuery.data.length > 0 && (
-                          <div className="absolute z-50 left-0 right-0 bg-card border border-border rounded-lg shadow-lg mt-1 max-h-48 overflow-y-auto">
-                            {zonesSearchQuery.data.map((zone) => (
+
+                      {(savedAddressesQuery.data?.length ?? 0) > 0 && (
+                        <div className="space-y-2">
+                          <Label>Usar endereço salvo</Label>
+                          <div className="flex gap-2 overflow-x-auto pb-1">
+                            {savedAddressesQuery.data?.map((address) => (
                               <button
-                                key={zone.id}
+                                key={address.id}
                                 type="button"
-                                className="w-full text-left px-3 py-2.5 hover:bg-muted transition-colors flex items-center justify-between text-sm"
-                                onClick={() => {
-                                  setNeighborhood(zone.neighborhood);
-                                  setNeighborhoodSearch("");
-                                  setDeliveryZone(zone);
-                                  setZoneNotFound(false);
-                                }}
+                                onClick={() => applySavedAddress(address)}
+                                disabled={!address.street || !address.number || !address.cep || !address.city || !address.state}
+                                className="min-w-[190px] rounded-xl border border-border bg-background p-3 text-left transition-colors hover:border-primary/40 hover:bg-primary/5 disabled:cursor-not-allowed disabled:opacity-50"
                               >
-                                <span className="font-medium">{zone.neighborhood}</span>
-                                <span className="text-muted-foreground text-xs">
-                                  {parseFloat(zone.deliveryFee) === 0 ? "Grátis" : `R$ ${parseFloat(zone.deliveryFee).toFixed(2)}`} • ~{zone.estimatedMinutes} min
-                                </span>
+                                <div className="flex items-center gap-2">
+                                  <MapPin className="h-4 w-4 text-primary" />
+                                  <span className="text-sm font-semibold">{address.label}</span>
+                                  {address.isDefault && <Badge variant="secondary" className="text-[10px]">Padrão</Badge>}
+                                </div>
+                                <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">{address.address}</p>
+                                {!address.latitude || !address.longitude ? (
+                                  <p className="mt-1 text-[10px] text-amber-700">Edite este endereço para confirmar a localização.</p>
+                                ) : null}
                               </button>
                             ))}
                           </div>
-                        )}
-                        {neighborhoodSearch.length >= 2 && !deliveryZone && zonesSearchQuery.data?.length === 0 && (
-                          <p className="text-xs text-[#7d0f14] mt-1">Bairro não encontrado na nossa área. Entre em contato pelo WhatsApp.</p>
-                        )}
-                        {/* Card de taxa encontrada */}
-                        {deliveryZone && (
-                          <div className="mt-2 p-2.5 bg-green-50 border border-green-200 rounded-lg flex items-center justify-between text-sm">
-                            <span className="text-green-700 font-medium">
-                              {parseFloat(deliveryZone.deliveryFee) === 0 ? "🎉 Entrega grátis!" : `🛵 Taxa: R$ ${parseFloat(deliveryZone.deliveryFee).toFixed(2).replace(".", ",")}`}
-                            </span>
-                            <span className="text-green-600 text-xs">~{deliveryZone.estimatedMinutes} min</span>
-                          </div>
-                        )}
+                          <p className="text-[11px] text-muted-foreground">Ao selecionar, a distância, a taxa e o prazo são calculados novamente para esta unidade.</p>
+                        </div>
+                      )}
+
+                      <div className="grid grid-cols-1 gap-4 sm:grid-cols-[1fr_1fr_90px]">
+                        <div className="space-y-1.5">
+                          <Label htmlFor="cep">CEP * {cepLoading && <span className="text-xs text-muted-foreground">(buscando...)</span>}</Label>
+                          <Input
+                            id="cep"
+                            value={form.deliveryCep}
+                            onChange={(e) => setForm({ ...form, deliveryCep: e.target.value })}
+                            onBlur={handleCepBlur}
+                            placeholder="35680-000"
+                            autoComplete="postal-code"
+                          />
+                        </div>
+                        <div className="space-y-1.5">
+                          <Label htmlFor="city">Cidade *</Label>
+                          <Input
+                            id="city"
+                            value={form.deliveryCity}
+                            onChange={(e) => setForm({ ...form, deliveryCity: e.target.value })}
+                            placeholder="Itaúna"
+                            autoComplete="address-level2"
+                          />
+                        </div>
+                        <div className="space-y-1.5">
+                          <Label htmlFor="state">UF *</Label>
+                          <Input
+                            id="state"
+                            value={form.deliveryState}
+                            maxLength={2}
+                            onChange={(e) => setForm({ ...form, deliveryState: e.target.value.toUpperCase() })}
+                            placeholder="MG"
+                            autoComplete="address-level1"
+                          />
+                        </div>
                       </div>
-                      <div className="space-y-1.5">
-                        <Label htmlFor="complement">Complemento</Label>
-                        <Input id="complement" value={form.deliveryComplement} onChange={(e) => setForm({ ...form, deliveryComplement: e.target.value })} placeholder="Apto, bloco, referência..." />
+
+                      <div className="grid grid-cols-1 gap-4 sm:grid-cols-[1fr_130px]">
+                        <div className="space-y-1.5">
+                          <Label htmlFor="street">Rua *</Label>
+                          <Input
+                            id="street"
+                            value={form.deliveryStreet}
+                            onChange={(e) => setForm({ ...form, deliveryStreet: e.target.value })}
+                            placeholder="Nome da rua"
+                            autoComplete="address-line1"
+                          />
+                        </div>
+                        <div className="space-y-1.5">
+                          <Label htmlFor="number">Número *</Label>
+                          <Input
+                            id="number"
+                            value={form.deliveryNumber}
+                            onChange={(e) => setForm({ ...form, deliveryNumber: e.target.value })}
+                            placeholder="123"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                        <div className="space-y-1.5">
+                          <Label htmlFor="neighborhood">Bairro</Label>
+                          <Input
+                            id="neighborhood"
+                            value={neighborhood}
+                            onChange={(e) => setNeighborhood(e.target.value)}
+                            onBlur={handleNeighborhoodBlur}
+                            placeholder="Centro"
+                            autoComplete="address-level3"
+                          />
+                          <p className="text-[11px] text-muted-foreground">O bairro faz parte do endereço, mas não define taxa ou cobertura.</p>
+                        </div>
+                        <div className="space-y-1.5">
+                          <Label htmlFor="complement">Complemento</Label>
+                          <Input
+                            id="complement"
+                            value={form.deliveryComplement}
+                            onChange={(e) => setForm({ ...form, deliveryComplement: e.target.value })}
+                            placeholder="Apto, bloco, referência..."
+                            autoComplete="address-line2"
+                          />
+                        </div>
+                      </div>
+
+                      <div aria-live="polite">
+                        {deliveryQuoteMutation.isPending ? (
+                          <div className="flex items-center gap-3 rounded-xl border border-border bg-muted/30 p-3.5 text-sm">
+                            <Loader2 className="h-4 w-4 animate-spin text-primary" />
+                            <div>
+                              <p className="font-medium">Calculando entrega...</p>
+                              <p className="text-xs text-muted-foreground">Estamos localizando o endereço e calculando a rota até esta unidade.</p>
+                            </div>
+                          </div>
+                        ) : deliveryQuote?.available ? (
+                          <div className="rounded-xl border border-green-200 bg-green-50 p-3.5">
+                            <div className="grid grid-cols-3 gap-3 text-center">
+                              <div>
+                                <p className="text-[11px] text-green-700/70">Entrega</p>
+                                <p className="mt-1 text-sm font-semibold text-green-800">
+                                  {deliveryFeeAmount === 0 ? "Grátis" : `R$ ${deliveryFeeAmount.toFixed(2).replace(".", ",")}`}
+                                </p>
+                              </div>
+                              <div className="border-x border-green-200">
+                                <p className="text-[11px] text-green-700/70">Distância</p>
+                                <p className="mt-1 text-sm font-semibold text-green-800">{deliveryQuote.distanceKm.toFixed(1).replace(".", ",")} km</p>
+                              </div>
+                              <div>
+                                <p className="text-[11px] text-green-700/70">Previsão</p>
+                                <p className="mt-1 text-sm font-semibold text-green-800">~{deliveryQuote.estimatedMinutes} min</p>
+                              </div>
+                            </div>
+                          </div>
+                        ) : deliveryQuoteError ? (
+                          <div className="space-y-3">
+                            <div className="rounded-xl border border-red-200 bg-red-50 p-3.5">
+                              <p className="text-sm font-medium text-red-800">{deliveryQuoteError}</p>
+                              {(deliveryQuote?.reason === "OUTSIDE_DELIVERY_AREA" || deliveryQuote?.reason === "NO_COVERAGE_ZONE") && (
+                                <button
+                                  type="button"
+                                  className="mt-2 text-xs font-semibold text-red-800 underline underline-offset-2"
+                                  onClick={() => setDeliveryMode("pickup")}
+                                >
+                                  Retirar na loja
+                                </button>
+                              )}
+                            </div>
+
+                            {(deliveryQuote?.alternatives?.length ?? 0) > 0 && (
+                              <div className="rounded-xl border border-amber-200 bg-amber-50 p-3.5">
+                                <div className="flex items-start gap-2">
+                                  <Store className="mt-0.5 h-4 w-4 shrink-0 text-amber-800" />
+                                  <div>
+                                    <p className="text-sm font-semibold text-amber-950">
+                                      Outra unidade entrega neste endereço
+                                    </p>
+                                    <p className="mt-0.5 text-xs text-amber-800">
+                                      Encontramos {deliveryQuote?.alternatives?.length === 1 ? "uma unidade próxima" : "outras unidades"} dentro da área de entrega.
+                                    </p>
+                                  </div>
+                                </div>
+
+                                <div className="mt-3 space-y-2">
+                                  {deliveryQuote?.alternatives?.map((alternative) => (
+                                    <div
+                                      key={alternative.storeId}
+                                      className="rounded-lg border border-amber-200 bg-white p-3"
+                                    >
+                                      <div className="flex items-start justify-between gap-3">
+                                        <div className="min-w-0">
+                                          <p className="text-sm font-semibold text-foreground">{alternative.name}</p>
+                                          <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
+                                            <span>{alternative.distanceKm.toFixed(1).replace(".", ",")} km</span>
+                                            <span>
+                                              {alternative.deliveryFee === 0
+                                                ? "Entrega grátis"
+                                                : `R$ ${alternative.deliveryFee.toFixed(2).replace(".", ",")}`}
+                                            </span>
+                                            <span>~{alternative.estimatedMinutes} min</span>
+                                          </div>
+                                        </div>
+                                        <Button
+                                          type="button"
+                                          size="sm"
+                                          className="h-8 shrink-0 gap-1.5"
+                                          onClick={() => handleSwitchToAlternativeStore(alternative)}
+                                        >
+                                          Trocar
+                                          <ChevronRight className="h-3.5 w-3.5" />
+                                        </Button>
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        ) : (
+                          <p className="text-xs text-muted-foreground">Preencha CEP, rua e número para calcular automaticamente taxa e prazo.</p>
+                        )}
                       </div>
                     </CardContent>
                   </Card>
@@ -1179,7 +1638,7 @@ export default function Checkout() {
           setUpsellDismissed(true);
           setShowUpsellModal(false);
           toast.success(`${upsellProduct.name} adicionado ao pedido!`);
-          setStep(2);
+          completeStepAndSet(2);
         };
         const handleDecline = () => {
           setUpsellDismissed(true);
@@ -1187,7 +1646,7 @@ export default function Checkout() {
           if (downsellOffer && downsellProduct) {
             setShowDownsellModal(true);
           } else {
-            setStep(2);
+            completeStepAndSet(2);
           }
         };
         return (
@@ -1197,11 +1656,11 @@ export default function Checkout() {
               <div className="bg-primary px-5 pt-5 pb-4 text-white relative">
                 <div className="flex items-center gap-2 mb-2">
                   <span className="text-lg">⚠️</span>
-                  <span className="text-xs font-black uppercase tracking-widest text-[#f9d0d0]">ESPERA — você vai perder isso...</span>
+                  <span className="text-xs font-black uppercase tracking-widest text-[#f9d0d0]">Antes de continuar</span>
                 </div>
                 <DialogTitle className="text-2xl font-black text-white leading-tight">{upsellOffer.title}</DialogTitle>
                 <p className="text-sm text-[#fce8e8] mt-1 font-medium">
-                  Você acabou de desbloquear <strong className="text-white">{upsellProduct.name}</strong> no seu pedido 🍕
+                  Você pode adicionar <strong className="text-white">{upsellProduct.name}</strong> ao seu pedido.
                 </p>
               </div>
 
@@ -1228,12 +1687,12 @@ export default function Checkout() {
                 {/* Gatilho de urgência */}
                 <div className="flex items-center gap-2 text-sm text-amber-700 bg-amber-50 rounded-xl px-4 py-2.5 border border-amber-200">
                   <span className="text-base">⏳</span>
-                  <span className="font-semibold">Essa oferta some assim que você continuar</span>
+                  <span className="font-semibold">Disponível enquanto você estiver nesta etapa.</span>
                 </div>
 
                 {/* Prova social */}
                 <p className="text-xs text-center text-muted-foreground">
-                  👉 A maioria das pessoas aproveita essa oferta e não se arrepende.
+                  Revise o item e o preço antes de adicionar.
                 </p>
 
                 {/* Botões */}
@@ -1242,7 +1701,7 @@ export default function Checkout() {
                     className="w-full h-12 gap-2 font-black text-base bg-primary hover:bg-primary/90 shadow-lg shadow-primary/30"
                     onClick={handleAccept}
                   >
-                    🔥 SIM, QUERO APROVEITAR AGORA
+                    Adicionar ao pedido
                   </Button>
                   <button
                     onClick={handleDecline}
@@ -1250,7 +1709,7 @@ export default function Checkout() {
                   >
                     {discount > 0
                       ? `"Não, prefiro perder ${fmt(basePrice - finalPrice)}"`
-                      : '"Não, obrigado — continuar sem adicionar"'}
+                      : "Continuar sem adicionar"}
                   </button>
                 </div>
               </div>
@@ -1266,17 +1725,17 @@ export default function Checkout() {
         const finalPrice = discount > 0 ? basePrice * (1 - discount / 100) : basePrice;
         const fmt = (v: number) => `R$ ${v.toFixed(2).replace(".", ",")}`;
         return (
-          <Dialog open={showDownsellModal} onOpenChange={(open) => { if (!open) { setShowDownsellModal(false); setStep(2); } }}>
+          <Dialog open={showDownsellModal} onOpenChange={(open) => { if (!open) { setShowDownsellModal(false); completeStepAndSet(2); } }}>
             <DialogContent className="max-w-sm p-0 overflow-hidden border-0 shadow-2xl">
               {/* Header laranja com urgência */}
               <div className="bg-orange-500 px-5 pt-5 pb-4 text-white">
                 <div className="flex items-center gap-2 mb-2">
                   <TrendingDown className="w-4 h-4 text-orange-200" />
-                  <span className="text-xs font-black uppercase tracking-widest text-orange-100">ÚLTIMA CHANCE — só para você</span>
+                  <span className="text-xs font-black uppercase tracking-widest text-orange-100">Outra opção</span>
                 </div>
                 <DialogTitle className="text-2xl font-black text-white leading-tight">{downsellOffer.title}</DialogTitle>
                 <p className="text-sm text-orange-100 mt-1 font-medium">
-                  Antes de ir... temos uma oferta menor que pode te interessar.
+                  Se preferir, você pode adicionar esta opção ao pedido.
                 </p>
               </div>
 
@@ -1323,7 +1782,7 @@ export default function Checkout() {
                       }));
                       setShowDownsellModal(false);
                       toast.success(`${downsellProduct.name} adicionado ao pedido!`);
-                      setStep(2);
+                      completeStepAndSet(2);
                     }}
                   >
                     <CartIcon className="w-4 h-4" />
@@ -1331,7 +1790,7 @@ export default function Checkout() {
                   </Button>
                   <button
                     className="text-xs text-center text-muted-foreground hover:text-foreground transition-colors py-2"
-                    onClick={() => { setShowDownsellModal(false); setStep(2); }}
+                    onClick={() => { setShowDownsellModal(false); completeStepAndSet(2); }}
                   >
                     {discount > 0
                       ? `"Não, prefiro perder ${fmt(basePrice - finalPrice)}"`

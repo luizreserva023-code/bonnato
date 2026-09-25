@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { trpc } from "@/lib/trpc";
+import { uploadImageFile } from "@/lib/imageUpload";
 import { useAdminStore } from "@/contexts/AdminStoreContext";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -43,6 +44,7 @@ import {
   CheckCircle2,
   AlarmClock,
   Repeat,
+  ImagePlus,
 } from "lucide-react";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { useLocation } from "wouter";
@@ -99,6 +101,20 @@ const CHANNEL_COLORS: Record<string, string> = {
 
 const VARIABLES_HINT = "Variáveis: {{clientName}}, {{orderId}}, {{total}}, {{coupon}}";
 
+async function uploadNotificationImage(
+  file: File,
+  storeId: number | undefined,
+  onUploaded: (url: string) => void,
+) {
+  try {
+    const data = await uploadImageFile({ file, scope: "notification", storeId });
+    onUploaded(data.url);
+    toast.success("Imagem enviada!");
+  } catch (error) {
+    toast.error(error instanceof Error ? error.message : "Não foi possível enviar a imagem.");
+  }
+}
+
 // Atalhos de tela para redirecionamento
 const REDIRECT_SHORTCUTS = [
   { label: "🏠 Início", value: "/" },
@@ -128,6 +144,7 @@ type Template = {
   title: string;
   body: string;
   redirectUrl?: string | null;
+  imageUrl?: string | null;
   isActive: boolean;
   createdAt: Date;
   updatedAt: Date;
@@ -150,6 +167,7 @@ function TemplateFormDialog({
   const [channel, setChannel] = useState(editTemplate?.channel ?? "both");
   const [title, setTitle] = useState(editTemplate?.title ?? "");
   const [body, setBody] = useState(editTemplate?.body ?? "");
+  const [imageUrl, setImageUrl] = useState(editTemplate?.imageUrl ?? "");
   const [redirectShortcut, setRedirectShortcut] = useState<string>(() => {
     const url = editTemplate?.redirectUrl ?? "";
     const found = REDIRECT_SHORTCUTS.find((s) => s.value === url && s.value !== "custom");
@@ -193,6 +211,7 @@ function TemplateFormDialog({
         storeId: selectedStoreId,
         title,
         body,
+        imageUrl: imageUrl.trim() || null,
         channel: channel as "push" | "whatsapp" | "both",
         redirectUrl: finalRedirectUrl || undefined,
       });
@@ -203,6 +222,7 @@ function TemplateFormDialog({
         channel: channel as "push" | "whatsapp" | "both",
         title,
         body,
+        imageUrl: imageUrl.trim() || undefined,
         redirectUrl: finalRedirectUrl || undefined,
       });
     }
@@ -275,6 +295,27 @@ function TemplateFormDialog({
             </p>
           </div>
 
+          {(channel === "push" || channel === "both") && (
+            <div>
+              <label className="text-sm font-medium text-gray-700 block mb-1 flex items-center gap-1">
+                <ImagePlus className="w-3.5 h-3.5" /> Imagem da notificação
+              </label>
+              {imageUrl && <img src={imageUrl} alt="Prévia" className="mb-2 h-28 w-full rounded-lg object-cover border" />}
+              <Input value={imageUrl} onChange={(e) => setImageUrl(e.target.value)} placeholder="URL da imagem ou envie um arquivo abaixo" />
+              <input
+                className="mt-2 block w-full text-xs text-gray-500"
+                type="file"
+                accept="image/jpeg,image/png,image/webp,image/gif"
+                onChange={async (e) => {
+                  const selected = e.target.files?.[0];
+                  if (!selected) return;
+                  await uploadNotificationImage(selected, selectedStoreId, setImageUrl);
+                }}
+              />
+              <p className="mt-1 text-xs text-gray-400">A imagem é armazenada no storage; o banco salva apenas a URL.</p>
+            </div>
+          )}
+
           {/* Redirecionamento */}
           {(channel === "push" || channel === "both") && (
             <div>
@@ -331,6 +372,7 @@ function SendCustomDialog({
   const { selectedStoreId } = useAdminStore();
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
+  const [imageUrl, setImageUrl] = useState("");
   const [redirectShortcut, setRedirectShortcut] = useState("/");
   const [customUrl, setCustomUrl] = useState("");
   const [segment, setSegment] = useState("");
@@ -347,6 +389,7 @@ function SendCustomDialog({
       onClose();
       setTitle("");
       setBody("");
+      setImageUrl("");
       setRedirectShortcut("/");
       setCustomUrl("");
       setSegment("");
@@ -368,6 +411,7 @@ function SendCustomDialog({
       storeId: selectedStoreId,
       title: title.trim(),
       body: body.trim(),
+      imageUrl: imageUrl.trim() || undefined,
       redirectUrl: finalRedirectUrl || "/",
       tag: segment === "all" || !segment
         ? undefined
@@ -397,6 +441,7 @@ function SendCustomDialog({
               <div className="w-10 h-10 rounded-xl bg-[#6E0D12] flex items-center justify-center flex-shrink-0">
                 <Bell className="w-5 h-5 text-white" />
               </div>
+              {imageUrl && <img src={imageUrl} alt="" className="h-16 w-16 rounded-lg object-cover flex-shrink-0" />}
               <div className="flex-1 min-w-0">
                 <div className="text-white text-sm font-semibold truncate">{previewTitle}</div>
                 <div className="text-[#f9d0d0]/80 text-xs mt-0.5 line-clamp-2">{previewBody}</div>
@@ -413,7 +458,7 @@ function SendCustomDialog({
             <Input
               value={title}
               onChange={(e) => setTitle(e.target.value)}
-              placeholder="Ex: 🍕 Oferta especial só hoje!"
+              placeholder="Ex: 🍕 20% de desconto nas pizzas grandes"
               maxLength={200}
             />
           </div>
@@ -423,9 +468,20 @@ function SendCustomDialog({
             <Textarea
               value={body}
               onChange={(e) => setBody(e.target.value)}
-              placeholder="Ex: Aproveite 20% de desconto em todas as pizzas grandes. Válido até meia-noite! 🔥"
+              placeholder="Ex: Pizzas grandes com 20% de desconto até meia-noite."
               rows={3}
             />
+          </div>
+
+          <div>
+            <label className="text-sm font-medium text-gray-700 block mb-1 flex items-center gap-1"><ImagePlus className="w-3.5 h-3.5" /> Imagem</label>
+            <Input value={imageUrl} onChange={(e) => setImageUrl(e.target.value)} placeholder="URL da imagem ou envie um arquivo" />
+            <input className="mt-2 block w-full text-xs text-gray-500" type="file" accept="image/jpeg,image/png,image/webp,image/gif"
+              onChange={async (e) => {
+                const selected = e.target.files?.[0];
+                if (!selected) return;
+                await uploadNotificationImage(selected, selectedStoreId, setImageUrl);
+              }} />
           </div>
 
           {/* Destino */}
@@ -619,6 +675,7 @@ function ScheduleFormDialog({ open, onClose }: { open: boolean; onClose: () => v
   const { selectedStoreId } = useAdminStore();
   const [title, setTitle] = useState("");
   const [message, setMessage] = useState("");
+  const [imageUrl, setImageUrl] = useState("");
   const [channel, setChannel] = useState("push");
   const [audience, setAudience] = useState("all");
   const [recurrence, setRecurrence] = useState("once");
@@ -627,15 +684,15 @@ function ScheduleFormDialog({ open, onClose }: { open: boolean; onClose: () => v
   const [selectedNeighborhoods, setSelectedNeighborhoods] = useState<string[]>([]);
   const [neighborhoodSearch, setNeighborhoodSearch] = useState("");
 
-  // Fetch delivery zones for neighborhood selection
-  const { data: deliveryZones } = trpc.deliveryZones.list.useQuery(
+  // Filtro de marketing por bairro usa bairros observados em pedidos históricos.
+  // Não depende das antigas zonas comerciais por bairro.
+  const { data: neighborhoodOptions } = trpc.notifications.neighborhoodOptions.useQuery(
     { storeId: selectedStoreId },
     { enabled: selectedStoreId !== undefined },
   );
-  const activeZones = (deliveryZones ?? []).filter((z: any) => z.isActive);
-  const filteredZones = neighborhoodSearch.trim()
-    ? activeZones.filter((z: any) => z.neighborhood.toLowerCase().includes(neighborhoodSearch.toLowerCase()))
-    : activeZones;
+  const filteredNeighborhoods = neighborhoodSearch.trim()
+    ? (neighborhoodOptions ?? []).filter((item) => item.neighborhood.toLowerCase().includes(neighborhoodSearch.toLowerCase()))
+    : (neighborhoodOptions ?? []);
 
   function toggleNeighborhood(name: string) {
     setSelectedNeighborhoods((prev) =>
@@ -648,7 +705,7 @@ function ScheduleFormDialog({ open, onClose }: { open: boolean; onClose: () => v
       toast.success("Notificação agendada com sucesso!");
       utils.notifications.scheduleList.invalidate();
       onClose();
-      setTitle(""); setMessage(""); setScheduledDate(""); setScheduledTime("");
+      setTitle(""); setMessage(""); setImageUrl(""); setScheduledDate(""); setScheduledTime("");
       setSelectedNeighborhoods([]); setNeighborhoodSearch("");
     },
     onError: (e) => toast.error(e.message),
@@ -662,6 +719,7 @@ function ScheduleFormDialog({ open, onClose }: { open: boolean; onClose: () => v
     createMutation.mutate({
       storeId: selectedStoreId,
       title, message,
+      imageUrl: imageUrl.trim() || undefined,
       channel: channel as "push" | "whatsapp" | "both",
       targetAudience: audience as "all" | "active" | "inactive" | "club",
       scheduledAt,
@@ -688,6 +746,25 @@ function ScheduleFormDialog({ open, onClose }: { open: boolean; onClose: () => v
             <label className="text-sm font-medium text-gray-700 mb-1 block">Mensagem *</label>
             <Textarea value={message} onChange={e => setMessage(e.target.value)} placeholder="Texto da notificação..." required rows={3} />
           </div>
+          {(channel === "push" || channel === "both") && (
+            <div>
+              <label className="text-sm font-medium text-gray-700 mb-1 block flex items-center gap-1">
+                <ImagePlus className="w-3.5 h-3.5" /> Imagem da notificação
+              </label>
+              {imageUrl && <img src={imageUrl} alt="Prévia" className="mb-2 h-28 w-full rounded-lg object-cover border" />}
+              <Input value={imageUrl} onChange={(e) => setImageUrl(e.target.value)} placeholder="URL da imagem ou envie um arquivo" />
+              <input
+                className="mt-2 block w-full text-xs text-gray-500"
+                type="file"
+                accept="image/jpeg,image/png,image/webp,image/gif"
+                onChange={async (e) => {
+                  const selected = e.target.files?.[0];
+                  if (!selected) return;
+                  await uploadNotificationImage(selected, selectedStoreId, setImageUrl);
+                }}
+              />
+            </div>
+          )}
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="text-sm font-medium text-gray-700 mb-1 block">Canal</label>
@@ -736,7 +813,7 @@ function ScheduleFormDialog({ open, onClose }: { open: boolean; onClose: () => v
           </div>
 
           {/* Filtro por Bairro */}
-          {activeZones.length > 0 && (
+          {(neighborhoodOptions?.length ?? 0) > 0 && (
             <div>
               <label className="text-sm font-medium text-gray-700 mb-1 block flex items-center gap-1">
                 📍 Filtrar por bairro
@@ -762,11 +839,11 @@ function ScheduleFormDialog({ open, onClose }: { open: boolean; onClose: () => v
                 className="mb-2 h-8 text-sm"
               />
               <div className="max-h-36 overflow-y-auto border rounded-lg divide-y">
-                {filteredZones.length === 0 ? (
+                {filteredNeighborhoods.length === 0 ? (
                   <p className="text-xs text-gray-400 text-center py-3">Nenhum bairro encontrado</p>
-                ) : filteredZones.map((z: any) => (
+                ) : filteredNeighborhoods.map((z) => (
                   <button
-                    key={z.id}
+                    key={`${z.neighborhood}:${z.city ?? ""}`}
                     type="button"
                     onClick={() => toggleNeighborhood(z.neighborhood)}
                     className={`w-full text-left px-3 py-2 text-sm flex items-center justify-between hover:bg-gray-50 transition-colors ${

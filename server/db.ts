@@ -1,9 +1,10 @@
-import { and, desc, eq, gte, gt, inArray, isNull, like, lte, not, or, sql, type SQL } from "drizzle-orm";
-import { getTodayStartUtc, getTodayEndUtc, getBrasilTzOffset } from "../shared/timezone.ts";
-import { drizzle } from "drizzle-orm/mysql2";
-import { createPool, type Pool } from "mysql2/promise";
+import { and, desc, eq, gte, gt, ilike, inArray, isNull, like, lte, not, or, sql, type SQL } from "drizzle-orm";
+import { getTodayStartUtc, getTodayEndUtc } from "../shared/timezone.ts";
+import { drizzle } from "drizzle-orm/node-postgres";
+import { Pool } from "pg";
 import bcrypt from "bcryptjs";
 import { randomUUID } from "crypto";
+import { hashRecoveryToken } from "./securityTokens.ts";
 import {
   Category,
   Coupon,
@@ -83,6 +84,10 @@ import {
   customTags,
   customCustomerTags,
   CustomTag,
+  customerTags,
+  abandonedCarts,
+  journeys,
+  journeyExecutions,
   scheduledNotifications,
   ScheduledNotification,
   InsertScheduledNotification,
@@ -91,22 +96,25 @@ import {
   driverPushSubscriptions,
   DriverPushSubscription,
   loyaltyTransactions,
-  tenantCustomerAccounts,
+  customerStoreAccounts,
   clientAlerts,
   clientAlertReads,
   ClientAlert,
   webhookEvents,
   loyaltyOrderCredits,
   couponRedemptions,
+  orderRequests,
+  eventOutbox,
+  orderStageLogs,
+  storeAuditLogs,
 } from "../drizzle/schema.ts";
 import { ENV } from "./_core/env.ts";
-import { shouldRunRuntimeSchemaMigrations } from "./runtimeSchema.ts";
+import { publishOrderRealtimeEvent } from "./realtime/orderEvents.ts";
 
 type DatabaseClient = ReturnType<typeof drizzle>;
 
 let _db: DatabaseClient | null = null;
 let _pool: Pool | null = null;
-let _schemaReady: Promise<void> | null = null;
 const _memoCache = new Map<string, { expiresAt: number; value: unknown }>();
 
 async function withShortCache<T>(key: string, ttlMs: number, factory: () => Promise<T>): Promise<T> {
@@ -124,74 +132,50 @@ function buildConnectionStringFromParts(): string | null {
   const host = process.env.DATABASE_HOST?.trim();
   const user = process.env.DATABASE_USER?.trim();
   const password = process.env.DATABASE_PASSWORD?.trim();
-  const database = process.env.DATABASE_NAME?.trim() || "defaultdb";
-  const port = process.env.DATABASE_PORT?.trim() || "3306";
+  const database = process.env.DATABASE_NAME?.trim() || "bonatto";
+  const port = process.env.DATABASE_PORT?.trim() || "5432";
+  if (!host || !user || !password) return null;
 
-  if (!host || !user || !password) {
-    return null;
-  }
-
-  const sslMode = process.env.DATABASE_SSL_MODE?.trim() || "require";
-  const url = new URL(`mysql://${encodeURIComponent(user)}:${encodeURIComponent(password)}@${host}:${port}/${database}`);
-
-  // mysql2 accepts JSON in the ssl query parameter when using URI strings.
-  if (sslMode === "require") {
-    url.searchParams.set("ssl", JSON.stringify({ rejectUnauthorized: false }));
-  }
-
-  return url.toString();
+  // Keep TLS configuration out of the connection string.
+  // node-postgres can let sslmode query parameters override the explicit
+  // Pool.ssl object. We configure TLS once in buildPostgresPool instead.
+  return new URL(
+    `postgresql://${encodeURIComponent(user)}:${encodeURIComponent(password)}@${host}:${port}/${database}`,
+  ).toString();
 }
 
 function normalizeDatabaseUrl(rawUrl?: string | null): string | null {
   if (!rawUrl) return null;
-  try {
-    const url = new URL(rawUrl);
-    const sslMode = (url.searchParams.get("ssl-mode") ?? url.searchParams.get("sslmode") ?? "").toLowerCase();
-    if (sslMode === "required" || sslMode === "require") {
-      url.searchParams.delete("ssl-mode");
-      url.searchParams.delete("sslmode");
-      url.searchParams.set("ssl", JSON.stringify({ rejectUnauthorized: false }));
-    }
-    return url.toString();
-  } catch {
-    return rawUrl;
+  let normalized = rawUrl.trim();
+  if (!normalized) return null;
+  if (/^mysql:/i.test(normalized)) throw new Error("DATABASE_URL must use postgresql://, not mysql://");
+  if (/^postgres:\/\//i.test(normalized)) {
+    normalized = "postgresql://" + normalized.slice("postgres://".length);
   }
+  return normalized.replace(/[?&]ssl-mode=REQUIRED/gi, (match) =>
+    match.startsWith("?") ? "?sslmode=require" : "&sslmode=require",
+  );
 }
 
-function buildMysqlPoolFromParts() {
-  const host = process.env.DATABASE_HOST?.trim();
-  const user = process.env.DATABASE_USER?.trim();
-  const password = process.env.DATABASE_PASSWORD?.trim();
-  const database = process.env.DATABASE_NAME?.trim() || "defaultdb";
-  const port = Number(process.env.DATABASE_PORT?.trim() || "3306");
-
-  if (!host || !user || !password) {
-    return null;
-  }
-
-  const pool = createPool({
-    host,
-    port,
-    user,
-    password,
-    database,
-    waitForConnections: true,
-    connectionLimit: 10,
-    maxIdle: 10,
-    idleTimeout: 60000,
-    enableKeepAlive: true,
-    keepAliveInitialDelay: 0,
-    connectTimeout: 10000,
-    queueLimit: 0,
-    ssl: { rejectUnauthorized: false },
+function buildPostgresPool(connectionString: string) {
+  const sslMode = (process.env.DATABASE_SSL_MODE ?? "").trim().toLowerCase();
+  const hostname = new URL(connectionString).hostname.toLowerCase();
+  const isLocalhost = hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1";
+  const requiresSsl = !isLocalhost && (
+    sslMode === "require" ||
+    sslMode === "required" ||
+    /[?&]sslmode=require/i.test(connectionString)
+  );
+  const pool = new Pool({
+    connectionString,
+    max: 10,
+    idleTimeoutMillis: 60_000,
+    connectionTimeoutMillis: 10_000,
+    ssl: requiresSsl ? { rejectUnauthorized: false } : false,
   });
-  (pool as unknown as { on(event: "error", listener: (error: NodeJS.ErrnoException & { fatal?: boolean }) => void): void }).on("error", (error) => {
+  pool.on("error", (error) => {
     console.error("[Database] Pool error:", error);
-    if (error.fatal) {
-      _db = null;
-      _pool = null;
-      _schemaReady = null;
-    }
+    resetDbState();
   });
   return pool;
 }
@@ -204,7 +188,6 @@ function resetDbState() {
   }
   _db = null;
   _pool = null;
-  _schemaReady = null;
   _memoCache.clear();
 }
 
@@ -269,1034 +252,15 @@ async function geocodeAddress(address: string): Promise<Coordinates | null> {
   return { lat, lng };
 }
 
-async function hasColumn(db: DatabaseClient, tableName: string, columnName: string): Promise<boolean> {
-  const result = await db.execute(sql.raw(`SHOW COLUMNS FROM \`${tableName}\` LIKE '${columnName}'`));
-  const rows = (result as unknown as [Array<unknown>])[0] ?? [];
-  return rows.length > 0;
-}
-
-async function hasIndex(db: DatabaseClient, tableName: string, indexName: string): Promise<boolean> {
-  const result = await db.execute(sql.raw(`SHOW INDEX FROM \`${tableName}\` WHERE Key_name = '${indexName}'`));
-  const rows = (result as unknown as [Array<unknown>])[0] ?? [];
-  return rows.length > 0;
-}
-
-async function hasConstraint(db: DatabaseClient, tableName: string, constraintName: string): Promise<boolean> {
-  const result = await db.execute(sql.raw(
-    `SELECT 1 FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = '${tableName}' AND CONSTRAINT_NAME = '${constraintName}' LIMIT 1`,
-  ));
-  const rows = (result as unknown as [Array<unknown>])[0] ?? [];
-  return rows.length > 0;
-}
-
-async function getIndexColumns(db: DatabaseClient, tableName: string, indexName: string): Promise<string[]> {
-  const result = await db.execute(sql.raw(`SHOW INDEX FROM \`${tableName}\` WHERE Key_name = '${indexName}'`));
-  const rows = (result as unknown as [Array<{ Column_name?: string; Seq_in_index?: number }>])[0] ?? [];
-  return rows
-    .sort((a, b) => Number(a.Seq_in_index ?? 0) - Number(b.Seq_in_index ?? 0))
-    .map((row) => String(row.Column_name ?? ""))
-    .filter(Boolean);
-}
-
-export async function ensureRuntimeSchema(db: DatabaseClient): Promise<void> {
-  if (_schemaReady) {
-    return _schemaReady;
-  }
-
-  _schemaReady = (async () => {
-    await db.execute(
-      sql.raw(
-        "ALTER TABLE `users` MODIFY COLUMN `role` enum('user','admin','manager') NOT NULL DEFAULT 'user'"
-      )
-    );
-
-    if (!(await hasColumn(db, "users", "status"))) {
-      await db.execute(
-        sql.raw(
-          "ALTER TABLE `users` ADD `status` enum('active','inactive','suspended','setup_pending') NOT NULL DEFAULT 'active' AFTER `phone`"
-        )
-      );
-    }
-    const socialUserColumns = [
-      ["firstName", "ALTER TABLE `users` ADD `firstName` varchar(160) NULL AFTER `name`"],
-      ["lastName", "ALTER TABLE `users` ADD `lastName` varchar(160) NULL AFTER `firstName`"],
-      ["username", "ALTER TABLE `users` ADD `username` varchar(191) NULL AFTER `email`"],
-      ["profileCompleted", "ALTER TABLE `users` ADD `profileCompleted` boolean NOT NULL DEFAULT false AFTER `emailVerified`"],
-    ] as const;
-    for (const [column, statement] of socialUserColumns) {
-      if (!(await hasColumn(db, "users", column))) await db.execute(sql.raw(statement));
-    }
-
-    if (!(await hasColumn(db, "stores", "displayName"))) {
-      await db.execute(sql.raw("ALTER TABLE `stores` ADD `displayName` varchar(200)"));
-    }
-    if (!(await hasColumn(db, "stores", "tenantKey"))) {
-      await db.execute(sql.raw("ALTER TABLE `stores` ADD `tenantKey` varchar(100) NULL AFTER `id`"));
-      await db.execute(sql.raw("UPDATE `stores` SET `tenantKey` = CASE WHEN `isDefault` = 1 OR LOWER(`name`) LIKE '%bonatto%' OR LOWER(`name`) LIKE '%bonnato%' THEN 'bonatto' ELSE `slug` END WHERE `tenantKey` IS NULL OR `tenantKey` = ''"));
-      await db.execute(sql.raw("ALTER TABLE `stores` MODIFY `tenantKey` varchar(100) NOT NULL DEFAULT 'bonatto'"));
-    }
-    if (!(await hasIndex(db, "stores", "stores_tenant_idx"))) {
-      await db.execute(sql.raw("CREATE INDEX `stores_tenant_idx` ON `stores` (`tenantKey`)"));
-    }
-    if (!(await hasColumn(db, "stores", "document"))) {
-      await db.execute(sql.raw("ALTER TABLE `stores` ADD `document` varchar(32)"));
-    }
-    if (!(await hasColumn(db, "stores", "latitude"))) {
-      await db.execute(sql.raw("ALTER TABLE `stores` ADD `latitude` decimal(10,7)"));
-    }
-    if (!(await hasColumn(db, "stores", "longitude"))) {
-      await db.execute(sql.raw("ALTER TABLE `stores` ADD `longitude` decimal(10,7)"));
-    }
-    if (!(await hasColumn(db, "stores", "serviceRadiusKm"))) {
-      await db.execute(sql.raw("ALTER TABLE `stores` ADD `serviceRadiusKm` decimal(6,2) NOT NULL DEFAULT '25.00'"));
-    }
-    if (!(await hasColumn(db, "stores", "email"))) {
-      await db.execute(sql.raw("ALTER TABLE `stores` ADD `email` varchar(320)"));
-    }
-    if (!(await hasColumn(db, "stores", "status"))) {
-      await db.execute(
-        sql.raw(
-          "ALTER TABLE `stores` ADD `status` enum('active','inactive','suspended','setup_pending') NOT NULL DEFAULT 'active'"
-        )
-      );
-    }
-    if (!(await hasIndex(db, "stores", "stores_status_idx"))) {
-      await db.execute(sql.raw("CREATE INDEX `stores_status_idx` ON `stores` (`status`)"));
-    }
-
-    await db.execute(sql.raw(`
-      CREATE TABLE IF NOT EXISTS \`store_white_label_configs\` (
-        \`id\` int AUTO_INCREMENT NOT NULL,
-        \`storeId\` int NOT NULL,
-        \`status\` enum('active','inactive','setup_pending') NOT NULL DEFAULT 'setup_pending',
-        \`plan\` enum('essential','pro','enterprise','custom') NOT NULL DEFAULT 'essential',
-        \`domain\` varchar(191),
-        \`subdomain\` varchar(100),
-        \`brandName\` varchar(200) NOT NULL,
-        \`shortName\` varchar(100) NOT NULL,
-        \`tagline\` varchar(240),
-        \`adminTitle\` varchar(200),
-        \`deliveryLabel\` varchar(200),
-        \`logoUrl\` text,
-        \`wordmarkUrl\` text,
-        \`faviconUrl\` text,
-        \`waiterLogoUrl\` text,
-        \`primaryColor\` varchar(20) NOT NULL DEFAULT '#6E0D12',
-        \`primaryDarkColor\` varchar(20) NOT NULL DEFAULT '#450709',
-        \`accentColor\` varchar(20) NOT NULL DEFAULT '#e05c5c',
-        \`backgroundColor\` varchar(20) NOT NULL DEFAULT '#fffaf8',
-        \`textColor\` varchar(20) NOT NULL DEFAULT '#211719',
-        \`featureFlags\` text NOT NULL,
-        \`providerConfig\` text NOT NULL,
-        \`pageConfig\` text NOT NULL,
-        \`contactConfig\` text,
-        \`createdAt\` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        \`updatedAt\` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-        PRIMARY KEY (\`id\`),
-        UNIQUE KEY \`store_white_label_store_unique\` (\`storeId\`),
-        UNIQUE KEY \`store_white_label_domain_unique\` (\`domain\`),
-        UNIQUE KEY \`store_white_label_subdomain_unique\` (\`subdomain\`),
-        KEY \`store_white_label_status_idx\` (\`status\`)
-      )
-    `));
-
-    await db.execute(sql.raw(`
-      CREATE TABLE IF NOT EXISTS \`tenant_memberships\` (
-        \`id\` int AUTO_INCREMENT NOT NULL,
-        \`tenantKey\` varchar(100) NOT NULL,
-        \`userId\` int NOT NULL,
-        \`role\` enum('owner','admin','manager') NOT NULL DEFAULT 'admin',
-        \`active\` boolean NOT NULL DEFAULT true,
-        \`createdAt\` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        \`updatedAt\` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-        PRIMARY KEY (\`id\`),
-        UNIQUE KEY \`tenant_memberships_unique\` (\`tenantKey\`,\`userId\`),
-        KEY \`tenant_memberships_tenant_idx\` (\`tenantKey\`),
-        KEY \`tenant_memberships_user_idx\` (\`userId\`)
-      )
-    `));
-
-    await db.execute(sql.raw(`
-      CREATE TABLE IF NOT EXISTS \`tenant_customer_accounts\` (
-        \`id\` int AUTO_INCREMENT NOT NULL,
-        \`tenantKey\` varchar(100) NOT NULL,
-        \`userId\` int NOT NULL,
-        \`loyaltyPoints\` int NOT NULL DEFAULT 0,
-        \`clubPlan\` enum('bonattao','basico'),
-        \`clubStatus\` enum('active','pending','cancelled'),
-        \`clubStartDate\` timestamp NULL,
-        \`clubNextBillingDate\` timestamp NULL,
-        \`clubFreePizzaUsed\` boolean NOT NULL DEFAULT false,
-        \`clubFreePizzaResetAt\` timestamp NULL,
-        \`stripeCustomerId\` varchar(255),
-        \`createdAt\` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        \`updatedAt\` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-        PRIMARY KEY (\`id\`),
-        UNIQUE KEY \`tenant_customer_accounts_unique\` (\`tenantKey\`,\`userId\`),
-        KEY \`tenant_customer_accounts_tenant_idx\` (\`tenantKey\`),
-        KEY \`tenant_customer_accounts_user_idx\` (\`userId\`),
-        CONSTRAINT \`tenant_customer_accounts_points_nonnegative_chk\` CHECK (\`loyaltyPoints\` >= 0)
-      )
-    `));
-    await db.execute(sql.raw(`
-      INSERT IGNORE INTO \`tenant_customer_accounts\`
-        (\`tenantKey\`, \`userId\`, \`loyaltyPoints\`, \`clubPlan\`, \`clubStatus\`, \`clubStartDate\`,
-         \`clubNextBillingDate\`, \`clubFreePizzaUsed\`, \`clubFreePizzaResetAt\`, \`stripeCustomerId\`)
-      SELECT 'bonatto', \`id\`, \`loyaltyPoints\`, \`clubPlan\`, \`clubStatus\`, \`clubStartDate\`,
-             \`clubNextBillingDate\`, \`clubFreePizzaUsed\`, \`clubFreePizzaResetAt\`, \`stripeCustomerId\`
-      FROM \`users\`
-    `));
-
-    const defaultStoreSql = "COALESCE((SELECT `id` FROM (SELECT `id` FROM `stores` ORDER BY `isDefault` DESC, `id` LIMIT 1) default_store), 0)";
-    const tenantLedgerTables = ["loyalty_transactions", "loyalty_order_credits"] as const;
-    for (const tableName of tenantLedgerTables) {
-      if (!(await hasColumn(db, tableName, "tenantKey"))) {
-        await db.execute(sql.raw(`ALTER TABLE \`${tableName}\` ADD \`tenantKey\` varchar(100) NOT NULL DEFAULT 'bonatto' AFTER \`id\``));
-      }
-      if (!(await hasColumn(db, tableName, "storeId"))) {
-        await db.execute(sql.raw(`ALTER TABLE \`${tableName}\` ADD \`storeId\` int NULL AFTER \`tenantKey\``));
-        await db.execute(sql.raw(`
-          UPDATE \`${tableName}\` ledger
-          LEFT JOIN \`orders\` o ON o.\`id\` = ledger.\`orderId\`
-          LEFT JOIN \`stores\` s ON s.\`id\` = o.\`storeId\`
-          SET ledger.\`storeId\` = o.\`storeId\`, ledger.\`tenantKey\` = COALESCE(s.\`tenantKey\`, 'bonatto')
-          WHERE ledger.\`storeId\` IS NULL
-        `));
-      }
-      const indexName = tableName === "loyalty_transactions" ? "loyalty_tx_tenant_user_idx" : "loyalty_order_credits_tenant_user_idx";
-      if (!(await hasIndex(db, tableName, indexName))) {
-        await db.execute(sql.raw(`CREATE INDEX \`${indexName}\` ON \`${tableName}\` (\`tenantKey\`,\`userId\`)`));
-      }
-    }
-
-    if (!(await hasColumn(db, "club_payments", "tenantKey"))) {
-      await db.execute(sql.raw("ALTER TABLE `club_payments` ADD `tenantKey` varchar(100) NOT NULL DEFAULT 'bonatto' AFTER `id`"));
-    }
-    if (!(await hasColumn(db, "club_payments", "storeId"))) {
-      await db.execute(sql.raw("ALTER TABLE `club_payments` ADD `storeId` int NULL AFTER `tenantKey`"));
-      await db.execute(sql.raw(`UPDATE \`club_payments\` SET \`storeId\` = ${defaultStoreSql} WHERE \`storeId\` IS NULL`));
-      await db.execute(sql.raw("ALTER TABLE `club_payments` MODIFY `storeId` int NOT NULL DEFAULT 0"));
-    }
-    if (!(await hasIndex(db, "club_payments", "club_payments_tenant_user_idx"))) {
-      await db.execute(sql.raw("CREATE INDEX `club_payments_tenant_user_idx` ON `club_payments` (`tenantKey`,`userId`)"));
-    }
-    if (!(await hasIndex(db, "club_payments", "club_payments_store_idx"))) {
-      await db.execute(sql.raw("CREATE INDEX `club_payments_store_idx` ON `club_payments` (`storeId`)"));
-    }
-
-    if (!(await hasColumn(db, "client_notifications", "storeId"))) {
-      await db.execute(sql.raw("ALTER TABLE `client_notifications` ADD `storeId` int NULL AFTER `id`"));
-      await db.execute(sql.raw(`UPDATE \`client_notifications\` SET \`storeId\` = ${defaultStoreSql} WHERE \`storeId\` IS NULL`));
-    }
-    if (!(await hasIndex(db, "client_notifications", "client_notifications_store_user_idx"))) {
-      await db.execute(sql.raw("CREATE INDEX `client_notifications_store_user_idx` ON `client_notifications` (`storeId`,`userId`)"));
-    }
-
-    const automationScopedTables = [
-      ["customer_tags", "customer_tags_store_idx"],
-      ["custom_tags", "custom_tags_store_idx"],
-      ["custom_customer_tags", "custom_customer_tags_store_idx"],
-      ["abandoned_carts", "abandoned_carts_store_idx"],
-      ["journeys", "journeys_store_idx"],
-      ["journey_executions", "journey_executions_store_idx"],
-      ["automation_events", "automation_events_store_idx"],
-    ] as const;
-    for (const [tableName, indexName] of automationScopedTables) {
-      if (!(await hasColumn(db, tableName, "storeId"))) {
-        await db.execute(sql.raw(`ALTER TABLE \`${tableName}\` ADD \`storeId\` int NULL AFTER \`id\``));
-        await db.execute(sql.raw(`UPDATE \`${tableName}\` SET \`storeId\` = ${defaultStoreSql} WHERE \`storeId\` IS NULL`));
-        await db.execute(sql.raw(`ALTER TABLE \`${tableName}\` MODIFY \`storeId\` int NOT NULL DEFAULT 0`));
-      }
-      if (!(await hasIndex(db, tableName, indexName))) {
-        await db.execute(sql.raw(`CREATE INDEX \`${indexName}\` ON \`${tableName}\` (\`storeId\`)`));
-      }
-    }
-    if (await hasIndex(db, "customer_tags", "customer_tags_unique")) {
-      const columns = await getIndexColumns(db, "customer_tags", "customer_tags_unique");
-      if (columns.join(",") !== "storeId,userId,tag") {
-        await db.execute(sql.raw("ALTER TABLE `customer_tags` DROP INDEX `customer_tags_unique`"));
-      }
-    }
-    if (!(await hasIndex(db, "customer_tags", "customer_tags_unique"))) {
-      await db.execute(sql.raw("CREATE UNIQUE INDEX `customer_tags_unique` ON `customer_tags` (`storeId`,`userId`,`tag`)"));
-    }
-    if (await hasIndex(db, "custom_customer_tags", "custom_customer_tags_unique")) {
-      const columns = await getIndexColumns(db, "custom_customer_tags", "custom_customer_tags_unique");
-      if (columns.join(",") !== "storeId,userId,tagId") {
-        await db.execute(sql.raw("ALTER TABLE `custom_customer_tags` DROP INDEX `custom_customer_tags_unique`"));
-      }
-    }
-    if (!(await hasIndex(db, "custom_customer_tags", "custom_customer_tags_unique"))) {
-      await db.execute(sql.raw("CREATE UNIQUE INDEX `custom_customer_tags_unique` ON `custom_customer_tags` (`storeId`,`userId`,`tagId`)"));
-    }
-    if (await hasIndex(db, "custom_tags", "custom_tags_name_unique")) {
-      await db.execute(sql.raw("ALTER TABLE `custom_tags` DROP INDEX `custom_tags_name_unique`"));
-    }
-    if (!(await hasIndex(db, "custom_tags", "custom_tags_store_name_unique"))) {
-      await db.execute(sql.raw("CREATE UNIQUE INDEX `custom_tags_store_name_unique` ON `custom_tags` (`storeId`,`name`)"));
-    }
-
-    if (!(await hasColumn(db, "categories", "storeId"))) {
-      await db.execute(sql.raw("ALTER TABLE `categories` ADD `storeId` int NULL AFTER `id`"));
-      await db.execute(sql.raw(`
-        UPDATE \`categories\`
-        SET \`storeId\` = COALESCE((SELECT \`id\` FROM (SELECT \`id\` FROM \`stores\` ORDER BY \`isDefault\` DESC, \`id\` LIMIT 1) default_store), 0)
-        WHERE \`storeId\` IS NULL
-      `));
-      await db.execute(sql.raw("ALTER TABLE `categories` MODIFY `storeId` int NOT NULL DEFAULT 0"));
-      if (await hasIndex(db, "categories", "categories_slug_unique")) {
-        await db.execute(sql.raw("ALTER TABLE `categories` DROP INDEX `categories_slug_unique`"));
-      }
-      if (await hasIndex(db, "categories", "categories_external_uq")) {
-        await db.execute(sql.raw("ALTER TABLE `categories` DROP INDEX `categories_external_uq`"));
-      }
-    }
-    if (!(await hasIndex(db, "categories", "categories_store_idx"))) {
-      await db.execute(sql.raw("CREATE INDEX `categories_store_idx` ON `categories` (`storeId`)"));
-    }
-    if (!(await hasIndex(db, "categories", "categories_store_slug_unique"))) {
-      await db.execute(sql.raw("CREATE UNIQUE INDEX `categories_store_slug_unique` ON `categories` (`storeId`,`slug`)"));
-    }
-    if (!(await hasIndex(db, "categories", "categories_external_uq"))) {
-      await db.execute(sql.raw("CREATE UNIQUE INDEX `categories_external_uq` ON `categories` (`storeId`,`externalSource`,`externalMerchantId`,`externalId`)"));
-    }
-
-    if (!(await hasColumn(db, "store_settings", "storeId"))) {
-      await db.execute(sql.raw("ALTER TABLE `store_settings` ADD `storeId` int NULL AFTER `id`"));
-      await db.execute(sql.raw(`
-        UPDATE \`store_settings\`
-        SET \`storeId\` = COALESCE((SELECT \`id\` FROM (SELECT \`id\` FROM \`stores\` ORDER BY \`isDefault\` DESC, \`id\` LIMIT 1) default_store), 0)
-        WHERE \`storeId\` IS NULL
-      `));
-      await db.execute(sql.raw("ALTER TABLE `store_settings` MODIFY `storeId` int NOT NULL DEFAULT 0"));
-      if (await hasIndex(db, "store_settings", "store_settings_key_unique")) {
-        await db.execute(sql.raw("ALTER TABLE `store_settings` DROP INDEX `store_settings_key_unique`"));
-      }
-    }
-    if (!(await hasIndex(db, "store_settings", "store_settings_store_idx"))) {
-      await db.execute(sql.raw("CREATE INDEX `store_settings_store_idx` ON `store_settings` (`storeId`)"));
-    }
-    if (!(await hasIndex(db, "store_settings", "store_settings_store_key_unique"))) {
-      await db.execute(sql.raw("CREATE UNIQUE INDEX `store_settings_store_key_unique` ON `store_settings` (`storeId`,`key`)"));
-    }
-
-    const promotionsWasGlobal = !(await hasColumn(db, "promotions", "storeId"));
-    const tenantScopedTables = [
-      ["upsells", "upsells_store_idx"],
-      ["promotions", "promotions_store_idx"],
-      ["raffles", "raffles_store_idx"],
-      ["delivery_zones", "delivery_zones_store_idx"],
-      ["menu_slides", "menu_slides_store_idx"],
-      ["carousel_images", "carousel_images_store_idx"],
-      ["notification_templates", "notification_templates_store_idx"],
-      ["scheduled_notifications", "scheduled_notifications_store_idx"],
-    ] as const;
-    for (const [tableName, indexName] of tenantScopedTables) {
-      if (!(await hasColumn(db, tableName, "storeId"))) {
-        await db.execute(sql.raw(`ALTER TABLE \`${tableName}\` ADD \`storeId\` int NULL AFTER \`id\``));
-        await db.execute(sql.raw(`
-          UPDATE \`${tableName}\`
-          SET \`storeId\` = COALESCE((SELECT \`id\` FROM (SELECT \`id\` FROM \`stores\` ORDER BY \`isDefault\` DESC, \`id\` LIMIT 1) default_store), 0)
-          WHERE \`storeId\` IS NULL
-        `));
-        await db.execute(sql.raw(`ALTER TABLE \`${tableName}\` MODIFY \`storeId\` int NOT NULL DEFAULT 0`));
-      }
-      if (!(await hasIndex(db, tableName, indexName))) {
-        await db.execute(sql.raw(`CREATE INDEX \`${indexName}\` ON \`${tableName}\` (\`storeId\`)`));
-      }
-    }
-    if (!(await hasIndex(db, "delivery_zones", "delivery_zones_store_neighborhood_idx"))) {
-      await db.execute(sql.raw("CREATE INDEX `delivery_zones_store_neighborhood_idx` ON `delivery_zones` (`storeId`,`neighborhood`)"));
-    }
-    if (!(await hasIndex(db, "notification_templates", "notification_templates_store_event_channel_idx"))) {
-      await db.execute(sql.raw("CREATE INDEX `notification_templates_store_event_channel_idx` ON `notification_templates` (`storeId`,`event`,`channel`)"));
-    }
-    if (!(await hasIndex(db, "scheduled_notifications", "scheduled_notifications_store_scheduled_status_idx"))) {
-      await db.execute(sql.raw("CREATE INDEX `scheduled_notifications_store_scheduled_status_idx` ON `scheduled_notifications` (`storeId`,`scheduledAt`,`status`)"));
-    }
-    if (promotionsWasGlobal && await hasIndex(db, "promotions", "promotions_external_uq")) {
-      await db.execute(sql.raw("ALTER TABLE `promotions` DROP INDEX `promotions_external_uq`"));
-    }
-    if (!(await hasIndex(db, "promotions", "promotions_external_uq"))) {
-      await db.execute(sql.raw("CREATE UNIQUE INDEX `promotions_external_uq` ON `promotions` (`storeId`,`externalSource`,`externalMerchantId`,`externalId`)"));
-    }
-
-    await db.execute(sql.raw(`
-      UPDATE \`products\`
-      SET \`storeId\` = COALESCE((SELECT \`id\` FROM (SELECT \`id\` FROM \`stores\` ORDER BY \`isDefault\` DESC, \`id\` LIMIT 1) default_store), 0)
-      WHERE \`storeId\` IS NULL
-    `));
-    await db.execute(sql.raw(`
-      UPDATE \`coupons\`
-      SET \`storeId\` = COALESCE((SELECT \`id\` FROM (SELECT \`id\` FROM \`stores\` ORDER BY \`isDefault\` DESC, \`id\` LIMIT 1) default_store), 0)
-      WHERE \`storeId\` IS NULL
-    `));
-    await db.execute(sql.raw("ALTER TABLE `products` MODIFY `storeId` int NOT NULL DEFAULT 0"));
-    await db.execute(sql.raw("ALTER TABLE `coupons` MODIFY `storeId` int NOT NULL DEFAULT 0"));
-    if (await hasIndex(db, "coupons", "coupons_code_unique")) {
-      await db.execute(sql.raw("ALTER TABLE `coupons` DROP INDEX `coupons_code_unique`"));
-    }
-    if (!(await hasIndex(db, "coupons", "coupons_store_idx"))) {
-      await db.execute(sql.raw("CREATE INDEX `coupons_store_idx` ON `coupons` (`storeId`)"));
-    }
-    if (!(await hasIndex(db, "coupons", "coupons_store_code_unique"))) {
-      await db.execute(sql.raw("CREATE UNIQUE INDEX `coupons_store_code_unique` ON `coupons` (`storeId`,`code`)"));
-    }
-
-    const productsExternalColumns = await getIndexColumns(db, "products", "products_external_uq");
-    if (productsExternalColumns.length > 0 && productsExternalColumns[0] !== "storeId") {
-      await db.execute(sql.raw("ALTER TABLE `products` DROP INDEX `products_external_uq`"));
-    }
-    if (!(await hasIndex(db, "products", "products_external_uq"))) {
-      await db.execute(sql.raw("CREATE UNIQUE INDEX `products_external_uq` ON `products` (`storeId`,`externalSource`,`externalMerchantId`,`externalId`)"));
-    }
-    const couponsExternalColumns = await getIndexColumns(db, "coupons", "coupons_external_uq");
-    if (couponsExternalColumns.length > 0 && couponsExternalColumns[0] !== "storeId") {
-      await db.execute(sql.raw("ALTER TABLE `coupons` DROP INDEX `coupons_external_uq`"));
-    }
-    if (!(await hasIndex(db, "coupons", "coupons_external_uq"))) {
-      await db.execute(sql.raw("CREATE UNIQUE INDEX `coupons_external_uq` ON `coupons` (`storeId`,`externalSource`,`externalMerchantId`,`externalId`)"));
-    }
-
-    if (!(await hasIndex(db, "orders", "orders_store_created_idx"))) {
-      await db.execute(sql.raw("CREATE INDEX `orders_store_created_idx` ON `orders` (`storeId`,`createdAt`)"));
-    }
-    if (!(await hasIndex(db, "orders", "orders_store_status_created_idx"))) {
-      await db.execute(sql.raw("CREATE INDEX `orders_store_status_created_idx` ON `orders` (`storeId`,`status`,`createdAt`)"));
-    }
-    if (!(await hasIndex(db, "orders", "orders_status_created_idx"))) {
-      await db.execute(sql.raw("CREATE INDEX `orders_status_created_idx` ON `orders` (`status`,`createdAt`)"));
-    }
-    if (!(await hasIndex(db, "order_items", "order_items_order_product_idx"))) {
-      await db.execute(sql.raw("CREATE INDEX `order_items_order_product_idx` ON `order_items` (`orderId`,`productId`)"));
-    }
-
-    if (!(await hasColumn(db, "orders", "serviceType"))) {
-      await db.execute(sql.raw("ALTER TABLE `orders` ADD `serviceType` enum('delivery','pickup','dine_in','counter') NOT NULL DEFAULT 'delivery'"));
-    }
-    if (!(await hasColumn(db, "orders", "deliveryNeighborhood"))) {
-      await db.execute(sql.raw("ALTER TABLE `orders` ADD `deliveryNeighborhood` varchar(120)"));
-    }
-    if (!(await hasColumn(db, "orders", "tableSessionId"))) {
-      await db.execute(sql.raw("ALTER TABLE `orders` ADD `tableSessionId` int"));
-    }
-    if (!(await hasColumn(db, "orders", "predictedReadyAt"))) {
-      await db.execute(sql.raw("ALTER TABLE `orders` ADD `predictedReadyAt` timestamp NULL"));
-    }
-    if (!(await hasColumn(db, "orders", "predictedDeliveredAt"))) {
-      await db.execute(sql.raw("ALTER TABLE `orders` ADD `predictedDeliveredAt` timestamp NULL"));
-    }
-    if (!(await hasColumn(db, "orders", "predictionLabel"))) {
-      await db.execute(sql.raw("ALTER TABLE `orders` ADD `predictionLabel` varchar(120)"));
-    }
-    if (!(await hasColumn(db, "orders", "confirmedAt"))) {
-      await db.execute(sql.raw("ALTER TABLE `orders` ADD `confirmedAt` timestamp NULL"));
-    }
-    if (!(await hasColumn(db, "orders", "preparingAt"))) {
-      await db.execute(sql.raw("ALTER TABLE `orders` ADD `preparingAt` timestamp NULL"));
-    }
-    if (!(await hasColumn(db, "orders", "readyAt"))) {
-      await db.execute(sql.raw("ALTER TABLE `orders` ADD `readyAt` timestamp NULL"));
-    }
-    if (!(await hasColumn(db, "orders", "outForDeliveryAt"))) {
-      await db.execute(sql.raw("ALTER TABLE `orders` ADD `outForDeliveryAt` timestamp NULL"));
-    }
-    if (!(await hasColumn(db, "orders", "deliveredAt"))) {
-      await db.execute(sql.raw("ALTER TABLE `orders` ADD `deliveredAt` timestamp NULL"));
-    }
-    if (!(await hasColumn(db, "orders", "cancelledAt"))) {
-      await db.execute(sql.raw("ALTER TABLE `orders` ADD `cancelledAt` timestamp NULL"));
-    }
-
-    await db.execute(sql.raw(`
-      CREATE TABLE IF NOT EXISTS \`ingredients\` (
-        \`id\` int AUTO_INCREMENT NOT NULL,
-        \`storeId\` int,
-        \`name\` varchar(160) NOT NULL,
-        \`category\` varchar(120),
-        \`unit\` enum('g','kg','ml','l','unit','pack','slice','portion') NOT NULL,
-        \`currentStock\` decimal(12,3) NOT NULL DEFAULT '0.000',
-        \`minimumStock\` decimal(12,3) NOT NULL DEFAULT '0.000',
-        \`unitCost\` decimal(10,4) NOT NULL DEFAULT '0.0000',
-        \`supplier\` varchar(160),
-        \`notes\` text,
-        \`active\` boolean NOT NULL DEFAULT true,
-        \`createdAt\` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        \`updatedAt\` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-        PRIMARY KEY (\`id\`),
-        KEY \`ingredients_store_idx\` (\`storeId\`),
-        KEY \`ingredients_active_idx\` (\`active\`),
-        KEY \`ingredients_name_idx\` (\`name\`)
-      )
-    `));
-
-    await db.execute(sql.raw(`
-      CREATE TABLE IF NOT EXISTS \`product_ingredients\` (
-        \`id\` int AUTO_INCREMENT NOT NULL,
-        \`productId\` int NOT NULL,
-        \`ingredientId\` int NOT NULL,
-        \`quantity\` decimal(12,3) NOT NULL,
-        \`wastePercent\` decimal(5,2) NOT NULL DEFAULT '0.00',
-        \`active\` boolean NOT NULL DEFAULT true,
-        \`createdAt\` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        \`updatedAt\` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-        PRIMARY KEY (\`id\`),
-        UNIQUE KEY \`product_ingredients_unique\` (\`productId\`,\`ingredientId\`),
-        KEY \`product_ingredients_product_idx\` (\`productId\`),
-        KEY \`product_ingredients_ingredient_idx\` (\`ingredientId\`)
-      )
-    `));
-
-    await db.execute(sql.raw(`
-      CREATE TABLE IF NOT EXISTS \`inventory_movements\` (
-        \`id\` int AUTO_INCREMENT NOT NULL,
-        \`ingredientId\` int NOT NULL,
-        \`storeId\` int,
-        \`orderId\` int,
-        \`orderItemId\` int,
-        \`movementType\` enum('entry','manual_adjustment','sale_consumption','reversal','waste') NOT NULL,
-        \`quantityDelta\` decimal(12,3) NOT NULL,
-        \`previousStock\` decimal(12,3) NOT NULL DEFAULT '0.000',
-        \`nextStock\` decimal(12,3) NOT NULL DEFAULT '0.000',
-        \`reason\` varchar(255),
-        \`performedByUserId\` int,
-        \`metadata\` text,
-        \`createdAt\` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        PRIMARY KEY (\`id\`),
-        KEY \`inventory_movements_ingredient_idx\` (\`ingredientId\`),
-        KEY \`inventory_movements_order_idx\` (\`orderId\`),
-        KEY \`inventory_movements_type_idx\` (\`movementType\`),
-        KEY \`inventory_movements_created_idx\` (\`createdAt\`)
-      )
-    `));
-
-    await db.execute(sql.raw(`
-      CREATE TABLE IF NOT EXISTS \`order_stage_logs\` (
-        \`id\` int AUTO_INCREMENT NOT NULL,
-        \`orderId\` int NOT NULL,
-        \`previousStatus\` enum('pending','confirmed','preparing','out_for_delivery','delivered','cancelled'),
-        \`nextStatus\` enum('pending','confirmed','preparing','out_for_delivery','delivered','cancelled') NOT NULL,
-        \`stage\` enum('created','confirmed','preparing','ready','out_for_delivery','delivered','cancelled') NOT NULL,
-        \`source\` enum('system','admin','manager','driver','automation','customer') NOT NULL DEFAULT 'system',
-        \`changedByUserId\` int,
-        \`changedByDriverId\` int,
-        \`notes\` varchar(255),
-        \`metadata\` text,
-        \`createdAt\` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        PRIMARY KEY (\`id\`),
-        KEY \`order_stage_logs_order_idx\` (\`orderId\`),
-        KEY \`order_stage_logs_stage_idx\` (\`stage\`),
-        KEY \`order_stage_logs_created_idx\` (\`createdAt\`)
-      )
-    `));
-
-    await db.execute(sql.raw(`
-      CREATE TABLE IF NOT EXISTS \`productivity_events\` (
-        \`id\` int AUTO_INCREMENT NOT NULL,
-        \`orderId\` int,
-        \`storeId\` int,
-        \`eventType\` enum('acceptance_time','prep_time','dispatch_time','delivery_time','total_time','delay') NOT NULL,
-        \`actorType\` enum('system','user','staff','driver') NOT NULL DEFAULT 'system',
-        \`actorUserId\` int,
-        \`actorDriverId\` int,
-        \`valueSeconds\` int NOT NULL,
-        \`metadata\` text,
-        \`createdAt\` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        PRIMARY KEY (\`id\`),
-        KEY \`productivity_events_order_idx\` (\`orderId\`),
-        KEY \`productivity_events_type_idx\` (\`eventType\`),
-        KEY \`productivity_events_store_idx\` (\`storeId\`),
-        KEY \`productivity_events_created_idx\` (\`createdAt\`)
-      )
-    `));
-
-    await db.execute(sql.raw(`
-      CREATE TABLE IF NOT EXISTS \`staff_members\` (
-        \`id\` int AUTO_INCREMENT NOT NULL,
-        \`storeId\` int,
-        \`userId\` int,
-        \`name\` varchar(200) NOT NULL,
-        \`phone\` varchar(20),
-        \`email\` varchar(320),
-        \`role\` enum('waiter','cashier','attendant','kitchen','driver','manager','admin') NOT NULL,
-        \`accessToken\` varchar(128),
-        \`active\` boolean NOT NULL DEFAULT true,
-        \`createdAt\` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        \`updatedAt\` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-        PRIMARY KEY (\`id\`),
-        UNIQUE KEY \`staff_members_user_unique\` (\`userId\`),
-        UNIQUE KEY \`staff_members_access_token_unique\` (\`accessToken\`),
-        KEY \`staff_members_store_idx\` (\`storeId\`),
-        KEY \`staff_members_role_idx\` (\`role\`)
-      )
-    `));
-    if (!(await hasColumn(db, "staff_members", "accessToken"))) {
-      await db.execute(sql.raw("ALTER TABLE `staff_members` ADD `accessToken` varchar(128)"));
-    }
-    if (!(await hasIndex(db, "staff_members", "staff_members_access_token_unique"))) {
-      await db.execute(sql.raw("ALTER TABLE `staff_members` ADD UNIQUE KEY `staff_members_access_token_unique` (`accessToken`)"));
-    }
-
-    await db.execute(sql.raw(`
-      CREATE TABLE IF NOT EXISTS \`delivery_predictions\` (
-        \`id\` int AUTO_INCREMENT NOT NULL,
-        \`orderId\` int NOT NULL,
-        \`kind\` enum('delivery','pickup','dine_in') NOT NULL DEFAULT 'delivery',
-        \`predictionLabel\` varchar(120) NOT NULL,
-        \`minMinutes\` int NOT NULL,
-        \`maxMinutes\` int NOT NULL,
-        \`prepBaseMinutes\` int NOT NULL DEFAULT 0,
-        \`deliveryBaseMinutes\` int NOT NULL DEFAULT 0,
-        \`queuePressure\` int NOT NULL DEFAULT 0,
-        \`neighborhood\` varchar(120),
-        \`method\` varchar(80) NOT NULL DEFAULT 'heuristic',
-        \`computedAt\` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        \`createdAt\` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        \`updatedAt\` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-        PRIMARY KEY (\`id\`),
-        UNIQUE KEY \`delivery_predictions_order_unique\` (\`orderId\`),
-        KEY \`delivery_predictions_kind_idx\` (\`kind\`)
-      )
-    `));
-
-    await db.execute(sql.raw(`
-      CREATE TABLE IF NOT EXISTS \`dining_tables\` (
-        \`id\` int AUTO_INCREMENT NOT NULL,
-        \`storeId\` int,
-        \`name\` varchar(80) NOT NULL,
-        \`status\` enum('free','occupied','reserved','awaiting_closure') NOT NULL DEFAULT 'free',
-        \`capacity\` int NOT NULL DEFAULT 4,
-        \`active\` boolean NOT NULL DEFAULT true,
-        \`createdAt\` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        \`updatedAt\` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-        PRIMARY KEY (\`id\`),
-        UNIQUE KEY \`dining_tables_store_name_unique\` (\`storeId\`,\`name\`),
-        KEY \`dining_tables_store_idx\` (\`storeId\`),
-        KEY \`dining_tables_status_idx\` (\`status\`)
-      )
-    `));
-
-    await db.execute(sql.raw(`
-      CREATE TABLE IF NOT EXISTS \`table_sessions\` (
-        \`id\` int AUTO_INCREMENT NOT NULL,
-        \`tableId\` int NOT NULL,
-        \`storeId\` int,
-        \`waiterStaffId\` int,
-        \`customerName\` varchar(200),
-        \`guestCount\` int NOT NULL DEFAULT 1,
-        \`status\` enum('open','awaiting_closure','closed','cancelled') NOT NULL DEFAULT 'open',
-        \`notes\` text,
-        \`openedAt\` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        \`closedAt\` timestamp NULL,
-        \`subtotal\` decimal(10,2) NOT NULL DEFAULT '0.00',
-        \`discountAmount\` decimal(10,2) NOT NULL DEFAULT '0.00',
-        \`tipAmount\` decimal(10,2) NOT NULL DEFAULT '0.00',
-        \`closedByStaffId\` int,
-        \`total\` decimal(10,2) NOT NULL DEFAULT '0.00',
-        \`createdAt\` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        \`updatedAt\` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-        PRIMARY KEY (\`id\`),
-        KEY \`table_sessions_table_idx\` (\`tableId\`),
-        KEY \`table_sessions_waiter_idx\` (\`waiterStaffId\`),
-        KEY \`table_sessions_closed_by_idx\` (\`closedByStaffId\`),
-        KEY \`table_sessions_status_idx\` (\`status\`)
-      )
-    `));
-    if (!(await hasColumn(db, "table_sessions", "tipAmount"))) {
-      await db.execute(sql.raw("ALTER TABLE `table_sessions` ADD `tipAmount` decimal(10,2) NOT NULL DEFAULT '0.00'"));
-    }
-    if (!(await hasColumn(db, "table_sessions", "closedByStaffId"))) {
-      await db.execute(sql.raw("ALTER TABLE `table_sessions` ADD `closedByStaffId` int"));
-    }
-    if (!(await hasIndex(db, "table_sessions", "table_sessions_closed_by_idx"))) {
-      await db.execute(sql.raw("ALTER TABLE `table_sessions` ADD KEY `table_sessions_closed_by_idx` (`closedByStaffId`)"));
-    }
-
-    await db.execute(sql.raw(`
-      CREATE TABLE IF NOT EXISTS \`table_order_links\` (
-        \`id\` int AUTO_INCREMENT NOT NULL,
-        \`tableSessionId\` int NOT NULL,
-        \`orderId\` int NOT NULL,
-        \`createdAt\` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        PRIMARY KEY (\`id\`),
-        UNIQUE KEY \`table_order_links_order_unique\` (\`orderId\`),
-        KEY \`table_order_links_session_idx\` (\`tableSessionId\`)
-      )
-    `));
-
-    await db.execute(sql.raw(`
-      CREATE TABLE IF NOT EXISTS \`table_session_items\` (
-        \`id\` int AUTO_INCREMENT NOT NULL,
-        \`tableSessionId\` int NOT NULL,
-        \`productId\` int NOT NULL,
-        \`productName\` varchar(200) NOT NULL,
-        \`unitPrice\` decimal(10,2) NOT NULL,
-        \`quantity\` int NOT NULL DEFAULT 1,
-        \`notes\` text,
-        \`addedByStaffId\` int,
-        \`status\` enum('pending','preparing','ready','served','cancelled') NOT NULL DEFAULT 'pending',
-        \`requestedAt\` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        \`readyAt\` timestamp NULL,
-        \`servedAt\` timestamp NULL,
-        \`createdAt\` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        \`updatedAt\` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-        PRIMARY KEY (\`id\`),
-        KEY \`table_session_items_session_idx\` (\`tableSessionId\`),
-        KEY \`table_session_items_product_idx\` (\`productId\`),
-        KEY \`table_session_items_requested_at_idx\` (\`requestedAt\`),
-        KEY \`table_session_items_status_idx\` (\`status\`)
-      )
-    `));
-    if (!(await hasColumn(db, "table_session_items", "status"))) {
-      await db.execute(sql.raw("ALTER TABLE `table_session_items` ADD `status` enum('pending','preparing','ready','served','cancelled') NOT NULL DEFAULT 'pending'"));
-    }
-    if (!(await hasColumn(db, "table_session_items", "readyAt"))) {
-      await db.execute(sql.raw("ALTER TABLE `table_session_items` ADD `readyAt` timestamp NULL"));
-    }
-    if (!(await hasColumn(db, "table_session_items", "servedAt"))) {
-      await db.execute(sql.raw("ALTER TABLE `table_session_items` ADD `servedAt` timestamp NULL"));
-    }
-    if (!(await hasIndex(db, "table_session_items", "table_session_items_status_idx"))) {
-      await db.execute(sql.raw("ALTER TABLE `table_session_items` ADD KEY `table_session_items_status_idx` (`status`)"));
-    }
-
-    await db.execute(sql.raw(`
-      CREATE TABLE IF NOT EXISTS \`customer_metrics\` (
-        \`id\` int AUTO_INCREMENT NOT NULL,
-        \`userId\` int NOT NULL,
-        \`storeId\` int NOT NULL DEFAULT 0,
-        \`firstOrderAt\` timestamp NULL,
-        \`lastOrderAt\` timestamp NULL,
-        \`totalOrders\` int NOT NULL DEFAULT 0,
-        \`deliveredOrders\` int NOT NULL DEFAULT 0,
-        \`cancelledOrders\` int NOT NULL DEFAULT 0,
-        \`firstOrderCount\` int NOT NULL DEFAULT 0,
-        \`totalSpent\` decimal(12,2) NOT NULL DEFAULT '0.00',
-        \`averageTicket\` decimal(12,2) NOT NULL DEFAULT '0.00',
-        \`favoriteNeighborhood\` varchar(120),
-        \`favoriteOrderDay\` varchar(20),
-        \`favoriteOrderHour\` int,
-        \`favoriteProductName\` varchar(200),
-        \`updatedAt\` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-        \`createdAt\` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        PRIMARY KEY (\`id\`),
-        UNIQUE KEY \`customer_metrics_user_store_unique\` (\`userId\`,\`storeId\`),
-        KEY \`customer_metrics_orders_idx\` (\`totalOrders\`),
-        KEY \`customer_metrics_spent_idx\` (\`totalSpent\`)
-      )
-    `));
-
-    await db.execute(sql.raw(`
-      CREATE TABLE IF NOT EXISTS \`customer_auth_providers\` (
-        \`id\` int AUTO_INCREMENT NOT NULL,
-        \`userId\` int NOT NULL,
-        \`provider\` enum('email','phone','google','apple','facebook','instagram','manus') NOT NULL,
-        \`providerUserId\` varchar(191) NOT NULL,
-        \`providerEmail\` varchar(320),
-        \`providerPhone\` varchar(20),
-        \`isPrimary\` boolean NOT NULL DEFAULT false,
-        \`linkedAt\` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        \`updatedAt\` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-        PRIMARY KEY (\`id\`),
-        UNIQUE KEY \`customer_auth_providers_provider_user_unique\` (\`provider\`,\`providerUserId\`),
-        UNIQUE KEY \`customer_auth_providers_user_provider_unique\` (\`userId\`,\`provider\`),
-        KEY \`customer_auth_providers_user_idx\` (\`userId\`)
-      )
-    `));
-
-    const socialProviderColumns = [
-      ["providerUsername", "ALTER TABLE `customer_auth_providers` ADD `providerUsername` varchar(191) NULL AFTER `providerPhone`"],
-      ["displayName", "ALTER TABLE `customer_auth_providers` ADD `displayName` varchar(255) NULL AFTER `providerUsername`"],
-      ["avatarUrl", "ALTER TABLE `customer_auth_providers` ADD `avatarUrl` text NULL AFTER `displayName`"],
-      ["accountType", "ALTER TABLE `customer_auth_providers` ADD `accountType` varchar(64) NULL AFTER `avatarUrl`"],
-      ["accessTokenEncrypted", "ALTER TABLE `customer_auth_providers` ADD `accessTokenEncrypted` text NULL AFTER `accountType`"],
-      ["refreshTokenEncrypted", "ALTER TABLE `customer_auth_providers` ADD `refreshTokenEncrypted` text NULL AFTER `accessTokenEncrypted`"],
-      ["tokenExpiresAt", "ALTER TABLE `customer_auth_providers` ADD `tokenExpiresAt` timestamp NULL AFTER `refreshTokenEncrypted`"],
-      ["grantedScopes", "ALTER TABLE `customer_auth_providers` ADD `grantedScopes` text NULL AFTER `tokenExpiresAt`"],
-      ["rawProfileJson", "ALTER TABLE `customer_auth_providers` ADD `rawProfileJson` text NULL AFTER `grantedScopes`"],
-      ["consentVersion", "ALTER TABLE `customer_auth_providers` ADD `consentVersion` varchar(32) NULL AFTER `isPrimary`"],
-      ["consentedAt", "ALTER TABLE `customer_auth_providers` ADD `consentedAt` timestamp NULL AFTER `consentVersion`"],
-      ["lastSyncedAt", "ALTER TABLE `customer_auth_providers` ADD `lastSyncedAt` timestamp NULL AFTER `linkedAt`"],
-      ["disconnectedAt", "ALTER TABLE `customer_auth_providers` ADD `disconnectedAt` timestamp NULL AFTER `lastSyncedAt`"],
-    ] as const;
-    for (const [column, statement] of socialProviderColumns) {
-      if (!(await hasColumn(db, "customer_auth_providers", column))) await db.execute(sql.raw(statement));
-    }
-
-    await db.execute(sql.raw(`
-      CREATE TABLE IF NOT EXISTS \`auth_event_logs\` (
-        \`id\` int AUTO_INCREMENT NOT NULL,
-        \`userId\` int NULL,
-        \`provider\` varchar(32) NULL,
-        \`event\` enum('login_success','login_failure','provider_connected','provider_disconnected','profile_synced','account_deleted') NOT NULL,
-        \`ipAddress\` varchar(64) NULL,
-        \`userAgent\` text NULL,
-        \`metadataJson\` text NULL,
-        \`createdAt\` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        PRIMARY KEY (\`id\`),
-        KEY \`auth_event_logs_user_created_idx\` (\`userId\`,\`createdAt\`),
-        KEY \`auth_event_logs_event_created_idx\` (\`event\`,\`createdAt\`)
-      )
-    `));
-
-    await db.execute(sql.raw(`
-      CREATE TABLE IF NOT EXISTS \`user_consents\` (
-        \`id\` int AUTO_INCREMENT NOT NULL,
-        \`userId\` int NOT NULL,
-        \`kind\` enum('terms','privacy','social_sync') NOT NULL,
-        \`version\` varchar(32) NOT NULL,
-        \`granted\` boolean NOT NULL DEFAULT true,
-        \`ipAddress\` varchar(64) NULL,
-        \`userAgent\` text NULL,
-        \`createdAt\` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        PRIMARY KEY (\`id\`),
-        KEY \`user_consents_user_kind_created_idx\` (\`userId\`,\`kind\`,\`createdAt\`)
-      )
-    `));
-
-    await db.execute(sql.raw(`
-      CREATE TABLE IF NOT EXISTS \`otp_codes\` (
-        \`id\` int AUTO_INCREMENT NOT NULL,
-        \`userId\` int,
-        \`phone\` varchar(20) NOT NULL,
-        \`purpose\` enum('login','verify_phone') NOT NULL DEFAULT 'login',
-        \`codeHash\` varchar(255) NOT NULL,
-        \`attempts\` int NOT NULL DEFAULT 0,
-        \`requestIp\` varchar(64),
-        \`userAgent\` text,
-        \`expiresAt\` timestamp NOT NULL,
-        \`consumedAt\` timestamp NULL,
-        \`createdAt\` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        PRIMARY KEY (\`id\`),
-        KEY \`otp_codes_phone_idx\` (\`phone\`),
-        KEY \`otp_codes_phone_purpose_idx\` (\`phone\`,\`purpose\`),
-        KEY \`otp_codes_expires_idx\` (\`expiresAt\`)
-      )
-    `));
-
-    const platformTables = [
-      "CREATE TABLE IF NOT EXISTS `tenant_site_pages` (`id` int AUTO_INCREMENT PRIMARY KEY,`storeId` int NOT NULL,`pageKey` enum('home','menu','club','landing') NOT NULL,`title` varchar(160) NOT NULL,`draftContent` longtext NOT NULL,`publishedVersionId` int,`updatedByUserId` int,`createdAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,`updatedAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,UNIQUE KEY `tenant_site_pages_store_page_uq` (`storeId`,`pageKey`),KEY `tenant_site_pages_store_idx` (`storeId`))",
-      "CREATE TABLE IF NOT EXISTS `tenant_site_page_versions` (`id` int AUTO_INCREMENT PRIMARY KEY,`pageId` int NOT NULL,`versionNumber` int NOT NULL,`content` longtext NOT NULL,`note` varchar(240),`createdByUserId` int,`createdAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,UNIQUE KEY `tenant_site_page_versions_uq` (`pageId`,`versionNumber`),KEY `tenant_site_page_versions_page_idx` (`pageId`,`createdAt`))",
-      "CREATE TABLE IF NOT EXISTS `tenants` (`id` int AUTO_INCREMENT PRIMARY KEY,`tenantKey` varchar(100) NOT NULL,`legalName` varchar(200) NOT NULL,`displayName` varchar(200) NOT NULL,`document` varchar(32),`status` enum('setup_pending','active','suspended','cancelled') NOT NULL DEFAULT 'setup_pending',`ownerUserId` int,`metadata` text,`createdAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,`updatedAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,UNIQUE KEY `tenants_key_uq` (`tenantKey`),KEY `tenants_status_idx` (`status`))",
-      "CREATE TABLE IF NOT EXISTS `tenant_domains` (`id` int AUTO_INCREMENT PRIMARY KEY,`tenantId` int NOT NULL,`hostname` varchar(255) NOT NULL,`kind` enum('platform_subdomain','custom_domain') NOT NULL,`status` enum('pending','verifying','verified','active','failed','disabled') NOT NULL DEFAULT 'pending',`verificationToken` varchar(96) NOT NULL,`verifiedAt` timestamp NULL,`activatedAt` timestamp NULL,`lastError` text,`createdAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,`updatedAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,UNIQUE KEY `tenant_domains_hostname_uq` (`hostname`),KEY `tenant_domains_tenant_idx` (`tenantId`,`status`))",
-      "CREATE TABLE IF NOT EXISTS `tenant_plans` (`id` int AUTO_INCREMENT PRIMARY KEY,`code` varchar(64) NOT NULL,`name` varchar(120) NOT NULL,`monthlyPrice` decimal(10,2) NOT NULL DEFAULT 0,`entitlements` text NOT NULL,`limits` text NOT NULL,`active` boolean NOT NULL DEFAULT true,`createdAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,`updatedAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,UNIQUE KEY `tenant_plans_code_uq` (`code`))",
-      "CREATE TABLE IF NOT EXISTS `tenant_subscriptions` (`id` int AUTO_INCREMENT PRIMARY KEY,`tenantId` int NOT NULL,`planId` int NOT NULL,`status` enum('trialing','active','past_due','suspended','cancelled') NOT NULL DEFAULT 'trialing',`provider` varchar(32),`externalCustomerId` varchar(191),`externalSubscriptionId` varchar(191),`trialEndsAt` timestamp NULL,`currentPeriodEndsAt` timestamp NULL,`graceEndsAt` timestamp NULL,`createdAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,`updatedAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,UNIQUE KEY `tenant_subscriptions_tenant_uq` (`tenantId`),KEY `tenant_subscriptions_status_idx` (`status`))",
-      "CREATE TABLE IF NOT EXISTS `tenant_audit_logs` (`id` int AUTO_INCREMENT PRIMARY KEY,`tenantId` int NOT NULL,`storeId` int,`actorUserId` int,`action` varchar(120) NOT NULL,`resourceType` varchar(80) NOT NULL,`resourceId` varchar(96),`requestId` varchar(96),`ipAddress` varchar(64),`metadata` text,`createdAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,KEY `tenant_audit_tenant_created_idx` (`tenantId`,`createdAt`))",
-      "CREATE TABLE IF NOT EXISTS `product_option_groups` (`id` int AUTO_INCREMENT PRIMARY KEY,`storeId` int NOT NULL,`productId` int NOT NULL,`name` varchar(120) NOT NULL,`kind` enum('single','multiple','flavor','size','edge') NOT NULL DEFAULT 'multiple',`required` boolean NOT NULL DEFAULT false,`minSelections` int NOT NULL DEFAULT 0,`maxSelections` int NOT NULL DEFAULT 1,`sortOrder` int NOT NULL DEFAULT 0,`active` boolean NOT NULL DEFAULT true,`createdAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,`updatedAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,KEY `product_option_groups_product_idx` (`storeId`,`productId`,`active`))",
-      "CREATE TABLE IF NOT EXISTS `product_options` (`id` int AUTO_INCREMENT PRIMARY KEY,`storeId` int NOT NULL,`groupId` int NOT NULL,`name` varchar(160) NOT NULL,`description` text,`priceDelta` decimal(10,2) NOT NULL DEFAULT 0,`linkedProductId` int,`ingredientId` int,`ingredientQuantity` decimal(10,3),`imageUrl` text,`sortOrder` int NOT NULL DEFAULT 0,`active` boolean NOT NULL DEFAULT true,`createdAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,`updatedAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,KEY `product_options_group_idx` (`storeId`,`groupId`,`active`))",
-      "CREATE TABLE IF NOT EXISTS `product_combos` (`id` int AUTO_INCREMENT PRIMARY KEY,`storeId` int NOT NULL,`productId` int NOT NULL,`name` varchar(160) NOT NULL,`description` text,`active` boolean NOT NULL DEFAULT true,`createdAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,`updatedAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,UNIQUE KEY `product_combos_product_uq` (`storeId`,`productId`))",
-      "CREATE TABLE IF NOT EXISTS `combo_groups` (`id` int AUTO_INCREMENT PRIMARY KEY,`storeId` int NOT NULL,`comboId` int NOT NULL,`name` varchar(120) NOT NULL,`minSelections` int NOT NULL DEFAULT 1,`maxSelections` int NOT NULL DEFAULT 1,`sortOrder` int NOT NULL DEFAULT 0,KEY `combo_groups_combo_idx` (`storeId`,`comboId`))",
-      "CREATE TABLE IF NOT EXISTS `combo_group_items` (`id` int AUTO_INCREMENT PRIMARY KEY,`storeId` int NOT NULL,`groupId` int NOT NULL,`productId` int NOT NULL,`priceDelta` decimal(10,2) NOT NULL DEFAULT 0,`active` boolean NOT NULL DEFAULT true,KEY `combo_group_items_group_idx` (`storeId`,`groupId`))",
-      "CREATE TABLE IF NOT EXISTS `order_item_selections` (`id` int AUTO_INCREMENT PRIMARY KEY,`storeId` int NOT NULL,`orderId` int NOT NULL,`orderItemId` int NOT NULL,`groupName` varchar(120) NOT NULL,`optionName` varchar(160) NOT NULL,`optionId` int,`linkedProductId` int,`priceDelta` decimal(10,2) NOT NULL DEFAULT 0,`quantity` int NOT NULL DEFAULT 1,`metadata` text,`createdAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,KEY `order_item_selections_order_idx` (`storeId`,`orderId`),KEY `order_item_selections_item_idx` (`orderItemId`))",
-      "CREATE TABLE IF NOT EXISTS `kitchen_tickets` (`id` int AUTO_INCREMENT PRIMARY KEY,`storeId` int NOT NULL,`orderId` int NOT NULL,`station` varchar(80) NOT NULL DEFAULT 'cozinha',`status` enum('queued','preparing','ready','completed','cancelled') NOT NULL DEFAULT 'queued',`priority` enum('normal','high','urgent') NOT NULL DEFAULT 'normal',`promisedAt` timestamp NULL,`startedAt` timestamp NULL,`readyAt` timestamp NULL,`completedAt` timestamp NULL,`printedAt` timestamp NULL,`createdAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,`updatedAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,UNIQUE KEY `kitchen_tickets_order_uq` (`storeId`,`orderId`),KEY `kitchen_tickets_board_idx` (`storeId`,`status`,`createdAt`))",
-      "CREATE TABLE IF NOT EXISTS `growth_settings` (`id` int AUTO_INCREMENT PRIMARY KEY,`storeId` int NOT NULL,`cashbackPercent` decimal(5,2) NOT NULL DEFAULT 0,`pointsPerReal` decimal(8,3) NOT NULL DEFAULT 1,`referralReferrerPoints` int NOT NULL DEFAULT 100,`referralReferredPoints` int NOT NULL DEFAULT 50,`npsEnabled` boolean NOT NULL DEFAULT true,`config` text,`updatedAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,UNIQUE KEY `growth_settings_store_uq` (`storeId`))",
-      "CREATE TABLE IF NOT EXISTS `reward_catalog` (`id` int AUTO_INCREMENT PRIMARY KEY,`storeId` int NOT NULL,`name` varchar(160) NOT NULL,`description` text,`rewardType` enum('discount','product','free_delivery','cashback') NOT NULL,`pointsCost` int NOT NULL DEFAULT 0,`value` decimal(10,2) NOT NULL DEFAULT 0,`productId` int,`category` varchar(80),`icon` varchar(64),`imageUrl` text,`badgeText` varchar(64),`buttonText` varchar(64) NOT NULL DEFAULT 'Resgatar',`stock` int,`totalRedemptions` int NOT NULL DEFAULT 0,`maxRedemptionsPerUser` int,`active` boolean NOT NULL DEFAULT true,`featured` boolean NOT NULL DEFAULT false,`sortOrder` int NOT NULL DEFAULT 0,`startsAt` timestamp NULL,`expiresAt` timestamp NULL,`archivedAt` timestamp NULL,`createdAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,`updatedAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,KEY `reward_catalog_store_idx` (`storeId`,`active`),KEY `reward_catalog_display_idx` (`storeId`,`archivedAt`,`sortOrder`),CONSTRAINT `reward_catalog_stock_nonnegative_chk` CHECK (`stock` IS NULL OR `stock` >= 0),CONSTRAINT `reward_catalog_redemptions_nonnegative_chk` CHECK (`totalRedemptions` >= 0))",
-      "CREATE TABLE IF NOT EXISTS `reward_redemptions` (`id` int AUTO_INCREMENT PRIMARY KEY,`storeId` int NOT NULL,`rewardId` int NOT NULL,`userId` int NOT NULL,`couponId` int,`pointsSpent` int NOT NULL,`status` enum('pending','completed','cancelled','refunded','expired') NOT NULL DEFAULT 'pending',`idempotencyKey` varchar(96) NOT NULL,`redeemedAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,`expiresAt` timestamp NULL,`cancelledAt` timestamp NULL,`cancellationReason` varchar(500),`createdAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,`updatedAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,UNIQUE KEY `reward_redemptions_idempotency_uq` (`storeId`,`userId`,`idempotencyKey`),UNIQUE KEY `reward_redemptions_coupon_uq` (`couponId`),KEY `reward_redemptions_reward_idx` (`rewardId`,`status`),KEY `reward_redemptions_user_idx` (`userId`,`status`),CONSTRAINT `reward_redemptions_points_chk` CHECK (`pointsSpent` >= 0))",
-      "CREATE TABLE IF NOT EXISTS `reward_coupons` (`id` int AUTO_INCREMENT PRIMARY KEY,`storeId` int NOT NULL,`rewardId` int NOT NULL,`code` varchar(64) NOT NULL,`status` enum('available','reserved','redeemed','used','expired','cancelled') NOT NULL DEFAULT 'available',`assignedUserId` int,`redemptionId` int,`reservedAt` timestamp NULL,`redeemedAt` timestamp NULL,`usedAt` timestamp NULL,`expiresAt` timestamp NULL,`createdAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,`updatedAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,UNIQUE KEY `reward_coupons_store_code_uq` (`storeId`,`code`),UNIQUE KEY `reward_coupons_redemption_uq` (`redemptionId`),KEY `reward_coupons_reward_status_idx` (`rewardId`,`status`),KEY `reward_coupons_user_idx` (`assignedUserId`))",
-      "CREATE TABLE IF NOT EXISTS `reward_coupon_usages` (`id` int AUTO_INCREMENT PRIMARY KEY,`storeId` int NOT NULL,`couponId` int NOT NULL,`redemptionId` int NOT NULL,`userId` int NOT NULL,`orderId` int NOT NULL,`usedAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,UNIQUE KEY `reward_coupon_usages_coupon_uq` (`couponId`),UNIQUE KEY `reward_coupon_usages_order_uq` (`orderId`),KEY `reward_coupon_usages_user_idx` (`userId`,`usedAt`))",
-      "CREATE TABLE IF NOT EXISTS `nps_responses` (`id` int AUTO_INCREMENT PRIMARY KEY,`storeId` int NOT NULL,`orderId` int NOT NULL,`userId` int,`score` int NOT NULL,`comment` text,`createdAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,UNIQUE KEY `nps_responses_order_uq` (`storeId`,`orderId`))",
-      "CREATE TABLE IF NOT EXISTS `referrals` (`id` int AUTO_INCREMENT PRIMARY KEY,`storeId` int NOT NULL,`referrerUserId` int NOT NULL,`referredUserId` int,`code` varchar(32) NOT NULL,`status` enum('pending','converted','rewarded','cancelled') NOT NULL DEFAULT 'pending',`convertedOrderId` int,`createdAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,`convertedAt` timestamp NULL,UNIQUE KEY `referrals_store_code_uq` (`storeId`,`code`),KEY `referrals_referrer_idx` (`storeId`,`referrerUserId`))",
-      "CREATE TABLE IF NOT EXISTS `integration_connections` (`id` int AUTO_INCREMENT PRIMARY KEY,`storeId` int NOT NULL,`provider` varchar(64) NOT NULL,`status` enum('disconnected','connecting','connected','degraded','error') NOT NULL DEFAULT 'disconnected',`config` text,`credentialsRef` varchar(191),`lastSuccessAt` timestamp NULL,`lastFailureAt` timestamp NULL,`lastError` text,`latencyMs` int,`createdAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,`updatedAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,UNIQUE KEY `integration_connections_provider_uq` (`storeId`,`provider`),KEY `integration_connections_health_idx` (`storeId`,`status`))",
-      "CREATE TABLE IF NOT EXISTS `intelligence_suggestions` (`id` int AUTO_INCREMENT PRIMARY KEY,`storeId` int NOT NULL,`kind` enum('campaign','demand','purchase','pricing','staffing') NOT NULL,`title` varchar(200) NOT NULL,`description` text NOT NULL,`confidence` decimal(5,2) NOT NULL DEFAULT 0,`impactValue` decimal(12,2),`payload` text,`status` enum('new','accepted','dismissed','applied') NOT NULL DEFAULT 'new',`validUntil` timestamp NULL,`createdAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,`updatedAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,KEY `intelligence_suggestions_store_kind_idx` (`storeId`,`kind`,`status`))",
-      "CREATE TABLE IF NOT EXISTS `product_images` (`id` int AUTO_INCREMENT PRIMARY KEY,`storeId` int NOT NULL,`productId` int NOT NULL,`imageUrl` text NOT NULL,`altText` varchar(240),`kind` enum('primary','gallery','flavor','nutrition') NOT NULL DEFAULT 'gallery',`sortOrder` int NOT NULL DEFAULT 0,`active` boolean NOT NULL DEFAULT true,`createdAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,KEY `product_images_product_idx` (`storeId`,`productId`,`active`,`sortOrder`))",
-      "CREATE TABLE IF NOT EXISTS `product_sizes` (`id` int AUTO_INCREMENT PRIMARY KEY,`storeId` int NOT NULL,`productId` int NOT NULL,`name` varchar(120) NOT NULL,`internalCode` varchar(128),`description` text,`price` decimal(10,2) NOT NULL,`promotionalPrice` decimal(10,2),`promotionStartsAt` timestamp NULL,`promotionEndsAt` timestamp NULL,`serves` int,`minFlavors` int,`maxFlavors` int,`maxAddons` int,`preparationTime` int,`active` boolean NOT NULL DEFAULT true,`sortOrder` int NOT NULL DEFAULT 0,`createdAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,`updatedAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,UNIQUE KEY `product_sizes_code_uq` (`storeId`,`productId`,`internalCode`),KEY `product_sizes_product_idx` (`storeId`,`productId`,`active`,`sortOrder`))",
-      "CREATE TABLE IF NOT EXISTS `product_variants` (`id` int AUTO_INCREMENT PRIMARY KEY,`storeId` int NOT NULL,`productId` int NOT NULL,`name` varchar(160) NOT NULL,`sku` varchar(128),`price` decimal(10,2) NOT NULL,`promotionalPrice` decimal(10,2),`active` boolean NOT NULL DEFAULT true,`sortOrder` int NOT NULL DEFAULT 0,`createdAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,`updatedAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,UNIQUE KEY `product_variants_store_sku_uq` (`storeId`,`sku`),KEY `product_variants_product_idx` (`storeId`,`productId`,`active`))",
-      "CREATE TABLE IF NOT EXISTS `product_availability` (`id` int AUTO_INCREMENT PRIMARY KEY,`storeId` int NOT NULL,`productId` int NOT NULL,`weekday` int,`startTime` varchar(5),`endTime` varchar(5),`startsAt` timestamp NULL,`expiresAt` timestamp NULL,`channel` enum('all','delivery','pickup','dine_in','counter') NOT NULL DEFAULT 'all',`unavailableBehavior` enum('hide','show_unavailable','show_return_time') NOT NULL DEFAULT 'show_unavailable',`stockLimit` int,`pausedUntil` timestamp NULL,`active` boolean NOT NULL DEFAULT true,`createdAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,`updatedAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,KEY `product_availability_product_idx` (`storeId`,`productId`,`active`))",
-      "CREATE TABLE IF NOT EXISTS `modifier_size_rules` (`id` int AUTO_INCREMENT PRIMARY KEY,`storeId` int NOT NULL,`modifierOptionId` int NOT NULL,`productSizeId` int NOT NULL,`enabled` boolean NOT NULL DEFAULT true,`priceOverride` decimal(10,2),`maxQuantityOverride` int,`createdAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,`updatedAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,UNIQUE KEY `modifier_size_rules_uq` (`storeId`,`modifierOptionId`,`productSizeId`))",
-      "CREATE TABLE IF NOT EXISTS `multi_flavor_settings` (`id` int AUTO_INCREMENT PRIMARY KEY,`storeId` int NOT NULL,`productId` int NOT NULL,`enabled` boolean NOT NULL DEFAULT false,`pricingRule` enum('highest_price','average_price','proportional_price','size_fixed_price','base_plus_difference') NOT NULL DEFAULT 'highest_price',`allowRepeatedFlavors` boolean NOT NULL DEFAULT false,`visualDivisions` boolean NOT NULL DEFAULT true,`createdAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,`updatedAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,UNIQUE KEY `multi_flavor_settings_product_uq` (`storeId`,`productId`))",
-      "CREATE TABLE IF NOT EXISTS `product_flavors` (`id` int AUTO_INCREMENT PRIMARY KEY,`storeId` int NOT NULL,`productId` int NOT NULL,`name` varchar(160) NOT NULL,`description` text,`imageUrl` text,`ingredients` text,`removableIngredients` text,`active` boolean NOT NULL DEFAULT true,`sortOrder` int NOT NULL DEFAULT 0,`createdAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,`updatedAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,KEY `product_flavors_product_idx` (`storeId`,`productId`,`active`,`sortOrder`))",
-      "CREATE TABLE IF NOT EXISTS `flavor_size_prices` (`id` int AUTO_INCREMENT PRIMARY KEY,`storeId` int NOT NULL,`flavorId` int NOT NULL,`productSizeId` int NOT NULL,`price` decimal(10,2) NOT NULL,`active` boolean NOT NULL DEFAULT true,`createdAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,`updatedAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,UNIQUE KEY `flavor_size_prices_uq` (`storeId`,`flavorId`,`productSizeId`))",
-      "CREATE TABLE IF NOT EXISTS `product_drafts` (`id` int AUTO_INCREMENT PRIMARY KEY,`storeId` int NOT NULL,`productId` int,`createdByUserId` int NOT NULL,`baseVersion` int NOT NULL DEFAULT 0,`status` enum('editing','ready','published','discarded') NOT NULL DEFAULT 'editing',`draftData` longtext NOT NULL,`tutorialProgress` text,`lastSavedAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,`createdAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,`updatedAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,KEY `product_drafts_product_idx` (`storeId`,`productId`,`status`),KEY `product_drafts_user_idx` (`createdByUserId`,`status`))",
-      "CREATE TABLE IF NOT EXISTS `product_revisions` (`id` int AUTO_INCREMENT PRIMARY KEY,`storeId` int NOT NULL,`productId` int NOT NULL,`version` int NOT NULL,`snapshot` longtext NOT NULL,`note` varchar(240),`createdByUserId` int,`createdAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,UNIQUE KEY `product_revisions_uq` (`storeId`,`productId`,`version`),KEY `product_revisions_product_idx` (`productId`,`createdAt`))",
-      "CREATE TABLE IF NOT EXISTS `product_audit_logs` (`id` int AUTO_INCREMENT PRIMARY KEY,`storeId` int NOT NULL,`productId` int NOT NULL,`actorUserId` int,`action` varchar(80) NOT NULL,`fieldName` varchar(160),`previousValue` longtext,`newValue` longtext,`createdAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,KEY `product_audit_logs_product_idx` (`storeId`,`productId`,`createdAt`))",
-    ];
-    for (const statement of platformTables) await db.execute(sql.raw(statement));
-
-    const professionalCatalogColumns: Record<string, ReadonlyArray<readonly [string, string]>> = {
-      products: [
-        ["sku", "varchar(128) NULL AFTER `externalCode`"],
-        ["shortDescription", "varchar(320) NULL AFTER `sku`"],
-        ["productType", "enum('simple','sizes','variants','buildable','multi_flavor','combo','weight','quantity','variable_price') NOT NULL DEFAULT 'simple' AFTER `shortDescription`"],
-        ["pricingEngine", "enum('legacy_v1','configured_v2') NOT NULL DEFAULT 'legacy_v1' AFTER `productType`"],
-        ["editorialStatus", "enum('draft','published','scheduled','archived') NOT NULL DEFAULT 'published' AFTER `pricingEngine`"],
-        ["preparationTime", "int NULL AFTER `editorialStatus`"],
-        ["allergenNotice", "text NULL AFTER `preparationTime`"],
-        ["nutritionalInfo", "text NULL AFTER `allergenNotice`"],
-        ["tags", "text NULL AFTER `nutritionalInfo`"],
-        ["minQuantity", "int NOT NULL DEFAULT 1 AFTER `tags`"],
-        ["maxQuantity", "int NOT NULL DEFAULT 99 AFTER `minQuantity`"],
-        ["couponEligible", "boolean NOT NULL DEFAULT true AFTER `maxQuantity`"],
-        ["pointsEligible", "boolean NOT NULL DEFAULT true AFTER `couponEligible`"],
-        ["version", "int NOT NULL DEFAULT 1 AFTER `pointsEligible`"],
-        ["scheduledPublishAt", "timestamp NULL AFTER `version`"],
-        ["publishedAt", "timestamp NULL AFTER `scheduledPublishAt`"],
-        ["archivedAt", "timestamp NULL AFTER `publishedAt`"],
-      ],
-      product_option_groups: [
-        ["description", "text NULL AFTER `kind`"],
-        ["freeSelections", "int NOT NULL DEFAULT 0 AFTER `maxSelections`"],
-        ["allowRepeatedOptions", "boolean NOT NULL DEFAULT false AFTER `freeSelections`"],
-        ["appliesToAllSizes", "boolean NOT NULL DEFAULT true AFTER `allowRepeatedOptions`"],
-      ],
-      product_options: [
-        ["maxQuantity", "int NOT NULL DEFAULT 1 AFTER `imageUrl`"],
-        ["allowRepeat", "boolean NOT NULL DEFAULT false AFTER `maxQuantity`"],
-      ],
-      combo_groups: [
-        ["required", "boolean NOT NULL DEFAULT true AFTER `name`"],
-        ["active", "boolean NOT NULL DEFAULT true AFTER `sortOrder`"],
-      ],
-      combo_group_items: [["sizeId", "int NULL AFTER `productId`"]],
-      order_items: [
-        ["snapshotVersion", "int NOT NULL DEFAULT 1 AFTER `notes`"],
-        ["configurationSnapshot", "longtext NULL AFTER `snapshotVersion`"],
-        ["pricingBreakdown", "longtext NULL AFTER `configurationSnapshot`"],
-      ],
-      order_item_selections: [["totalPrice", "decimal(10,2) NOT NULL DEFAULT 0 AFTER `quantity`"]],
-      upsells: [
-        ["triggerType", "enum('product_selected','size_selected','modifier_selected','category_selected','cart_value','missing_category','checkout') NOT NULL DEFAULT 'checkout' AFTER `sortOrder`"],
-        ["triggerSizeId", "int NULL AFTER `triggerType`"],
-        ["triggerModifierId", "int NULL AFTER `triggerSizeId`"],
-        ["triggerCategoryId", "int NULL AFTER `triggerModifierId`"],
-        ["displayType", "enum('inline','modal','cart','checkout') NOT NULL DEFAULT 'checkout' AFTER `triggerCategoryId`"],
-        ["priority", "int NOT NULL DEFAULT 0 AFTER `displayType`"],
-        ["startsAt", "timestamp NULL AFTER `priority`"],
-        ["expiresAt", "timestamp NULL AFTER `startsAt`"],
-        ["weekdays", "varchar(32) NULL AFTER `expiresAt`"],
-        ["startTime", "varchar(5) NULL AFTER `weekdays`"],
-        ["endTime", "varchar(5) NULL AFTER `startTime`"],
-        ["maxDisplaysPerCart", "int NOT NULL DEFAULT 1 AFTER `endTime`"],
-        ["dismissible", "boolean NOT NULL DEFAULT true AFTER `maxDisplaysPerCart`"],
-      ],
-    };
-    for (const [table, columns] of Object.entries(professionalCatalogColumns)) {
-      for (const [column, definition] of columns) {
-        if (!(await hasColumn(db, table, column))) {
-          await db.execute(sql.raw(`ALTER TABLE \`${table}\` ADD \`${column}\` ${definition}`));
-        }
-      }
-    }
-    if (!(await hasIndex(db, "products", "products_store_sku_uq"))) {
-      await db.execute(sql.raw("CREATE UNIQUE INDEX `products_store_sku_uq` ON `products` (`storeId`,`sku`)"));
-    }
-    if (!(await hasIndex(db, "products", "products_editorial_idx"))) {
-      await db.execute(sql.raw("CREATE INDEX `products_editorial_idx` ON `products` (`storeId`,`editorialStatus`,`active`)"));
-    }
-
-    const rewardCatalogColumns = [
-      ["category", "varchar(80) NULL AFTER `productId`"],
-      ["icon", "varchar(64) NULL AFTER `category`"],
-      ["imageUrl", "text NULL AFTER `icon`"],
-      ["badgeText", "varchar(64) NULL AFTER `imageUrl`"],
-      ["buttonText", "varchar(64) NOT NULL DEFAULT 'Resgatar' AFTER `badgeText`"],
-      ["stock", "int NULL AFTER `buttonText`"],
-      ["totalRedemptions", "int NOT NULL DEFAULT 0 AFTER `stock`"],
-      ["maxRedemptionsPerUser", "int NULL AFTER `totalRedemptions`"],
-      ["featured", "boolean NOT NULL DEFAULT false AFTER `active`"],
-      ["sortOrder", "int NOT NULL DEFAULT 0 AFTER `featured`"],
-      ["startsAt", "timestamp NULL AFTER `sortOrder`"],
-      ["expiresAt", "timestamp NULL AFTER `startsAt`"],
-      ["archivedAt", "timestamp NULL AFTER `expiresAt`"],
-      ["updatedAt", "timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP AFTER `createdAt`"],
-    ] as const;
-    for (const [column, definition] of rewardCatalogColumns) {
-      if (!(await hasColumn(db, "reward_catalog", column))) {
-        await db.execute(sql.raw(`ALTER TABLE \`reward_catalog\` ADD \`${column}\` ${definition}`));
-      }
-    }
-    if (!(await hasIndex(db, "reward_catalog", "reward_catalog_display_idx"))) {
-      await db.execute(sql.raw("CREATE INDEX `reward_catalog_display_idx` ON `reward_catalog` (`storeId`,`archivedAt`,`sortOrder`)"));
-    }
-    await db.execute(sql.raw("ALTER TABLE `loyalty_transactions` MODIFY COLUMN `type` enum('earn','redeem','refund','adjustment','manual') NOT NULL"));
-    if (!(await hasConstraint(db, "tenant_customer_accounts", "tenant_customer_accounts_points_nonnegative_chk"))) {
-      await db.execute(sql.raw("ALTER TABLE `tenant_customer_accounts` ADD CONSTRAINT `tenant_customer_accounts_points_nonnegative_chk` CHECK (`loyaltyPoints` >= 0)"));
-    }
-    if (!(await hasConstraint(db, "reward_catalog", "reward_catalog_stock_nonnegative_chk"))) {
-      await db.execute(sql.raw("ALTER TABLE `reward_catalog` ADD CONSTRAINT `reward_catalog_stock_nonnegative_chk` CHECK (`stock` IS NULL OR `stock` >= 0)"));
-    }
-    if (!(await hasConstraint(db, "reward_catalog", "reward_catalog_redemptions_nonnegative_chk"))) {
-      await db.execute(sql.raw("ALTER TABLE `reward_catalog` ADD CONSTRAINT `reward_catalog_redemptions_nonnegative_chk` CHECK (`totalRedemptions` >= 0)"));
-    }
-    await db.execute(sql.raw("ALTER TABLE `tenant_memberships` MODIFY `role` enum('owner','admin','manager','site_editor','marketing') NOT NULL DEFAULT 'admin'"));
-    await db.execute(sql.raw("INSERT IGNORE INTO `tenants` (`tenantKey`,`legalName`,`displayName`,`status`) SELECT `tenantKey`,COALESCE(MAX(`displayName`),MAX(`name`)),COALESCE(MAX(`displayName`),MAX(`name`)),'active' FROM `stores` GROUP BY `tenantKey`"));
-    await db.execute(sql.raw("INSERT IGNORE INTO `tenant_plans` (`code`,`name`,`monthlyPrice`,`entitlements`,`limits`) VALUES ('essential','Essencial',0,'{}','{\"stores\":1,\"users\":10}'),('pro','Pro',0,'{}','{\"stores\":5,\"users\":50}'),('enterprise','Enterprise',0,'{}','{}')"));
-
-    if (!(await hasColumn(db, "categories", "externalSource"))) {
-      await db.execute(
-        sql.raw(
-          "ALTER TABLE `categories` ADD `externalSource` varchar(32), ADD `externalMerchantId` varchar(128), ADD `externalId` varchar(128)"
-        )
-      );
-    }
-    if (!(await hasColumn(db, "categories", "icon"))) {
-      await db.execute(sql.raw("ALTER TABLE `categories` ADD `icon` varchar(64)"));
-    }
-    if (!(await hasIndex(db, "categories", "categories_external_uq"))) {
-      await db.execute(sql.raw("CREATE UNIQUE INDEX `categories_external_uq` ON `categories` (`externalSource`,`externalMerchantId`,`externalId`)"));
-    }
-
-    if (!(await hasColumn(db, "products", "externalSource"))) {
-      await db.execute(
-        sql.raw(
-          "ALTER TABLE `products` ADD `externalSource` varchar(32), ADD `externalMerchantId` varchar(128), ADD `externalId` varchar(128), ADD `externalCode` varchar(128)"
-        )
-      );
-    }
-    if (!(await hasIndex(db, "products", "products_external_uq"))) {
-      await db.execute(sql.raw("CREATE UNIQUE INDEX `products_external_uq` ON `products` (`storeId`,`externalSource`,`externalMerchantId`,`externalId`)"));
-    }
-
-    if (!(await hasColumn(db, "coupons", "externalSource"))) {
-      await db.execute(
-        sql.raw(
-          "ALTER TABLE `coupons` ADD `externalSource` varchar(32), ADD `externalMerchantId` varchar(128), ADD `externalId` varchar(128)"
-        )
-      );
-    }
-    if (!(await hasIndex(db, "coupons", "coupons_external_uq"))) {
-      await db.execute(sql.raw("CREATE UNIQUE INDEX `coupons_external_uq` ON `coupons` (`storeId`,`externalSource`,`externalMerchantId`,`externalId`)"));
-    }
-
-    if (!(await hasColumn(db, "promotions", "externalSource"))) {
-      await db.execute(
-        sql.raw(
-          "ALTER TABLE `promotions` ADD `externalSource` varchar(32), ADD `externalMerchantId` varchar(128), ADD `externalId` varchar(128)"
-        )
-      );
-    }
-    if (!(await hasIndex(db, "promotions", "promotions_external_uq"))) {
-      await db.execute(sql.raw("CREATE UNIQUE INDEX `promotions_external_uq` ON `promotions` (`externalSource`,`externalMerchantId`,`externalId`)"));
-    }
-  })().catch((error) => {
-    _schemaReady = null;
-    throw error;
-  });
-
-  return _schemaReady;
-}
-
 export async function getDb() {
   const connectionString = normalizeDatabaseUrl(process.env.DATABASE_URL) || buildConnectionStringFromParts();
-
-  if (!_db && !_pool && (process.env.DATABASE_HOST || process.env.DATABASE_URL)) {
-    _pool = buildMysqlPoolFromParts();
-  }
-
-  if (!_db && (_pool || connectionString)) {
+  if (!_db && !_pool && connectionString) {
     try {
-      _db = _pool ? drizzle(_pool as any) : drizzle(connectionString!);
+      _pool = buildPostgresPool(connectionString);
+      _db = drizzle(_pool);
     } catch (error) {
       console.warn("[Database] Failed to connect:", error);
       resetDbState();
-    }
-  }
-  if (_db && shouldRunRuntimeSchemaMigrations()) {
-    try {
-      await ensureRuntimeSchema(_db);
-    } catch (error) {
-      console.error("[Database] Runtime schema/connection error, resetting pool:", error);
-      resetDbState();
-      return null;
     }
   }
   return _db;
@@ -1335,7 +299,7 @@ export async function upsertUser(user: InsertUser): Promise<{ isNew: boolean }> 
     if (!values.lastSignedIn) values.lastSignedIn = new Date();
     if (Object.keys(updateSet).length === 0) updateSet.lastSignedIn = new Date();
 
-    await db.insert(users).values(values).onDuplicateKeyUpdate({ set: updateSet });
+    await db.insert(users).values(values).onConflictDoUpdate({ target: users.openId, set: updateSet });
     return { isNew };
   });
 }
@@ -1401,14 +365,23 @@ export async function updateUserPasswordHash(openId: string, passwordHash: strin
 }
 
 export async function saveResetToken(email: string, token: string, expiresAt: Date) {
+  const tokenHash = hashRecoveryToken(token);
   await withDbRetry(async (db) => {
-    await db.update(users).set({ resetToken: token, resetTokenExpiresAt: expiresAt }).where(eq(users.email, email));
+    await db.update(users)
+      .set({ resetToken: tokenHash, resetTokenExpiresAt: expiresAt })
+      .where(eq(users.email, email));
   });
 }
 
 export async function getUserByResetToken(token: string) {
+  const tokenHash = hashRecoveryToken(token);
   return withDbRetry(async (db) => {
-    const result = await db.select().from(users).where(eq(users.resetToken, token)).limit(1);
+    const result = await db.select().from(users)
+      .where(or(
+        eq(users.resetToken, tokenHash),
+        eq(users.resetToken, token),
+      ))
+      .limit(1);
     return result[0];
   });
 }
@@ -2400,7 +1373,8 @@ export async function linkCustomerAuthProvider(data: {
         lastSyncedAt: data.lastSyncedAt ?? null,
         disconnectedAt: null,
       })
-      .onDuplicateKeyUpdate({
+      .onConflictDoUpdate({
+        target: [customerAuthProviders.provider, customerAuthProviders.providerUserId],
         set: {
           providerEmail: data.providerEmail ?? null,
           providerPhone: data.providerPhone ?? null,
@@ -2461,7 +1435,17 @@ export async function disconnectCustomerAuthProvider(userId: number, provider: "
 export async function recordAuthEvent(data: {
   userId?: number | null;
   provider?: string | null;
-  event: "login_success" | "login_failure" | "provider_connected" | "provider_disconnected" | "profile_synced" | "account_deleted";
+  event:
+    | "login_success"
+    | "login_failure"
+    | "provider_connected"
+    | "provider_disconnected"
+    | "profile_synced"
+    | "account_deleted"
+    | "two_factor_challenge"
+    | "two_factor_failure"
+    | "two_factor_enabled"
+    | "two_factor_disabled";
   ipAddress?: string | null;
   userAgent?: string | null;
   metadata?: Record<string, unknown>;
@@ -2718,21 +1702,281 @@ export async function pickStoreForDeliveryAddress(input: {
   });
 }
 
+export type OrderRequestClaimResult =
+  | { state: "claimed" }
+  | { state: "completed"; orderId: number }
+  | { state: "processing" }
+  | { state: "failed"; orderId?: number | null; reason?: string | null }
+  | { state: "conflict" };
+
+export async function claimOrderRequest(input: {
+  idempotencyKey: string;
+  requestFingerprint: string;
+  userId: number;
+  storeId: number;
+  staleAfterMs?: number;
+}): Promise<OrderRequestClaimResult> {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  const now = new Date();
+  const inserted = await db
+    .insert(orderRequests)
+    .values({
+      idempotencyKey: input.idempotencyKey,
+      requestFingerprint: input.requestFingerprint,
+      userId: input.userId,
+      storeId: input.storeId,
+      status: "processing",
+      updatedAt: now,
+    })
+    .onConflictDoNothing({ target: orderRequests.idempotencyKey })
+    .returning({ id: orderRequests.id });
+
+  if (inserted.length > 0) return { state: "claimed" };
+
+  const [existing] = await db
+    .select({
+      id: orderRequests.id,
+      requestFingerprint: orderRequests.requestFingerprint,
+      userId: orderRequests.userId,
+      storeId: orderRequests.storeId,
+      status: orderRequests.status,
+      orderId: orderRequests.orderId,
+      updatedAt: orderRequests.updatedAt,
+    })
+    .from(orderRequests)
+    .where(eq(orderRequests.idempotencyKey, input.idempotencyKey))
+    .limit(1);
+
+  if (!existing) return { state: "processing" };
+
+  if (
+    existing.requestFingerprint !== input.requestFingerprint ||
+    existing.userId !== input.userId ||
+    existing.storeId !== input.storeId
+  ) {
+    return { state: "conflict" };
+  }
+
+  if (existing.status === "completed" && existing.orderId) {
+    return { state: "completed", orderId: existing.orderId };
+  }
+
+  if (existing.status === "failed" && existing.orderId) {
+    return { state: "failed", orderId: existing.orderId };
+  }
+
+  const staleAfterMs = input.staleAfterMs ?? 2 * 60 * 1000;
+  const staleBefore = new Date(Date.now() - staleAfterMs);
+  const canReclaim =
+    existing.status === "failed" ||
+    (existing.status === "processing" && existing.updatedAt <= staleBefore);
+
+  if (canReclaim) {
+    const [orphanOrder] = await db
+      .select({ id: orders.id, status: orders.status })
+      .from(orders)
+      .where(eq(orders.idempotencyKey, input.idempotencyKey))
+      .limit(1);
+
+    if (orphanOrder) {
+      await db
+        .update(orderRequests)
+        .set({
+          status: "failed",
+          orderId: orphanOrder.id,
+          lastError: "Pedido já criado em tentativa anterior; retry automático bloqueado para evitar duplicidade.",
+          updatedAt: now,
+        })
+        .where(eq(orderRequests.id, existing.id));
+      return { state: "failed", orderId: orphanOrder.id };
+    }
+
+    const reclaimed = await db
+      .update(orderRequests)
+      .set({ status: "processing", orderId: null, lastError: null, updatedAt: now })
+      .where(and(
+        eq(orderRequests.id, existing.id),
+        or(
+          eq(orderRequests.status, "failed"),
+          and(eq(orderRequests.status, "processing"), lte(orderRequests.updatedAt, staleBefore)),
+        ),
+      ))
+      .returning({ id: orderRequests.id });
+
+    if (reclaimed.length > 0) return { state: "claimed" };
+  }
+
+  return { state: "processing" };
+}
+
+export async function attachOrderRequest(idempotencyKey: string, orderId: number): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await db
+    .update(orderRequests)
+    .set({ orderId, updatedAt: new Date() })
+    .where(and(
+      eq(orderRequests.idempotencyKey, idempotencyKey),
+      eq(orderRequests.status, "processing"),
+    ));
+}
+
+export async function completeOrderRequest(idempotencyKey: string, orderId: number): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await db
+    .update(orderRequests)
+    .set({ status: "completed", orderId, lastError: null, updatedAt: new Date() })
+    .where(eq(orderRequests.idempotencyKey, idempotencyKey));
+}
+
+export async function failOrderRequest(idempotencyKey: string, error: unknown, orderId?: number | null): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  const message = error instanceof Error ? error.message : String(error ?? "unknown");
+  await db
+    .update(orderRequests)
+    .set({
+      status: "failed",
+      orderId: orderId ?? undefined,
+      lastError: message.slice(0, 2000),
+      updatedAt: new Date(),
+    })
+    .where(and(
+      eq(orderRequests.idempotencyKey, idempotencyKey),
+      eq(orderRequests.status, "processing"),
+    ));
+}
+
+export async function getOrderByIdempotencyKey(idempotencyKey: string) {
+  return withDbRetry(async (db) => {
+    const result = await db
+      .select()
+      .from(orders)
+      .where(eq(orders.idempotencyKey, idempotencyKey))
+      .limit(1);
+    return result[0];
+  });
+}
+
+export async function enqueueOutboxEvent(input: {
+  eventKey: string;
+  eventType: string;
+  aggregateType: string;
+  aggregateId: string;
+  storeId?: number | null;
+  payload: unknown;
+  availableAt?: Date;
+}): Promise<boolean> {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  const inserted = await db
+    .insert(eventOutbox)
+    .values({
+      eventKey: input.eventKey,
+      eventType: input.eventType,
+      aggregateType: input.aggregateType,
+      aggregateId: input.aggregateId,
+      storeId: input.storeId ?? null,
+      payload: JSON.stringify(input.payload ?? {}),
+      availableAt: input.availableAt ?? new Date(),
+    })
+    .onConflictDoNothing({ target: eventOutbox.eventKey })
+    .returning({ id: eventOutbox.id });
+  return inserted.length > 0;
+}
+
 export async function createOrder(
   orderData: InsertOrder,
   items: Omit<InsertOrderItem, 'orderId'>[]
 ): Promise<number> {
-  return withDbRetry((db) =>
+  const orderId = await withDbRetry((db) =>
     db.transaction(async (tx) => {
-      const result = await tx.insert(orders).values(orderData);
-      const resultHeader = Array.isArray(result) ? result[0] : result;
-      const orderId = (resultHeader as unknown as { insertId: number }).insertId;
+      const [insertedOrder] = await tx
+        .insert(orders)
+        .values(orderData)
+        .returning({
+          id: orders.id,
+          storeId: orders.storeId,
+          status: orders.status,
+          serviceType: orders.serviceType,
+        });
+      const orderId = insertedOrder?.id;
       if (!orderId) throw new Error("Failed to get order ID after insert");
+
+      const orderNumber = `BNT-${String(insertedOrder.storeId ?? 0).padStart(2, "0")}-${String(orderId).padStart(6, "0")}`;
+      await tx
+        .update(orders)
+        .set({ orderNumber, updatedAt: new Date() })
+        .where(eq(orders.id, orderId));
+
       const itemsWithOrderId = items.map((item) => ({ ...item, orderId }));
       await tx.insert(orderItems).values(itemsWithOrderId);
+
+      await tx.insert(orderStageLogs).values({
+        orderId,
+        previousStatus: null,
+        nextStatus: insertedOrder.status,
+        stage: "created",
+        source: "system",
+        metadata: JSON.stringify({
+          serviceType: insertedOrder.serviceType,
+          orderNumber,
+          transactional: true,
+        }),
+      });
+
+      const createdPayload = JSON.stringify({ orderId, orderNumber });
+      await tx
+        .insert(eventOutbox)
+        .values([
+          {
+            eventKey: `order.created:${orderId}`,
+            eventType: "order.created",
+            aggregateType: "order",
+            aggregateId: String(orderId),
+            storeId: insertedOrder.storeId ?? null,
+            payload: createdPayload,
+            status: "pending",
+            availableAt: new Date(),
+          },
+          {
+            eventKey: `order.created.admin_push:${orderId}`,
+            eventType: "order.created.admin_push",
+            aggregateType: "order",
+            aggregateId: String(orderId),
+            storeId: insertedOrder.storeId ?? null,
+            payload: createdPayload,
+            status: "pending",
+            availableAt: new Date(),
+          },
+          {
+            eventKey: `order.created.customer_whatsapp:${orderId}`,
+            eventType: "order.created.customer_whatsapp",
+            aggregateType: "order",
+            aggregateId: String(orderId),
+            storeId: insertedOrder.storeId ?? null,
+            payload: createdPayload,
+            status: "pending",
+            availableAt: new Date(),
+          },
+        ])
+        .onConflictDoNothing({ target: eventOutbox.eventKey });
+
       return orderId;
     })
   );
+
+  void publishOrderRealtimeEvent({
+    type: "created",
+    orderId,
+    storeId: orderData.storeId ?? null,
+    userId: orderData.userId ?? null,
+    status: orderData.status ?? "pending",
+  });
+  return orderId;
 }
 
 export async function getOrderById(id: number) {
@@ -2785,12 +2029,6 @@ export async function getAllOrders(opts?: {
   });
 }
 
-export async function updateOrderStatus(id: number, status: Order["status"]) {
-  await withDbRetry(async (db) => {
-    await db.update(orders).set({ status }).where(eq(orders.id, id));
-  });
-}
-
 export async function setOrderAiPaused(id: number, aiPaused: boolean) {
   await withDbRetry(async (db) => {
     await db.update(orders).set({ aiPaused }).where(eq(orders.id, id));
@@ -2804,16 +2042,62 @@ export async function updateOrderPaymentStatus(
   stripeCheckoutSessionId?: string,
   asaasPaymentId?: string
 ) {
-  await withDbRetry(async (db) => {
-    const updateFields: Record<string, unknown> = { paymentStatus };
-    if (stripePaymentIntentId) updateFields.stripePaymentIntentId = stripePaymentIntentId;
-    if (stripeCheckoutSessionId) updateFields.stripeCheckoutSessionId = stripeCheckoutSessionId;
-    if (asaasPaymentId) updateFields.asaasPaymentId = asaasPaymentId;
-    if (paymentStatus === "paid") {
-      updateFields.status = sql`CASE WHEN ${orders.status} = 'pending' THEN 'confirmed' ELSE ${orders.status} END`;
+  await withDbRetry((db) =>
+    db.transaction(async (tx) => {
+      const updateFields: Record<string, unknown> = { paymentStatus, updatedAt: new Date() };
+      if (stripePaymentIntentId) updateFields.stripePaymentIntentId = stripePaymentIntentId;
+      if (stripeCheckoutSessionId) updateFields.stripeCheckoutSessionId = stripeCheckoutSessionId;
+      if (asaasPaymentId) updateFields.asaasPaymentId = asaasPaymentId;
+
+      const [updatedOrder] = await tx
+        .update(orders)
+        .set(updateFields)
+        .where(eq(orders.id, id))
+        .returning({
+          id: orders.id,
+          storeId: orders.storeId,
+          orderNumber: orders.orderNumber,
+        });
+
+      if (!updatedOrder) throw new Error(`Order ${id} not found`);
+
+      if (paymentStatus === "paid") {
+        await tx
+          .insert(eventOutbox)
+          .values({
+            eventKey: `order.paid:${id}`,
+            eventType: "order.paid",
+            aggregateType: "order",
+            aggregateId: String(id),
+            storeId: updatedOrder.storeId ?? null,
+            payload: JSON.stringify({
+              orderId: id,
+              orderNumber: updatedOrder.orderNumber,
+              paymentStatus: "paid",
+            }),
+            status: "pending",
+            availableAt: new Date(),
+          })
+          .onConflictDoNothing({ target: eventOutbox.eventKey });
+      }
+    })
+  );
+
+  if (paymentStatus === "paid") {
+    const guard = await updateOrderStatusGuarded(id, "confirmed", ["pending"], {
+      source: "system",
+      notes: "Pagamento confirmado",
+    });
+    if (guard.ok && guard.previous) {
+      const { applyOrderStatusLifecycle } = await import("./orderLifecycle.ts");
+      await applyOrderStatusLifecycle(id, guard.previous, "confirmed", {
+        source: "system",
+        notes: "Pagamento confirmado",
+        skipStageLog: true,
+          skipStatusTimestamp: true,
+      });
     }
-    await db.update(orders).set(updateFields).where(eq(orders.id, id));
-  });
+  }
 }
 
 // --- TRANSACTIONS -------------------------------------------------------------
@@ -2923,40 +2207,35 @@ export async function getSalesOverview(startDate: Date, endDate: Date, storeId?:
   const periodMs = endDate.getTime() - startDate.getTime();
   const prevStart = new Date(startDate.getTime() - periodMs);
   const prevEnd = new Date(startDate.getTime() - 1);
-  // Usa America/Sao_Paulo para calcular início e fim do dia
   const todayStart = getTodayStartUtc();
   const todayEnd = getTodayEndUtc();
 
-  const storeFilter = storeId ? sql` AND \`storeId\` = ${storeId}` : sql``;
-  const [curr, prev, todayRes] = await Promise.all([
-    db.execute(
-      sql`SELECT COUNT(*) AS totalOrders, COALESCE(SUM(\`total\`),0) AS totalRevenue
-          FROM \`orders\`
-          WHERE \`createdAt\` >= ${startDate} AND \`createdAt\` <= ${endDate}
-            AND \`status\` != 'cancelled'${storeFilter}`
-    ),
-    db.execute(
-      sql`SELECT COUNT(*) AS totalOrders, COALESCE(SUM(\`total\`),0) AS totalRevenue
-          FROM \`orders\`
-          WHERE \`createdAt\` >= ${prevStart} AND \`createdAt\` <= ${prevEnd}
-            AND \`status\` != 'cancelled'${storeFilter}`
-    ),
-    db.execute(
-      sql`SELECT COUNT(*) AS todayOrders, COALESCE(SUM(\`total\`),0) AS todayRevenue
-          FROM \`orders\`
-          WHERE \`createdAt\` >= ${todayStart} AND \`createdAt\` <= ${todayEnd}
-            AND \`status\` != 'cancelled'${storeFilter}`
-    ),
+  const aggregatePeriod = async (from: Date, to: Date) => {
+    const [row] = await db
+      .select({
+        totalOrders: sql<number>`COUNT(*)`,
+        totalRevenue: sql<number>`COALESCE(SUM(${orders.total}), 0)`,
+      })
+      .from(orders)
+      .where(and(
+        gte(orders.createdAt, from),
+        lte(orders.createdAt, to),
+        not(eq(orders.status, "cancelled")),
+        storeId ? eq(orders.storeId, storeId) : undefined,
+      ));
+    return row ?? { totalOrders: 0, totalRevenue: 0 };
+  };
+
+  const [curr, prev, today] = await Promise.all([
+    aggregatePeriod(startDate, endDate),
+    aggregatePeriod(prevStart, prevEnd),
+    aggregatePeriod(todayStart, todayEnd),
   ]);
 
-  const c = (curr as unknown as [Array<{ totalOrders: string; totalRevenue: string }>])[0][0];
-  const p = (prev as unknown as [Array<{ totalOrders: string; totalRevenue: string }>])[0][0];
-  const td = (todayRes as unknown as [Array<{ todayOrders: string; todayRevenue: string }>])[0][0];
-
-  const totalOrders = Number(c?.totalOrders ?? 0);
-  const totalRevenue = Number(c?.totalRevenue ?? 0);
-  const prevTotalOrders = Number(p?.totalOrders ?? 0);
-  const prevTotalRevenue = Number(p?.totalRevenue ?? 0);
+  const totalOrders = Number(curr.totalOrders ?? 0);
+  const totalRevenue = Number(curr.totalRevenue ?? 0);
+  const prevTotalOrders = Number(prev.totalOrders ?? 0);
+  const prevTotalRevenue = Number(prev.totalRevenue ?? 0);
 
   return {
     totalRevenue,
@@ -2964,31 +2243,36 @@ export async function getSalesOverview(startDate: Date, endDate: Date, storeId?:
     avgTicket: totalOrders > 0 ? totalRevenue / totalOrders : 0,
     prevTotalRevenue,
     prevTotalOrders,
-    todayOrders: Number(td?.todayOrders ?? 0),
-    todayRevenue: Number(td?.todayRevenue ?? 0),
+    todayOrders: Number(today.totalOrders ?? 0),
+    todayRevenue: Number(today.totalRevenue ?? 0),
   };
 }
 
 export async function getSalesTimeSeries(startDate: Date, endDate: Date, storeId?: number, timezoneOffsetMinutes = 0) {
   const db = await getDb();
   if (!db) return [];
-  // Sempre usa America/Sao_Paulo — ignora timezoneOffset do cliente
-  const tzOffset = getBrasilTzOffset();
-  const storeFilterTs = storeId ? sql` AND \`storeId\` = ${storeId}` : sql``;
-  const rows = await db.execute(
-    sql`SELECT DATE(CONVERT_TZ(\`createdAt\`, '+00:00', ${tzOffset})) AS date,
-               COUNT(*) AS totalOrders,
-               COALESCE(SUM(\`total\`),0) AS totalRevenue
-        FROM \`orders\`
-        WHERE \`createdAt\` >= ${startDate} AND \`createdAt\` <= ${endDate}
-          AND \`status\` != 'cancelled'${storeFilterTs}
-        GROUP BY DATE(CONVERT_TZ(\`createdAt\`, '+00:00', ${tzOffset}))
-        ORDER BY DATE(CONVERT_TZ(\`createdAt\`, '+00:00', ${tzOffset}))`
-  );
-  return (rows as unknown as [Array<{ date: string; totalOrders: string; totalRevenue: string }>])[0].map((r) => ({
-    date: r.date,
-    totalOrders: Number(r.totalOrders),
-    totalRevenue: Number(r.totalRevenue ?? 0),
+
+  const localDate = sql<string>`(${orders.createdAt} AT TIME ZONE 'UTC' AT TIME ZONE 'America/Sao_Paulo')::date`;
+  const rows = await db
+    .select({
+      date: localDate,
+      totalOrders: sql<number>`COUNT(*)`,
+      totalRevenue: sql<number>`COALESCE(SUM(${orders.total}), 0)`,
+    })
+    .from(orders)
+    .where(and(
+      gte(orders.createdAt, startDate),
+      lte(orders.createdAt, endDate),
+      not(eq(orders.status, "cancelled")),
+      storeId ? eq(orders.storeId, storeId) : undefined,
+    ))
+    .groupBy(localDate)
+    .orderBy(localDate);
+
+  return rows.map((row) => ({
+    date: String(row.date),
+    totalOrders: Number(row.totalOrders ?? 0),
+    totalRevenue: Number(row.totalRevenue ?? 0),
   }));
 }
 
@@ -3065,26 +2349,30 @@ export async function getOrdersByPeriod(startDate: Date, endDate: Date, storeId?
 export async function getDailyRevenue(days = 7, storeId?: number, timezoneOffsetMinutes = 0) {
   const db = await getDb();
   if (!db) return [];
-  // Sempre usa America/Sao_Paulo — ignora timezoneOffset do cliente
-  const tzOffset = getBrasilTzOffset();
+
   const todayStartUtc = getTodayStartUtc();
   const startDate = new Date(todayStartUtc.getTime() - days * 24 * 60 * 60 * 1000);
-  // Use raw SQL with CONVERT_TZ to group by local date
-  const storeFilterDr = storeId ? sql` AND \`orders\`.\`storeId\` = ${storeId}` : sql``;
-  const rows = await db.execute(
-    sql`SELECT DATE(CONVERT_TZ(\`orders\`.\`createdAt\`, '+00:00', ${tzOffset})) AS date,
-               COUNT(*) AS totalOrders,
-               SUM(\`orders\`.\`total\`) AS totalRevenue
-        FROM \`orders\`
-        WHERE \`orders\`.\`createdAt\` >= ${startDate}
-          AND \`orders\`.\`status\` != 'cancelled'${storeFilterDr}
-        GROUP BY DATE(CONVERT_TZ(\`orders\`.\`createdAt\`, '+00:00', ${tzOffset}))
-        ORDER BY DATE(CONVERT_TZ(\`orders\`.\`createdAt\`, '+00:00', ${tzOffset}))`
-  );
-  return (rows as unknown as [Array<{ date: string; totalOrders: number; totalRevenue: string }>])[0].map((r) => ({
-    date: r.date,
-    totalOrders: Number(r.totalOrders),
-    totalRevenue: Number(r.totalRevenue ?? 0),
+  const localDate = sql<string>`(${orders.createdAt} AT TIME ZONE 'UTC' AT TIME ZONE 'America/Sao_Paulo')::date`;
+
+  const rows = await db
+    .select({
+      date: localDate,
+      totalOrders: sql<number>`COUNT(*)`,
+      totalRevenue: sql<number>`COALESCE(SUM(${orders.total}), 0)`,
+    })
+    .from(orders)
+    .where(and(
+      gte(orders.createdAt, startDate),
+      not(eq(orders.status, "cancelled")),
+      storeId ? eq(orders.storeId, storeId) : undefined,
+    ))
+    .groupBy(localDate)
+    .orderBy(localDate);
+
+  return rows.map((row) => ({
+    date: String(row.date),
+    totalOrders: Number(row.totalOrders ?? 0),
+    totalRevenue: Number(row.totalRevenue ?? 0),
   }));
 }
 
@@ -3092,7 +2380,21 @@ export async function getDailyRevenue(days = 7, storeId?: number, timezoneOffset
 
 export async function updateUserProfile(
   userId: number,
-  data: { name?: string; phone?: string; savedAddress?: string; savedCep?: string; savedCity?: string }
+  data: {
+    name?: string;
+    phone?: string;
+    savedAddress?: string | null;
+    savedStreet?: string | null;
+    savedNumber?: string | null;
+    savedComplement?: string | null;
+    savedNeighborhood?: string | null;
+    savedCep?: string | null;
+    savedCity?: string | null;
+    savedState?: string | null;
+    savedLatitude?: string | null;
+    savedLongitude?: string | null;
+    savedGeocodedAt?: Date | null;
+  }
 ) {
   await withDbRetry(async (db) => {
     await db.update(users).set(data).where(eq(users.id, userId));
@@ -3167,28 +2469,30 @@ export async function getAdminUsersPage(input?: AdminUsersPageInput) {
 
     const searchClause = search
       ? sql`AND (
-          u.name LIKE ${"%" + search + "%"}
-          OR u.email LIKE ${"%" + search + "%"}
-          OR u.phone LIKE ${"%" + search + "%"}
-          OR u.openId LIKE ${"%" + search + "%"}
+          u.name ILIKE ${"%" + search + "%"}
+          OR u.email ILIKE ${"%" + search + "%"}
+          OR u.phone ILIKE ${"%" + search + "%"}
+          OR u."openId" ILIKE ${"%" + search + "%"}
         )`
       : sql``;
 
     const roleClause = input?.role ? sql`AND u.role = ${input.role}` : sql``;
     const statusClause = input?.status ? sql`AND u.status = ${input.status}` : sql``;
-    const loginMethodClause = input?.loginMethod ? sql`AND u.loginMethod = ${input.loginMethod}` : sql``;
+    const loginMethodClause = input?.loginMethod ? sql`AND u."loginMethod" = ${input.loginMethod}` : sql``;
     const clubStatusClause =
       input?.clubStatus === "none"
-        ? sql`AND u.clubStatus IS NULL`
+        ? sql`AND u."clubStatus" IS NULL`
         : input?.clubStatus
-          ? sql`AND u.clubStatus = ${input.clubStatus}`
+          ? sql`AND u."clubStatus" = ${input.clubStatus}`
           : sql``;
-    const storeMembershipClause = input?.storeId ? sql`AND oa.userId IS NOT NULL` : sql``;
+    const storeMembershipClause = input?.storeId
+      ? sql`AND (oa."userId" IS NOT NULL OR usa."userId" IS NOT NULL OR u.role = 'admin')`
+      : sql``;
     const hasOrdersClause =
       input?.hasOrders === "with_orders"
-        ? sql`AND COALESCE(oa.totalOrders, 0) > 0`
+        ? sql`AND COALESCE(oa."totalOrders", 0) > 0`
         : input?.hasOrders === "without_orders"
-          ? sql`AND COALESCE(oa.totalOrders, 0) = 0`
+          ? sql`AND COALESCE(oa."totalOrders", 0) = 0`
           : sql``;
 
     const countRows = await db.execute(sql`
@@ -3196,13 +2500,17 @@ export async function getAdminUsersPage(input?: AdminUsersPageInput) {
       FROM users u
       LEFT JOIN (
         SELECT
-          o.userId,
-          COUNT(*) AS totalOrders
+          o."userId" AS "userId",
+          COUNT(*) AS "totalOrders"
         FROM orders o
-        WHERE 1 = 1
-        ${input?.storeId ? sql`AND o.storeId = ${input.storeId}` : sql``}
-        GROUP BY o.userId
-      ) oa ON oa.userId = u.id
+        WHERE o."userId" IS NOT NULL
+        ${input?.storeId ? sql`AND o."storeId" = ${input.storeId}` : sql``}
+        GROUP BY o."userId"
+      ) oa ON oa."userId" = u.id
+      LEFT JOIN user_store_access usa
+        ON usa."userId" = u.id
+       AND usa."storeId" = ${metricsStoreId}
+       AND usa.active = true
       WHERE 1 = 1
       ${searchClause}
       ${roleClause}
@@ -3213,49 +2521,53 @@ export async function getAdminUsersPage(input?: AdminUsersPageInput) {
       ${hasOrdersClause}
     `);
 
-    const total = Number((countRows as unknown as [Array<{ total: number }>])[0]?.[0]?.total ?? 0);
+    const total = Number((countRows.rows as Array<{ total: number | string }>)[0]?.total ?? 0);
 
     const rows = await db.execute(sql`
       SELECT
         u.id,
-        u.openId,
+        u."openId",
         u.name,
         u.email,
         u.phone,
         u.role,
         u.status,
-        u.loginMethod,
-        u.clubPlan,
-        u.clubStatus,
-        u.avatarUrl,
-        u.loyaltyPoints,
-        u.createdAt,
-        u.lastSignedIn,
-        COALESCE(oa.totalOrders, 0) AS totalOrders,
-        COALESCE(oa.deliveredOrders, 0) AS deliveredOrders,
-        COALESCE(oa.totalSpent, 0) AS totalSpent,
-        oa.lastOrderAt,
-        cm.averageTicket,
-        cm.favoriteNeighborhood,
-        cm.favoriteProductName,
-        cm.firstOrderAt,
-        cm.lastOrderAt AS metricsLastOrderAt
+        u."loginMethod",
+        u."clubPlan",
+        u."clubStatus",
+        u."avatarUrl",
+        u."loyaltyPoints",
+        u."createdAt",
+        u."lastSignedIn",
+        COALESCE(oa."totalOrders", 0) AS "totalOrders",
+        COALESCE(oa."deliveredOrders", 0) AS "deliveredOrders",
+        COALESCE(oa."totalSpent", 0) AS "totalSpent",
+        oa."lastOrderAt",
+        cm."averageTicket",
+        cm."favoriteNeighborhood",
+        cm."favoriteProductName",
+        cm."firstOrderAt",
+        cm."lastOrderAt" AS "metricsLastOrderAt"
       FROM users u
       LEFT JOIN (
         SELECT
-          o.userId,
-          COUNT(*) AS totalOrders,
-          SUM(CASE WHEN o.status = 'delivered' THEN 1 ELSE 0 END) AS deliveredOrders,
-          COALESCE(SUM(CASE WHEN o.status = 'delivered' THEN CAST(o.total AS DECIMAL(12,2)) ELSE 0 END), 0) AS totalSpent,
-          MAX(o.createdAt) AS lastOrderAt
+          o."userId" AS "userId",
+          COUNT(*) AS "totalOrders",
+          SUM(CASE WHEN o.status = 'delivered' THEN 1 ELSE 0 END) AS "deliveredOrders",
+          COALESCE(SUM(CASE WHEN o.status = 'delivered' THEN CAST(o.total AS DECIMAL(12,2)) ELSE 0 END), 0) AS "totalSpent",
+          MAX(o."createdAt") AS "lastOrderAt"
         FROM orders o
-        WHERE 1 = 1
-        ${input?.storeId ? sql`AND o.storeId = ${input.storeId}` : sql``}
-        GROUP BY o.userId
-      ) oa ON oa.userId = u.id
+        WHERE o."userId" IS NOT NULL
+        ${input?.storeId ? sql`AND o."storeId" = ${input.storeId}` : sql``}
+        GROUP BY o."userId"
+      ) oa ON oa."userId" = u.id
+      LEFT JOIN user_store_access usa
+        ON usa."userId" = u.id
+       AND usa."storeId" = ${metricsStoreId}
+       AND usa.active = true
       LEFT JOIN customer_metrics cm
-        ON cm.userId = u.id
-       AND cm.storeId = ${metricsStoreId}
+        ON cm."userId" = u.id
+       AND cm."storeId" = ${metricsStoreId}
       WHERE 1 = 1
       ${searchClause}
       ${roleClause}
@@ -3264,11 +2576,11 @@ export async function getAdminUsersPage(input?: AdminUsersPageInput) {
       ${clubStatusClause}
       ${storeMembershipClause}
       ${hasOrdersClause}
-      ORDER BY COALESCE(oa.lastOrderAt, u.createdAt) DESC, u.id DESC
+      ORDER BY COALESCE(oa."lastOrderAt", u."createdAt") DESC, u.id DESC
       LIMIT ${pageSize} OFFSET ${offset}
     `);
 
-    const items = (rows as unknown as [Array<{
+    const items = (rows.rows as Array<{
       id: number;
       openId: string;
       name: string | null;
@@ -3292,7 +2604,7 @@ export async function getAdminUsersPage(input?: AdminUsersPageInput) {
       favoriteProductName: string | null;
       firstOrderAt: Date | string | null;
       metricsLastOrderAt: Date | string | null;
-    }>])[0].map((row) => ({
+    }>).map((row) => ({
       ...row,
       totalOrders: Number(row.totalOrders ?? 0),
       deliveredOrders: Number(row.deliveredOrders ?? 0),
@@ -3551,7 +2863,7 @@ export async function setStoreSetting(key: string, value: string, storeId = 0): 
     await db
       .insert(storeSettings)
       .values({ storeId: effectiveStoreId, key, value })
-      .onDuplicateKeyUpdate({ set: { value } });
+      .onConflictDoUpdate({ target: [storeSettings.storeId, storeSettings.key], set: { value, updatedAt: new Date() } });
   });
 }
 
@@ -3585,9 +2897,17 @@ export async function getDriverByToken(token: string): Promise<Driver | undefine
 export async function createDriver(data: Omit<InsertDriver, "id">): Promise<number> {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  const result = await db.insert(drivers).values(data);
-  const resultHeader = Array.isArray(result) ? result[0] : result;
-  return (resultHeader as unknown as { insertId: number }).insertId;
+
+  const [created] = await db
+    .insert(drivers)
+    .values(data)
+    .returning({ id: drivers.id });
+
+  if (!created?.id) {
+    throw new Error("Driver was inserted without a returned id");
+  }
+
+  return created.id;
 }
 
 export async function updateDriver(id: number, data: Partial<InsertDriver>): Promise<void> {
@@ -3605,7 +2925,70 @@ export async function deleteDriver(id: number): Promise<void> {
 export async function assignDriverToOrder(orderId: number, driverId: number | null): Promise<void> {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  await db.update(orders).set({ driverId }).where(eq(orders.id, orderId));
+
+  const [current] = await db
+    .select({
+      driverId: orders.driverId,
+      driverAcceptedAt: orders.driverAcceptedAt,
+    })
+    .from(orders)
+    .where(eq(orders.id, orderId))
+    .limit(1);
+
+  await db
+    .update(orders)
+    .set({
+      driverId,
+      driverAcceptedAt: current?.driverId === driverId
+        ? current.driverAcceptedAt
+        : null,
+      updatedAt: new Date(),
+    })
+    .where(eq(orders.id, orderId));
+}
+
+export async function driverAcceptOrder(
+  driverId: number,
+  orderId: number,
+): Promise<{ success: boolean; error?: string; acceptedAt?: Date }> {
+  const db = await getDb();
+  if (!db) return { success: false, error: "DB not available" };
+
+  const [order] = await db
+    .select({
+      id: orders.id,
+      driverId: orders.driverId,
+      status: orders.status,
+      driverAcceptedAt: orders.driverAcceptedAt,
+    })
+    .from(orders)
+    .where(eq(orders.id, orderId))
+    .limit(1);
+
+  if (!order || order.driverId !== driverId || order.status !== "out_for_delivery") {
+    return { success: false, error: "Pedido não está disponível para este motoboy." };
+  }
+
+  if (order.driverAcceptedAt) {
+    return { success: true, acceptedAt: order.driverAcceptedAt };
+  }
+
+  const acceptedAt = new Date();
+  const [updated] = await db
+    .update(orders)
+    .set({ driverAcceptedAt: acceptedAt, updatedAt: acceptedAt })
+    .where(and(
+      eq(orders.id, orderId),
+      eq(orders.driverId, driverId),
+      eq(orders.status, "out_for_delivery"),
+    ))
+    .returning({ driverAcceptedAt: orders.driverAcceptedAt });
+
+  if (!updated?.driverAcceptedAt) {
+    return { success: false, error: "Não foi possível aceitar este pedido." };
+  }
+
+  return { success: true, acceptedAt: updated.driverAcceptedAt };
 }
 
 // --- DRIVER LOCATIONS ---------------------------------------------------------
@@ -3800,6 +3183,7 @@ export async function getClientNotifications(userId: number, storeId?: number): 
   if (!db) return [];
   return db.select().from(clientNotifications).where(and(
     eq(clientNotifications.userId, userId),
+    isNull(clientNotifications.archivedAt),
     storeId ? eq(clientNotifications.storeId, storeId) : undefined,
   )).orderBy(desc(clientNotifications.createdAt)).limit(50);
 }
@@ -3810,6 +3194,7 @@ export async function getUnreadNotificationCount(userId: number, storeId?: numbe
   const result = await db.select({ count: sql<number>`count(*)` }).from(clientNotifications).where(and(
     eq(clientNotifications.userId, userId),
     eq(clientNotifications.read, false),
+    isNull(clientNotifications.archivedAt),
     storeId ? eq(clientNotifications.storeId, storeId) : undefined,
   ));
   return result[0]?.count ?? 0;
@@ -3824,64 +3209,111 @@ export async function markNotificationsRead(userId: number, storeId?: number): P
   ));
 }
 
-export async function createClientNotification(data: { storeId?: number | null; userId: number; title: string; message: string; type: 'order' | 'promo' | 'system' }): Promise<void> {
+export async function markNotificationRead(notificationId: number, userId: number, storeId?: number): Promise<void> {
   const db = await getDb();
   if (!db) return;
-  await db.insert(clientNotifications).values(data);
+  await db.update(clientNotifications).set({ read: true }).where(and(
+    eq(clientNotifications.id, notificationId),
+    eq(clientNotifications.userId, userId),
+    storeId ? eq(clientNotifications.storeId, storeId) : undefined,
+  ));
 }
 
-// --- TENANT CUSTOMER ACCOUNT / LOYALTY ---------------------------------------
-export async function getTenantScope(storeId?: number | null): Promise<{ tenantKey: string; storeId: number | null }> {
-  if (!storeId) return { tenantKey: "bonatto", storeId: null };
+export async function archiveClientNotification(notificationId: number, userId: number, storeId?: number): Promise<void> {
   const db = await getDb();
-  if (!db) return { tenantKey: "bonatto", storeId };
-  const [store] = await db.select({ tenantKey: stores.tenantKey }).from(stores).where(eq(stores.id, storeId)).limit(1);
-  return { tenantKey: store?.tenantKey ?? "bonatto", storeId };
+  if (!db) return;
+  await db.update(clientNotifications).set({ archivedAt: new Date(), read: true }).where(and(
+    eq(clientNotifications.id, notificationId),
+    eq(clientNotifications.userId, userId),
+    storeId ? eq(clientNotifications.storeId, storeId) : undefined,
+  ));
 }
 
-export async function getTenantCustomerAccount(userId: number, storeId?: number | null) {
+export async function createClientNotification(data: { storeId?: number | null; userId: number; title: string; message: string; imageUrl?: string | null; url?: string | null; dedupeKey?: string | null; type: 'order' | 'promo' | 'system' }): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  const query = db.insert(clientNotifications).values(data);
+  if (data.dedupeKey) {
+    await query.onConflictDoNothing({
+      target: [clientNotifications.storeId, clientNotifications.userId, clientNotifications.dedupeKey],
+    });
+    return;
+  }
+  await query;
+}
+
+// --- STORE CUSTOMER ACCOUNT / LOYALTY ----------------------------------------
+export async function getStoreScope(storeId?: number | null): Promise<{ storeId: number; isDefault: boolean }> {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  const [store] = storeId
+    ? await db
+        .select({ id: stores.id, isDefault: stores.isDefault })
+        .from(stores)
+        .where(and(eq(stores.id, storeId), eq(stores.active, true)))
+        .limit(1)
+    : await db
+        .select({ id: stores.id, isDefault: stores.isDefault })
+        .from(stores)
+        .where(eq(stores.active, true))
+        .orderBy(desc(stores.isDefault), stores.id)
+        .limit(1);
+
+  if (!store) throw new Error("No active store configured");
+  return { storeId: store.id, isDefault: store.isDefault };
+}
+
+export async function getCustomerStoreAccount(userId: number, storeId?: number | null) {
   const db = await getDb();
   if (!db) return null;
-  const scope = await getTenantScope(storeId);
+
+  const scope = await getStoreScope(storeId);
   let [account] = await db
     .select()
-    .from(tenantCustomerAccounts)
-    .where(and(eq(tenantCustomerAccounts.tenantKey, scope.tenantKey), eq(tenantCustomerAccounts.userId, userId)))
+    .from(customerStoreAccounts)
+    .where(and(
+      eq(customerStoreAccounts.storeId, scope.storeId),
+      eq(customerStoreAccounts.userId, userId),
+    ))
     .limit(1);
   if (account) return account;
 
   const [legacyUser] = await db.select().from(users).where(eq(users.id, userId)).limit(1);
   if (!legacyUser) return null;
-  const legacy = scope.tenantKey === "bonatto";
-  await db.insert(tenantCustomerAccounts).values({
-    tenantKey: scope.tenantKey,
-    userId,
-    loyaltyPoints: legacy ? legacyUser.loyaltyPoints : 0,
-    clubPlan: legacy ? legacyUser.clubPlan : null,
-    clubStatus: legacy ? legacyUser.clubStatus : null,
-    clubStartDate: legacy ? legacyUser.clubStartDate : null,
-    clubNextBillingDate: legacy ? legacyUser.clubNextBillingDate : null,
-    clubFreePizzaUsed: legacy ? legacyUser.clubFreePizzaUsed : false,
-    clubFreePizzaResetAt: legacy ? legacyUser.clubFreePizzaResetAt : null,
-    stripeCustomerId: legacy ? legacyUser.stripeCustomerId : null,
-  }).onDuplicateKeyUpdate({ set: { userId } });
+
+  await db
+    .insert(customerStoreAccounts)
+    .values({
+      storeId: scope.storeId,
+      userId,
+      loyaltyPoints: scope.isDefault ? legacyUser.loyaltyPoints : 0,
+      clubPlan: scope.isDefault ? legacyUser.clubPlan : null,
+      clubStatus: scope.isDefault ? legacyUser.clubStatus : null,
+      clubStartDate: scope.isDefault ? legacyUser.clubStartDate : null,
+      clubNextBillingDate: scope.isDefault ? legacyUser.clubNextBillingDate : null,
+      clubFreePizzaUsed: scope.isDefault ? legacyUser.clubFreePizzaUsed : false,
+      clubFreePizzaResetAt: scope.isDefault ? legacyUser.clubFreePizzaResetAt : null,
+      stripeCustomerId: scope.isDefault ? legacyUser.stripeCustomerId : null,
+    })
+    .onConflictDoNothing({
+      target: [customerStoreAccounts.storeId, customerStoreAccounts.userId],
+    });
+
   [account] = await db
     .select()
-    .from(tenantCustomerAccounts)
-    .where(and(eq(tenantCustomerAccounts.tenantKey, scope.tenantKey), eq(tenantCustomerAccounts.userId, userId)))
+    .from(customerStoreAccounts)
+    .where(and(
+      eq(customerStoreAccounts.storeId, scope.storeId),
+      eq(customerStoreAccounts.userId, userId),
+    ))
     .limit(1);
+
   return account ?? null;
 }
 
-async function mirrorBonattoLoyalty(userId: number, tenantKey: string, loyaltyPoints: number) {
-  if (tenantKey !== "bonatto") return;
-  const db = await getDb();
-  if (!db) return;
-  await db.update(users).set({ loyaltyPoints }).where(eq(users.id, userId));
-}
-
 export async function getUserLoyaltyPoints(userId: number, storeId?: number | null): Promise<number> {
-  return (await getTenantCustomerAccount(userId, storeId))?.loyaltyPoints ?? 0;
+  return (await getCustomerStoreAccount(userId, storeId))?.loyaltyPoints ?? 0;
 }
 
 export async function addLoyaltyPoints(
@@ -3893,18 +3325,24 @@ export async function addLoyaltyPoints(
 ): Promise<void> {
   const db = await getDb();
   if (!db || points === 0) return;
-  const account = await getTenantCustomerAccount(userId, storeId);
+
+  const scope = await getStoreScope(storeId);
+  const account = await getCustomerStoreAccount(userId, scope.storeId);
   if (!account) return;
-  const scope = await getTenantScope(storeId);
-  await db
-    .update(tenantCustomerAccounts)
-    .set({ loyaltyPoints: sql`GREATEST(0, ${tenantCustomerAccounts.loyaltyPoints} + ${points})` })
-    .where(eq(tenantCustomerAccounts.id, account.id));
-  const balanceAfter = await getUserLoyaltyPoints(userId, storeId);
+
+  const [updated] = await db
+    .update(customerStoreAccounts)
+    .set({
+      loyaltyPoints: sql`GREATEST(0, ${customerStoreAccounts.loyaltyPoints} + ${points})`,
+      updatedAt: new Date(),
+    })
+    .where(eq(customerStoreAccounts.id, account.id))
+    .returning({ loyaltyPoints: customerStoreAccounts.loyaltyPoints });
+
+  const balanceAfter = updated?.loyaltyPoints ?? account.loyaltyPoints;
   const balanceBefore = Math.max(0, balanceAfter - points);
-  await mirrorBonattoLoyalty(userId, scope.tenantKey, balanceAfter);
+
   await db.insert(loyaltyTransactions).values({
-    tenantKey: scope.tenantKey,
     storeId: scope.storeId,
     userId,
     orderId: orderId ?? null,
@@ -3929,10 +3367,16 @@ export async function deductLoyaltyPoints(
 export async function getLoyaltyHistory(userId: number, limit = 30, storeId?: number | null) {
   const db = await getDb();
   if (!db) return [];
-  const { tenantKey } = await getTenantScope(storeId);
-  return db.select().from(loyaltyTransactions)
-    .where(and(eq(loyaltyTransactions.userId, userId), eq(loyaltyTransactions.tenantKey, tenantKey)))
-    .orderBy(sql`${loyaltyTransactions.createdAt} DESC`)
+  const scope = await getStoreScope(storeId);
+
+  return db
+    .select()
+    .from(loyaltyTransactions)
+    .where(and(
+      eq(loyaltyTransactions.userId, userId),
+      eq(loyaltyTransactions.storeId, scope.storeId),
+    ))
+    .orderBy(desc(loyaltyTransactions.createdAt))
     .limit(limit);
 }
 
@@ -3945,11 +3389,12 @@ export async function updateUserAvatar(userId: number, avatarUrl: string): Promi
 export async function getUserSpendingHistory(userId: number, storeId?: number | null) {
   const db = await getDb();
   if (!db) return [];
+  const month = sql<string>`TO_CHAR(${orders.createdAt}, 'YYYY-MM')`;
   return db
     .select({
-      month: sql<string>`DATE_FORMAT(${orders.createdAt}, '%Y-%m')`,
-      total: sql<number>`SUM(${orders.total})`,
-      count: sql<number>`COUNT(*)`,
+      month,
+      total: sql<number>`COALESCE(SUM(${orders.total}), 0)::numeric`,
+      count: sql<number>`COUNT(*)::int`,
     })
     .from(orders)
     .where(and(
@@ -3957,8 +3402,8 @@ export async function getUserSpendingHistory(userId: number, storeId?: number | 
       eq(orders.status, 'delivered'),
       storeId ? eq(orders.storeId, storeId) : undefined,
     ))
-    .groupBy(sql`DATE_FORMAT(${orders.createdAt}, '%Y-%m')`)
-    .orderBy(sql`DATE_FORMAT(${orders.createdAt}, '%Y-%m')`)
+    .groupBy(month)
+    .orderBy(month)
     .limit(12);
 }
 
@@ -3972,9 +3417,7 @@ export async function getOrderMessages(orderId: number) {
 export async function sendOrderMessage(data: { orderId: number; userId: number; senderRole: "customer" | "admin"; message: string }) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  const [result] = await db.insert(orderMessages).values(data);
-  const id = (result as any).insertId as number;
-  const [msg] = await db.select().from(orderMessages).where(eq(orderMessages.id, id));
+  const [msg] = await db.insert(orderMessages).values(data).returning();
   return msg;
 }
 
@@ -4032,74 +3475,172 @@ export async function getCrmCustomers(opts?: {
 }) {
   const db = await getDb();
   if (!db) return [];
-  const limit = opts?.limit ?? 100;
-  const offset = opts?.offset ?? 0;
+
+  const limit = Math.min(10_000, Math.max(1, opts?.limit ?? 100));
+  const offset = Math.max(0, opts?.offset ?? 0);
   const search = opts?.search?.trim() ?? "";
+  const searchCondition = search
+    ? or(
+        ilike(users.name, `%${search}%`),
+        ilike(users.email, `%${search}%`),
+        ilike(users.phone, `%${search}%`),
+      )
+    : undefined;
 
-  const rows = await db.execute(sql`
-    SELECT
-      u.id,
-      u.name,
-      u.email,
-      u.phone,
-      u.avatarUrl,
-      ${opts?.storeId ? sql`COALESCE(tca.loyaltyPoints, 0)` : sql`u.loyaltyPoints`} AS loyaltyPoints,
-      u.createdAt,
-      u.lastSignedIn,
-      COUNT(DISTINCT o.id) AS totalOrders,
-      COALESCE(SUM(CASE WHEN o.status = 'delivered' THEN CAST(o.total AS DECIMAL(10,2)) ELSE 0 END), 0) AS totalSpent,
-      MAX(o.createdAt) AS lastOrderAt,
-      COUNT(DISTINCT CASE WHEN o.status = 'delivered' THEN o.id END) AS deliveredOrders,
-      GROUP_CONCAT(DISTINCT ct.tag ORDER BY ct.assignedAt DESC SEPARATOR ',') AS tags
-    FROM users u
-    LEFT JOIN orders o ON o.userId = u.id
-    LEFT JOIN customer_tags ct ON ct.userId = u.id ${opts?.storeId ? sql`AND ct.storeId = ${opts.storeId}` : sql``}
-    ${opts?.storeId ? sql`LEFT JOIN tenant_customer_accounts tca ON tca.userId = u.id AND tca.tenantKey = (SELECT tenantKey FROM stores WHERE id = ${opts.storeId} LIMIT 1)` : sql``}
-    WHERE u.role = 'user'
-      ${search ? sql`AND (u.name LIKE ${'%' + search + '%'} OR u.email LIKE ${'%' + search + '%'} OR u.phone LIKE ${'%' + search + '%'})` : sql``}
-      ${opts?.storeId ? sql`AND u.id IN (SELECT DISTINCT userId FROM \`orders\` WHERE storeId = ${opts.storeId})` : sql``}
-    GROUP BY u.id
-    ORDER BY lastOrderAt DESC, u.createdAt DESC
-    LIMIT ${limit} OFFSET ${offset}
-  `);
-
-  return (rows as unknown as [Array<{
+  type CrmListRow = {
     id: number;
     name: string | null;
     email: string | null;
     phone: string | null;
     avatarUrl: string | null;
-    loyaltyPoints: number;
+    loyaltyPoints: number | null;
     createdAt: Date;
     lastSignedIn: Date;
-    totalOrders: number;
-    totalSpent: number;
+    totalOrders: number | null;
+    totalSpent: string | null;
     lastOrderAt: Date | null;
-    deliveredOrders: number;
-    tags: string | null;
-  }>])[0];
-}
+    deliveredOrders: number | null;
+  };
 
-/**
- * Conta total de clientes para paginação.
- */
+  let rows: CrmListRow[];
+
+  if (opts?.storeId) {
+    rows = await db
+      .select({
+        id: users.id,
+        name: users.name,
+        email: users.email,
+        phone: users.phone,
+        avatarUrl: users.avatarUrl,
+        loyaltyPoints: customerStoreAccounts.loyaltyPoints,
+        createdAt: users.createdAt,
+        lastSignedIn: users.lastSignedIn,
+        totalOrders: customerMetrics.totalOrders,
+        totalSpent: customerMetrics.totalSpent,
+        lastOrderAt: customerMetrics.lastOrderAt,
+        deliveredOrders: customerMetrics.deliveredOrders,
+      })
+      .from(users)
+      .innerJoin(
+        customerMetrics,
+        and(
+          eq(customerMetrics.userId, users.id),
+          eq(customerMetrics.storeId, opts.storeId),
+        ),
+      )
+      .leftJoin(
+        customerStoreAccounts,
+        and(
+          eq(customerStoreAccounts.userId, users.id),
+          eq(customerStoreAccounts.storeId, opts.storeId),
+        ),
+      )
+      .where(and(
+        eq(users.role, "user"),
+        gt(customerMetrics.totalOrders, 0),
+        searchCondition,
+      ))
+      .orderBy(desc(customerMetrics.lastOrderAt), desc(users.createdAt))
+      .limit(limit)
+      .offset(offset);
+  } else {
+    rows = await db
+      .select({
+        id: users.id,
+        name: users.name,
+        email: users.email,
+        phone: users.phone,
+        avatarUrl: users.avatarUrl,
+        loyaltyPoints: users.loyaltyPoints,
+        createdAt: users.createdAt,
+        lastSignedIn: users.lastSignedIn,
+        totalOrders: customerMetrics.totalOrders,
+        totalSpent: customerMetrics.totalSpent,
+        lastOrderAt: customerMetrics.lastOrderAt,
+        deliveredOrders: customerMetrics.deliveredOrders,
+      })
+      .from(users)
+      .leftJoin(
+        customerMetrics,
+        and(
+          eq(customerMetrics.userId, users.id),
+          eq(customerMetrics.storeId, 0),
+        ),
+      )
+      .where(and(eq(users.role, "user"), searchCondition))
+      .orderBy(desc(customerMetrics.lastOrderAt), desc(users.createdAt))
+      .limit(limit)
+      .offset(offset);
+  }
+
+  const userIds = rows.map((row) => row.id);
+  const tagRows = userIds.length > 0
+    ? await db
+        .select({
+          userId: customerTags.userId,
+          tag: customerTags.tag,
+          assignedAt: customerTags.assignedAt,
+        })
+        .from(customerTags)
+        .where(and(
+          inArray(customerTags.userId, userIds),
+          opts?.storeId ? eq(customerTags.storeId, opts.storeId) : undefined,
+        ))
+        .orderBy(desc(customerTags.assignedAt))
+    : [];
+
+  const tagsByUser = new Map<number, string[]>();
+  for (const tagRow of tagRows) {
+    const tags = tagsByUser.get(tagRow.userId) ?? [];
+    if (!tags.includes(tagRow.tag)) tags.push(tagRow.tag);
+    tagsByUser.set(tagRow.userId, tags);
+  }
+
+  return rows.map((row) => ({
+    ...row,
+    loyaltyPoints: Number(row.loyaltyPoints ?? 0),
+    totalOrders: Number(row.totalOrders ?? 0),
+    totalSpent: Number(row.totalSpent ?? 0),
+    deliveredOrders: Number(row.deliveredOrders ?? 0),
+    tags: tagsByUser.get(row.id)?.join(",") ?? null,
+  }));
+}
 export async function countCrmCustomers(search?: string, storeId?: number): Promise<number> {
   const db = await getDb();
   if (!db) return 0;
-  const s = search?.trim() ?? "";
-  const rows = await db.execute(sql`
-    SELECT COUNT(*) AS total FROM users u
-    WHERE u.role = 'user'
-    ${s ? sql`AND (u.name LIKE ${'%' + s + '%'} OR u.email LIKE ${'%' + s + '%'} OR u.phone LIKE ${'%' + s + '%'})` : sql``}
-    ${storeId ? sql`AND u.id IN (SELECT DISTINCT userId FROM \`orders\` WHERE storeId = ${storeId})` : sql``}
-  `);
-  const result = (rows as unknown as [Array<{ total: number }>])[0];
-  return Number(result[0]?.total ?? 0);
-}
 
-/**
- * Retorna detalhes completos de um cliente para o CRM.
- */
+  const normalized = search?.trim() ?? "";
+  const searchCondition = normalized
+    ? or(
+        ilike(users.name, `%${normalized}%`),
+        ilike(users.email, `%${normalized}%`),
+        ilike(users.phone, `%${normalized}%`),
+      )
+    : undefined;
+
+  const rows = storeId
+    ? await db
+        .select({ total: sql<number>`count(*)::int` })
+        .from(users)
+        .innerJoin(
+          customerMetrics,
+          and(
+            eq(customerMetrics.userId, users.id),
+            eq(customerMetrics.storeId, storeId),
+          ),
+        )
+        .where(and(
+          eq(users.role, "user"),
+          gt(customerMetrics.totalOrders, 0),
+          searchCondition,
+        ))
+    : await db
+        .select({ total: sql<number>`count(*)::int` })
+        .from(users)
+        .where(and(eq(users.role, "user"), searchCondition));
+
+  return Number(rows[0]?.total ?? 0);
+}
 export async function getCrmCustomerDetail(userId: number, storeId?: number) {
   const db = await getDb();
   if (!db) return null;
@@ -4109,7 +3650,7 @@ export async function getCrmCustomerDetail(userId: number, storeId?: number) {
   const { passwordHash: _ph, resetToken: _rt, resetTokenExpiresAt: _rte, ...baseSafeUser } = userRows[0] as typeof userRows[0] & {
     passwordHash?: unknown; resetToken?: unknown; resetTokenExpiresAt?: unknown;
   };
-  const account = storeId ? await getTenantCustomerAccount(userId, storeId) : null;
+  const account = storeId ? await getCustomerStoreAccount(userId, storeId) : null;
   const safeUser = account ? {
     ...baseSafeUser,
     loyaltyPoints: account.loyaltyPoints,
@@ -4137,157 +3678,190 @@ export async function getCrmCustomerDetail(userId: number, storeId?: number) {
 export async function getCrmCustomersByTag(tag: string, storeId: number) {
   const db = await getDb();
   if (!db) return [];
-  const rows = await db.execute(sql`
-    SELECT
-      u.id,
-      u.name,
-      u.email,
-      u.phone,
-      u.avatarUrl,
-      COALESCE(tca.loyaltyPoints, 0) AS loyaltyPoints,
-      u.createdAt,
-      COUNT(DISTINCT o.id) AS totalOrders,
-      COALESCE(SUM(CASE WHEN o.status = 'delivered' THEN CAST(o.total AS DECIMAL(10,2)) ELSE 0 END), 0) AS totalSpent,
-      MAX(o.createdAt) AS lastOrderAt,
-      GROUP_CONCAT(DISTINCT ct2.tag ORDER BY ct2.assignedAt DESC SEPARATOR ',') AS tags
-    FROM users u
-    INNER JOIN customer_tags ct ON ct.userId = u.id AND ct.storeId = ${storeId} AND ct.tag = ${tag}
-    LEFT JOIN customer_tags ct2 ON ct2.userId = u.id AND ct2.storeId = ${storeId}
-    LEFT JOIN orders o ON o.userId = u.id AND o.storeId = ${storeId}
-    LEFT JOIN tenant_customer_accounts tca ON tca.userId = u.id AND tca.tenantKey = (SELECT tenantKey FROM stores WHERE id = ${storeId} LIMIT 1)
-    WHERE u.role = 'user'
-    GROUP BY u.id
-    ORDER BY lastOrderAt DESC
-  `);
-  return (rows as unknown as [Array<{
-    id: number; name: string | null; email: string | null; phone: string | null;
-    avatarUrl: string | null; loyaltyPoints: number; createdAt: Date;
-    totalOrders: number; totalSpent: number; lastOrderAt: Date | null;
-    tags: string | null;
-  }>])[0];
-}
 
-/**
- * Atribui uma tag manualmente a um cliente.
- */
+  const tagged = await db
+    .select({ userId: customerTags.userId })
+    .from(customerTags)
+    .where(and(
+      eq(customerTags.storeId, storeId),
+      eq(customerTags.tag, tag as typeof customerTags.$inferSelect["tag"]),
+    ));
+
+  if (tagged.length === 0) return [];
+  const ids = new Set(tagged.map((row) => row.userId));
+  const customers = await getCrmCustomers({ storeId, limit: 10_000, offset: 0 });
+  return customers.filter((customer) => ids.has(customer.id));
+}
 export async function assignTagToCustomer(userId: number, tag: string, storeId: number): Promise<void> {
   const db = await getDb();
   if (!db) return;
-  const now = new Date();
-  const existing = await db.execute(sql`
-    SELECT id FROM customer_tags WHERE storeId = ${storeId} AND userId = ${userId} AND tag = ${tag} LIMIT 1
-  `);
-  const rows = (existing as unknown as [Array<{ id: number }>])[0];
-  if (rows.length === 0) {
-    await db.execute(sql`
-      INSERT INTO customer_tags (storeId, userId, tag, assignedAt, updatedAt) VALUES (${storeId}, ${userId}, ${tag}, ${now}, ${now})
-    `);
-  }
+  await db
+    .insert(customerTags)
+    .values({
+      storeId,
+      userId,
+      tag: tag as typeof customerTags.$inferInsert["tag"],
+      assignedAt: new Date(),
+      updatedAt: new Date(),
+    })
+    .onConflictDoUpdate({
+      target: [customerTags.storeId, customerTags.userId, customerTags.tag],
+      set: { updatedAt: new Date() },
+    });
 }
-
-/**
- * Remove uma tag de um cliente.
- */
 export async function removeTagFromCustomer(userId: number, tag: string, storeId: number): Promise<void> {
   const db = await getDb();
   if (!db) return;
-  await db.execute(sql`DELETE FROM customer_tags WHERE storeId = ${storeId} AND userId = ${userId} AND tag = ${tag}`);
+  await db
+    .delete(customerTags)
+    .where(and(
+      eq(customerTags.storeId, storeId),
+      eq(customerTags.userId, userId),
+      eq(customerTags.tag, tag as typeof customerTags.$inferSelect["tag"]),
+    ));
 }
-
-/**
- * Retorna todas as tags de um cliente específico.
- */
-export async function getTagsForCustomer(userId: number, storeId: number): Promise<Array<{ tag: string; assignedAt: Date }>> {
+export async function getTagsForCustomer(
+  userId: number,
+  storeId: number,
+): Promise<Array<{ tag: string; assignedAt: Date }>> {
   const db = await getDb();
   if (!db) return [];
-  const rows = await db.execute(sql`
-    SELECT tag, assignedAt FROM customer_tags WHERE storeId = ${storeId} AND userId = ${userId} ORDER BY assignedAt DESC
-  `);
-  return (rows as unknown as [Array<{ tag: string; assignedAt: Date }>])[0];
+  return db
+    .select({
+      tag: customerTags.tag,
+      assignedAt: customerTags.assignedAt,
+    })
+    .from(customerTags)
+    .where(and(
+      eq(customerTags.storeId, storeId),
+      eq(customerTags.userId, userId),
+    ))
+    .orderBy(desc(customerTags.assignedAt));
 }
-
-/**
- * Retorna execuções de jornadas de um cliente específico.
- */
 export async function getJourneyExecutionsByUser(userId: number, storeId: number) {
   const db = await getDb();
   if (!db) return [];
-  const rows = await db.execute(sql`
-    SELECT je.*, j.name AS journeyName
-    FROM journey_executions je
-    LEFT JOIN journeys j ON j.id = je.journeyId
-    WHERE je.storeId = ${storeId} AND je.userId = ${userId}
-    ORDER BY je.startedAt DESC
-    LIMIT 20
-  `);
-  return (rows as unknown as [Array<{
-    id: number; journeyId: number; journeyName: string | null;
-    status: string; currentStep: number; startedAt: Date;
-    completedAt: Date | null; logs: string | null;
-  }>])[0];
+  return db
+    .select({
+      id: journeyExecutions.id,
+      journeyId: journeyExecutions.journeyId,
+      journeyName: journeys.name,
+      status: journeyExecutions.status,
+      currentStep: journeyExecutions.currentStep,
+      startedAt: journeyExecutions.startedAt,
+      completedAt: journeyExecutions.completedAt,
+      logs: journeyExecutions.logs,
+    })
+    .from(journeyExecutions)
+    .leftJoin(journeys, eq(journeys.id, journeyExecutions.journeyId))
+    .where(and(
+      eq(journeyExecutions.storeId, storeId),
+      eq(journeyExecutions.userId, userId),
+    ))
+    .orderBy(desc(journeyExecutions.startedAt))
+    .limit(20);
 }
-
-/**
- * Retorna carrinhos abandonados de um cliente específico.
- */
 export async function getAbandonedCartsByUser(userId: number, storeId: number) {
   const db = await getDb();
   if (!db) return [];
-  const rows = await db.execute(sql`
-    SELECT * FROM abandoned_carts WHERE storeId = ${storeId} AND userId = ${userId} ORDER BY createdAt DESC LIMIT 10
-  `);
-  return (rows as unknown as [Array<{
-    id: number; status: string; total: string; items: string;
-    createdAt: Date; firstReminderSentAt: Date | null; secondReminderSentAt: Date | null;
-  }>])[0];
+  return db
+    .select({
+      id: abandonedCarts.id,
+      status: abandonedCarts.status,
+      total: abandonedCarts.total,
+      items: abandonedCarts.items,
+      createdAt: abandonedCarts.createdAt,
+      firstReminderSentAt: abandonedCarts.firstReminderSentAt,
+      secondReminderSentAt: abandonedCarts.secondReminderSentAt,
+    })
+    .from(abandonedCarts)
+    .where(and(
+      eq(abandonedCarts.storeId, storeId),
+      eq(abandonedCarts.userId, userId),
+    ))
+    .orderBy(desc(abandonedCarts.createdAt))
+    .limit(10);
 }
-
-/**
- * Retorna estatísticas gerais do CRM para o dashboard.
- */
 export async function getCrmStats(storeId?: number) {
   const db = await getDb();
   if (!db) return null;
-  const rows = storeId
-    ? await db.execute(sql`
-      SELECT
-        (SELECT COUNT(DISTINCT o.userId) FROM orders o WHERE o.storeId = ${storeId} AND o.userId IS NOT NULL) AS totalCustomers,
-        (SELECT COUNT(*) FROM customer_tags ct WHERE ct.storeId = ${storeId} AND ct.tag = 'novo') AS tagNovo,
-        (SELECT COUNT(*) FROM customer_tags ct WHERE ct.storeId = ${storeId} AND ct.tag = 'recorrente') AS tagRecorrente,
-        (SELECT COUNT(*) FROM customer_tags ct WHERE ct.storeId = ${storeId} AND ct.tag = 'indeciso') AS tagIndeciso,
-        (SELECT COUNT(*) FROM customer_tags ct WHERE ct.storeId = ${storeId} AND ct.tag = 'inativo_15') AS tagInativo15,
-        (SELECT COUNT(*) FROM customer_tags ct WHERE ct.storeId = ${storeId} AND ct.tag = 'inativo_30') AS tagInativo30,
-        (SELECT COUNT(*) FROM customer_tags ct WHERE ct.storeId = ${storeId} AND ct.tag = 'inativo_60') AS tagInativo60,
-        (SELECT COUNT(*) FROM abandoned_carts ac WHERE ac.status = 'pending' AND EXISTS (SELECT 1 FROM orders o WHERE o.userId = ac.userId AND o.storeId = ${storeId})) AS carrinhosPendentes,
-        (SELECT COUNT(*) FROM journey_executions je WHERE je.status = 'running' AND EXISTS (SELECT 1 FROM orders o WHERE o.userId = je.userId AND o.storeId = ${storeId})) AS jornadasAtivas
-    `)
-    : await db.execute(sql`
-      SELECT
-        (SELECT COUNT(*) FROM users WHERE role = 'user') AS totalCustomers,
-        (SELECT COUNT(*) FROM customer_tags WHERE tag = 'novo') AS tagNovo,
-        (SELECT COUNT(*) FROM customer_tags WHERE tag = 'recorrente') AS tagRecorrente,
-        (SELECT COUNT(*) FROM customer_tags WHERE tag = 'indeciso') AS tagIndeciso,
-        (SELECT COUNT(*) FROM customer_tags WHERE tag = 'inativo_15') AS tagInativo15,
-        (SELECT COUNT(*) FROM customer_tags WHERE tag = 'inativo_30') AS tagInativo30,
-        (SELECT COUNT(*) FROM customer_tags WHERE tag = 'inativo_60') AS tagInativo60,
-        (SELECT COUNT(*) FROM abandoned_carts WHERE status = 'pending') AS carrinhosPendentes,
-        (SELECT COUNT(*) FROM journey_executions WHERE status = 'running') AS jornadasAtivas
-    `);
-  const result = (rows as unknown as [Array<{
-    totalCustomers: number; tagNovo: number; tagRecorrente: number; tagIndeciso: number;
-    tagInativo15: number; tagInativo30: number; tagInativo60: number;
-    carrinhosPendentes: number; jornadasAtivas: number;
-  }>])[0];
-  return result[0] ?? null;
+
+  const metricsStoreId = storeId ?? 0;
+  const [lifetime] = await db
+    .select({
+      totalCustomers: sql<number>`count(*)::int`,
+      repeatCustomers: sql<number>`count(*) FILTER (WHERE ${customerMetrics.deliveredOrders} > 1)::int`,
+      totalLifetimeRevenue: sql<string>`COALESCE(SUM(${customerMetrics.totalSpent}), 0)`,
+      avgLtv: sql<string>`COALESCE(AVG(${customerMetrics.totalSpent}), 0)`,
+    })
+    .from(customerMetrics)
+    .where(and(
+      eq(customerMetrics.storeId, metricsStoreId),
+      gt(customerMetrics.totalOrders, 0),
+    ));
+
+  const countTag = async (tag: typeof customerTags.$inferSelect["tag"]) => {
+    const [row] = await db
+      .select({ total: sql<number>`count(*)::int` })
+      .from(customerTags)
+      .where(and(
+        storeId ? eq(customerTags.storeId, storeId) : undefined,
+        eq(customerTags.tag, tag),
+      ));
+    return Number(row?.total ?? 0);
+  };
+
+  const [
+    tagNovo,
+    tagRecorrente,
+    tagIndeciso,
+    tagInativo15,
+    tagInativo30,
+    tagInativo60,
+    cartRows,
+    journeyRows,
+  ] = await Promise.all([
+    countTag("novo"),
+    countTag("recorrente"),
+    countTag("indeciso"),
+    countTag("inativo_15"),
+    countTag("inativo_30"),
+    countTag("inativo_60"),
+    db
+      .select({ total: sql<number>`count(*)::int` })
+      .from(abandonedCarts)
+      .where(and(
+        eq(abandonedCarts.status, "pending"),
+        storeId ? eq(abandonedCarts.storeId, storeId) : undefined,
+      )),
+    db
+      .select({ total: sql<number>`count(*)::int` })
+      .from(journeyExecutions)
+      .where(and(
+        eq(journeyExecutions.status, "running"),
+        storeId ? eq(journeyExecutions.storeId, storeId) : undefined,
+      )),
+  ]);
+
+  const totalCustomers = Number(lifetime?.totalCustomers ?? 0);
+  const repeatCustomers = Number(lifetime?.repeatCustomers ?? 0);
+
+  return {
+    totalCustomers,
+    repeatCustomers,
+    retentionRate: totalCustomers > 0 ? (repeatCustomers / totalCustomers) * 100 : 0,
+    totalLifetimeRevenue: Number(lifetime?.totalLifetimeRevenue ?? 0),
+    avgLtv: Number(lifetime?.avgLtv ?? 0),
+    tagNovo,
+    tagRecorrente,
+    tagIndeciso,
+    tagInativo15,
+    tagInativo30,
+    tagInativo60,
+    carrinhosPendentes: Number(cartRows[0]?.total ?? 0),
+    jornadasAtivas: Number(journeyRows[0]?.total ?? 0),
+  };
 }
-
-// ─── Notification Templates ───────────────────────────────────────────────────
-
-
-
-/**
- * Lista todos os templates de notificação, opcionalmente filtrados por event/channel.
- */
 export async function listNotificationTemplates(opts?: { storeId?: number; event?: string; channel?: string }) {
   const db = await getDb();
   if (!db) return [];
@@ -4340,21 +3914,29 @@ export async function pickRandomTemplate(
   event: string,
   channel: "push" | "whatsapp",
   requestedStoreId?: number,
-): Promise<{ title: string; body: string } | null> {
+): Promise<{ title: string; body: string; imageUrl: string | null } | null> {
   const db = await getDb();
   if (!db) return null;
   const storeId = await getEffectiveStoreId(db, requestedStoreId);
-  const rows = await db.execute(sql`
-    SELECT title, body FROM notification_templates
-    WHERE storeId = ${storeId}
-      AND event = ${event}
-      AND (channel = ${channel} OR channel = 'both')
-      AND isActive = 1
-    ORDER BY RAND()
-    LIMIT 1
-  `);
-  const result = (rows as unknown as [Array<{ title: string; body: string }>])[0];
-  return result[0] ?? null;
+  const rows = await db
+    .select({
+      title: notificationTemplates.title,
+      body: notificationTemplates.body,
+      imageUrl: notificationTemplates.imageUrl,
+    })
+    .from(notificationTemplates)
+    .where(and(
+      eq(notificationTemplates.storeId, storeId),
+      eq(notificationTemplates.event, event as typeof notificationTemplates.$inferSelect["event"]),
+      or(
+        eq(notificationTemplates.channel, channel),
+        eq(notificationTemplates.channel, "both"),
+      ),
+      eq(notificationTemplates.isActive, true),
+    ))
+    .orderBy(sql`RANDOM()`)
+    .limit(1);
+  return rows[0] ?? null;
 }
 
 /**
@@ -4372,81 +3954,81 @@ export async function seedNotificationTemplates(requestedStoreId?: number) {
 
   const templates: InsertNotificationTemplate[] = [
     // ── order_confirmed ──
-    { event: "order_confirmed", channel: "push", title: "✅ Pedido confirmado!", body: "Oba! Seu pedido #{{orderId}} foi confirmado. Já estamos separando tudo com carinho!" },
-    { event: "order_confirmed", channel: "push", title: "🍕 Recebemos seu pedido!", body: "Pedido #{{orderId}} confirmado! A equipe da Bonatto já entrou em ação." },
-    { event: "order_confirmed", channel: "push", title: "👌 Tá na fila, {{clientName}}!", body: "Seu pedido #{{orderId}} foi aceito. Em breve começa a magia!" },
-    { event: "order_confirmed", channel: "whatsapp", title: "Pedido confirmado", body: "Olá, {{clientName}}! 🎉 Seu pedido #{{orderId}} foi confirmado. Estamos preparando tudo com muito carinho pra você. Qualquer dúvida é só chamar!" },
-    { event: "order_confirmed", channel: "whatsapp", title: "Pedido confirmado", body: "Oi, {{clientName}}! ✅ Recebemos seu pedido #{{orderId}} e já estamos de olho nele. Logo logo sua pizza sai do forno!" },
-    { event: "order_confirmed", channel: "whatsapp", title: "Pedido confirmado", body: "{{clientName}}, seu pedido #{{orderId}} está confirmado! 🍕 Nossa equipe já foi avisada. Aguarda que vem coisa boa aí!" },
+    { event: "order_confirmed", channel: "push", title: "✅ Pedido confirmado", body: "Seu pedido #{{orderId}} foi confirmado pela loja." },
+    { event: "order_confirmed", channel: "push", title: "🍕 Pedido recebido", body: "Recebemos o pedido #{{orderId}} e ele já entrou na fila." },
+    { event: "order_confirmed", channel: "push", title: "👌 Pedido aceito", body: "{{clientName}}, seu pedido #{{orderId}} foi aceito pela loja." },
+    { event: "order_confirmed", channel: "whatsapp", title: "Pedido confirmado", body: "Oi, {{clientName}}! Seu pedido #{{orderId}} foi confirmado. Se precisar falar com a loja, responda por aqui." },
+    { event: "order_confirmed", channel: "whatsapp", title: "Pedido confirmado", body: "Oi, {{clientName}}! Recebemos seu pedido #{{orderId}}. Você pode acompanhar o andamento pelo site." },
+    { event: "order_confirmed", channel: "whatsapp", title: "Pedido confirmado", body: "{{clientName}}, o pedido #{{orderId}} está confirmado e já foi enviado para a equipe da loja." },
 
     // ── order_preparing ──
-    { event: "order_preparing", channel: "push", title: "👨‍🍳 Mãos na massa!", body: "Seu pedido #{{orderId}} está sendo preparado. O cheirinho já deve estar chegando aí!" },
-    { event: "order_preparing", channel: "push", title: "🔥 Forno ligado!", body: "Pedido #{{orderId}} no forno! Daqui a pouco vai estar pronto." },
-    { event: "order_preparing", channel: "push", title: "🍕 Preparando com amor", body: "Seu pedido #{{orderId}} está nas mãos dos nossos pizzaiolos. Quase lá!" },
-    { event: "order_preparing", channel: "whatsapp", title: "Preparando", body: "{{clientName}}, seu pedido #{{orderId}} está sendo preparado agora! 🍕🔥 O forno já está quente e a pizza vai sair perfeita. Aguenta um pouquinho!" },
-    { event: "order_preparing", channel: "whatsapp", title: "Preparando", body: "Oi {{clientName}}! 👨‍🍳 Nosso time já está com as mãos na massa do seu pedido #{{orderId}}. Em breve fica pronto!" },
-    { event: "order_preparing", channel: "whatsapp", title: "Preparando", body: "{{clientName}}, o pedido #{{orderId}} entrou em produção! 🎯 Estamos caprichando em cada detalhe pra você. Logo logo sai!" },
+    { event: "order_preparing", channel: "push", title: "👨‍🍳 Pedido em preparo", body: "Seu pedido #{{orderId}} está sendo preparado." },
+    { event: "order_preparing", channel: "push", title: "🔥 Em preparo", body: "O pedido #{{orderId}} está em preparo na loja." },
+    { event: "order_preparing", channel: "push", title: "🍕 Preparando seu pedido", body: "A equipe está preparando o pedido #{{orderId}}." },
+    { event: "order_preparing", channel: "whatsapp", title: "Preparando", body: "{{clientName}}, seu pedido #{{orderId}} está sendo preparado pela loja." },
+    { event: "order_preparing", channel: "whatsapp", title: "Preparando", body: "Oi, {{clientName}}! O pedido #{{orderId}} está em preparo. Avisaremos quando ele sair para entrega." },
+    { event: "order_preparing", channel: "whatsapp", title: "Preparando", body: "{{clientName}}, o pedido #{{orderId}} entrou em preparo na loja." },
 
     // ── order_out_for_delivery ──
-    { event: "order_out_for_delivery", channel: "push", title: "🛵 Saiu pra entrega!", body: "Seu pedido #{{orderId}} está a caminho! Fique de olho na porta." },
-    { event: "order_out_for_delivery", channel: "push", title: "🚀 Voando até você!", body: "Pedido #{{orderId}} saiu! Nosso motoboy já está na estrada." },
-    { event: "order_out_for_delivery", channel: "push", title: "📍 A caminho!", body: "Pedido #{{orderId}} em rota de entrega. Pode deixar o apetite crescer!" },
-    { event: "order_out_for_delivery", channel: "whatsapp", title: "Saiu para entrega", body: "{{clientName}}, seu pedido #{{orderId}} saiu para entrega! 🛵💨 Nosso motoboy está a caminho. Fique de olho na porta!" },
-    { event: "order_out_for_delivery", channel: "whatsapp", title: "Saiu para entrega", body: "Oi {{clientName}}! 🍕🛵 O pedido #{{orderId}} está voando até você. Pode ir abrindo a porta!" },
-    { event: "order_out_for_delivery", channel: "whatsapp", title: "Saiu para entrega", body: "{{clientName}}, boa notícia! 🎉 Seu pedido #{{orderId}} saiu agora. Daqui a pouco você vai estar saboreando uma pizza incrível!" },
+    { event: "order_out_for_delivery", channel: "push", title: "🛵 Saiu para entrega", body: "Seu pedido #{{orderId}} está a caminho." },
+    { event: "order_out_for_delivery", channel: "push", title: "🛵 Pedido a caminho", body: "O pedido #{{orderId}} saiu para entrega." },
+    { event: "order_out_for_delivery", channel: "push", title: "📍 Em rota de entrega", body: "O pedido #{{orderId}} está em rota de entrega." },
+    { event: "order_out_for_delivery", channel: "whatsapp", title: "Saiu para entrega", body: "{{clientName}}, seu pedido #{{orderId}} saiu para entrega e está a caminho." },
+    { event: "order_out_for_delivery", channel: "whatsapp", title: "Saiu para entrega", body: "Oi, {{clientName}}! O pedido #{{orderId}} está em rota de entrega." },
+    { event: "order_out_for_delivery", channel: "whatsapp", title: "Saiu para entrega", body: "{{clientName}}, seu pedido #{{orderId}} saiu para entrega." },
 
     // ── order_delivered ──
-    { event: "order_delivered", channel: "push", title: "🎉 Entregue! Bom apetite!", body: "Seu pedido #{{orderId}} foi entregue. Aproveite muito!" },
-    { event: "order_delivered", channel: "push", title: "🍕 Chegou! Hora de comer!", body: "Pedido #{{orderId}} entregue. Bom apetite, {{clientName}}!" },
-    { event: "order_delivered", channel: "push", title: "✅ Entregue com sucesso!", body: "Pedido #{{orderId}} na sua mão! Que seja delicioso." },
-    { event: "order_delivered", channel: "whatsapp", title: "Entregue", body: "{{clientName}}, seu pedido #{{orderId}} foi entregue! 🎉🍕 Esperamos que você aproveite muito. Bom apetite e até a próxima!" },
-    { event: "order_delivered", channel: "whatsapp", title: "Entregue", body: "Oi {{clientName}}! ✅ Pedido #{{orderId}} entregue com sucesso. Que a pizza esteja deliciosa! Qualquer coisa, estamos aqui. 😊" },
-    { event: "order_delivered", channel: "whatsapp", title: "Entregue", body: "{{clientName}}, chegou! 🍕🔥 Pedido #{{orderId}} entregue. Obrigado pela preferência! Nos vemos no próximo pedido. 🙏" },
+    { event: "order_delivered", channel: "push", title: "🎉 Entregue! Bom apetite!", body: "Seu pedido #{{orderId}} foi entregue. Bom apetite!" },
+    { event: "order_delivered", channel: "push", title: "🍕 Pedido entregue", body: "Pedido #{{orderId}} entregue. Bom apetite, {{clientName}}!" },
+    { event: "order_delivered", channel: "push", title: "✅ Pedido entregue", body: "O pedido #{{orderId}} foi entregue." },
+    { event: "order_delivered", channel: "whatsapp", title: "Entregue", body: "{{clientName}}, seu pedido #{{orderId}} foi entregue. 🍕 Bom apetite!" },
+    { event: "order_delivered", channel: "whatsapp", title: "Entregue", body: "Oi, {{clientName}}! O pedido #{{orderId}} foi entregue. Bom apetite!" },
+    { event: "order_delivered", channel: "whatsapp", title: "Entregue", body: "{{clientName}}, o pedido #{{orderId}} foi entregue. Obrigado pelo pedido!" },
 
     // ── order_cancelled ──
-    { event: "order_cancelled", channel: "push", title: "❌ Pedido cancelado", body: "Seu pedido #{{orderId}} foi cancelado. Sentimos muito!" },
-    { event: "order_cancelled", channel: "push", title: "😔 Ops, pedido cancelado", body: "Pedido #{{orderId}} cancelado. Qualquer dúvida, entre em contato." },
-    { event: "order_cancelled", channel: "whatsapp", title: "Cancelado", body: "{{clientName}}, infelizmente seu pedido #{{orderId}} precisou ser cancelado. 😔 Sentimos muito pelo inconveniente. Entre em contato conosco para mais informações." },
-    { event: "order_cancelled", channel: "whatsapp", title: "Cancelado", body: "Oi {{clientName}}, seu pedido #{{orderId}} foi cancelado. 😢 Pedimos desculpas! Estamos à disposição para resolver qualquer situação." },
+    { event: "order_cancelled", channel: "push", title: "❌ Pedido cancelado", body: "Seu pedido #{{orderId}} foi cancelado." },
+    { event: "order_cancelled", channel: "push", title: "Pedido cancelado", body: "O pedido #{{orderId}} foi cancelado. Entre em contato com a loja se precisar de ajuda." },
+    { event: "order_cancelled", channel: "whatsapp", title: "Cancelado", body: "{{clientName}}, o pedido #{{orderId}} foi cancelado. Entre em contato com a loja se precisar de mais informações." },
+    { event: "order_cancelled", channel: "whatsapp", title: "Cancelado", body: "Oi, {{clientName}}. Seu pedido #{{orderId}} foi cancelado. Se precisar de ajuda, fale com a loja." },
 
     // ── cart_abandoned_step1 (10 min — urgência) ──
-    { event: "cart_abandoned_step1", channel: "push", title: "🍕 Sua pizza está esperando!", body: "Finalize seu pedido de R$ {{total}} antes que esfrie!" },
-    { event: "cart_abandoned_step1", channel: "push", title: "⚡ Esqueceu alguma coisa?", body: "Seu carrinho de R$ {{total}} ainda está salvo. Finaliza aí!" },
-    { event: "cart_abandoned_step1", channel: "push", title: "🔥 Seu pedido está te esperando!", body: "R$ {{total}} no carrinho. Não deixa esfriar, {{clientName}}!" },
-    { event: "cart_abandoned_step1", channel: "whatsapp", title: "Carrinho abandonado - etapa 1", body: "Olá, {{clientName}}! 🍕\n\nVocê deixou sua pizza no forno! 😅\n\n*Total: R$ {{total}}*\n\nFinalize agora antes que esfrie:\n👉 https://bonattopizza.manus.space" },
-    { event: "cart_abandoned_step1", channel: "whatsapp", title: "Carrinho abandonado - etapa 1", body: "Oi {{clientName}}! 👋\n\nEsqueceu de finalizar seu pedido? 🍕\n\nSeu carrinho de *R$ {{total}}* ainda está salvo pra você!\n\n👉 https://bonattopizza.manus.space" },
+    { event: "cart_abandoned_step1", channel: "push", title: "🍕 Seu carrinho está salvo", body: "Seu pedido de R$ {{total}} continua no carrinho." },
+    { event: "cart_abandoned_step1", channel: "push", title: "Seu carrinho continua aqui", body: "Você ainda pode finalizar o pedido de R$ {{total}}." },
+    { event: "cart_abandoned_step1", channel: "push", title: "Carrinho salvo", body: "{{clientName}}, seu carrinho de R$ {{total}} continua disponível." },
+    { event: "cart_abandoned_step1", channel: "whatsapp", title: "Carrinho abandonado - etapa 1", body: "Oi, {{clientName}}! Seu carrinho ainda está salvo.\n\n*Total: R$ {{total}}*\n\nSe quiser concluir o pedido, continue por aqui:\nhttps://bonattopizza.manus.space" },
+    { event: "cart_abandoned_step1", channel: "whatsapp", title: "Carrinho abandonado - etapa 1", body: "Oi, {{clientName}}! Seu carrinho de *R$ {{total}}* continua salvo.\n\nSe quiser finalizar, acesse:\nhttps://bonattopizza.manus.space" },
 
     // ── cart_abandoned_step2 (20 min — benefício) ──
-    { event: "cart_abandoned_step2", channel: "push", title: "🛵 Entrega em 40 minutos!", body: "Seu pedido de R$ {{total}} ainda está salvo. Finalize agora!" },
-    { event: "cart_abandoned_step2", channel: "push", title: "⏱️ Ainda dá tempo!", body: "Pedido de R$ {{total}} aguardando. Entregamos em até 40 min!" },
-    { event: "cart_abandoned_step2", channel: "push", title: "🍕 Não perca sua pizza!", body: "Carrinho salvo: R$ {{total}}. Finalize e receba em 40 minutos!" },
-    { event: "cart_abandoned_step2", channel: "whatsapp", title: "Carrinho abandonado - etapa 2", body: "{{clientName}}, ainda dá tempo! 🔥\n\nSeu pedido de *R$ {{total}}* ainda está salvo.\n\n🛵 Entregamos em até 40 minutos!\n\nNão perca sua pizza favorita:\n👉 https://bonattopizza.manus.space" },
-    { event: "cart_abandoned_step2", channel: "whatsapp", title: "Carrinho abandonado - etapa 2", body: "Oi {{clientName}}! 🍕\n\nSeu carrinho de *R$ {{total}}* ainda está te esperando.\n\n🛵 Pedido rápido, entrega em até 40 min!\n\n👉 https://bonattopizza.manus.space" },
+    { event: "cart_abandoned_step2", channel: "push", title: "Seu carrinho ainda está salvo", body: "O pedido de R$ {{total}} continua disponível para finalizar." },
+    { event: "cart_abandoned_step2", channel: "push", title: "Pedido salvo", body: "Seu carrinho de R$ {{total}} continua disponível." },
+    { event: "cart_abandoned_step2", channel: "push", title: "🍕 Carrinho salvo", body: "Seu pedido de R$ {{total}} ainda pode ser finalizado." },
+    { event: "cart_abandoned_step2", channel: "whatsapp", title: "Carrinho abandonado - etapa 2", body: "Oi, {{clientName}}! Seu pedido de *R$ {{total}}* continua no carrinho.\n\nSe quiser finalizar, use o link abaixo:\nhttps://bonattopizza.manus.space" },
+    { event: "cart_abandoned_step2", channel: "whatsapp", title: "Carrinho abandonado - etapa 2", body: "Oi, {{clientName}}! Seu carrinho de *R$ {{total}}* continua disponível.\n\nPara finalizar, acesse:\nhttps://bonattopizza.manus.space" },
 
     // ── cart_abandoned_step3 (30 min — escassez + cupom) ──
-    { event: "cart_abandoned_step3", channel: "push", title: "⏰ Última chance! 10% OFF", body: "Cupom {{coupon}} — válido 48h. Finalize agora!" },
-    { event: "cart_abandoned_step3", channel: "push", title: "🎁 Desconto exclusivo para você!", body: "Use {{coupon}} e ganhe 10% OFF. Carrinho expira em breve!" },
-    { event: "cart_abandoned_step3", channel: "push", title: "🚨 Carrinho expirando!", body: "Última chance: R$ {{total}} com cupom {{coupon}} — 10% OFF!" },
-    { event: "cart_abandoned_step3", channel: "whatsapp", title: "Carrinho abandonado - etapa 3", body: "⏰ {{clientName}}, última chance!\n\nSeu carrinho expira em breve e não queremos que você perca sua pizza! 🍕\n\n🎁 Use o cupom exclusivo *{{coupon}}* e ganhe *10% de desconto*!\n\n⚡ Válido por apenas 48 horas!\n\n👉 https://bonattopizza.manus.space" },
-    { event: "cart_abandoned_step3", channel: "whatsapp", title: "Carrinho abandonado - etapa 3", body: "{{clientName}}, não deixa passar! 😱\n\nSeu pedido de *R$ {{total}}* ainda está salvo e temos um presente pra você:\n\n🎟️ Cupom *{{coupon}}* — *10% de desconto*\n\n⏰ Expira em 48h!\n\n👉 https://bonattopizza.manus.space" },
+    { event: "cart_abandoned_step3", channel: "push", title: "🎁 Cupom de 10% para seu carrinho", body: "Use {{coupon}} nas próximas 48 horas." },
+    { event: "cart_abandoned_step3", channel: "push", title: "🎁 10% de desconto no carrinho", body: "Use o cupom {{coupon}} nas próximas 48 horas." },
+    { event: "cart_abandoned_step3", channel: "push", title: "Seu carrinho tem cupom", body: "Use {{coupon}} para ter 10% de desconto no pedido de R$ {{total}}." },
+    { event: "cart_abandoned_step3", channel: "whatsapp", title: "Carrinho abandonado - etapa 3", body: "Oi, {{clientName}}! Seu carrinho ainda está salvo.\n\nUse o cupom *{{coupon}}* para ter *10% de desconto*.\n\nVálido por 48 horas.\n\nhttps://bonattopizza.manus.space" },
+    { event: "cart_abandoned_step3", channel: "whatsapp", title: "Carrinho abandonado - etapa 3", body: "Oi, {{clientName}}! Seu pedido de *R$ {{total}}* continua salvo.\n\nCupom: *{{coupon}}*\nDesconto: *10%*\nValidade: 48 horas.\n\nhttps://bonattopizza.manus.space" },
 
     // ── reactivation_15 (inativo 15 dias — 5% OFF) ──
-    { event: "reactivation_15", channel: "push", title: "🍕 Sentimos sua falta!", body: "5% OFF no seu próximo pedido — válido 72h. Cupom: {{coupon}}" },
-    { event: "reactivation_15", channel: "push", title: "👋 Olá, {{clientName}}! Temos saudades!", body: "Volte a pedir e ganhe 5% de desconto com o cupom {{coupon}}!" },
-    { event: "reactivation_15", channel: "whatsapp", title: "Reativação 15 dias", body: "Oi, {{clientName}}! 👋\n\nFaz uns dias que você não pede na Bonatto Pizza e a gente sentiu falta!\n\n🍕 Que tal uma pizza hoje? Use o cupom *{{coupon}}* e ganhe *5% de desconto* no seu próximo pedido!\n\n⏰ Válido por 72 horas.\n\n👉 https://bonattopizza.manus.space" },
-    { event: "reactivation_15", channel: "whatsapp", title: "Reativação 15 dias", body: "{{clientName}}, a Bonatto sente sua falta! 🍕\n\nQue tal voltar com um desconto especial? Use *{{coupon}}* e ganhe *5% OFF* no seu próximo pedido!\n\n⏰ Válido por 72h.\n\n👉 https://bonattopizza.manus.space" },
+    { event: "reactivation_15", channel: "push", title: "🍕 5% de desconto no próximo pedido", body: "Cupom {{coupon}}, válido por 72 horas." },
+    { event: "reactivation_15", channel: "push", title: "👋 Cupom para {{clientName}}", body: "Use {{coupon}} e tenha 5% de desconto no próximo pedido." },
+    { event: "reactivation_15", channel: "whatsapp", title: "Reativação 15 dias", body: "Oi, {{clientName}}! Temos um cupom de *5% de desconto* para seu próximo pedido.\n\nCupom: *{{coupon}}*\nVálido por 72 horas.\n\nhttps://bonattopizza.manus.space" },
+    { event: "reactivation_15", channel: "whatsapp", title: "Reativação 15 dias", body: "{{clientName}}, use o cupom *{{coupon}}* para ter *5% de desconto* no próximo pedido.\n\nVálido por 72 horas.\n\nhttps://bonattopizza.manus.space" },
 
     // ── reactivation_30 (inativo 30 dias — 10% OFF) ──
-    { event: "reactivation_30", channel: "push", title: "🎁 10% OFF — Oferta exclusiva!", body: "Volte a pedir com desconto especial. Cupom: {{coupon}}" },
-    { event: "reactivation_30", channel: "push", title: "🎯 Oferta especial para você!", body: "Está com saudade? 10% OFF com o cupom {{coupon}} — só por tempo limitado!" },
-    { event: "reactivation_30", channel: "whatsapp", title: "Reativação 30 dias", body: "{{clientName}}, temos uma oferta especial para você! 🎁\n\nSabemos que faz um tempinho que você não pede na Bonatto Pizza. Que tal voltar com *10% de desconto*?\n\n🎟️ Cupom exclusivo: *{{coupon}}*\n\n⏰ Oferta por tempo limitado!\n\n👉 https://bonattopizza.manus.space" },
-    { event: "reactivation_30", channel: "whatsapp", title: "Reativação 30 dias", body: "Oi {{clientName}}! 😊\n\nA Bonatto tem um presente especial pra você: *10% de desconto* no seu próximo pedido!\n\n🎟️ Use o cupom *{{coupon}}* e aproveite!\n\n⏰ Válido por 48h.\n\n👉 https://bonattopizza.manus.space" },
+    { event: "reactivation_30", channel: "push", title: "🎁 10% de desconto no próximo pedido", body: "Use o cupom {{coupon}}." },
+    { event: "reactivation_30", channel: "push", title: "Cupom de 10% para sua conta", body: "Use {{coupon}} no próximo pedido enquanto estiver válido." },
+    { event: "reactivation_30", channel: "whatsapp", title: "Reativação 30 dias", body: "Oi, {{clientName}}! Seu próximo pedido tem *10% de desconto* com o cupom abaixo.\n\nCupom: *{{coupon}}*\nVálido por 48 horas.\n\nhttps://bonattopizza.manus.space" },
+    { event: "reactivation_30", channel: "whatsapp", title: "Reativação 30 dias", body: "Oi, {{clientName}}! Use o cupom *{{coupon}}* para ter *10% de desconto* no próximo pedido.\n\nVálido por 48 horas.\n\nhttps://bonattopizza.manus.space" },
 
     // ── reactivation_60 (inativo 60 dias — 15% OFF) ──
-    { event: "reactivation_60", channel: "push", title: "😢 Voltamos para você! 15% OFF", body: "Cupom especial de 15% para seu retorno: {{coupon}}" },
-    { event: "reactivation_60", channel: "push", title: "🙏 Sua volta vale 15% OFF!", body: "Sentimos muito sua falta. Use {{coupon}} e volte com desconto!" },
-    { event: "reactivation_60", channel: "whatsapp", title: "Reativação 60 dias", body: "{{clientName}}! 😢\n\nA gente sente muito a sua falta na Bonatto Pizza.\n\nPara te receber de volta, preparamos um cupom especial de *15% de desconto*:\n\n🎟️ *{{coupon}}*\n\n🍕 Novidades no cardápio te esperam!\n\n👉 https://bonattopizza.manus.space" },
-    { event: "reactivation_60", channel: "whatsapp", title: "Reativação 60 dias", body: "{{clientName}}, sua volta é muito especial pra gente! 🥰\n\nComo presente de boas-vindas, aqui vai *15% de desconto*:\n\n🎟️ Cupom: *{{coupon}}*\n\n⏰ Válido por 24h. Corre!\n\n👉 https://bonattopizza.manus.space" },
+    { event: "reactivation_60", channel: "push", title: "🍕 15% de desconto no próximo pedido", body: "Use o cupom {{coupon}}." },
+    { event: "reactivation_60", channel: "push", title: "Cupom de 15% disponível", body: "Use {{coupon}} no seu próximo pedido." },
+    { event: "reactivation_60", channel: "whatsapp", title: "Reativação 60 dias", body: "Oi, {{clientName}}! Temos um cupom de *15% de desconto* para seu próximo pedido.\n\nCupom: *{{coupon}}*\n\nhttps://bonattopizza.manus.space" },
+    { event: "reactivation_60", channel: "whatsapp", title: "Reativação 60 dias", body: "{{clientName}}, use o cupom *{{coupon}}* para ter *15% de desconto* no próximo pedido.\n\nVálido por 24 horas.\n\nhttps://bonattopizza.manus.space" },
   ];
 
   await db.insert(notificationTemplates).values(templates.map((template) => ({ ...template, storeId })));
@@ -4667,14 +4249,14 @@ export async function listCustomTags(storeId: number): Promise<CustomTag[]> {
 export async function createCustomTag(data: { storeId: number; name: string; color: string; description?: string }): Promise<number> {
   const db = await getDb();
   if (!db) return -1;
-  const result = await db.insert(customTags).values({
+  const [created] = await db.insert(customTags).values({
     storeId: data.storeId,
     name: data.name.trim().toLowerCase().replace(/\s+/g, "_"),
     color: data.color,
     description: data.description ?? null,
     createdAt: new Date(),
-  });
-  return Number((result[0] as { insertId: number }).insertId);
+  }).returning({ id: customTags.id });
+  return created.id;
 }
 
 /** Atualiza uma tag personalizada */
@@ -4815,18 +4397,34 @@ export async function getCarouselImages(activeOnly = true, storeId?: number) {
     .where(and(...conditions))
     .orderBy(carouselImages.sortOrder, carouselImages.id);
 }
-export async function createCarouselImage(data: { storeId: number; imageUrl: string; title?: string | null; sortOrder?: number }) {
+export async function createCarouselImage(data: {
+  storeId: number;
+  imageUrl: string;
+  title?: string | null;
+  destinationType?: "none" | "product" | "category" | "internal" | "external";
+  destinationValue?: string | null;
+  sortOrder?: number;
+}) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
   await db.insert(carouselImages).values({
     storeId: data.storeId,
     imageUrl: data.imageUrl,
     title: data.title ?? null,
+    destinationType: data.destinationType ?? "none",
+    destinationValue: data.destinationValue ?? null,
     sortOrder: data.sortOrder ?? 0,
     active: true,
   });
 }
-export async function updateCarouselImage(id: number, storeId: number, data: Partial<{ imageUrl: string; title: string | null; sortOrder: number; active: boolean }>) {
+export async function updateCarouselImage(id: number, storeId: number, data: Partial<{
+  imageUrl: string;
+  title: string | null;
+  destinationType: "none" | "product" | "category" | "internal" | "external";
+  destinationValue: string | null;
+  sortOrder: number;
+  active: boolean;
+}>) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
   await db.update(carouselImages).set(data).where(and(eq(carouselImages.id, id), eq(carouselImages.storeId, storeId)));
@@ -4986,7 +4584,8 @@ export async function getDriverActiveOrderDetails(driverId: number) {
     .select()
     .from(orderItems)
     .where(eq(orderItems.orderId, order.id));
-  return { order, items };
+  const { deliveryConfirmationCode: _privateDeliveryCode, ...safeOrder } = order;
+  return { order: safeOrder, items };
 }
 
 // --- DRIVER ALL ASSIGNED ORDERS (lista completa) --------------------------------
@@ -5012,7 +4611,8 @@ export async function getDriverAssignedOrders(driverId: number) {
         .select()
         .from(orderItems)
         .where(eq(orderItems.orderId, order.id));
-      return { order, items };
+      const { deliveryConfirmationCode: _privateDeliveryCode, ...safeOrder } = order;
+      return { order: safeOrder, items };
     })
   );
   return results;
@@ -5022,7 +4622,8 @@ export async function getDriverAssignedOrders(driverId: number) {
 
 export async function driverConfirmDelivery(
   driverId: number,
-  orderId: number
+  orderId: number,
+  confirmationCode: string,
 ): Promise<{ success: boolean; error?: string; customerId?: number | null }> {
   const db = await getDb();
   if (!db) return { success: false, error: "DB not available" };
@@ -5041,10 +4642,23 @@ export async function driverConfirmDelivery(
     return { success: false, error: "Pedido não encontrado ou já foi finalizado" };
   }
   const order = orderResult[0];
-  await db
-    .update(orders)
-    .set({ status: "delivered", updatedAt: new Date() })
-    .where(eq(orders.id, orderId));
+  if (!order.driverAcceptedAt) {
+    return { success: false, error: "Aceite o pedido antes de confirmar a entrega." };
+  }
+  if (!order.deliveryConfirmationCode) {
+    return { success: false, error: "Este pedido não possui código de entrega. Solicite apoio ao administrador." };
+  }
+  if (confirmationCode !== order.deliveryConfirmationCode) {
+    return { success: false, error: "Código de entrega incorreto." };
+  }
+
+  const transition = await updateOrderStatusGuarded(orderId, "delivered", ["out_for_delivery"], {
+    source: "driver",
+    notes: "Entrega confirmada pelo motoboy",
+  });
+  if (!transition.ok) {
+    return { success: false, error: "Pedido já foi finalizado ou mudou de status" };
+  }
   // Limpa o orderId da localização do motoboy
   await db
     .update(driverLocations)
@@ -5087,6 +4701,7 @@ export async function createClientAlert(data: {
   type: "promotion" | "raffle" | "coupon" | "club" | "custom";
   title: string;
   message: string;
+  imageUrl?: string;
   icon?: string;
   url?: string;
   storeId?: number;
@@ -5094,17 +4709,18 @@ export async function createClientAlert(data: {
 }): Promise<number> {
   const db = await getDb();
   if (!db) return 0;
-  const [result] = await db.insert(clientAlerts).values({
+  const [created] = await db.insert(clientAlerts).values({
     type: data.type,
     title: data.title,
     message: data.message,
+    imageUrl: data.imageUrl ?? null,
     icon: data.icon ?? "🔔",
     url: data.url,
     storeId: data.storeId,
     active: true,
     expiresAt: data.expiresAt,
-  });
-  return (result as any).insertId as number;
+  }).returning({ id: clientAlerts.id });
+  return created.id;
 }
 
 /** Lista alertas ativos não lidos pelo usuário (máx 20) */
@@ -5276,26 +4892,125 @@ export async function getAdminDashboardSnapshot(storeId?: number) {
 // coupon redemption ledger, atomic loyalty debit and order status guard.
 // ============================================================================
 
-/**
- * Record a webhook event id (Stripe or Asaas). Returns `true` when the event
- * is being processed for the first time, `false` if it was already processed.
- * Uses the UNIQUE(provider, eventId) constraint to provide atomic idempotency.
- */
-export async function recordWebhookEventOnce(
+export type WebhookEventClaim = "claimed" | "duplicate" | "processing";
+
+export async function claimWebhookEvent(
   provider: "stripe" | "asaas",
   eventId: string,
-  eventType?: string
-): Promise<boolean> {
+  eventType?: string,
+  staleAfterMs = 5 * 60 * 1000,
+): Promise<WebhookEventClaim> {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  try {
-    await db.insert(webhookEvents).values({ provider, eventId, eventType: eventType ?? null });
-    return true;
-  } catch (err) {
-    const msg = (err as { message?: string } | undefined)?.message ?? "";
-    if (msg.includes("Duplicate") || msg.includes("ER_DUP_ENTRY")) return false;
-    throw err;
-  }
+
+  const now = new Date();
+  const [inserted] = await db
+    .insert(webhookEvents)
+    .values({
+      provider,
+      eventId,
+      eventType: eventType ?? null,
+      status: "processing",
+      attempts: 1,
+      lockedAt: now,
+      processedAt: null,
+      updatedAt: now,
+    })
+    .onConflictDoNothing({ target: [webhookEvents.provider, webhookEvents.eventId] })
+    .returning({ id: webhookEvents.id });
+
+  if (inserted) return "claimed";
+
+  const [existing] = await db
+    .select({
+      status: webhookEvents.status,
+      lockedAt: webhookEvents.lockedAt,
+    })
+    .from(webhookEvents)
+    .where(and(
+      eq(webhookEvents.provider, provider),
+      eq(webhookEvents.eventId, eventId),
+    ))
+    .limit(1);
+
+  if (!existing) return "processing";
+  if (existing.status === "processed") return "duplicate";
+
+  const staleBefore = new Date(now.getTime() - staleAfterMs);
+  const reclaimable = existing.status === "failed"
+    || (existing.status === "processing" && (!existing.lockedAt || existing.lockedAt <= staleBefore));
+
+  if (!reclaimable) return "processing";
+
+  const [claimed] = await db
+    .update(webhookEvents)
+    .set({
+      eventType: eventType ?? null,
+      status: "processing",
+      attempts: sql`${webhookEvents.attempts} + 1`,
+      lastError: null,
+      lockedAt: now,
+      updatedAt: now,
+    })
+    .where(and(
+      eq(webhookEvents.provider, provider),
+      eq(webhookEvents.eventId, eventId),
+      or(
+        eq(webhookEvents.status, "failed"),
+        and(
+          eq(webhookEvents.status, "processing"),
+          or(isNull(webhookEvents.lockedAt), lte(webhookEvents.lockedAt, staleBefore)),
+        ),
+      ),
+    ))
+    .returning({ id: webhookEvents.id });
+
+  return claimed ? "claimed" : "processing";
+}
+
+export async function completeWebhookEvent(
+  provider: "stripe" | "asaas",
+  eventId: string,
+): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await db
+    .update(webhookEvents)
+    .set({
+      status: "processed",
+      processedAt: new Date(),
+      lockedAt: null,
+      lastError: null,
+      updatedAt: new Date(),
+    })
+    .where(and(
+      eq(webhookEvents.provider, provider),
+      eq(webhookEvents.eventId, eventId),
+      eq(webhookEvents.status, "processing"),
+    ));
+}
+
+export async function failWebhookEvent(
+  provider: "stripe" | "asaas",
+  eventId: string,
+  error: unknown,
+): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  const message = error instanceof Error ? error.message : String(error);
+  await db
+    .update(webhookEvents)
+    .set({
+      status: "failed",
+      lastError: message.slice(0, 2000),
+      lockedAt: null,
+      updatedAt: new Date(),
+    })
+    .where(and(
+      eq(webhookEvents.provider, provider),
+      eq(webhookEvents.eventId, eventId),
+      eq(webhookEvents.status, "processing"),
+    ));
 }
 
 /**
@@ -5313,21 +5028,20 @@ export async function creditLoyaltyForOrderIdempotent(
   if (points <= 0) return false;
   const db = await getDb();
   if (!db) return false;
-  const scope = await getTenantScope(storeId);
-  try {
-    await db.insert(loyaltyOrderCredits).values({
-      tenantKey: scope.tenantKey,
+  const scope = await getStoreScope(storeId);
+  const inserted = await db
+    .insert(loyaltyOrderCredits)
+    .values({
       storeId: scope.storeId,
       orderId,
       userId,
       points,
-    });
-  } catch (err) {
-    const msg = (err as { message?: string } | undefined)?.message ?? "";
-    if (msg.includes("Duplicate") || msg.includes("ER_DUP_ENTRY")) return false;
-    throw err;
-  }
-  await addLoyaltyPoints(userId, points, orderId, description ?? `+${points} pontos pelo pedido #${orderId}`, storeId);
+    })
+    .onConflictDoNothing({ target: loyaltyOrderCredits.orderId })
+    .returning({ id: loyaltyOrderCredits.id });
+
+  if (!inserted.length) return false;
+  await addLoyaltyPoints(userId, points, orderId, description ?? `+${points} pontos pelo pedido #${orderId}`, scope.storeId);
   return true;
 }
 
@@ -5346,19 +5060,28 @@ export async function deductLoyaltyPointsAtomic(
   if (points <= 0) return { ok: true, newBalance: await getUserLoyaltyPoints(userId, storeId) };
   const db = await getDb();
   if (!db) return { ok: false, newBalance: 0 };
-  const account = await getTenantCustomerAccount(userId, storeId);
+  const scope = await getStoreScope(storeId);
+  const account = await getCustomerStoreAccount(userId, scope.storeId);
   if (!account) return { ok: false, newBalance: 0 };
-  const scope = await getTenantScope(storeId);
-  const result = await db
-    .update(tenantCustomerAccounts)
-    .set({ loyaltyPoints: sql`${tenantCustomerAccounts.loyaltyPoints} - ${points}` })
-    .where(and(eq(tenantCustomerAccounts.id, account.id), gte(tenantCustomerAccounts.loyaltyPoints, points)));
-  const affected = (result as any)?.rowsAffected ?? (result as any)?.[0]?.affectedRows ?? 0;
-  if (!affected) return { ok: false, newBalance: await getUserLoyaltyPoints(userId, storeId) };
-  const newBalance = await getUserLoyaltyPoints(userId, storeId);
-  await mirrorBonattoLoyalty(userId, scope.tenantKey, newBalance);
+
+  const [updated] = await db
+    .update(customerStoreAccounts)
+    .set({
+      loyaltyPoints: sql`${customerStoreAccounts.loyaltyPoints} - ${points}`,
+      updatedAt: new Date(),
+    })
+    .where(and(
+      eq(customerStoreAccounts.id, account.id),
+      gte(customerStoreAccounts.loyaltyPoints, points),
+    ))
+    .returning({ loyaltyPoints: customerStoreAccounts.loyaltyPoints });
+
+  if (!updated) {
+    return { ok: false, newBalance: await getUserLoyaltyPoints(userId, scope.storeId) };
+  }
+
+  const newBalance = updated.loyaltyPoints;
   await db.insert(loyaltyTransactions).values({
-    tenantKey: scope.tenantKey,
     storeId: scope.storeId,
     userId,
     orderId: orderId ?? null,
@@ -5379,17 +5102,16 @@ export async function refundLoyaltyPointsForOrder(orderId: number): Promise<numb
   const db = await getDb();
   if (!db) return 0;
   const order = await getOrderById(orderId);
-  if (!order || !order.userId) return 0;
+  if (!order || !order.userId || !order.storeId) return 0;
   const pointsUsed = order.pointsUsed ?? 0;
   if (pointsUsed <= 0) return 0;
   // Check if we already refunded (to prevent double-refund)
-  const scope = await getTenantScope(order.storeId);
   const existing = await db
     .select()
     .from(loyaltyTransactions)
     .where(and(
       eq(loyaltyTransactions.orderId, orderId),
-      eq(loyaltyTransactions.tenantKey, scope.tenantKey),
+      eq(loyaltyTransactions.storeId, order.storeId),
     ))
   if (existing.some((transaction) => transaction.description?.startsWith("refund:"))) return 0;
   await addLoyaltyPoints(
@@ -5443,20 +5165,168 @@ export async function revertCouponRedemption(orderId: number): Promise<boolean> 
 export async function updateOrderStatusGuarded(
   id: number,
   nextStatus: Order["status"],
-  allowedCurrent: Order["status"][]
+  allowedCurrent: Order["status"][],
+  opts?: {
+    actorUserId?: number | null;
+    source?: "system" | "admin" | "manager" | "driver" | "automation" | "customer";
+    notes?: string | null;
+    cancellationReasonCode?: NonNullable<Order["cancellationReasonCode"]>;
+    cancellationReason?: string | null;
+  },
 ): Promise<{ ok: boolean; previous?: Order["status"] }> {
-  const db = await getDb();
-  if (!db) throw new Error("DB not available");
-  const current = await db.select({ status: orders.status }).from(orders).where(eq(orders.id, id)).limit(1);
-  if (!current[0]) return { ok: false };
-  const previous = current[0].status;
-  if (!allowedCurrent.includes(previous)) return { ok: false, previous };
-  const result = await db
-    .update(orders)
-    .set({ status: nextStatus })
-    .where(and(eq(orders.id, id), eq(orders.status, previous)));
-  const affected = (result as any)?.rowsAffected ?? (result as any)?.[0]?.affectedRows ?? 0;
-  return { ok: affected > 0, previous };
+  const result = await withDbRetry((db) =>
+    db.transaction(async (tx) => {
+      const current = await tx
+        .select({
+          status: orders.status,
+          storeId: orders.storeId,
+          orderNumber: orders.orderNumber,
+          userId: orders.userId,
+        })
+        .from(orders)
+        .where(eq(orders.id, id))
+        .limit(1);
+
+      if (!current[0]) return { ok: false };
+      const previous = current[0].status;
+      if (!allowedCurrent.includes(previous)) return { ok: false, previous };
+
+      const transitionedAt = new Date();
+      const statusPatch: Partial<typeof orders.$inferInsert> = {
+        status: nextStatus,
+        updatedAt: transitionedAt,
+      };
+      if (nextStatus === "confirmed") statusPatch.confirmedAt = transitionedAt;
+      if (nextStatus === "preparing") statusPatch.preparingAt = transitionedAt;
+      if (nextStatus === "out_for_delivery") statusPatch.outForDeliveryAt = transitionedAt;
+      if (nextStatus === "delivered") statusPatch.deliveredAt = transitionedAt;
+      if (nextStatus === "cancelled") {
+        statusPatch.cancelledAt = transitionedAt;
+        statusPatch.cancellationReasonCode = opts?.cancellationReasonCode ?? null;
+        statusPatch.cancellationReason = opts?.cancellationReason?.trim().slice(0, 500) ?? null;
+        statusPatch.cancelledByUserId = opts?.actorUserId ?? null;
+      }
+
+      const updated = await tx
+        .update(orders)
+        .set(statusPatch)
+        .where(and(eq(orders.id, id), eq(orders.status, previous)))
+        .returning({ id: orders.id });
+
+      if (updated.length === 0) return { ok: false, previous };
+
+      const stage =
+        nextStatus === "pending"
+          ? "created"
+          : nextStatus === "confirmed"
+            ? "confirmed"
+            : nextStatus === "preparing"
+              ? "preparing"
+              : nextStatus === "out_for_delivery"
+                ? "out_for_delivery"
+                : nextStatus === "delivered"
+                  ? "delivered"
+                  : "cancelled";
+
+      await tx.insert(orderStageLogs).values({
+        orderId: id,
+        previousStatus: previous,
+        nextStatus,
+        stage,
+        source: opts?.source ?? "system",
+        changedByUserId: opts?.actorUserId ?? null,
+        notes: opts?.notes ?? null,
+        metadata: JSON.stringify({
+          previousStatus: previous,
+          nextStatus,
+          transactional: true,
+        }),
+      });
+
+      const statusPayload = JSON.stringify({
+        orderId: id,
+        orderNumber: current[0].orderNumber,
+        previousStatus: previous,
+        nextStatus,
+        actorUserId: opts?.actorUserId ?? null,
+        source: opts?.source ?? "system",
+      });
+      const statusKey = `${id}:${previous}:${nextStatus}`;
+      await tx
+        .insert(eventOutbox)
+        .values([
+          {
+            eventKey: `order.status_changed:${statusKey}`,
+            eventType: "order.status_changed",
+            aggregateType: "order",
+            aggregateId: String(id),
+            storeId: current[0].storeId ?? null,
+            payload: statusPayload,
+            status: "pending",
+            availableAt: new Date(),
+          },
+          {
+            eventKey: `order.status_changed.customer_push:${statusKey}`,
+            eventType: "order.status_changed.customer_push",
+            aggregateType: "order",
+            aggregateId: String(id),
+            storeId: current[0].storeId ?? null,
+            payload: statusPayload,
+            status: "pending",
+            availableAt: new Date(),
+          },
+          {
+            eventKey: `order.status_changed.customer_whatsapp:${statusKey}`,
+            eventType: "order.status_changed.customer_whatsapp",
+            aggregateType: "order",
+            aggregateId: String(id),
+            storeId: current[0].storeId ?? null,
+            payload: statusPayload,
+            status: "pending",
+            availableAt: new Date(),
+          },
+        ])
+        .onConflictDoNothing({ target: eventOutbox.eventKey });
+
+      if (current[0].storeId) {
+        await tx.insert(storeAuditLogs).values({
+          storeId: current[0].storeId,
+          actorUserId: opts?.actorUserId ?? null,
+          action: "order.status_changed",
+          resourceType: "order",
+          resourceId: String(id),
+          metadata: JSON.stringify({
+            orderNumber: current[0].orderNumber,
+            previousStatus: previous,
+            nextStatus,
+            source: opts?.source ?? "system",
+            notes: opts?.notes ?? null,
+            cancellationReasonCode: nextStatus === "cancelled" ? opts?.cancellationReasonCode ?? null : null,
+            cancellationReason: nextStatus === "cancelled" ? opts?.cancellationReason ?? null : null,
+          }),
+        });
+      }
+
+      return {
+        ok: true,
+        previous,
+        storeId: current[0].storeId,
+        userId: current[0].userId,
+      };
+    })
+  );
+
+  if (result.ok) {
+    void publishOrderRealtimeEvent({
+      type: "status_changed",
+      orderId: id,
+      storeId: result.storeId ?? null,
+      userId: result.userId ?? null,
+      status: nextStatus,
+      previousStatus: result.previous ?? null,
+    });
+  }
+  return { ok: result.ok, previous: result.previous };
 }
 
 /**
@@ -5487,7 +5357,12 @@ export async function cancelStaleUnpaidOrders(olderThanMinutes = 120): Promise<n
     );
   const cancelled: number[] = [];
   for (const row of stale) {
-    const guard = await updateOrderStatusGuarded(row.id, "cancelled", ["pending"]);
+    const guard = await updateOrderStatusGuarded(row.id, "cancelled", ["pending"], {
+      source: "system",
+      notes: "Pagamento não confirmado dentro do prazo.",
+      cancellationReasonCode: "payment",
+      cancellationReason: "Pagamento não confirmado dentro do prazo.",
+    });
     if (guard.ok) {
       cancelled.push(row.id);
       try {

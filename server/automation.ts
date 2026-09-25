@@ -19,8 +19,9 @@ import {
   coupons,
   clientAlerts,
   clientNotifications,
+  customerMetrics,
 } from "../drizzle/schema.ts";
-import { eq, and, lt, gte, sql, inArray, isNull, or } from "drizzle-orm";
+import { eq, and, lt, gte, gt, sql, inArray, isNull, or } from "drizzle-orm";
 import { sendWhatsApp } from "./whatsapp.ts";
 import { sendPushToUser } from "./push.ts";
 import { pickRandomTemplate } from "./db.ts";
@@ -98,161 +99,137 @@ export type CustomerTagValue = "novo" | "recorrente" | "indeciso" | "inativo_15"
 export async function refreshCustomerTags(storeId?: number): Promise<void> {
   const db = await getDb();
   if (!db) return;
+
   const now = new Date();
-  const newInactivityTriggers: Array<{ trigger: typeof journeys.$inferInsert["trigger"]; userId: number; storeId: number }> = [];
-
-  // Buscar todos os usuários com estatísticas de pedidos entregues
-  // Nota: LAG() OVER não é compatível com GROUP BY no TiDB/MySQL 5.x
-  // Calculamos avgDaysBetween via subquery: (MAX - MIN) / (COUNT - 1)
-  const userOrderStats = await db.execute(sql`
-    SELECT
-      u.id AS userId,
-      o.storeId AS storeId,
-      COUNT(o.id) AS totalOrders,
-      MAX(o.createdAt) AS lastOrderAt,
-      MIN(o.createdAt) AS firstOrderAt,
-      CASE
-        WHEN COUNT(o.id) > 1
-        THEN DATEDIFF(MAX(o.createdAt), MIN(o.createdAt)) / (COUNT(o.id) - 1)
-        ELSE NULL
-      END AS avgDaysBetween
-    FROM users u
-    INNER JOIN orders o ON o.userId = u.id AND o.status = 'delivered'
-    WHERE u.role = 'user'
-      ${storeId ? sql`AND o.storeId = ${storeId}` : sql``}
-    GROUP BY u.id, o.storeId
-  `);
-
-  const rows = (userOrderStats as unknown as [Array<{
+  const newInactivityTriggers: Array<{
+    trigger: typeof journeys.$inferInsert["trigger"];
     userId: number;
     storeId: number;
-    totalOrders: number;
-    lastOrderAt: Date | null;
-    firstOrderAt: Date | null;
-    avgDaysBetween: number | null;
-  }>])[0];
+  }> = [];
 
-  for (const row of rows) {
-    const tags: CustomerTagValue[] = [];
-    const total = Number(row.totalOrders ?? 0);
-    const lastOrder = row.lastOrderAt ? new Date(row.lastOrderAt) : null;
-    const daysSinceLast = lastOrder
-      ? Math.floor((now.getTime() - lastOrder.getTime()) / (1000 * 60 * 60 * 24))
+  const metricRows = await db
+    .select()
+    .from(customerMetrics)
+    .where(and(
+      storeId ? eq(customerMetrics.storeId, storeId) : gt(customerMetrics.storeId, 0),
+      gt(customerMetrics.deliveredOrders, 0),
+    ));
+
+  for (const metric of metricRows) {
+    const total = Number(metric.deliveredOrders ?? 0);
+    if (total <= 0 || !metric.lastOrderAt) continue;
+
+    const lastOrder = new Date(metric.lastOrderAt);
+    const firstOrder = metric.firstOrderAt ? new Date(metric.firstOrderAt) : lastOrder;
+    const daysSinceLast = Math.max(
+      0,
+      Math.floor((now.getTime() - lastOrder.getTime()) / (1000 * 60 * 60 * 24)),
+    );
+    const avgDaysBetween = total > 1
+      ? (lastOrder.getTime() - firstOrder.getTime()) / (1000 * 60 * 60 * 24) / (total - 1)
       : null;
-    const avg = row.avgDaysBetween ? Number(row.avgDaysBetween) : null;
 
-    if (total === 0) continue; // sem pedidos entregues, sem tag
+    const tags: CustomerTagValue[] = [];
 
-    // Inatividade
-    if (daysSinceLast !== null) {
-      if (daysSinceLast >= 60) tags.push("inativo_60");
-      else if (daysSinceLast >= 30) tags.push("inativo_30");
-      else if (daysSinceLast >= 15) tags.push("inativo_15");
+    if (daysSinceLast >= 60) tags.push("inativo_60");
+    else if (daysSinceLast >= 30) tags.push("inativo_30");
+    else if (daysSinceLast >= 15) tags.push("inativo_15");
+
+    if (total <= 5) tags.push("novo");
+    if (total > 10 && daysSinceLast < 30) tags.push("recorrente");
+    if (avgDaysBetween !== null && avgDaysBetween >= 12 && avgDaysBetween <= 20 && total > 2) {
+      tags.push("indeciso");
     }
 
-    // Novo: até 5 pedidos
-    if (total <= 5) tags.push("novo");
+    const existingRows = await db
+      .select({ tag: customerTags.tag })
+      .from(customerTags)
+      .where(and(
+        eq(customerTags.storeId, metric.storeId),
+        eq(customerTags.userId, metric.userId),
+      ));
+    const existingTags = new Set(existingRows.map((row) => row.tag));
 
-    // Recorrente: mais de 10 pedidos e pediu nos últimos 30 dias
-    if (total > 10 && daysSinceLast !== null && daysSinceLast < 30) tags.push("recorrente");
-
-    // Indeciso: compra com intervalo médio entre 12 e 20 dias
-    if (avg !== null && avg >= 12 && avg <= 20 && total > 2) tags.push("indeciso");
-
-    // Upsert tags
     for (const tag of tags) {
-      const existing = await db
-        .select()
-        .from(customerTags)
-        .where(and(eq(customerTags.storeId, row.storeId), eq(customerTags.userId, row.userId), eq(customerTags.tag, tag)))
-        .limit(1);
-
-      if (existing.length === 0) {
+      if (!existingTags.has(tag)) {
         await db.insert(customerTags).values({
-          storeId: row.storeId,
-          userId: row.userId,
+          storeId: metric.storeId,
+          userId: metric.userId,
           tag,
           assignedAt: now,
           updatedAt: now,
         });
+
+        if (tag === "inativo_15" || tag === "inativo_30" || tag === "inativo_60") {
+          newInactivityTriggers.push({
+            trigger: `tag_${tag}` as typeof journeys.$inferInsert["trigger"],
+            userId: metric.userId,
+            storeId: metric.storeId,
+          });
+        }
       } else {
         await db
           .update(customerTags)
           .set({ updatedAt: now })
-          .where(and(eq(customerTags.storeId, row.storeId), eq(customerTags.userId, row.userId), eq(customerTags.tag, tag)));
+          .where(and(
+            eq(customerTags.storeId, metric.storeId),
+            eq(customerTags.userId, metric.userId),
+            eq(customerTags.tag, tag),
+          ));
       }
     }
 
-    // Remover tags que não se aplicam mais
-    const allTags: CustomerTagValue[] = ["novo", "recorrente", "indeciso", "inativo_15", "inativo_30", "inativo_60"];
-    const toRemove = allTags.filter(t => !tags.includes(t));
+    const allTags: CustomerTagValue[] = [
+      "novo",
+      "recorrente",
+      "indeciso",
+      "inativo_15",
+      "inativo_30",
+      "inativo_60",
+    ];
+    const toRemove = allTags.filter((tag) => !tags.includes(tag));
     if (toRemove.length > 0) {
       await db
         .delete(customerTags)
-        .where(
-          and(
-            eq(customerTags.userId, row.userId),
-            eq(customerTags.storeId, row.storeId),
-            inArray(customerTags.tag, toRemove)
-          )
-        );
-    }
-
-    // Fire automation triggers for inactivity tags (only when newly assigned)
-    for (const tag of tags) {
-      if (tag === "inativo_15" || tag === "inativo_30" || tag === "inativo_60") {
-        const triggerName = `tag_${tag}` as typeof journeys.$inferInsert["trigger"];
-        // Check if this tag was already present before (to avoid re-triggering)
-        const wasAlreadyTagged = await db
-          .select()
-          .from(customerTags)
-          .where(and(eq(customerTags.storeId, row.storeId), eq(customerTags.userId, row.userId), eq(customerTags.tag, tag)))
-          .limit(1);
-        if (!wasAlreadyTagged.length) {
-          // Tag is new — fire the trigger (deferred to avoid circular call during iteration)
-          newInactivityTriggers.push({ trigger: triggerName, userId: row.userId, storeId: row.storeId });
-        }
-      }
-    }
-
-    // ── tag_inativo_custom: verificar jornadas com N dias configurável ──────────
-    if (row.lastOrderAt) {
-      const daysSinceLast = Math.floor(
-        (now.getTime() - new Date(row.lastOrderAt).getTime()) / (1000 * 60 * 60 * 24)
-      );
-      const customJourneys = await db
-        .select()
-        .from(journeys)
         .where(and(
-          eq(journeys.storeId, row.storeId),
-          eq(journeys.trigger, "tag_inativo_custom"),
-          eq(journeys.status, "active"),
+          eq(customerTags.userId, metric.userId),
+          eq(customerTags.storeId, metric.storeId),
+          inArray(customerTags.tag, toRemove),
         ));
-      for (const cj of customJourneys) {
-        const requiredDays = cj.daysInactive ?? 0;
-        if (requiredDays > 0 && daysSinceLast >= requiredDays) {
-          // Verificar se já existe execução ativa para este usuário nesta jornada
-          const existingExec = await db
-            .select({ id: journeyExecutions.id })
-            .from(journeyExecutions)
-            .where(and(
-              eq(journeyExecutions.journeyId, cj.id),
-              eq(journeyExecutions.userId, row.userId),
-              inArray(journeyExecutions.status, ["running", "completed"])
-            ))
-            .limit(1);
-          if (!existingExec.length) {
-            await startJourneyExecution(cj.id, row.userId);
-          }
-        }
+    }
+
+    const customJourneys = await db
+      .select()
+      .from(journeys)
+      .where(and(
+        eq(journeys.storeId, metric.storeId),
+        eq(journeys.trigger, "tag_inativo_custom"),
+        eq(journeys.status, "active"),
+      ));
+
+    for (const journey of customJourneys) {
+      const requiredDays = journey.daysInactive ?? 0;
+      if (requiredDays <= 0 || daysSinceLast < requiredDays) continue;
+
+      const existingExecution = await db
+        .select({ id: journeyExecutions.id })
+        .from(journeyExecutions)
+        .where(and(
+          eq(journeyExecutions.journeyId, journey.id),
+          eq(journeyExecutions.userId, metric.userId),
+          inArray(journeyExecutions.status, ["running", "completed"]),
+        ))
+        .limit(1);
+
+      if (existingExecution.length === 0) {
+        await startJourneyExecution(journey.id, metric.userId);
       }
     }
   }
 
-  // Fire inactivity triggers after all tags are processed
   for (const { trigger, userId, storeId: triggerStoreId } of newInactivityTriggers) {
-    fireJourneyTrigger(trigger, userId, undefined, triggerStoreId).catch((err: unknown) =>
-      console.error(`[Automation] inactivity trigger ${trigger} failed for user ${userId}:`, err)
+    fireJourneyTrigger(trigger, userId, undefined, triggerStoreId).catch((error: unknown) =>
+      console.error(`[Automation] inactivity trigger ${trigger} failed for user ${userId}:`, error)
     );
   }
 }
@@ -297,7 +274,7 @@ export async function registerAbandonedCart(data: {
     return existing[0].id;
   }
 
-  const result = await db.insert(abandonedCarts).values({
+  const [created] = await db.insert(abandonedCarts).values({
     storeId: data.storeId,
     userId: data.userId,
     customerName: data.customerName,
@@ -307,8 +284,8 @@ export async function registerAbandonedCart(data: {
     status: "pending",
     createdAt: now,
     expiresAt,
-  });
-  return Number((result[0] as { insertId: number }).insertId);
+  }).returning({ id: abandonedCarts.id });
+  return created.id;
 }
 
 export async function markCartRecovered(userId: number, storeId: number): Promise<void> {
@@ -358,7 +335,7 @@ export async function startJourneyExecution(
     ? new Date(Date.now() + firstStep.delayMinutes * 60 * 1000)
     : new Date();
 
-  const result = await db.insert(journeyExecutions).values({
+  const [created] = await db.insert(journeyExecutions).values({
     storeId: journey[0].storeId,
     journeyId,
     userId,
@@ -369,9 +346,9 @@ export async function startJourneyExecution(
     startedAt: new Date(),
     nextStepAt,
     logs: JSON.stringify([{ at: new Date().toISOString(), msg: "Jornada iniciada" }]),
-  });
+  }).returning({ id: journeyExecutions.id });
 
-  return Number((result[0] as { insertId: number }).insertId);
+  return created.id;
 }
 
 /**
@@ -589,7 +566,7 @@ async function processExecution(exec: typeof journeyExecutions.$inferSelect): Pr
       await db.insert(clientNotifications).values({
         storeId: exec.storeId,
         userId: exec.userId,
-        title: "🎁 Cupom exclusivo para você!",
+        title: "🎁 Cupom disponível na sua conta",
         message: `Use o código ${code} e ganhe ${discountLabel}${validityLabel}. Válido no próximo pedido.`,
         type: "promo",
         read: false,
@@ -598,10 +575,11 @@ async function processExecution(exec: typeof journeyExecutions.$inferSelect): Pr
       // 3. Push notification
       await sendPushToUser(exec.userId, {
         storeId: exec.storeId,
-        title: "🎁 Cupom exclusivo para você!",
+        title: "🎁 Cupom disponível na sua conta",
         body: `Use ${code} e ganhe ${discountLabel}${validityLabel}.`,
         url: "/cardapio",
         tag: `coupon-${code}`,
+        persistInAppFallback: false,
       });
 
       // 4. WhatsApp (se tiver telefone cadastrado)
@@ -609,7 +587,7 @@ async function processExecution(exec: typeof journeyExecutions.$inferSelect): Pr
         const appUrl = process.env.PUBLIC_APP_URL ?? "";
         await sendWhatsApp(
           exec.phone,
-          `🎁 *Bonatto Pizza* — Olá! Preparamos um cupom exclusivo para você:\n\n` +
+          `🎁 *Bonatto Pizza*\n\nVocê recebeu um cupom para o próximo pedido:\n\n` +
           `*Código:* ${code}\n` +
           `*Desconto:* ${discountLabel}${validityLabel}\n\n` +
           `Use no seu próximo pedido: ${appUrl}/cardapio`
@@ -644,6 +622,7 @@ async function processExecution(exec: typeof journeyExecutions.$inferSelect): Pr
           body: `${pointsLabel}. Saldo atual: ${newBalance} pontos.`,
           url: "/minha-conta",
           tag: `loyalty-${exec.userId}-${Date.now()}`,
+          persistInAppFallback: false,
         });
 
         log(`Pontos de fidelidade: ${points > 0 ? "+" : ""}${points} (saldo: ${newBalance})`);
@@ -674,6 +653,7 @@ async function processExecution(exec: typeof journeyExecutions.$inferSelect): Pr
           body: alertMsg,
           url: alertUrl ?? "/",
           tag: `alert-${exec.journeyId}-${exec.id}`,
+          persistInAppFallback: false,
         });
       }
 
@@ -816,7 +796,7 @@ export async function createJourney(data: {
 }) {
   const db = await getDb();
   if (!db) return -1;
-  const result = await db.insert(journeys).values({
+  const [created] = await db.insert(journeys).values({
     storeId: data.storeId,
     name: data.name,
     description: data.description ?? null,
@@ -826,8 +806,8 @@ export async function createJourney(data: {
     daysInactive: data.daysInactive ?? null,
     createdAt: new Date(),
     updatedAt: new Date(),
-  });
-  return Number((result[0] as { insertId: number }).insertId);
+  }).returning({ id: journeys.id });
+  return created.id;
 }
 
 export async function updateJourney(id: number, data: Partial<{
@@ -858,7 +838,7 @@ export async function duplicateJourney(id: number, storeId?: number): Promise<nu
   if (!db) return -1;
   const original = await db.select().from(journeys).where(and(eq(journeys.id, id), storeId ? eq(journeys.storeId, storeId) : undefined)).limit(1);
   if (!original[0]) return -1;
-  const result = await db.insert(journeys).values({
+  const [created] = await db.insert(journeys).values({
     storeId: original[0].storeId,
     name: `${original[0].name} (cópia)`,
     description: original[0].description,
@@ -867,8 +847,8 @@ export async function duplicateJourney(id: number, storeId?: number): Promise<nu
     steps: original[0].steps,
     createdAt: new Date(),
     updatedAt: new Date(),
-  });
-  return Number((result[0] as { insertId: number }).insertId);
+  }).returning({ id: journeys.id });
+  return created.id;
 }
 
 export async function listExecutions(journeyId?: number, storeId?: number) {
@@ -1036,21 +1016,14 @@ export async function processAbandonedCarts(): Promise<void> {
       if (!isDuplicate) {
         const items = JSON.parse(cart.items) as Array<{ productName: string; quantity: number }>;
         const itemsList = items.map(i => `• ${i.productName} x${i.quantity}`).join("\n");
-        const msg = `Olá, ${cart.customerName}! 🍕\n\nVocê deixou sua pizza no forno! 😅\n\n${itemsList}\n\n*Total: R$ ${cart.total}*\n\nFinalize agora antes que esfrie:\n👉 https://bonattopizza.manus.space`;
+        const msg = `Oi, ${cart.customerName}! Seu carrinho ainda está salvo.\n\n${itemsList}\n\n*Total: R$ ${cart.total}*\n\nSe quiser concluir o pedido, continue por aqui:\nhttps://bonattopizza.manus.space`;
 
         if (cart.customerPhone) {
           await sendWhatsApp(cart.customerPhone, msg);
           await logAutomationEvent(db, { storeId: cart.storeId, type: "cart_step1", userId: cart.userId, cartId: cart.id, channel: "whatsapp", step: 1, status: "sent" });
         }
-        // Push notification (usa template configurado no admin, com fallback)
-        {
-          const tpl = await pickRandomTemplate("cart_abandoned_step1", "push", cart.storeId);
-          const interpolate = (t: string) => t.replace(/\{\{total\}\}/g, cart.total).replace(/\{\{clientName\}\}/g, cart.customerName ?? "cliente");
-          const pushTitle = tpl ? interpolate(tpl.title) : "🍕 Sua pizza está esperando!";
-          const pushBody = tpl ? interpolate(tpl.body) : `Finalize seu pedido de R$ ${cart.total}`;
-          await sendPushToUser(cart.userId, { storeId: cart.storeId, title: pushTitle, body: pushBody, url: `/checkout?restore=${cart.id}`, tag: `abandoned-cart-${cart.id}` });
-        }
-        await logAutomationEvent(db, { storeId: cart.storeId, type: "cart_step1", userId: cart.userId, cartId: cart.id, channel: "push", step: 1, status: "sent" });
+        // Push automático de carrinho abandonado desativado.
+        // Marketing push deve ser configurado explicitamente em uma jornada/campanha.
 
         await db.update(abandonedCarts).set({ firstReminderSentAt: now, currentStep: 1 }).where(eq(abandonedCarts.id, cart.id));
 
@@ -1066,20 +1039,13 @@ export async function processAbandonedCarts(): Promise<void> {
     if (minutesSinceCreated >= 20 && cart.firstReminderSentAt && !cart.secondReminderSentAt) {
       const isDuplicate = await alreadySent(db, "cart_step2", 2, cart.storeId, cart.id);
       if (!isDuplicate) {
-        const msg = `${cart.customerName}, ainda dá tempo! 🔥\n\nSeu pedido de *R$ ${cart.total}* ainda está salvo.\n\n🛵 Entregamos em até 40 minutos!\n\nNão perca sua pizza favorita:\n👉 https://bonattopizza.manus.space`;
+        const msg = `Oi, ${cart.customerName}! Seu pedido de *R$ ${cart.total}* continua no carrinho.\n\nSe quiser finalizar, use o link abaixo:\nhttps://bonattopizza.manus.space`;
 
         if (cart.customerPhone) {
           await sendWhatsApp(cart.customerPhone, msg);
           await logAutomationEvent(db, { storeId: cart.storeId, type: "cart_step2", userId: cart.userId, cartId: cart.id, channel: "whatsapp", step: 2, status: "sent" });
         }
-        {
-          const tpl = await pickRandomTemplate("cart_abandoned_step2", "push", cart.storeId);
-          const interpolate = (t: string) => t.replace(/\{\{total\}\}/g, cart.total).replace(/\{\{clientName\}\}/g, cart.customerName ?? "cliente");
-          const pushTitle = tpl ? interpolate(tpl.title) : "🛵 Entrega em 40 minutos!";
-          const pushBody = tpl ? interpolate(tpl.body) : `Seu pedido de R$ ${cart.total} está salvo`;
-          await sendPushToUser(cart.userId, { storeId: cart.storeId, title: pushTitle, body: pushBody, url: `/checkout?restore=${cart.id}`, tag: `abandoned-cart-${cart.id}` });
-        }
-        await logAutomationEvent(db, { storeId: cart.storeId, type: "cart_step2", userId: cart.userId, cartId: cart.id, channel: "push", step: 2, status: "sent" });
+        // Sem push automático nesta etapa.
 
         await db.update(abandonedCarts).set({ secondReminderSentAt: now, currentStep: 2 }).where(eq(abandonedCarts.id, cart.id));
       }
@@ -1092,20 +1058,13 @@ export async function processAbandonedCarts(): Promise<void> {
         // Gerar cupom personalizado de 10% para este usuário
         const couponCode = await generateRecoveryCoupon(db, cart.storeId, cart.userId, 10, cart.customerName);
 
-        const msg = `⏰ ${cart.customerName}, última chance!\n\nSeu carrinho expira em breve e não queremos que você perca sua pizza! 🍕\n\n🎁 Use o cupom exclusivo *${couponCode}* e ganhe *10% de desconto*!\n\n⚡ Válido por apenas 48 horas!\n\n👉 https://bonattopizza.manus.space`;
+        const msg = `Oi, ${cart.customerName}! Seu carrinho ainda está salvo.\n\nUse o cupom *${couponCode}* para ter *10% de desconto*.\n\nVálido por 48 horas.\n\nhttps://bonattopizza.manus.space`;
 
         if (cart.customerPhone) {
           await sendWhatsApp(cart.customerPhone, msg);
           await logAutomationEvent(db, { storeId: cart.storeId, type: "cart_step3", userId: cart.userId, cartId: cart.id, channel: "whatsapp", step: 3, status: "sent", metadata: { couponCode } });
         }
-        {
-          const tpl = await pickRandomTemplate("cart_abandoned_step3", "push", cart.storeId);
-          const interpolate = (t: string) => t.replace(/\{\{total\}\}/g, cart.total).replace(/\{\{clientName\}\}/g, cart.customerName ?? "cliente").replace(/\{\{coupon\}\}/g, couponCode);
-          const pushTitle = tpl ? interpolate(tpl.title) : "⏰ Última chance! 10% OFF";
-          const pushBody = tpl ? interpolate(tpl.body) : `Cupom ${couponCode} — válido 48h`;
-          await sendPushToUser(cart.userId, { storeId: cart.storeId, title: pushTitle, body: pushBody, url: `/checkout?restore=${cart.id}`, tag: `abandoned-cart-${cart.id}` });
-        }
-        await logAutomationEvent(db, { storeId: cart.storeId, type: "cart_step3", userId: cart.userId, cartId: cart.id, channel: "push", step: 3, status: "sent", metadata: { couponCode } });
+        // Sem push automático nesta etapa. O cupom continua disponível pela automação/WhatsApp.
 
         await db.update(abandonedCarts).set({ thirdReminderSentAt: now, couponCode, currentStep: 3 }).where(eq(abandonedCarts.id, cart.id));
       }
@@ -1122,22 +1081,22 @@ export async function processAbandonedCarts(): Promise<void> {
 
 const REACTIVATION_COPY: Record<string, { title: string; whatsapp: (name: string, coupon: string) => string; push: { title: string; body: string } }> = {
   inativo_15: {
-    title: "Sentimos sua falta!",
+    title: "Cupom de 5% para seu próximo pedido",
     whatsapp: (name, coupon) =>
-      `Oi, ${name}! 👋\n\nFaz uns dias que você não pede na Bonatto Pizza e a gente sentiu falta!\n\n🍕 Que tal uma pizza hoje? Use o cupom *${coupon}* e ganhe *5% de desconto* no seu próximo pedido!\n\n⏰ Válido por 72 horas.\n\n👉 https://bonattopizza.manus.space`,
-    push: { title: "🍕 Sentimos sua falta!", body: "5% OFF no seu próximo pedido — válido 72h" },
+      `Oi, ${name}! Temos um cupom de *5% de desconto* para seu próximo pedido.\n\nCupom: *${coupon}*\nVálido por 72 horas.\n\nhttps://bonattopizza.manus.space`,
+    push: { title: "🍕 5% de desconto no próximo pedido", body: "Use seu cupom nas próximas 72 horas." },
   },
   inativo_30: {
-    title: "Oferta especial para você",
+    title: "Cupom de 10% para seu próximo pedido",
     whatsapp: (name, coupon) =>
-      `${name}, temos uma oferta especial para você! 🎁\n\nSabemos que faz um tempinho que você não pede na Bonatto Pizza. Que tal voltar com *10% de desconto*?\n\n🎟️ Cupom exclusivo: *${coupon}*\n\n⏰ Oferta por tempo limitado!\n\n👉 https://bonattopizza.manus.space`,
-    push: { title: "🎁 10% OFF — Oferta exclusiva!", body: "Volte a pedir com desconto especial" },
+      `Oi, ${name}! Seu próximo pedido tem *10% de desconto* com o cupom abaixo.\n\nCupom: *${coupon}*\nVálido por 48 horas.\n\nhttps://bonattopizza.manus.space`,
+    push: { title: "🎁 10% de desconto no próximo pedido", body: "Use o cupom disponível para sua conta." },
   },
   inativo_60: {
-    title: "Voltamos para você!",
+    title: "Cupom de 15% para seu próximo pedido",
     whatsapp: (name, coupon) =>
-      `${name}! 😢\n\nA gente sente muito a sua falta na Bonatto Pizza.\n\nPara te receber de volta, preparamos um cupom especial de *15% de desconto*:\n\n🎟️ *${coupon}*\n\n🍕 Novidades no cardápio te esperam!\n\n👉 https://bonattopizza.manus.space`,
-    push: { title: "😢 Voltamos para você! 15% OFF", body: "Cupom especial de 15% para seu retorno" },
+      `Oi, ${name}! Temos um cupom de *15% de desconto* para seu próximo pedido.\n\nCupom: *${coupon}*\n\nVeja o cardápio em:\nhttps://bonattopizza.manus.space`,
+    push: { title: "🍕 15% de desconto no próximo pedido", body: "Seu cupom está disponível para usar no cardápio." },
   },
 };
 
@@ -1214,12 +1173,8 @@ export async function processReactivation(): Promise<void> {
         await logAutomationEvent(db, { storeId: tagged.storeId, type: segment.type, userId: user.id, channel: "whatsapp", step: 1, status: "sent", metadata: { couponCode, tag: segment.tag } });
       }
 
-      // Enviar Push (usa template configurado no admin, com fallback)
-      const pushTpl = await pickRandomTemplate(templateEvent, "push", tagged.storeId);
-      const pushTitle = pushTpl ? interpolate(pushTpl.title) : (copy?.push.title ?? "🍕 Sentimos sua falta!");
-      const pushBody = pushTpl ? interpolate(pushTpl.body) : (copy?.push.body ?? "Temos uma oferta especial para você!");
-      await sendPushToUser(user.id, { storeId: tagged.storeId, title: pushTitle, body: pushBody, url: "/" });
-      await logAutomationEvent(db, { storeId: tagged.storeId, type: segment.type, userId: user.id, channel: "push", step: 1, status: "sent", metadata: { couponCode, tag: segment.tag } });
+      // Push automático de reativação desativado.
+      // Caso desejado, configure uma jornada/campanha explícita no Admin.
 
       // Disparar jornada de reativação se existir
       await fireJourneyTrigger(segment.tag as typeof journeys.$inferInsert["trigger"], user.id, phone, tagged.storeId);

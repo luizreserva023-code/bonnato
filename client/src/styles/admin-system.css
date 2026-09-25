@@ -1,0 +1,605 @@
+/* Bonatto Admin Design System — escopo exclusivo de .bonatto-admin */
+.bonatto-admin {
+  --admin-brand-950: #3f0709;
+  --admin-brand-900: #50090c;
+  --admin-brand-800: #631014;
+  --admin-brand-700: #73151b;
+  --admin-brand-600: #8a3439;
+  --admin-brand-100: #f6e9e9;
+  --admin-brand-50: #fcf5f5;
+
+  --admin-bg: #f5f6f8;
+  --admin-surface: #ffffff;
+  --admin-surface-alt: #fafafb;
+  --admin-card-bg: #ffffff;
+  --admin-card-border: #e7e8ec;
+  --admin-border: #e7e8ec;
+  --admin-border-strong: #d7d9df;
+  --admin-divider: #e7e8ec;
+  --admin-hover-bg: #f7f7f9;
+
+  --admin-text-primary: #171719;
+  --admin-text-heading: #171719;
+  --admin-text: #34363d;
+  --admin-text-secondary: #676a73;
+  --admin-text-muted: #979aa3;
+  --admin-text-disabled: #b9bbc2;
+
+  --admin-success: #16a36a;
+  --admin-success-bg: #ecfdf5;
+  --admin-warning: #d97706;
+  --admin-warning-bg: #fffaeb;
+  --admin-danger: #d92d20;
+  --admin-danger-bg: #fef3f2;
+  --admin-info: #3578e5;
+  --admin-info-bg: #eff6ff;
+
+  --admin-sidebar-bg: #50090c;
+  --admin-sidebar-border: rgba(255,255,255,.08);
+  --admin-sidebar-text: rgba(255,255,255,.72);
+  --admin-sidebar-text-active: #ffffff;
+  --admin-sidebar-active-bg: rgba(255,255,255,.12);
+  --admin-sidebar-hover-bg: rgba(255,255,255,.07);
+  --admin-sidebar-divider: rgba(255,255,255,.10);
+
+  --admin-input-bg: #ffffff;
+  --admin-input-border: #d7d9df;
+  --admin-active-text: #631014;
+  --admin-badge-bg: #f6e9e9;
+  --admin-badge-text: #631014;
+  --admin-icon-bg: #fcf5f5;
+  --admin-icon-color: #631014;
+  --admin-chart-bar: #b25e62;
+  --admin-chart-bar-max: #631014;
+  --admin-chart-grid: #ecedef;
+  --admin-chart-tick: #979aa3;
+  --admin-tooltip-bg: #ffffff;
+  --admin-tooltip-shadow: 0 8px 30px rgba(16,24,40,.08);
+  --admin-header-bg: rgba(245,246,248,.94);
+  --admin-mobile-header-bg: rgba(255,255,255,.96);
+  --admin-mobile-header-border: #e7e8ec;
+  --admin-mobile-header-text: #171719;
+
+  --admin-filter-active-bg: #631014;
+  --admin-filter-active-text: #ffffff;
+  --admin-filter-inactive-bg: #f1f2f4;
+  --admin-filter-inactive-text: #676a73;
+  --admin-trend-up-bg: #ecfdf5;
+  --admin-trend-up-text: #16875b;
+  --admin-trend-down-bg: #fef3f2;
+  --admin-trend-down-text: #d92d20;
+  --admin-progress-bg: #f6e9e9;
+
+  --admin-radius-xs: 6px;
+  --admin-radius-sm: 8px;
+  --admin-radius-md: 12px;
+  --admin-radius-lg: 16px;
+  --admin-radius-xl: 20px;
+  --admin-shadow-sm: 0 1px 2px rgba(16,24,40,.03), 0 2px 8px rgba(16,24,40,.025);
+  --admin-shadow-md: 0 4px 18px rgba(16,24,40,.055);
+  --admin-shadow-lg: 0 18px 45px rgba(16,24,40,.08);
+  --admin-card-shadow: var(--admin-shadow-sm);
+  --admin-font: Inter, var(--font-body), ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --admin-duration: 160ms;
+  --admin-ease: cubic-bezier(.2,.8,.2,1);
+
+  min-height: 100vh;
+  background: var(--admin-bg);
+  color: var(--admin-text-primary);
+  font-family: var(--admin-font);
+}
+
+.bonatto-admin *,
+.bonatto-admin *::before,
+.bonatto-admin *::after { box-sizing: border-box; }
+
+.bonatto-admin .admin-main {
+  background: var(--admin-bg);
+  padding: 24px;
+}
+
+.bonatto-admin .admin-content-frame {
+  width: 100%;
+  max-width: 1600px;
+  min-width: 0;
+  margin: 0 auto;
+}
+
+.bonatto-admin .admin-page {
+  gap: 24px;
+  color: var(--admin-text-primary);
+}
+
+.bonatto-admin .admin-topbar {
+  min-height: 76px;
+  padding: 14px 0 18px;
+  background: transparent !important;
+  backdrop-filter: none !important;
+  border-bottom: 1px solid var(--admin-border) !important;
+}
+
+.bonatto-admin .admin-topbar__title {
+  font-size: 28px;
+  line-height: 36px;
+  font-weight: 600;
+  letter-spacing: -.025em;
+  color: var(--admin-text-primary);
+}
+
+.bonatto-admin .admin-topbar__subtitle {
+  margin-top: 3px;
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--admin-text-secondary);
+}
+
+.bonatto-admin .admin-surface,
+.bonatto-admin .admin-stat {
+  background: var(--admin-surface);
+  border: 1px solid var(--admin-border);
+  box-shadow: var(--admin-shadow-sm);
+}
+
+.bonatto-admin .admin-surface { border-radius: 18px; }
+
+.bonatto-admin .admin-surface__header {
+  padding: 20px 22px 16px;
+  border-bottom: 1px solid var(--admin-border);
+}
+
+.bonatto-admin .admin-surface__body { padding: 22px; }
+
+.bonatto-admin .admin-surface__title {
+  font-size: 16px;
+  line-height: 24px;
+  font-weight: 600;
+  color: var(--admin-text-primary);
+}
+
+.bonatto-admin .admin-surface__subtitle {
+  margin-top: 3px;
+  color: var(--admin-text-secondary);
+  font-size: 13px;
+  line-height: 18px;
+}
+
+.bonatto-admin .admin-stat {
+  min-height: 142px;
+  padding: 20px;
+  gap: 16px;
+  border-radius: 16px;
+  transition: border-color var(--admin-duration) var(--admin-ease), box-shadow var(--admin-duration) var(--admin-ease);
+}
+
+.bonatto-admin .admin-stat:hover {
+  transform: none;
+  border-color: var(--admin-border-strong);
+  box-shadow: var(--admin-shadow-md);
+}
+
+.bonatto-admin .admin-stat__label {
+  color: var(--admin-text-secondary);
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 600;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.bonatto-admin .admin-stat__value {
+  font-size: clamp(28px, 2.2vw, 36px);
+  line-height: 1.05;
+  font-weight: 650;
+  letter-spacing: -.03em;
+  color: var(--admin-text-primary);
+}
+
+.bonatto-admin .admin-stat__sub {
+  color: var(--admin-text-secondary);
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.bonatto-admin .admin-stat__icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  color: var(--admin-brand-800);
+  background: var(--admin-brand-50);
+}
+
+.bonatto-admin .admin-chip {
+  min-height: 34px;
+  border-radius: 10px;
+  padding: 7px 12px;
+  background: #fff;
+  color: var(--admin-text-secondary);
+  border: 1px solid var(--admin-border);
+  font-weight: 600;
+}
+
+.bonatto-admin .admin-chip:hover {
+  border-color: var(--admin-border-strong);
+  background: var(--admin-surface-alt);
+  filter: none;
+}
+
+.bonatto-admin .admin-chip[data-active="true"] {
+  background: var(--admin-brand-800);
+  border-color: var(--admin-brand-800);
+  color: #fff;
+}
+
+.bonatto-admin .admin-pill {
+  border-radius: 999px;
+  padding: 4px 8px;
+  font-size: 11px;
+  line-height: 16px;
+  font-weight: 600;
+}
+
+.bonatto-admin .admin-pill--success { background: var(--admin-success-bg); color: var(--admin-success); }
+.bonatto-admin .admin-pill--warning { background: var(--admin-warning-bg); color: var(--admin-warning); }
+.bonatto-admin .admin-pill--danger { background: var(--admin-danger-bg); color: var(--admin-danger); }
+.bonatto-admin .admin-pill--info { background: var(--admin-info-bg); color: var(--admin-info); }
+.bonatto-admin .admin-pill--brand { background: var(--admin-brand-50); color: var(--admin-brand-800); }
+.bonatto-admin .admin-pill--neutral { background: #f2f3f5; color: var(--admin-text-secondary); }
+
+.bonatto-admin input:not([type="checkbox"]):not([type="radio"]),
+.bonatto-admin textarea,
+.bonatto-admin button[role="combobox"] { border-color: var(--admin-input-border); }
+
+.bonatto-admin input:not([type="checkbox"]):not([type="radio"]):focus,
+.bonatto-admin textarea:focus,
+.bonatto-admin button[role="combobox"]:focus {
+  border-color: var(--admin-brand-700) !important;
+  box-shadow: 0 0 0 3px rgba(115,21,27,.12) !important;
+  outline: none;
+}
+
+.bonatto-admin .admin-card-special {
+  border-radius: 20px;
+  background: var(--admin-brand-900);
+  color: #fff;
+  border: 1px solid rgba(255,255,255,.06);
+  box-shadow: var(--admin-shadow-md);
+}
+
+.bonatto-admin .admin-chart-shell { min-height: 320px; }
+
+.bonatto-admin .admin-dashboard-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.55fr) minmax(300px, .85fr);
+  gap: 24px;
+}
+
+.bonatto-admin .admin-dashboard-three {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 24px;
+}
+
+.bonatto-admin .admin-intelligence {
+  position: relative;
+  overflow: hidden;
+  border-radius: 18px;
+  border: 1px solid var(--admin-border);
+  background: linear-gradient(180deg, #fff 0%, #fdfbfb 100%);
+  box-shadow: var(--admin-shadow-sm);
+}
+
+.bonatto-admin .admin-intelligence::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 3px;
+  background: var(--admin-brand-800);
+}
+
+.bonatto-admin .admin-intelligence__eyebrow {
+  color: var(--admin-brand-700);
+  font-size: 11px;
+  line-height: 16px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .08em;
+}
+
+.bonatto-admin .admin-empty-state {
+  min-height: 180px;
+  padding: 32px 24px;
+}
+
+.bonatto-admin .admin-empty-state__title { color: var(--admin-text-primary); }
+.bonatto-admin .admin-empty-state__body { color: var(--admin-text-secondary); }
+
+.bonatto-admin .admin-data-table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--admin-border);
+  border-radius: 16px;
+  background: var(--admin-surface);
+}
+
+.bonatto-admin .admin-data-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.bonatto-admin .admin-data-table thead { background: var(--admin-surface-alt); }
+
+.bonatto-admin .admin-data-table th {
+  height: 44px;
+  padding: 0 16px;
+  color: var(--admin-text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.bonatto-admin .admin-data-table td {
+  min-height: 56px;
+  padding: 14px 16px;
+  color: var(--admin-text-primary);
+  font-size: 13px;
+  border-top: 1px solid var(--admin-border);
+}
+
+.bonatto-admin .admin-data-table tbody tr {
+  transition: background var(--admin-duration) var(--admin-ease);
+}
+
+.bonatto-admin .admin-data-table tbody tr:hover { background: var(--admin-surface-alt); }
+
+.bonatto-admin .admin-skeleton {
+  position: relative;
+  overflow: hidden;
+  border-radius: 10px;
+  background: #eef0f3;
+}
+
+.bonatto-admin .admin-skeleton::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,.68), transparent);
+  animation: adminSkeleton 1.35s infinite;
+}
+
+@keyframes adminSkeleton { 100% { transform: translateX(100%); } }
+
+.bonatto-admin button:focus-visible,
+.bonatto-admin a:focus-visible {
+  outline: 2px solid var(--admin-brand-700);
+  outline-offset: 2px;
+}
+
+@media (max-width: 1279px) {
+  .bonatto-admin .admin-main { padding: 24px; }
+  .bonatto-admin .admin-dashboard-grid { grid-template-columns: 1fr; }
+  .bonatto-admin .admin-dashboard-three { grid-template-columns: repeat(2, minmax(0,1fr)); }
+}
+
+@media (max-width: 767px) {
+  .bonatto-admin .admin-main { padding: 16px; }
+  .bonatto-admin .admin-page { gap: 16px; }
+  .bonatto-admin .admin-topbar { padding: 10px 0 14px; }
+  .bonatto-admin .admin-topbar__title { font-size: 24px; line-height: 32px; }
+  .bonatto-admin .admin-dashboard-three { grid-template-columns: 1fr; gap: 16px; }
+  .bonatto-admin .admin-surface__header { padding: 16px; }
+  .bonatto-admin .admin-surface__body { padding: 16px; }
+  .bonatto-admin .admin-stat { min-height: 124px; padding: 16px; }
+}
+
+
+/* Compatibilidade visual com componentes shadcn já usados pelas abas antigas. */
+.bonatto-admin[data-admin-theme] .bg-primary { background-color: var(--admin-brand-800) !important; }
+.bonatto-admin[data-admin-theme] .text-primary { color: var(--admin-brand-800) !important; }
+.bonatto-admin[data-admin-theme] .border-primary { border-color: var(--admin-brand-700) !important; }
+.bonatto-admin[data-admin-theme] .ring-primary { --tw-ring-color: rgba(115,21,27,.18) !important; }
+
+.bonatto-admin [data-slot="card"],
+.bonatto-admin .bg-card {
+  border-color: var(--admin-border) !important;
+  box-shadow: var(--admin-shadow-sm);
+}
+
+.bonatto-admin button:not(.admin-chip):not([role="menuitem"]):not([role="tab"]) {
+  border-radius: 10px;
+}
+
+.bonatto-admin input:not([type="checkbox"]):not([type="radio"]),
+.bonatto-admin textarea,
+.bonatto-admin [role="combobox"] {
+  min-height: 40px;
+  border-radius: 10px;
+  background: #fff;
+}
+
+.bonatto-admin table thead {
+  background: var(--admin-surface-alt);
+}
+
+.bonatto-admin table thead th {
+  color: var(--admin-text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.bonatto-admin table tbody tr {
+  border-color: var(--admin-border);
+}
+
+.bonatto-admin table tbody tr:hover {
+  background: var(--admin-surface-alt);
+}
+
+.bonatto-admin .text-muted-foreground {
+  color: var(--admin-text-secondary) !important;
+}
+
+.bonatto-admin .border-border {
+  border-color: var(--admin-border) !important;
+}
+
+.bonatto-admin .bg-muted,
+.bonatto-admin .bg-muted\/30,
+.bonatto-admin .bg-muted\/50 {
+  background-color: var(--admin-surface-alt) !important;
+}
+
+/* Destructive deve ser semântico, nunca vinho de marca. */
+.bonatto-admin .bg-destructive { background-color: var(--admin-danger) !important; }
+.bonatto-admin .text-destructive { color: var(--admin-danger) !important; }
+.bonatto-admin .border-destructive { border-color: var(--admin-danger) !important; }
+
+/* Dark mode real do painel — ativado pelo ThemeProvider via data-admin-theme. */
+.bonatto-admin[data-admin-theme="dark"] {
+  --admin-bg: #120f10;
+  --admin-surface: #1a1617;
+  --admin-surface-alt: #211b1d;
+  --admin-card-bg: #1a1617;
+  --admin-card-border: #34292d;
+  --admin-border: #34292d;
+  --admin-border-strong: #49393f;
+  --admin-divider: #34292d;
+  --admin-hover-bg: #261f21;
+  --admin-text-primary: #f7f3f4;
+  --admin-text-heading: #fffafb;
+  --admin-text: #e6dde0;
+  --admin-text-secondary: #c2b5ba;
+  --admin-text-muted: #93858a;
+  --admin-text-disabled: #6f6267;
+  --admin-success-bg: #10281f;
+  --admin-warning-bg: #2e210e;
+  --admin-danger-bg: #321614;
+  --admin-info-bg: #10213a;
+  --admin-input-bg: #201a1c;
+  --admin-input-border: #49393f;
+  --admin-badge-bg: #341e21;
+  --admin-icon-bg: #2a191c;
+  --admin-chart-grid: #34292d;
+  --admin-chart-tick: #a9989e;
+  --admin-tooltip-bg: #201a1c;
+  --admin-tooltip-shadow: 0 12px 34px rgba(0,0,0,.36);
+  --admin-header-bg: rgba(18,15,16,.94);
+  --admin-mobile-header-bg: rgba(26,22,23,.96);
+  --admin-mobile-header-border: #34292d;
+  --admin-mobile-header-text: #f7f3f4;
+}
+
+.bonatto-admin[data-admin-theme="dark"] .admin-chip,
+.bonatto-admin[data-admin-theme="dark"] input:not([type="checkbox"]):not([type="radio"]),
+.bonatto-admin[data-admin-theme="dark"] textarea,
+.bonatto-admin[data-admin-theme="dark"] [role="combobox"],
+.bonatto-admin[data-admin-theme="dark"] .bg-card,
+.bonatto-admin[data-admin-theme="dark"] [data-slot="card"] {
+  background-color: var(--admin-surface) !important;
+  color: var(--admin-text-primary);
+}
+.bonatto-admin[data-admin-theme="dark"] .admin-intelligence {
+  background: linear-gradient(180deg, #1a1617 0%, #21191c 100%);
+}
+.bonatto-admin[data-admin-theme="dark"] .admin-skeleton { background: #2c2528; }
+.bonatto-admin[data-admin-theme="dark"] .admin-skeleton::after {
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,.08), transparent);
+}
+.bonatto-admin[data-admin-theme="dark"] .bg-white { background-color: var(--admin-surface) !important; }
+.bonatto-admin[data-admin-theme="dark"] .bg-gray-50,
+.bonatto-admin[data-admin-theme="dark"] .bg-slate-50 { background-color: var(--admin-surface-alt) !important; }
+.bonatto-admin[data-admin-theme="dark"] .text-gray-900,
+.bonatto-admin[data-admin-theme="dark"] .text-slate-900 { color: var(--admin-text-primary) !important; }
+.bonatto-admin[data-admin-theme="dark"] .text-gray-700,
+.bonatto-admin[data-admin-theme="dark"] .text-gray-600,
+.bonatto-admin[data-admin-theme="dark"] .text-slate-600 { color: var(--admin-text-secondary) !important; }
+
+@media (prefers-reduced-motion: reduce) {
+  .bonatto-admin *, .bonatto-admin *::before, .bonatto-admin *::after {
+    scroll-behavior: auto !important;
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .01ms !important;
+  }
+}
+
+/* Tema escuro determinístico do Admin. Usa classe explícita para não depender
+   apenas da herança do <html class="dark"> nem da ordem dos chunks CSS. */
+.bonatto-admin.admin-dark {
+  color-scheme: dark;
+  background: var(--admin-bg) !important;
+  color: var(--admin-text-primary) !important;
+}
+.bonatto-admin.admin-dark .admin-main,
+.bonatto-admin.admin-dark .admin-page,
+.bonatto-admin.admin-dark .admin-content-frame {
+  background: var(--admin-bg) !important;
+  color: var(--admin-text-primary) !important;
+}
+.bonatto-admin.admin-dark :is(.admin-surface,.admin-stat,[data-slot="card"],.bg-card,.bg-white) {
+  background-color: var(--admin-surface) !important;
+  color: var(--admin-text-primary) !important;
+  border-color: var(--admin-border) !important;
+}
+
+.bonatto-admin.admin-dark :is(.bg-gray-50,.bg-slate-50,.bg-muted,.bg-muted\/30,.bg-muted\/50) {
+  background-color: var(--admin-surface-alt) !important;
+}
+.bonatto-admin.admin-dark :is(.text-gray-900,.text-slate-900,.text-foreground) {
+  color: var(--admin-text-primary) !important;
+}
+.bonatto-admin.admin-dark :is(.text-gray-700,.text-gray-600,.text-slate-700,.text-slate-600,.text-muted-foreground) {
+  color: var(--admin-text-secondary) !important;
+}
+.bonatto-admin.admin-dark :is(input:not([type="checkbox"]):not([type="radio"]),textarea,[role="combobox"]) {
+  background-color: var(--admin-input-bg) !important;
+  color: var(--admin-text-primary) !important;
+  border-color: var(--admin-input-border) !important;
+}
+.bonatto-admin.admin-dark :is(table,thead,tbody,tr,td,th) {
+  border-color: var(--admin-border) !important;
+}
+
+.bonatto-admin.admin-dark table { background: var(--admin-surface) !important; }
+.bonatto-admin.admin-dark thead { background: var(--admin-surface-alt) !important; }
+.bonatto-admin.admin-dark tbody tr:hover { background: var(--admin-hover-bg) !important; }
+.bonatto-admin.admin-dark [class*="border-[#e8ebf0]"],
+.bonatto-admin.admin-dark [class*="border-[#E7E8EC]"] {
+  border-color: var(--admin-border) !important;
+}
+.bonatto-admin.admin-dark [class*="bg-[#f8f9fb]"],
+.bonatto-admin.admin-dark [class*="bg-[#F8F9FB]"],
+.bonatto-admin.admin-dark [class*="bg-[#f5f6f8]"] {
+  background-color: var(--admin-surface-alt) !important;
+}
+html.dark body,
+html[data-resolved-theme="dark"] body {
+  background: var(--background);
+  color: var(--foreground);
+}
+
+
+/* Modo Ajuda: os controles continuam visualmente reconhecíveis, mas o clique é
+   interceptado pelo AdminHelpProvider para mostrar a documentação da ação. */
+.bonatto-admin[data-help-mode="true"] :is(
+  button,
+  a,
+  [role="button"],
+  [role="combobox"],
+  input[type="button"],
+  input[type="submit"]
+) {
+  cursor: help !important;
+}
+
+.bonatto-admin[data-help-mode="true"] :is(
+  button,
+  a,
+  [role="button"],
+  [role="combobox"],
+  input[type="button"],
+  input[type="submit"]
+):hover {
+  outline: 2px solid color-mix(in srgb, var(--admin-accent, #7d0f14) 45%, transparent);
+  outline-offset: 2px;
+}

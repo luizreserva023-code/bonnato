@@ -5,7 +5,7 @@ import { useStore } from "@/contexts/StoreContext";
 import { isStoreOpenWithHours, type DaySchedule } from "@/lib/storeUtils";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
-import { useTenantConfig } from "@/shared/tenant/use-tenant-config";
+import { useBonattoConfig } from "@/hooks/use-bonatto-config";
 import type { inferRouterOutputs } from "@trpc/server";
 import {
   Bell,
@@ -28,7 +28,7 @@ import {
   Trophy,
   User,
 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useLocation } from "wouter";
 import { BRAND_ASSETS } from "@/lib/brand";
 import type { AppRouter } from "../../../server/routers";
@@ -43,29 +43,38 @@ export function Navbar() {
   const { user, isAuthenticated, logout } = useAuth();
   const [location, navigate] = useLocation();
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const { selectedStore, setShowCityModal, isTenantLocked } = useStore();
-  const tenant = useTenantConfig(selectedStore?.slug);
+  const [loadSecondaryStatus, setLoadSecondaryStatus] = useState(false);
+  const { selectedStore, setShowCityModal } = useStore();
+  const bonatto = useBonattoConfig();
+
+  useEffect(() => {
+    const handle = window.setTimeout(() => setLoadSecondaryStatus(true), 900);
+    return () => window.clearTimeout(handle);
+  }, []);
 
   const { data: notifData } = trpc.notifications.unreadCount.useQuery({ storeId: selectedStore?.id }, {
-    enabled: isAuthenticated && Boolean(selectedStore?.id),
-    refetchInterval: 60000,
+    enabled: loadSecondaryStatus && isAuthenticated && Boolean(selectedStore?.id),
+    staleTime: 60_000,
+    refetchInterval: loadSecondaryStatus ? 60_000 : false,
   });
   const notifCount = notifData ?? 0;
 
   const { data: alertsUnread } = trpc.clientAlerts.unreadCount.useQuery({ storeId: selectedStore?.id ?? 0 }, {
-    enabled: isAuthenticated && Boolean(selectedStore?.id),
-    refetchInterval: 60000,
+    enabled: loadSecondaryStatus && isAuthenticated && Boolean(selectedStore?.id),
+    staleTime: 60_000,
+    refetchInterval: loadSecondaryStatus ? 60_000 : false,
   });
   const alertsCount = alertsUnread ?? 0;
 
   const { data: loyaltyPoints = 0 } = trpc.loyalty.points.useQuery(
     { storeId: selectedStore?.id },
-    { enabled: isAuthenticated && Boolean(selectedStore?.id), staleTime: 30_000 },
+    { enabled: loadSecondaryStatus && isAuthenticated && Boolean(selectedStore?.id), staleTime: 60_000 },
   );
 
   const { data: orders } = trpc.orders.myOrders.useQuery({ storeId: selectedStore?.id }, {
-    enabled: isAuthenticated && Boolean(selectedStore?.id),
-    refetchInterval: 30000,
+    enabled: loadSecondaryStatus && isAuthenticated && Boolean(selectedStore?.id),
+    staleTime: 30_000,
+    refetchInterval: loadSecondaryStatus ? 30_000 : false,
   });
   const customerOrders: CustomerOrderRecord[] = orders ?? [];
   const activeOrdersCount = customerOrders.filter((order: CustomerOrderRecord) => !["delivered", "cancelled"].includes(order.status)).length;
@@ -75,21 +84,28 @@ export function Navbar() {
     { href: "/cardapio", label: "Cardápio", icon: ShoppingBag },
     { href: "/clube", label: "Clube", icon: Crown },
     { href: "/minha-conta", label: "Minha Conta", icon: User },
-  ].filter((link) => link.href !== "/clube" || tenant.pages.club.enabled);
+  ].filter((link) => link.href !== "/clube" || bonatto.pages.club.enabled);
 
-  const { data: storeSettings } = trpc.storeSettings.get.useQuery({ storeId: selectedStore?.id });
+  const { data: storeSettings } = trpc.storeSettings.get.useQuery(
+    { storeId: selectedStore?.id },
+    {
+      enabled: Boolean(selectedStore?.id),
+      staleTime: 2 * 60 * 1000,
+      gcTime: 30 * 60 * 1000,
+    },
+  );
   const dbStoreHours = storeSettings?.storeHours
     ? (JSON.parse(storeSettings.storeHours as string) as Record<string, DaySchedule | null>)
     : undefined;
-  const storeOpen = isStoreOpenWithHours(dbStoreHours);
+  const storeOpen = storeSettings?.manualStoreOpen === "true" || isStoreOpenWithHours(dbStoreHours);
   const totalAlerts = notifCount + alertsCount + activeOrdersCount;
-  const brandName = tenant.brand.name;
-  const brandTagline = tenant.brand.tagline;
+  const brandName = bonatto.brand.name;
+  const brandTagline = bonatto.brand.tagline;
   const firstName = user?.name?.trim().split(/\s+/)[0] || "visitante";
   const isHome = location === "/";
-  const locationLabel = selectedStore ? `Entrega em ${selectedStore.city}` : tenant.brand.deliveryLabel;
-  const navIcon = tenant.brand.logos.icon || NAVBAR_PALMITO_URL;
-  const navWordmark = tenant.brand.logos.wordmark || LOGO_TIPOGRAFICA_URL;
+  const locationLabel = selectedStore ? `Entrega em ${selectedStore.city}` : bonatto.brand.deliveryLabel;
+  const navIcon = bonatto.brand.logos.icon || NAVBAR_PALMITO_URL;
+  const navWordmark = bonatto.brand.logos.wordmark || LOGO_TIPOGRAFICA_URL;
 
   const accountCards = [
     { tab: "pedidos", icon: <Package className="h-5 w-5" />, label: "Pedidos", badge: activeOrdersCount > 0 ? activeOrdersCount : null },
@@ -121,7 +137,7 @@ export function Navbar() {
       >
         <nav
           className="relative overflow-hidden rounded-[20px] border border-black/5 shadow-[0_6px_18px_rgba(38,8,10,0.14)]"
-          style={{ backgroundColor: "var(--tenant-header, #DA1923)" }}
+          style={{ backgroundColor: "var(--bonatto-header, #DA1923)" }}
         >
           <div className={`relative flex items-center justify-between px-3 sm:h-16 sm:px-4 ${isHome ? "h-24" : "h-16"}`}>
             {isHome && (
@@ -163,7 +179,7 @@ export function Navbar() {
               </div>
             </Link>
 
-            {!isTenantLocked && <div className="hidden items-center gap-2 md:flex">
+            <div className="hidden items-center gap-2 md:flex">
               <button
                 type="button"
                 onClick={() => setShowCityModal(true)}
@@ -172,7 +188,7 @@ export function Navbar() {
                 <MapPin className="h-3.5 w-3.5" />
                 {locationLabel}
               </button>
-            </div>}
+            </div>
 
             <div className="flex items-center gap-2">
               <button
@@ -183,7 +199,7 @@ export function Navbar() {
               >
                 <ShoppingCart className={isHome ? "size-6 sm:size-5" : "size-5"} />
                 {itemCount > 0 && (
-                  <span className="absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full bg-white text-[10px] font-black text-[var(--tenant-primary,#6E0D12)]">
+                  <span className="absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full bg-white text-[10px] font-black text-[var(--bonatto-primary,#6E0D12)]">
                     {itemCount > 9 ? "9+" : itemCount}
                   </span>
                 )}
@@ -224,7 +240,7 @@ export function Navbar() {
                   <div>
                     <SheetTitle className="text-base font-black text-[#2f090d]">{brandName}</SheetTitle>
                     <p className="mt-1 text-xs text-[#7e4d51]">
-                      Menu premium, delivery e experiência de app em um só lugar.
+                      Cardápio, pedidos e entrega pelo mesmo lugar.
                     </p>
                   </div>
                 </div>
@@ -243,7 +259,7 @@ export function Navbar() {
                   {brandTagline}
                 </p>
                 <p className="mt-2 text-sm leading-6 text-white/78">
-                  Escolha seu sabor, acompanhe seus pedidos e entre na experiência completa da Bonatto sem exagero visual.
+                  Escolha o que vai pedir e acompanhe tudo por aqui.
                 </p>
                 <div className="mt-4">
                   <Link href="/cardapio" onClick={() => setDrawerOpen(false)} className="inline-flex w-full items-center justify-center rounded-full bg-white px-4 py-3 text-sm font-black text-[#6E0D12] transition hover:scale-[1.01]">
@@ -335,7 +351,7 @@ export function Navbar() {
                 <div className="rounded-[24px] border border-[#f1dfde] bg-white/92 p-4">
                   <p className="text-sm font-bold text-[#351215]">Entre para acompanhar pedidos e vantagens.</p>
                   <p className="mt-1 text-xs leading-5 text-[#805055]">
-                    Sua conta libera recompensas, pedidos ativos, cupons e um checkout muito mais rápido.
+                    Na sua conta você acompanha pedidos, cupons, recompensas e dados de pagamento.
                   </p>
                   <Link href="/login" onClick={() => setDrawerOpen(false)} className="mt-4 block">
                     <Button className="w-full gap-2 rounded-full bg-[#6E0D12] text-white hover:bg-[#56090e]">
